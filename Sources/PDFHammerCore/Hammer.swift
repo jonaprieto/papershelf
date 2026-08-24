@@ -256,7 +256,25 @@ public func normalizedName(
 /// Recomputes what a file would be called under different naming rules, using only the
 /// dates already captured when it was first read. No PDF is opened, so the whole list
 /// can be restyled as fast as a switch can be flipped.
-public func restyled(_ item: Item, options: Options) -> Item {
+public func restyled(_ item: Item, options: Options, guess: BookGuess? = nil) -> Item {
+    // A name the model produced is still only a suggestion of title, author and year:
+    // the rules decide how those are written, so they are reapplied here rather than
+    // the AI's spelling being frozen in place.
+    if let guess {
+        let name = filename(for: guess, rules: options.rules)
+        if !name.isEmpty {
+            var restyled = item
+            restyled.destination = availableURL(
+                item.source.deletingLastPathComponent().appendingPathComponent(name),
+                ignoring: item.source
+            )
+            return restyled
+        }
+    }
+    return restyledFromName(item, options: options)
+}
+
+private func restyledFromName(_ item: Item, options: Options) -> Item {
     var fallbacks: [String] = []
     if options.useFolderNames,
        let folderPrefix = folderContext(for: item.source, under: item.root, rules: options.rules).prefix {
@@ -284,12 +302,15 @@ public func restyled(_ item: Item, options: Options) -> Item {
 }
 
 /// Restyles a whole list. Independent per item, so it runs across cores.
-public func restyled(_ list: [Item], options: Options) -> [Item] {
-    guard list.count > 1 else { return list.map { restyled($0, options: options) } }
+public func restyled(_ list: [Item], options: Options,
+                     known: [String: BookGuess] = [:]) -> [Item] {
+    guard list.count > 1 else {
+        return list.map { restyled($0, options: options, guess: known[$0.key]) }
+    }
     var slots = [Item?](repeating: nil, count: list.count)
     slots.withUnsafeMutableBufferPointer { buffer in
         DispatchQueue.concurrentPerform(iterations: list.count) { index in
-            buffer[index] = restyled(list[index], options: options)
+            buffer[index] = restyled(list[index], options: options, guess: known[list[index].key])
         }
     }
     return slots.compactMap { $0 }
@@ -729,10 +750,24 @@ public func duplicateGroups(in items: [Item]) -> [DuplicateGroup] {
     return groups.sorted { $0.keeper.sourceName < $1.keeper.sourceName }
 }
 
+/// True when both URLs name the same file on disk, whatever they spell it like.
+///
+/// APFS is case-insensitive by default, so `Bus-Oslo.pdf` and `bus-oslo.pdf` are one
+/// file. Comparing the paths as strings says otherwise, which made every rename that
+/// only changed case look like a collision and collect a needless `-2`.
+private func sameFile(_ a: URL, _ b: URL) -> Bool {
+    if a.standardizedFileURL == b.standardizedFileURL { return true }
+    let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+    guard let one = (try? a.resourceValues(forKeys: keys))?.fileResourceIdentifier,
+          let two = (try? b.resourceValues(forKeys: keys))?.fileResourceIdentifier
+    else { return false }
+    return one.isEqual(two)
+}
+
 /// Returns `url` if free, otherwise `name-2.pdf`, `name-3.pdf`, ...
 private func availableURL(_ url: URL, ignoring: URL? = nil) -> URL {
     if !fm.fileExists(atPath: url.path) { return url }
-    if let ignoring, url.standardizedFileURL == ignoring.standardizedFileURL { return url }
+    if let ignoring, sameFile(url, ignoring) { return url }
     let base = url.deletingPathExtension().path
     let ext = url.pathExtension
     var n = 2

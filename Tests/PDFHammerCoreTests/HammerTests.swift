@@ -816,4 +816,40 @@ final class HammerTests: XCTestCase {
         }
         XCTAssertEqual(BackupSettings(folderName: " originales ").safeFolderName, "originales")
     }
+
+    // MARK: - Case-only renames
+
+    /// On a case-insensitive volume the old and new names are the same file, so nothing
+    /// has collided and no suffix belongs on the result.
+    func testLoweringTheCaseIsNotACollision() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Bus-Oslo-Airport.pdf"), password: nil)
+
+        let options = Options(passwords: [], recursive: true, dryRun: true,
+                              rules: NameRules(separator: .dash))
+        let preview = process(jobs: collectJobs(roots: [root], recursive: true), options: options)
+        XCTAssertEqual(preview.first?.destinationName, "bus-oslo-airport.pdf")
+
+        let applied = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               rules: NameRules(separator: .dash)))
+        XCTAssertEqual(applied.first?.destinationName, "bus-oslo-airport.pdf")
+    }
+
+    func testARealCollisionStillGetsASuffix() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Report A 2024.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("report-a-2024.pdf"), password: nil)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               rules: NameRules(separator: .dash)))
+        XCTAssertEqual(Set(results.map(\.destinationName)), ["2024-report-a.pdf", "2024-report-a-2.pdf"])
+    }
 }

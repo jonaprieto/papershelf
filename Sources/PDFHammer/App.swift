@@ -170,6 +170,8 @@ final class Runner: ObservableObject {
     // folder from slow into unusable.
     @Published private(set) var tree: [Node] = []
     @Published private(set) var statusCounts: [(Status, Int)] = []
+    @Published private(set) var bib: [BibEntry] = []
+    @Published private(set) var bibByItem: [String: BibEntry] = [:]
     @Published private(set) var confirmedCount = 0
     @Published private(set) var appliedCount = 0
     /// Bumped whenever the suggested names change without the list itself changing.
@@ -214,7 +216,8 @@ final class Runner: ObservableObject {
     /// still what Apply will use. Reopening a file picks up the new suggestion.
     func restyle(options: Options) {
         guard lastRunWasDry, !results.isEmpty else { return }
-        results = PDFHammerCore.restyled(results, options: options)
+        results = PDFHammerCore.restyled(results, options: options, known: guesses)
+        refreshBib()
         revision += 1
     }
 
@@ -308,6 +311,7 @@ final class Runner: ObservableObject {
         guard let index = indexByKey[key] else { return }
         let previous = results[index].status
         results[index] = item
+        refreshBib()
         revision += 1
         guard previous != item.status else { return }
         var counts = Dictionary(uniqueKeysWithValues: statusCounts)
@@ -326,6 +330,13 @@ final class Runner: ObservableObject {
     func reset() {
         begin(fingerprint: "", dry: true)
         phase = .idle
+    }
+
+    /// Entries are derived state like the tree and the counts, so they are built once
+    /// per change rather than in a view body.
+    private func refreshBib() {
+        bib = bibEntries(for: results, known: guesses)
+        bibByItem = Dictionary(uniqueKeysWithValues: bib.map { ($0.itemKey, $0) })
     }
 
     func findDuplicates() {
@@ -524,6 +535,7 @@ final class Runner: ObservableObject {
         }
         walk(tree, path: [])
         ancestorsByKey = ancestors
+        refreshBib()
         statusCounts = Status.allCases.compactMap { status in
             counts[status].map { (status, $0) }
         }
@@ -615,6 +627,10 @@ struct ContentView: View {
 
     @AppStorage("sources") private var storedSources = ""
     @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("viewMode") private var mode: ViewMode = .catalogue
+    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
+    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
+    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
 
     @StateObject private var runner = Runner()
     @StateObject private var covers = Covers()
@@ -656,6 +672,13 @@ struct ContentView: View {
             customLocation: backupCustomPath.isEmpty ? nil : URL(fileURLWithPath: backupCustomPath)
         )
     }
+
+    private var aiClient: AIClient {
+        AIClient(baseURL: aiBaseURL, model: aiModel,
+                 apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+    }
+
+    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
 
     private var rules: NameRules {
         NameRules(casing: ruleCasing, separator: ruleSeparator,
@@ -978,7 +1001,45 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section {
+                LabeledContent("API key") {
+                    if aiReady {
+                        Label("Ready", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                    } else {
+                        Label("Not set", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    }
+                }
+                LabeledContent("Model") {
+                    Text(aiModel).font(.callout.monospaced()).foregroundStyle(.secondary)
+                }
+                SettingsLink {
+                    Label("Open settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.link)
+                if aiReady && runner.pendingCount > 0 && runner.lastRunWasDry {
+                    Button {
+                        Task { await runner.identifyPending(client: aiClient, passwords: passwords, rules: rules) }
+                    } label: {
+                        Label("Name the \(runner.pendingCount) still pending", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.link)
+                }
+            } header: {
+                Text("AI")
+            } footer: {
+                Text("Suggestions still go through the name rules above, and still have to "
+                     + "be confirmed. Only the filename and the opening text are sent.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Running") {
+                Picker("Default view", selection: $mode) {
+                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
+                }
                 Toggle("Preview as soon as a source is added", isOn: $autoPreview)
             }
 
@@ -1024,16 +1085,20 @@ struct ContentView: View {
             Button(action: preview) {
                 Label("Preview", systemImage: "eye")
             }
+            .labelStyle(.titleAndIcon)
             .disabled(selection.isEmpty || runner.busy)
             .keyboardShortcut("p", modifiers: .command)
+            .help("Read-only. Builds the plan without touching a file.")
 
             Button(action: confirmApply) {
                 Label(canApply ? "Apply to \(runner.actionable) files" : "Apply",
                       systemImage: "checkmark.circle")
             }
+            .labelStyle(.titleAndIcon)
             .buttonStyle(.borderedProminent)
             .disabled(!canApply)
             .keyboardShortcut(.return, modifiers: .command)
+            .help("Carry out the reviewed plan on disk")
         }
     }
 
@@ -1161,6 +1226,10 @@ private struct ResultsPane: View {
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @State private var confirmingBatchAI = false
+    @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
+    @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
+    @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
+    @State private var showingBibOutput = false
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
     /// a name you simply have not touched.
@@ -1203,11 +1272,7 @@ private struct ResultsPane: View {
                 VStack(spacing: 0) {
                     summaryBar
                     Divider()
-                    HSplitView {
-                        browser.frame(minWidth: 330, maxWidth: .infinity, maxHeight: .infinity)
-                        inspector.frame(minWidth: 340, maxHeight: .infinity)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    split
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -1216,7 +1281,12 @@ private struct ResultsPane: View {
         .focusEffectDisabled()
         .focused($paneFocused)
         .animation(.easeOut(duration: 0.18), value: runner.results.count)
-        .onChange(of: runner.results.count) { _, _ in ensureSelection() }
+        .onChange(of: runner.results.count) { _, _ in
+            // Open the first level only, so a run lands looking like `ls` rather than
+            // one closed folder or the whole tree at once.
+            expanded.formUnion(runner.tree.filter { $0.children != nil }.map(\.id))
+            ensureSelection()
+        }
         .onChange(of: selected) { previous, new in
             // Folder rows carry no tag, so clicking one clears the selection. Put the
             // file back rather than letting the inspector swap out from under you.
@@ -1373,13 +1443,53 @@ private struct ResultsPane: View {
         }
     }
 
-    /// The whole selection flattened into one .bib, rebuilt from the current names on
-    /// every change, so it always describes what Apply would produce.
+    /// The same tree, showing what each file will contribute to the .bib. Selection is
+    /// shared with the other two views, so the preview on the right keeps up and an
+    /// entry can be checked against the page it came from.
     private var bibliography: some View {
-        BibliographyView(
-            entries: bibEntries(for: runner.results, known: runner.guesses),
-            selected: $selected
-        )
+        VStack(spacing: 0) {
+            bibBar
+            Divider()
+            ScrollViewReader { scroll in
+                List(selection: $selected) {
+                    ForEach(runner.tree) { node in
+                        BibNodeView(node: node, expanded: $expanded, runner: runner)
+                    }
+                }
+                .listStyle(.inset)
+                .focused($listFocused)
+                .onChange(of: selected) { _, new in
+                    guard let new else { return }
+                    expanded.formUnion(runner.ancestors(of: new))
+                    withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
+                }
+            }
+        }
+        .sheet(isPresented: $showingBibOutput) {
+            BibOutputSheet(text: bibDocument, order: $bibOrder, completeOnly: $bibCompleteOnly)
+        }
+    }
+
+    private var bibDocument: String {
+        bibtexDocument(runner.bib, includeIncomplete: !bibCompleteOnly, order: bibOrder)
+    }
+
+    private var bibBar: some View {
+        HStack(spacing: 10) {
+            let incomplete = runner.bib.filter { !$0.isComplete }.count
+            Text("\(runner.bib.count) entries").font(.callout).foregroundStyle(.secondary)
+            if incomplete > 0 {
+                Label("\(incomplete) incomplete", systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .help("Ask AI on those files to fill in author and year")
+            }
+            Spacer()
+            Button("Show .bib") { showingBibOutput = true }.controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store
@@ -1407,6 +1517,37 @@ private struct ResultsPane: View {
             .onChange(of: selected) { _, new in
                 guard let new else { return }
                 withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
+            }
+        }
+    }
+
+    /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
+    /// whenever its children change, which is why the inspector kept jumping; here the
+    /// width only ever changes because someone dragged it, and it is remembered.
+    private var split: some View {
+        GeometryReader { geometry in
+            let maximum = max(360, geometry.size.width - 360)
+            let width = min(max(inspectorWidth, 360), maximum)
+            HStack(spacing: 0) {
+                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                    .background(.separator)
+                    .frame(width: 1)
+                    .overlay {
+                        // A 10pt grab strip: a 1pt divider is not a target anyone can hit.
+                        Rectangle()
+                            .fill(.clear)
+                            .frame(width: 10)
+                            .contentShape(Rectangle())
+                            .onHover { NSCursor.resizeLeftRight.set(); if !$0 { NSCursor.arrow.set() } }
+                            .gesture(
+                                DragGesture(coordinateSpace: .global)
+                                    .onChanged { value in
+                                        inspectorWidth = min(max(width - value.translation.width, 360), maximum)
+                                    }
+                            )
+                    }
+                inspector.frame(width: width).frame(maxHeight: .infinity)
             }
         }
     }
@@ -1482,37 +1623,29 @@ private struct ResultsPane: View {
     // MARK: Header
 
     private var summaryBar: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
+                Picker("View", selection: $mode) {
+                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
                 ForEach(runner.statusCounts, id: \.0) { status, count in
                     StatusPill(status: status, count: count)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
                 stateLabel
             }
-            if runner.lastRunWasDry {
-                HStack(spacing: 10) {
-                    Picker("View", selection: $mode) {
-                        ForEach(ViewMode.allCases) { Label($0.label, systemImage: $0.icon).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 168)
 
-                    duplicateControls
-                    if aiReady && runner.pendingCount > 0 {
-                        Button("Ask AI for \(runner.pendingCount) names") { confirmingBatchAI = true }
-                            .controlSize(.small)
-                    }
-                    Divider().frame(height: 16)
-                }
+            if runner.lastRunWasDry {
                 HStack(spacing: 10) {
                     ProgressView(value: Double(runner.reviewed),
                                  total: Double(max(runner.results.count, 1)))
-                        .frame(maxWidth: 220)
+                        .frame(width: 140)
                     if runner.pendingCount == 0 {
-                        Label("All \(runner.results.count) reviewed, Apply is unlocked",
-                              systemImage: "checkmark.circle.fill")
+                        Label("All \(runner.results.count) reviewed", systemImage: "checkmark.circle.fill")
                             .font(.callout)
                             .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
                     } else {
@@ -1521,7 +1654,14 @@ private struct ResultsPane: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
+
+                    Spacer(minLength: 8)
+
+                    duplicateControls
+                    if aiReady && runner.pendingCount > 0 {
+                        Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
+                            .controlSize(.small)
+                    }
                     Button("Confirm all remaining") {
                         runner.confirmAllPending()
                         ensureSelection()
@@ -1725,36 +1865,39 @@ private struct ReviewInspector: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                    Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
-                        .buttonStyle(.borderedProminent)
-                    Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
-                    Button(action: applyNow) { KeyLabel("A", "Apply now") }
-                        .disabled(decision == .applied)
-                        .help("Rename this one file right now, without waiting for the batch")
-                    Button(action: identify) { KeyLabel("G", "Ask AI") }
-                        .disabled(!aiReady || runner.isThinking(item))
-                        .help(aiReady
-                              ? "Read the opening pages and suggest a title"
-                              : "Add an API key in Settings first")
-                    Button(action: skip) { KeyLabel("S", "Skip") }
-                    Button(action: skipFolder) {
-                        KeyLabel("F", folderScopeLabel)
+                VStack(spacing: 7) {
+                    // Deciding on the name.
+                    HStack(spacing: 7) {
+                        Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
+                            .buttonStyle(.borderedProminent)
+                        Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
+                        Button(action: identify) { KeyLabel("G", "Ask AI") }
+                            .disabled(!aiReady || runner.isThinking(item))
+                            .help(aiReady
+                                  ? "Read the opening pages and suggest a title"
+                                  : "Add an API key in Settings first")
+                        Spacer(minLength: 0)
                     }
-                    .disabled(pendingInFolder == 0)
-                    .help("Skip everything still undecided in \(folderName) and below it")
-                    if decision != nil {
-                        Button(action: reopen) { KeyLabel("R", "Reopen") }
-                    }
-                    Spacer(minLength: 0)
 
-                    // Kept apart from the others: it is the one action with consequences.
-                    Divider().frame(height: 18)
-                    Button(action: markDeleted) { KeyLabel("D", "Delete") }
-                        .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    // Moving on, and the two that touch the disk.
+                    HStack(spacing: 7) {
+                        Button(action: skip) { KeyLabel("S", "Skip") }
+                        Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
+                            .disabled(pendingInFolder == 0)
+                            .help("Skip everything still undecided in \(folderName) and below it")
+                        if decision != nil {
+                            Button(action: reopen) { KeyLabel("R", "Reopen") }
+                        }
+                        Spacer(minLength: 0)
+                        Button(action: applyNow) { KeyLabel("A", "Apply now") }
+                            .disabled(decision == .applied)
+                            .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .help("Rename this one file on disk right now, without waiting for the batch")
+                        Button(action: markDeleted) { KeyLabel("D", "Delete") }
+                            .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .help("Move to the Trash when you apply")
+                    }
                 }
-                .controlSize(.large)
 
                 Text(decision == .deleted
                      ? "Moves to the Trash on apply, so it stays recoverable. R puts it back."
@@ -2153,84 +2296,127 @@ private struct StatusPill: View {
 
 // MARK: - Bibliography
 
-/// The generated .bib alongside the gaps in it. Everything is derived from the current
-/// results, so it follows renames and AI answers without a refresh button.
-private struct BibliographyView: View {
-    let entries: [BibEntry]
-    @Binding var selected: String?
+/// Mirrors NodeView, but each file shows what it will contribute to the .bib.
+private struct BibNodeView: View {
+    let node: Node
+    @Binding var expanded: Set<String>
+    @ObservedObject var runner: Runner
 
-    @State private var completeOnly = false
+    var body: some View {
+        if let key = node.itemKey, let entry = runner.bibByItem[key] {
+            BibRow(entry: entry).tag(key).id(key)
+        } else if node.itemKey == nil {
+            DisclosureGroup(isExpanded: expansion) {
+                ForEach(node.children ?? []) { child in
+                    BibNodeView(node: child, expanded: $expanded, runner: runner)
+                }
+            } label: {
+                Label {
+                    Text(node.name).fontWeight(.medium)
+                } icon: {
+                    Image(systemName: "folder.fill").foregroundStyle(.tint)
+                }
+            }
+        }
+    }
+
+    private var expansion: Binding<Bool> {
+        Binding(
+            get: { expanded.contains(node.id) },
+            set: { open in
+                if open { expanded.insert(node.id) } else { expanded.remove(node.id) }
+            }
+        )
+    }
+}
+
+private struct BibRow: View {
+    let entry: BibEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: entry.isComplete ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .foregroundStyle(entry.isComplete
+                                 ? Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+                                 : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.key)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(entry.title.isEmpty ? "no title" : entry.title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    if let author = entry.author {
+                        Text(author).foregroundStyle(.secondary)
+                    }
+                    if let year = entry.year {
+                        Text(year).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    if !entry.missing.isEmpty {
+                        Text("no " + entry.missing.joined(separator: ", "))
+                            .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    }
+                }
+                .font(.caption)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+/// The flattened file, on demand. Editing happens in the browser behind it; this is for
+/// reading, copying and saving.
+private struct BibOutputSheet: View {
+    let text: String
+    @Binding var order: BibOrder
+    @Binding var completeOnly: Bool
+    @Environment(\.dismiss) private var dismiss
     @State private var copied = false
     @State private var saving = false
-
-    private var shown: [BibEntry] { completeOnly ? entries.filter(\.isComplete) : entries }
-    private var document: String { bibtexDocument(entries, includeIncomplete: !completeOnly) }
-    private var incomplete: [BibEntry] { entries.filter { !$0.isComplete } }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("\(shown.count) entries").font(.callout).foregroundStyle(.secondary)
-                if !incomplete.isEmpty {
-                    Label("\(incomplete.count) missing fields", systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                        .help("Ask AI on those files to fill in author and year")
+                Picker("Order", selection: $order) {
+                    ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
                 }
-                Spacer()
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
                 Toggle("Complete only", isOn: $completeOnly).toggleStyle(.checkbox)
+                Spacer()
                 Button(copied ? "Copied" : "Copy") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(document, forType: .string)
+                    NSPasteboard.general.setString(text, forType: .string)
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(2)); copied = false }
                 }
-                .controlSize(.small)
-                Button("Save…") { saving = true }.controlSize(.small)
+                Button("Save…") { saving = true }
+                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.bar)
+            .padding(14)
 
             Divider()
 
-            if incomplete.isEmpty == false && completeOnly == false {
-                gaps
-                Divider()
-            }
-
             ScrollView([.vertical, .horizontal]) {
-                Text(document.isEmpty ? "Nothing to write yet." : document)
+                Text(text.isEmpty ? "Nothing to write yet." : text)
                     .font(.system(.callout, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
             }
         }
+        .frame(minWidth: 720, minHeight: 520)
         .fileExporter(isPresented: $saving,
-                      document: BibDocument(text: document),
+                      document: BibDocument(text: text),
                       contentType: .plainText,
                       defaultFilename: "library.bib") { _ in }
-    }
-
-    /// The entries that need a hand, clickable so the file can be dealt with.
-    private var gaps: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 7) {
-                ForEach(incomplete) { entry in
-                    Button {
-                        selected = entry.itemKey
-                    } label: {
-                        Text("\(entry.key) · no \(entry.missing.joined(separator: ", "))")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-        }
     }
 }
 

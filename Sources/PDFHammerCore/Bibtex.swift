@@ -92,13 +92,37 @@ public func bibEntries(for items: [Item], known: [String: BookGuess] = [:]) -> [
     }
 }
 
+public enum BibOrder: String, Sendable, CaseIterable, Identifiable {
+    /// By citation key, the order a .bib is usually kept in.
+    case alphabetical
+    /// Grouped by the folder each file sits in, matching what the browser shows.
+    case folder
+
+    public var id: String { rawValue }
+    public var label: String { self == .alphabetical ? "Alphabetical" : "By folder" }
+}
+
 /// Renders entries as a .bib file, in the layout bibtex-tidy would leave behind: one
-/// field per line, aligned, trailing commas, entries sorted by key.
-public func bibtexDocument(_ entries: [BibEntry], includeIncomplete: Bool = true) -> String {
+/// field per line, aligned, trailing commas.
+public func bibtexDocument(_ entries: [BibEntry],
+                           includeIncomplete: Bool = true,
+                           order: BibOrder = .alphabetical) -> String {
     let usable = includeIncomplete ? entries : entries.filter(\.isComplete)
     guard !usable.isEmpty else { return "" }
 
-    return usable.sorted { $0.key < $1.key }.map { entry -> String in
+    let sorted: [BibEntry]
+    switch order {
+    case .alphabetical:
+        sorted = usable.sorted { $0.key < $1.key }
+    case .folder:
+        sorted = usable.sorted {
+            let a = ($0.file as NSString).deletingLastPathComponent
+            let b = ($1.file as NSString).deletingLastPathComponent
+            return a == b ? $0.key < $1.key : a < b
+        }
+    }
+
+    return sorted.map { entry -> String in
         var fields: [(String, String)] = [("title", entry.title)]
         if let author = entry.author { fields.append(("author", author)) }
         if let year = entry.year { fields.append(("year", year)) }

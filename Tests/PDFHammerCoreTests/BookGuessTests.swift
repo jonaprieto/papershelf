@@ -68,4 +68,34 @@ final class BookGuessTests: XCTestCase {
         let prompt = bookGuessPrompt(filename: "scan.pdf", excerpt: "   \n \n ")
         XCTAssertTrue(prompt.contains("no text layer"))
     }
+
+    /// The rules are not advisory. A name that came from the model goes through them
+    /// exactly like one read off the filesystem, and follows them when they change.
+    func testAGuessedNameObeysTheRules() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("guess-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("scan001.pdf")
+        fm.createFile(atPath: file.path, contents: Data())
+
+        let item = Item(root: root, source: file, destination: file, status: .renamed)
+        let guess = BookGuess(title: "Gödel, Escher, Bach", author: "Hofstadter", year: "1979")
+
+        // Folder borrowing off, so this measures the rules and nothing else: scan001 is
+        // a generic stem and would otherwise pick up the temp folder's name.
+        var options = Options(passwords: [], recursive: true, dryRun: true, useFolderNames: false)
+        options.rules = NameRules(separator: .dash, stripSymbols: true)
+        XCTAssertEqual(restyled(item, options: options, guess: guess).destinationName,
+                       "1979-gödel-escher-bach-hofstadter.pdf")
+
+        options.rules = NameRules(casing: .uppercase, separator: .underscore,
+                                  stripSymbols: true, stripDiacritics: true)
+        XCTAssertEqual(restyled(item, options: options, guess: guess).destinationName,
+                       "1979_GODEL_ESCHER_BACH_HOFSTADTER.pdf")
+
+        // With no guess it falls back to the filename, as before.
+        XCTAssertEqual(restyled(item, options: options, guess: nil).destinationName,
+                       "SCAN001.pdf")
+    }
 }

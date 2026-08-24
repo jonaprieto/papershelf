@@ -70,4 +70,22 @@ final class BibtexTests: XCTestCase {
     func testEmptySelectionGivesAnEmptyDocument() {
         XCTAssertEqual(bibtexDocument([]), "")
     }
+
+    func testFolderOrderGroupsByDirectory() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        func at(_ path: String) -> Item {
+            Item(root: root, source: root.appendingPathComponent(path),
+                 destination: root.appendingPathComponent(path), status: .renamed)
+        }
+        let entries = bibEntries(for: [at("zeta/1990-aaa.pdf"), at("alpha/1991-bbb.pdf"), at("alpha/1992-ccc.pdf")])
+
+        let byKey = bibtexDocument(entries, order: .alphabetical)
+        XCTAssertLessThan(try XCTUnwrap(byKey.range(of: "1990:aaa")).lowerBound,
+                          try XCTUnwrap(byKey.range(of: "1991:bbb")).lowerBound)
+
+        // By folder, alpha/ comes first even though its keys sort later.
+        let byFolder = bibtexDocument(entries, order: .folder)
+        XCTAssertLessThan(try XCTUnwrap(byFolder.range(of: "1991:bbb")).lowerBound,
+                          try XCTUnwrap(byFolder.range(of: "1990:aaa")).lowerBound)
+    }
 }
