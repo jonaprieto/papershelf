@@ -684,10 +684,21 @@ public struct DuplicateGroup: Identifiable, Sendable {
     public let id: String
     public let kind: Kind
     /// Best copy first: the one worth keeping.
-    public let items: [Item]
+    public var items: [Item]
 
     public var keeper: Item { items[0] }
     public var extras: [Item] { Array(items.dropFirst()) }
+
+    /// Moves one copy to the front. Which copy is worth keeping is a judgement the
+    /// ranking can only guess at, so it has to be overridable.
+    public mutating func keep(_ key: String) {
+        guard let index = items.firstIndex(where: { $0.key == key }), index != 0 else { return }
+        let chosen = items.remove(at: index)
+        items.insert(chosen, at: 0)
+    }
+
+    /// Bytes that would come back by keeping only one copy.
+    public var reclaimable: Int { extras.reduce(0) { $0 + ($1.byteCount ?? 0) } }
 }
 
 /// The copy worth keeping: biggest file first, since a truncated download is smaller,

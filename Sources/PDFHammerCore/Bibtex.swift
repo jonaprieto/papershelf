@@ -137,3 +137,73 @@ public func bibtexDocument(_ entries: [BibEntry],
         return "@book{\(entry.key),\n\(body)\n}"
     }.joined(separator: "\n\n") + "\n"
 }
+
+// MARK: - Highlighting
+
+public enum BibTokenKind: Sendable, Equatable {
+    case entryType   // @book
+    case key         // the citation key
+    case field       // title, author, year, file
+    case value       // what sits inside the braces
+    case punctuation // braces, commas, equals
+    case plain
+}
+
+public struct BibToken: Sendable, Equatable {
+    public let text: String
+    public let kind: BibTokenKind
+}
+
+/// Splits a .bib into coloured pieces.
+///
+/// Concatenating every token reproduces the input exactly, so highlighting can never
+/// quietly drop or reorder a character of what is about to be saved. A test holds that.
+public func bibtexTokens(_ text: String) -> [BibToken] {
+    var tokens: [BibToken] = []
+    func push(_ piece: String, _ kind: BibTokenKind) {
+        guard !piece.isEmpty else { return }
+        tokens.append(BibToken(text: piece, kind: kind))
+    }
+
+    // Keeping the separators means the join is lossless, newline for newline.
+    let lines = text.components(separatedBy: "\n")
+    for (index, line) in lines.enumerated() {
+        defer { if index < lines.count - 1 { push("\n", .plain) } }
+
+        if line.hasPrefix("@") {
+            // @book{key,
+            if let brace = line.firstIndex(of: "{") {
+                push(String(line[line.startIndex..<brace]), .entryType)
+                push("{", .punctuation)
+                let rest = line[line.index(after: brace)...]
+                if let comma = rest.firstIndex(of: ",") {
+                    push(String(rest[rest.startIndex..<comma]), .key)
+                    push(String(rest[comma...]), .punctuation)
+                } else {
+                    push(String(rest), .key)
+                }
+            } else {
+                push(line, .entryType)
+            }
+            continue
+        }
+
+        // "  title = {value},"
+        if let equals = line.firstIndex(of: "="), line.hasPrefix(" ") {
+            push(String(line[line.startIndex..<equals]), .field)
+            push("=", .punctuation)
+            let rest = line[line.index(after: equals)...]
+            if let open = rest.firstIndex(of: "{"), let close = rest.lastIndex(of: "}") , open < close {
+                push(String(rest[rest.startIndex..<open]) + "{", .punctuation)
+                push(String(rest[rest.index(after: open)..<close]), .value)
+                push(String(rest[close...]), .punctuation)
+            } else {
+                push(String(rest), .value)
+            }
+            continue
+        }
+
+        push(line, line.trimmingCharacters(in: .whitespaces) == "}" ? .punctuation : .plain)
+    }
+    return tokens
+}

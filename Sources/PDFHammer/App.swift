@@ -97,7 +97,7 @@ final class Covers: ObservableObject {
 }
 
 enum ViewMode: String, CaseIterable, Identifiable {
-    case list, catalogue, bibliography
+    case list, catalogue, bibliography, duplicates
     var id: String { rawValue }
 
     var label: String {
@@ -105,6 +105,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .list: return "List"
         case .catalogue: return "Catalogue"
         case .bibliography: return "BibTeX"
+        case .duplicates: return "Duplicates"
         }
     }
 
@@ -113,6 +114,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .list: return "list.bullet"
         case .catalogue: return "square.grid.2x2"
         case .bibliography: return "text.quote"
+        case .duplicates: return "doc.on.doc"
         }
     }
 }
@@ -192,6 +194,8 @@ final class Runner: ObservableObject {
     /// `Item.key` to the kind of duplicate it is, for the badge on a row or card.
     @Published private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
     @Published private(set) var findingDuplicates = false
+    /// Whether a comparison has been run, so "none found" reads differently to "not asked".
+    @Published private(set) var duplicatesChecked = false
 
     private var jobs: [Job] = []
 
@@ -353,6 +357,7 @@ final class Runner: ObservableObject {
                     }
                 )
                 self.findingDuplicates = false
+                self.duplicatesChecked = true
             }
         }
     }
@@ -360,6 +365,22 @@ final class Runner: ObservableObject {
     /// Marks the spare copies of byte-identical files for the Trash, keeping the best of
     /// each. Only identical groups: a likely match is a guess, and guesses do not get to
     /// delete a book on their own.
+    /// Promotes a different copy to keeper within its group.
+    func keep(_ item: Item, inGroup id: String) {
+        guard let index = duplicates.firstIndex(where: { $0.id == id }) else { return }
+        duplicates[index].keep(item.key)
+    }
+
+    /// Marks the spare copies of one group, whichever kind it is. Doing this for a whole
+    /// kind at once is only offered for identical groups; here the choice is per group,
+    /// having looked at it.
+    func trashExtras(of id: String) {
+        guard let group = duplicates.first(where: { $0.id == id }) else { return }
+        for extra in group.extras where decisions[extra.key] != .deleted {
+            set(.deleted, for: extra.key)
+        }
+    }
+
     func markIdenticalExtras() {
         for group in duplicates where group.kind == .identical {
             for extra in group.extras where decisions[extra.key] == nil {
@@ -485,6 +506,7 @@ final class Runner: ObservableObject {
         ancestorsByKey = [:]
         duplicates = []
         duplicateKind = [:]
+        duplicatesChecked = false
         guesses = [:]
         decisions = [:]
         confirmedCount = 0
@@ -1440,6 +1462,7 @@ private struct ResultsPane: View {
         case .catalogue: catalogue
         case .list: list
         case .bibliography: bibliography
+        case .duplicates: duplicatesView
         }
     }
 
@@ -1468,6 +1491,73 @@ private struct ResultsPane: View {
         .sheet(isPresented: $showingBibOutput) {
             BibOutputSheet(text: bibDocument, order: $bibOrder, completeOnly: $bibCompleteOnly)
         }
+    }
+
+    /// Duplicates get their own view rather than a badge, because deciding between two
+    /// copies means seeing them next to each other and next to the page.
+    private var duplicatesView: some View {
+        Group {
+            if runner.findingDuplicates {
+                VStack(spacing: 10) {
+                    ProgressView().controlSize(.large)
+                    Text("Comparing \(runner.results.count) files").font(.headline)
+                    Text("Hashing only what shares a size").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if runner.duplicates.isEmpty {
+                ContentUnavailableView {
+                    Label(runner.duplicatesChecked ? "No duplicates" : "Not compared yet",
+                          systemImage: runner.duplicatesChecked ? "checkmark.seal" : "doc.on.doc")
+                } description: {
+                    Text(runner.duplicatesChecked
+                         ? "Every file here is its own book."
+                         : "Compare the \(runner.results.count) files by content and by name.")
+                } actions: {
+                    if !runner.duplicatesChecked {
+                        Button("Find duplicates") { runner.findDuplicates() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
+            } else {
+                VStack(spacing: 0) {
+                    duplicatesBar
+                    Divider()
+                    List(selection: $selected) {
+                        ForEach(runner.duplicates) { group in
+                            DuplicateSection(group: group, runner: runner)
+                        }
+                    }
+                    .listStyle(.inset)
+                    .focused($listFocused)
+                }
+            }
+        }
+    }
+
+    private var duplicatesBar: some View {
+        let identical = runner.duplicates.filter { $0.kind == .identical }.count
+        let reclaimable = runner.duplicates.reduce(0) { $0 + $1.reclaimable }
+        return HStack(spacing: 10) {
+            Text("\(identical) identical, \(runner.duplicates.count - identical) likely")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text(ByteCountFormatter.string(fromByteCount: Int64(reclaimable), countStyle: .file)
+                 + " in spare copies")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Recheck") { runner.findDuplicates() }.controlSize(.small)
+            Button("Trash \(runner.identicalExtras) identical spares") {
+                runner.markIdenticalExtras()
+                ensureSelection()
+            }
+            .controlSize(.small)
+            .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            .disabled(runner.identicalExtras == 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private var bibDocument: String {
@@ -2405,11 +2495,15 @@ private struct BibOutputSheet: View {
             Divider()
 
             ScrollView([.vertical, .horizontal]) {
-                Text(text.isEmpty ? "Nothing to write yet." : text)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
+                if text.isEmpty {
+                    Text("Nothing to write yet.").foregroundStyle(.secondary).padding(14)
+                } else {
+                    Text(highlighted(text))
+                        .font(.system(.callout, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
             }
         }
         .frame(minWidth: 720, minHeight: 520)
@@ -2418,6 +2512,33 @@ private struct BibOutputSheet: View {
                       contentType: .plainText,
                       defaultFilename: "library.bib") { _ in }
     }
+}
+
+/// Colours the .bib for reading. The tokens rebuild the input exactly, so what is shown
+/// is character for character what Copy and Save produce.
+private func highlighted(_ text: String) -> AttributedString {
+    var out = AttributedString()
+    for token in bibtexTokens(text) {
+        var piece = AttributedString(token.text)
+        switch token.kind {
+        case .entryType:
+            piece.foregroundColor = Color(light: srgb(142, 42, 152), dark: srgb(214, 137, 226))
+            piece.font = .system(.callout, design: .monospaced).weight(.semibold)
+        case .key:
+            piece.foregroundColor = Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
+            piece.font = .system(.callout, design: .monospaced).weight(.semibold)
+        case .field:
+            piece.foregroundColor = Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+        case .value:
+            piece.foregroundColor = Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+        case .punctuation:
+            piece.foregroundColor = .secondary
+        case .plain:
+            break
+        }
+        out += piece
+    }
+    return out
 }
 
 private struct BibDocument: FileDocument {
@@ -2431,5 +2552,98 @@ private struct BibDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+
+// MARK: - Duplicates
+
+/// One group of copies. The keeper is marked, every other copy offers to take its place,
+/// and selecting any row shows it in the preview so two copies can be compared.
+private struct DuplicateSection: View {
+    let group: DuplicateGroup
+    @ObservedObject var runner: Runner
+
+    var body: some View {
+        Section {
+            ForEach(group.items) { item in
+                DuplicateRow(
+                    item: item,
+                    isKeeper: item.key == group.keeper.key,
+                    decision: runner.decision(for: item),
+                    keep: { runner.keep(item, inGroup: group.id) }
+                )
+                .tag(item.key)
+                .id(item.key)
+            }
+        } header: {
+            HStack(spacing: 8) {
+                Label(group.kind == .identical ? "Identical" : "Probably the same",
+                      systemImage: group.kind == .identical ? "doc.on.doc.fill" : "doc.on.doc")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(group.kind == .identical
+                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                Text("\(group.items.count) copies")
+                    .foregroundStyle(.secondary)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(group.reclaimable), countStyle: .file)
+                     + " spare")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Trash the other \(group.extras.count)") {
+                    runner.trashExtras(of: group.id)
+                }
+                .controlSize(.small)
+                .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            }
+            .font(.callout)
+            .padding(.vertical, 2)
+        }
+    }
+}
+
+private struct DuplicateRow: View {
+    let item: Item
+    let isKeeper: Bool
+    let decision: Decision?
+    let keep: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isKeeper ? "star.fill" : "circle")
+                .foregroundStyle(isKeeper
+                                 ? Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+                                 : Color.secondary.opacity(0.5))
+                .padding(.top, 2)
+                .help(isKeeper ? "The copy to keep" : "A spare copy")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.sourceName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .strikethrough(decision == .deleted)
+                Text(item.relativePath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount ?? 0), countStyle: .file))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            if decision == .deleted {
+                Label("Trash", systemImage: "trash.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            } else if !isKeeper {
+                Button("Keep this one", action: keep).controlSize(.small)
+            }
+        }
+        .padding(.vertical, 3)
+        .opacity(decision == .deleted ? 0.55 : 1)
     }
 }

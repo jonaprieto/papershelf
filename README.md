@@ -98,9 +98,12 @@ settle by size alone. Everything else is grouped by a name key that ignores the 
 copy markers, so `Dune.pdf`, `dune-2.pdf` and `Dune (1).pdf` land together while
 `Catch 22.pdf` stays clear of `Catch.pdf`.
 
-**Trash spare copies** marks the extras of byte-identical groups only, keeping the
-largest, then the shortest-named. A likely match is a guess, and guesses do not get to
-delete a book on their own: those are badged and left for you.
+Duplicates get their own view, because choosing between two copies means seeing them
+beside each other and beside the page. Each group shows its copies with sizes, the keeper
+starred, and **Keep this one** on the others to change that choice. **Trash the other N**
+works per group; the bar's **Trash identical spares** does every byte-identical group at
+once and never touches a likely match, since that is a guess and a guess should not
+delete a book on its own.
 
 ## Bibliography
 
@@ -114,6 +117,10 @@ result can be copied or saved.
 
 Citation keys are `surname:year:firstword`, with a letter appended when two works would
 otherwise collide.
+
+**Show .bib** opens the flattened file, syntax-highlighted, ordered alphabetically or by
+folder. The highlighter's tokens rebuild the input exactly, so what you read is character
+for character what Copy and Save write.
 
 ## Naming with AI
 

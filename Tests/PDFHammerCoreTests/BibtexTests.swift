@@ -89,3 +89,41 @@ final class BibtexTests: XCTestCase {
                           try XCTUnwrap(byFolder.range(of: "1990:aaa")).lowerBound)
     }
 }
+
+extension BibtexTests {
+
+    private var sample: String {
+        """
+        @book{hofstadter:1979:geb,
+          title  = {Gödel, Escher, Bach},
+          author = {Hofstadter},
+          year   = {1979},
+          file   = {/tmp/geb.pdf},
+        }
+        """
+    }
+
+    /// The invariant that matters: highlighting must not change a single character of
+    /// what is about to be copied or saved.
+    func testTokensRebuildTheInputExactly() {
+        for text in [sample, "", "\n\n", "not a bib file at all", "@book{nokey\n}", "  weird = value"] {
+            XCTAssertEqual(bibtexTokens(text).map(\.text).joined(), text)
+        }
+    }
+
+    func testTokensAreClassified() {
+        let tokens = bibtexTokens(sample)
+        func first(_ kind: BibTokenKind) -> String? {
+            tokens.first { $0.kind == kind }?.text.trimmingCharacters(in: .whitespaces)
+        }
+        XCTAssertEqual(first(.entryType), "@book")
+        XCTAssertEqual(first(.key), "hofstadter:1979:geb")
+        XCTAssertEqual(first(.field), "title")
+        XCTAssertEqual(first(.value), "Gödel, Escher, Bach")
+    }
+
+    func testBracesInsideAValueStayInTheValue() {
+        let tokens = bibtexTokens("  title  = {a \\{b\\} c},")
+        XCTAssertEqual(tokens.first { $0.kind == .value }?.text, "a \\{b\\} c")
+    }
+}
