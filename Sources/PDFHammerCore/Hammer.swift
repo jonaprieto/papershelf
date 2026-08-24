@@ -32,13 +32,13 @@ private let datePatterns: [(NSRegularExpression, DateShape)] = [
      .year),
 ]
 
-private struct FoundDate {
+struct FoundDate {
     let prefix: String
     let range: NSRange
 }
 
 /// First match of the most specific shape present.
-private func findDate(in stem: String) -> FoundDate? {
+func findDate(in stem: String) -> FoundDate? {
     let full = NSRange(location: 0, length: (stem as NSString).length)
     for (pattern, shape) in datePatterns {
         guard let m = pattern.firstMatch(in: stem, range: full) else { continue }

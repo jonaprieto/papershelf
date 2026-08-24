@@ -79,6 +79,30 @@ struct AIClient {
         return key.isEmpty ? nil : key
     }
 
+    /// An app launched from Finder inherits launchd's environment, not a shell's, so a
+    /// key exported in .zshrc is invisible to us. Asking the login shell is the only way
+    /// to see it. Run only when nothing else has produced a key, since it executes the
+    /// user's own startup files.
+    static func loginShellKey() -> String? {
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = ["-lc", "printf %s \"$OPENAI_API_KEY\""]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let key = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return key.isEmpty ? nil : key
+    }
+
     func identify(filename: String, excerpt: String) async throws -> BookGuess {
         guard !apiKey.isEmpty else { throw AIError.noKey }
         guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")

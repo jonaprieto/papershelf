@@ -40,6 +40,9 @@ single PDF.
 are cached, so the cost follows the window rather than the size of the collection.
 **List** groups the same results by folder instead.
 
+Sources are remembered between launches, and adding one runs a preview straight away
+unless you turn that off. **Forget sources and cached covers** clears both.
+
 Sources are kept as a set of non-overlapping roots. Picking a folder absorbs anything
 already selected inside it, and a file or folder already covered is never added twice.
 Overlap is not harmless: a file reachable from two roots would be attributed to whichever
@@ -59,6 +62,19 @@ copy markers, so `Dune.pdf`, `dune-2.pdf` and `Dune (1).pdf` land together while
 largest, then the shortest-named. A likely match is a guess, and guesses do not get to
 delete a book on their own: those are badged and left for you.
 
+## Bibliography
+
+A third view generates a `.bib` for everything currently selected, rebuilt on every
+change, so it always describes what Apply would produce rather than what is on disk now.
+
+Title and year are read back out of the normalized name. Author cannot be, so entries
+missing one are listed along the top as chips: click one to jump to that file and run
+**Ask AI**, which fills in author and year. **Complete only** hides the gaps, and the
+result can be copied or saved.
+
+Citation keys are `surname:year:firstword`, with a letter appended when two works would
+otherwise collide.
+
 ## Naming with AI
 
 `G`, or **Ask AI**, reads the opening pages and suggests a title. The reply becomes a
@@ -68,9 +84,9 @@ confirmation that names the count, since you are billed per request.
 
 Settings (the gear, or ⌘,) holds the key, model and endpoint. Any OpenAI-compatible
 endpoint works. The key is kept in your Keychain rather than in preferences, which are a
-plain file any process running as you can read. `OPENAI_API_KEY` is used as a fallback,
-though an app launched from Finder does not inherit a shell's environment, so that only
-helps when it is launched from a terminal.
+plain file any process running as you can read. `OPENAI_API_KEY` is used as a fallback. A
+Finder-launched app inherits launchd's environment rather than a shell's, so when the
+variable is not visible the login shell is asked for it once, in memory only.
 
 Only the filename and the first pages' text are sent. The file itself never leaves the
 machine, and nothing is sent unless you ask.

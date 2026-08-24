@@ -24,12 +24,13 @@ struct SettingsView: View {
                 Toggle("Use OPENAI_API_KEY from the environment", isOn: $useEnvironment)
                 if useEnvironment {
                     LabeledContent("Environment") {
-                        if let environmentKey {
-                            Label("Found, ending \(String(environmentKey.suffix(4)))",
+                        if let found = environmentKey ?? DiscoveredKey.shared.value {
+                            Label("Found, ending \(String(found.suffix(4)))",
                                   systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
                         } else {
-                            Label("Not set for this app", systemImage: "exclamationmark.triangle.fill")
+                            Label("Not found in the environment or your login shell",
+                                  systemImage: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
                         }
                     }
@@ -52,9 +53,9 @@ struct SettingsView: View {
             } header: {
                 Text("OpenAI")
             } footer: {
-                Text("The key is kept in your Keychain, never in preferences. "
-                     + "An app launched from Finder does not inherit a shell's environment, "
-                     + "so the variable only helps when the app is launched from a terminal.")
+                Text("The key is kept in your Keychain, never in preferences. A Finder-launched "
+                     + "app inherits launchd's environment rather than a shell's, so when the "
+                     + "variable is not visible the login shell is asked once, in memory only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -124,5 +125,26 @@ struct SettingsView: View {
 /// The stored key wins when there is one; the environment is the fallback.
 func resolvedKey(useEnvironment: Bool) -> String {
     if let stored = Keychain.get(account: "openai"), !stored.isEmpty { return stored }
-    return useEnvironment ? (AIClient.environmentKey() ?? "") : ""
+    guard useEnvironment else { return "" }
+    if let inherited = AIClient.environmentKey() { return inherited }
+    return DiscoveredKey.shared.value ?? ""
+}
+
+/// The login shell is asked once per launch, lazily, and the answer is kept in memory
+/// only. Storing it would be deciding on the user's behalf that a key belongs on disk.
+final class DiscoveredKey: @unchecked Sendable {
+    static let shared = DiscoveredKey()
+    private let lock = NSLock()
+    private var looked = false
+    private var found: String?
+
+    var value: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if !looked {
+            looked = true
+            found = AIClient.loginShellKey()
+        }
+        return found
+    }
 }

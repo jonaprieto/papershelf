@@ -97,10 +97,24 @@ final class Covers: ObservableObject {
 }
 
 enum ViewMode: String, CaseIterable, Identifiable {
-    case list, catalogue
+    case list, catalogue, bibliography
     var id: String { rawValue }
-    var label: String { self == .list ? "List" : "Catalogue" }
-    var icon: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+
+    var label: String {
+        switch self {
+        case .list: return "List"
+        case .catalogue: return "Catalogue"
+        case .bibliography: return "BibTeX"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .catalogue: return "square.grid.2x2"
+        case .bibliography: return "text.quote"
+        }
+    }
 }
 
 // MARK: - Runner
@@ -308,6 +322,12 @@ final class Runner: ObservableObject {
         duplicates.filter { $0.kind == .identical }.reduce(0) { $0 + $1.extras.count }
     }
 
+    /// Drops everything held from previous runs.
+    func reset() {
+        begin(fingerprint: "", dry: true)
+        phase = .idle
+    }
+
     func findDuplicates() {
         guard !results.isEmpty, !findingDuplicates else { return }
         findingDuplicates = true
@@ -338,6 +358,9 @@ final class Runner: ObservableObject {
         }
     }
 
+    /// What the model has said about a file, by `Item.key`. Keeps author and year, which
+    /// a filename cannot carry, so a bibliography can use them.
+    @Published private(set) var guesses: [String: BookGuess] = [:]
     @Published private(set) var thinking: Set<String> = []
     @Published var aiError: String?
 
@@ -355,6 +378,7 @@ final class Runner: ObservableObject {
 
         do {
             let guess = try await client.identify(filename: item.sourceName, excerpt: excerpt)
+            guesses[item.key] = guess
             let name = filename(for: guess, rules: rules)
             guard !name.isEmpty, let index = indexByKey[item.key] else { return }
             var updated = results[index]
@@ -450,6 +474,7 @@ final class Runner: ObservableObject {
         ancestorsByKey = [:]
         duplicates = []
         duplicateKind = [:]
+        guesses = [:]
         decisions = [:]
         confirmedCount = 0
         appliedCount = 0
@@ -588,7 +613,11 @@ struct ContentView: View {
     @AppStorage("ruleStripSymbols") private var ruleStripSymbols = false
     @AppStorage("ruleStripDiacritics") private var ruleStripDiacritics = false
 
+    @AppStorage("sources") private var storedSources = ""
+    @AppStorage("autoPreview") private var autoPreview = true
+
     @StateObject private var runner = Runner()
+    @StateObject private var covers = Covers()
     @State private var selection: [URL] = []
     @State private var importing = false
     /// Folders start closed. Only what has been opened, or opened for you to reach the
@@ -723,6 +752,7 @@ struct ContentView: View {
         } detail: {
             ResultsPane(
                 runner: runner,
+                covers: covers,
                 expanded: $expanded,
                 selected: $reviewing,
                 sourceCount: selection.count,
@@ -748,6 +778,7 @@ struct ContentView: View {
         .onAppear {
             sizeWindowOnFirstLaunch()
             NSApp.appearance = appearance.nsAppearance
+            restoreSources()
         }
         .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
         // Restyling is cheap but not free, so let a run of toggles settle first.
@@ -808,7 +839,10 @@ struct ContentView: View {
                         .padding(.vertical, 2)
                 } else {
                     ForEach(selection, id: \.self) { url in
-                        SourceRow(url: url) { selection.removeAll { $0 == url } }
+                        SourceRow(url: url) {
+                            selection.removeAll { $0 == url }
+                            persistSources()
+                        }
                     }
                 }
                 Button {
@@ -817,6 +851,12 @@ struct ContentView: View {
                     Label("Add folder or PDF", systemImage: "plus.circle")
                 }
                 .buttonStyle(.link)
+                if !selection.isEmpty || !runner.results.isEmpty {
+                    Button(role: .destructive, action: forgetEverything) {
+                        Label("Forget sources and cached covers", systemImage: "trash")
+                    }
+                    .buttonStyle(.link)
+                }
             }
 
             Section {
@@ -938,6 +978,10 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section("Running") {
+                Toggle("Preview as soon as a source is added", isOn: $autoPreview)
+            }
+
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
@@ -996,7 +1040,36 @@ struct ContentView: View {
     /// The selection is a set of non-overlapping roots: a folder absorbs anything already
     /// picked inside it, and nothing already covered is added twice.
     private func add(_ urls: [URL]) {
+        let before = selection
         selection = mergedSources(selection, adding: urls)
+        guard selection.map(\.path) != before.map(\.path) else { return }
+        persistSources()
+        if autoPreview { preview() }
+    }
+
+    private func persistSources() {
+        storedSources = selection.map(\.path).joined(separator: "\n")
+    }
+
+    /// Restores what was picked last time. Anything since moved or deleted is dropped
+    /// rather than kept as a broken row.
+    private func restoreSources() {
+        guard selection.isEmpty else { return }
+        let paths = storedSources.split(separator: "\n").map(String.init)
+        selection = paths
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        if selection.map(\.path) != paths { persistSources() }
+    }
+
+    /// Everything the app remembers between launches.
+    private func forgetEverything() {
+        selection = []
+        storedSources = ""
+        expanded = []
+        reviewing = nil
+        runner.reset()
+        covers.forget()
     }
 
     /// The results list is greedy, which makes `.defaultSize` lose and the window open at
@@ -1068,6 +1141,7 @@ private struct Note: View {
 
 private struct ResultsPane: View {
     @ObservedObject var runner: Runner
+    @ObservedObject var covers: Covers
     @Binding var expanded: Set<String>
     @Binding var selected: String?
     let sourceCount: Int
@@ -1087,7 +1161,6 @@ private struct ResultsPane: View {
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @State private var confirmingBatchAI = false
-    @StateObject private var covers = Covers()
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
     /// a name you simply have not touched.
@@ -1290,7 +1363,20 @@ private struct ResultsPane: View {
 
     @ViewBuilder
     private var browser: some View {
-        if mode == .catalogue { catalogue } else { list }
+        switch mode {
+        case .catalogue: catalogue
+        case .list: list
+        case .bibliography: bibliography
+        }
+    }
+
+    /// The whole selection flattened into one .bib, rebuilt from the current names on
+    /// every change, so it always describes what Apply would produce.
+    private var bibliography: some View {
+        BibliographyView(
+            entries: bibEntries(for: runner.results, known: runner.guesses),
+            selected: $selected
+        )
     }
 
     /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store
@@ -1409,7 +1495,7 @@ private struct ResultsPane: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .frame(width: 96)
+                    .frame(width: 168)
 
                     duplicateControls
                     if aiReady && runner.pendingCount > 0 {
@@ -2060,5 +2146,102 @@ private struct StatusPill: View {
         case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
         case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
         }
+    }
+}
+
+// MARK: - Bibliography
+
+/// The generated .bib alongside the gaps in it. Everything is derived from the current
+/// results, so it follows renames and AI answers without a refresh button.
+private struct BibliographyView: View {
+    let entries: [BibEntry]
+    @Binding var selected: String?
+
+    @State private var completeOnly = false
+    @State private var copied = false
+    @State private var saving = false
+
+    private var shown: [BibEntry] { completeOnly ? entries.filter(\.isComplete) : entries }
+    private var document: String { bibtexDocument(entries, includeIncomplete: !completeOnly) }
+    private var incomplete: [BibEntry] { entries.filter { !$0.isComplete } }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("\(shown.count) entries").font(.callout).foregroundStyle(.secondary)
+                if !incomplete.isEmpty {
+                    Label("\(incomplete.count) missing fields", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                        .help("Ask AI on those files to fill in author and year")
+                }
+                Spacer()
+                Toggle("Complete only", isOn: $completeOnly).toggleStyle(.checkbox)
+                Button(copied ? "Copied" : "Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(document, forType: .string)
+                    copied = true
+                    Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+                }
+                .controlSize(.small)
+                Button("Save…") { saving = true }.controlSize(.small)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            Divider()
+
+            if incomplete.isEmpty == false && completeOnly == false {
+                gaps
+                Divider()
+            }
+
+            ScrollView([.vertical, .horizontal]) {
+                Text(document.isEmpty ? "Nothing to write yet." : document)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+        }
+        .fileExporter(isPresented: $saving,
+                      document: BibDocument(text: document),
+                      contentType: .plainText,
+                      defaultFilename: "library.bib") { _ in }
+    }
+
+    /// The entries that need a hand, clickable so the file can be dealt with.
+    private var gaps: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 7) {
+                ForEach(incomplete) { entry in
+                    Button {
+                        selected = entry.itemKey
+                    } label: {
+                        Text("\(entry.key) · no \(entry.missing.joined(separator: ", "))")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+        }
+    }
+}
+
+private struct BibDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+    var text: String
+
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? ""
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
