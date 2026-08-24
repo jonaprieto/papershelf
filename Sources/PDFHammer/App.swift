@@ -203,6 +203,7 @@ final class Runner: ObservableObject {
 
     private var jobs: [Job] = []
 
+
     var busy: Bool { phase != .idle }
     var reviewed: Int { confirmedCount + appliedCount + skippedCount + deletedCount + movedCount }
     var pendingCount: Int { results.count - reviewed }
@@ -257,6 +258,44 @@ final class Runner: ObservableObject {
     func skip(_ item: Item) { set(.skipped, for: item.key) }
     func markForDeletion(_ item: Item) { set(.deleted, for: item.key) }
     func move(_ item: Item, to folder: URL) { set(.moveTo(folder), for: item.key) }
+
+    /// Drops every file that came from a source, in place. A rescan would give the same
+    /// answer at the cost of walking the disk again, and everything downstream, the tree,
+    /// the counts, the duplicates and the entries, is rebuilt from the results anyway.
+    func removeSource(_ root: URL, fingerprint: String) {
+        let path = root.resolvingSymlinksInPath().path
+        func belongs(_ url: URL) -> Bool {
+            let candidate = url.resolvingSymlinksInPath().path
+            return candidate == path || candidate.hasPrefix(path + "/")
+        }
+
+        let survivors = results.filter { !belongs($0.root) }
+        guard survivors.count != results.count else {
+            self.fingerprint = fingerprint
+            return
+        }
+
+        let gone = Set(results.filter { belongs($0.root) }.map(\.key))
+        for key in gone {
+            set(nil, for: key)
+            guesses[key] = nil
+        }
+        jobs.removeAll { belongs($0.root) }
+
+        // Groups can lose members, and one survivor is no longer a duplicate of anything.
+        duplicates = duplicates.compactMap { group in
+            var trimmed = group
+            trimmed.items.removeAll { gone.contains($0.key) }
+            return trimmed.items.count > 1 ? trimmed : nil
+        }
+        duplicateKind = Dictionary(uniqueKeysWithValues: duplicates.flatMap { group in
+            group.items.map { ($0.key, group.kind) }
+        })
+
+        finish(survivors, keepingDecisions: true)
+        // The results now match the smaller selection, so the preview is current again.
+        self.fingerprint = fingerprint
+    }
 
     /// Takes a file out of this run entirely. Nothing on disk changes; it simply stops
     /// being something to decide about.
@@ -680,6 +719,15 @@ struct ContentView: View {
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
+    @AppStorage("bibLineWidth") private var bibLineWidth = 80
+    @AppStorage("bibIndent") private var bibIndent = 2
+    @AppStorage("bibAlign") private var bibAlign = true
+    @AppStorage("bibDelimiter") private var bibDelimiter: BibStyle.Delimiter = .braces
+    @AppStorage("bibTrailingComma") private var bibTrailingComma = true
+    @AppStorage("bibBlankLines") private var bibBlankLines = true
+    @AppStorage("bibSortFields") private var bibSortFields = false
+    @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
+    @AppStorage("bibOmitFile") private var bibOmitFile = false
 
     @StateObject private var runner = Runner()
     @StateObject private var covers = Covers()
@@ -911,10 +959,7 @@ struct ContentView: View {
                         .padding(.vertical, 2)
                 } else {
                     ForEach(selection, id: \.self) { url in
-                        SourceRow(url: url) {
-                            selection.removeAll { $0 == url }
-                            persistSources()
-                        }
+                        SourceRow(url: url) { removeSource(url) }
                     }
                 }
                 Button {
@@ -1092,6 +1137,44 @@ struct ContentView: View {
                 Toggle("Preview as soon as a source is added", isOn: $autoPreview)
             }
 
+            if mode == .bibliography {
+                Section {
+                    LabeledContent("Line width") {
+                        HStack(spacing: 6) {
+                            Slider(value: Binding(get: { Double(bibLineWidth) },
+                                                  set: { bibLineWidth = Int($0) }),
+                                   in: 0...200, step: 10)
+                            Text(bibLineWidth == 0 ? "off" : "\(bibLineWidth)")
+                                .monospacedDigit()
+                                .frame(width: 30, alignment: .trailing)
+                        }
+                    }
+                    Picker("Indent", selection: $bibIndent) {
+                        Text("2 spaces").tag(2)
+                        Text("4 spaces").tag(4)
+                        Text("None").tag(0)
+                    }
+                    Picker("Values in", selection: $bibDelimiter) {
+                        ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
+                    }
+                    Toggle("Align the equals signs", isOn: $bibAlign)
+                    Toggle("Trailing comma", isOn: $bibTrailingComma)
+                    Toggle("Blank line between entries", isOn: $bibBlankLines)
+                    Toggle("Sort fields alphabetically", isOn: $bibSortFields)
+                    Toggle("Lowercase ALL-CAPS values", isOn: $bibDropAllCaps)
+                    Toggle("Omit the file field", isOn: $bibOmitFile)
+                } header: {
+                    Text("BibTeX")
+                } footer: {
+                    Text("A long value wraps onto indented continuations. A single word "
+                         + "longer than the budget is left whole, since breaking a path to "
+                         + "satisfy a column is worse than exceeding it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
@@ -1159,6 +1242,24 @@ struct ContentView: View {
         guard selection.map(\.path) != before.map(\.path) else { return }
         persistSources()
         if autoPreview { preview() }
+    }
+
+    /// Removing a source takes its files with it, straight away.
+    private func removeSource(_ url: URL) {
+        selection.removeAll { $0 == url }
+        persistSources()
+        runner.removeSource(url, fingerprint: fingerprint)
+        expanded = []
+        ensureSelectionAfterSourceChange()
+    }
+
+    private func ensureSelectionAfterSourceChange() {
+        if selection.isEmpty {
+            runner.reset()
+            reviewing = nil
+        } else if let current = reviewing, runner.item(current) == nil {
+            reviewing = nil
+        }
     }
 
     private func persistSources() {
