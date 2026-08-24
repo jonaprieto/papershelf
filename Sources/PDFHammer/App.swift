@@ -1297,10 +1297,13 @@ private struct ResultsPane: View {
         return true
     }
 
+    /// Leaving the name field has to hand focus somewhere, or Return drops it on the
+    /// floor: the row stops looking selected even though it still is.
     private func loadDraft() {
         editingName = false
         draft = selectedItem.map(currentName) ?? ""
         suggestion = selectedItem?.destinationName ?? ""
+        if !runner.results.isEmpty { listFocused = true }
     }
 
     private func refreshSuggestion() {
@@ -1474,7 +1477,6 @@ private struct ResultsPane: View {
         }
         selected = runner.nextPending()?.key
         loadDraft()
-        if !runner.results.isEmpty { listFocused = true }
     }
 
     // MARK: Header

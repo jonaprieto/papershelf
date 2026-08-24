@@ -11,6 +11,46 @@ A macOS app that strips passwords from PDFs and beats their filenames into
 
 Builds `dist/PDF Hammer.app`, ad-hoc signs it, and copies it to `/Applications`.
 
+## Distributing it
+
+```bash
+./Tools/make-dmg.sh
+```
+
+Produces `dist/PDF-Hammer-<version>.dmg` with the app and a drag-to-`/Applications`
+symlink, and prints its SHA-256.
+
+Signing is layered, and each layer changes what someone who downloads it sees:
+
+| | what they get |
+|---|---|
+| unsigned | Gatekeeper refuses it: "damaged and can't be opened". Right-click → Open, or `xattr -d com.apple.quarantine`, is the only way past |
+| `DEVELOPER_ID` set | Signed with a hardened runtime, but still warns about an unidentified developer |
+| `NOTARY_PROFILE` set | Submitted to Apple and stapled. Opens with no warning |
+
+Both come from the environment, so nothing secret is in the repo:
+
+```bash
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE=pdfhammer ./Tools/make-dmg.sh
+```
+
+The notary profile is stored once:
+
+```bash
+xcrun notarytool store-credentials pdfhammer --apple-id you@example.com \
+      --team-id TEAMID --password <app-specific-password>
+```
+
+Both require a paid Apple Developer account. Without one the image is still perfectly
+usable, it just asks the person opening it to right-click → Open the first time.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests, builds the image
+and attaches it to a GitHub release. It signs and notarizes only if the repository has
+`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_DEVELOPER_ID`,
+`NOTARY_APPLE_ID`, `NOTARY_TEAM_ID` and `NOTARY_PASSWORD` set, and produces an unsigned
+image otherwise.
+
 ## What it does
 
 | before | after |
