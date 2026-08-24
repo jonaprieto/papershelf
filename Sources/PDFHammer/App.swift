@@ -2249,6 +2249,9 @@ private struct NodeView: View {
                 } icon: {
                     Image(systemName: "folder.fill").foregroundStyle(.tint)
                 }
+                // The whole row opens the folder, not just the chevron.
+                .contentShape(Rectangle())
+                .onTapGesture { expansion.wrappedValue.toggle() }
             }
         }
     }
@@ -2504,6 +2507,8 @@ private struct BibNodeView: View {
                 } icon: {
                     Image(systemName: "folder.fill").foregroundStyle(.tint)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { expansion.wrappedValue.toggle() }
             }
         }
     }

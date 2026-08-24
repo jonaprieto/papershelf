@@ -54,6 +54,7 @@ struct SettingsView: View {
                     Button("Save key", action: saveKey).disabled(key.isEmpty)
                     Button("Remove") {
                         Keychain.remove(account: "openai")
+                        StoredKey.shared.update(nil)
                         key = ""
                         status = .ok("Key removed")
                     }
@@ -140,11 +141,13 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear { key = Keychain.get(account: "openai") ?? "" }
+        .onAppear { key = StoredKey.shared.value ?? "" }
     }
 
     private func saveKey() {
-        Keychain.set(key.trimmingCharacters(in: .whitespacesAndNewlines), account: "openai")
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        Keychain.set(trimmed, account: "openai")
+        StoredKey.shared.update(trimmed)
         status = .ok("Key saved to the Keychain")
     }
 
@@ -169,10 +172,40 @@ struct SettingsView: View {
 
 /// The stored key wins when there is one; the environment is the fallback.
 func resolvedKey(useEnvironment: Bool) -> String {
-    if let stored = Keychain.get(account: "openai"), !stored.isEmpty { return stored }
+    if let stored = StoredKey.shared.value, !stored.isEmpty { return stored }
     guard useEnvironment else { return "" }
     if let inherited = AIClient.environmentKey() { return inherited }
     return DiscoveredKey.shared.value ?? ""
+}
+
+/// Reads the Keychain once per launch and holds the answer.
+///
+/// This is called from `aiClient`, which is read inside view bodies, and SwiftUI
+/// evaluates those constantly. Querying the Keychain each time is what produced an
+/// unlock prompt every few seconds; one read per launch produces at most one.
+final class StoredKey: @unchecked Sendable {
+    static let shared = StoredKey()
+    private let lock = NSLock()
+    private var loaded = false
+    private var cached: String?
+
+    var value: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if !loaded {
+            loaded = true
+            cached = Keychain.get(account: "openai")
+        }
+        return cached
+    }
+
+    /// Called after writing, so the next read does not go back to the Keychain.
+    func update(_ key: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        loaded = true
+        cached = key
+    }
 }
 
 /// The login shell is asked once per launch, lazily, and the answer is kept in memory
