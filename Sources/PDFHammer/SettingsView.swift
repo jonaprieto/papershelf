@@ -7,6 +7,15 @@ struct SettingsView: View {
     @AppStorage("aiModel") private var model = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
+    @AppStorage("bibLineWidth") private var lineWidth = 80
+    @AppStorage("bibIndent") private var indent = 2
+    @AppStorage("bibAlign") private var align = true
+    @AppStorage("bibDelimiter") private var delimiter: BibStyle.Delimiter = .braces
+    @AppStorage("bibTrailingComma") private var trailingComma = true
+    @AppStorage("bibBlankLines") private var blankLines = true
+    @AppStorage("bibSortFields") private var sortFields = false
+    @AppStorage("bibDropAllCaps") private var dropAllCaps = false
+    @AppStorage("bibOmitFile") private var omitFile = false
 
     @State private var key = ""
     @State private var status: Status = .idle
@@ -61,6 +70,42 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section {
+                LabeledContent("Line width") {
+                    HStack {
+                        Slider(value: Binding(get: { Double(lineWidth) },
+                                              set: { lineWidth = Int($0) }),
+                               in: 0...200, step: 10)
+                        Text(lineWidth == 0 ? "off" : "\(lineWidth)")
+                            .monospacedDigit()
+                            .frame(width: 34, alignment: .trailing)
+                    }
+                }
+                Picker("Indent", selection: $indent) {
+                    Text("2 spaces").tag(2)
+                    Text("4 spaces").tag(4)
+                    Text("None").tag(0)
+                }
+                Picker("Values in", selection: $delimiter) {
+                    ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle("Align the equals signs", isOn: $align)
+                Toggle("Trailing comma", isOn: $trailingComma)
+                Toggle("Blank line between entries", isOn: $blankLines)
+                Toggle("Sort fields alphabetically", isOn: $sortFields)
+                Toggle("Lowercase ALL-CAPS values", isOn: $dropAllCaps)
+                Toggle("Omit the file field", isOn: $omitFile)
+            } header: {
+                Text("BibTeX")
+            } footer: {
+                Text("A value longer than the line width wraps onto indented continuations. "
+                     + "A single word longer than the budget is left whole, since breaking a "
+                     + "path to satisfy a column is worse than exceeding it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Model") {
                 TextField("Model", text: $model)
                 TextField("Base URL", text: $baseURL)
@@ -93,7 +138,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
+        .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { key = Keychain.get(account: "openai") ?? "" }
     }

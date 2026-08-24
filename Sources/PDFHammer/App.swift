@@ -149,6 +149,8 @@ enum Decision: Equatable {
     /// Marked for the Trash. Nothing happens until Apply, so this is undoable by
     /// reopening the file.
     case deleted
+    /// Headed for another folder, under the name it would have been given anyway.
+    case moveTo(URL)
 }
 
 @MainActor
@@ -174,12 +176,14 @@ final class Runner: ObservableObject {
     @Published private(set) var statusCounts: [(Status, Int)] = []
     @Published private(set) var bib: [BibEntry] = []
     @Published private(set) var bibByItem: [String: BibEntry] = [:]
+    private var bibStale = true
     @Published private(set) var confirmedCount = 0
     @Published private(set) var appliedCount = 0
     /// Bumped whenever the suggested names change without the list itself changing.
     @Published private(set) var revision = 0
     @Published private(set) var skippedCount = 0
     @Published private(set) var deletedCount = 0
+    @Published private(set) var movedCount = 0
 
     /// Indices into `results`, grouped by containing folder, so folder questions cost the
     /// size of one folder rather than a scan of everything.
@@ -200,11 +204,11 @@ final class Runner: ObservableObject {
     private var jobs: [Job] = []
 
     var busy: Bool { phase != .idle }
-    var reviewed: Int { confirmedCount + appliedCount + skippedCount + deletedCount }
+    var reviewed: Int { confirmedCount + appliedCount + skippedCount + deletedCount + movedCount }
     var pendingCount: Int { results.count - reviewed }
     var allReviewed: Bool { lastRunWasDry && !results.isEmpty && pendingCount == 0 }
     /// What a batch Apply would still touch. Files already applied are done.
-    var actionable: Int { confirmedCount + deletedCount }
+    var actionable: Int { confirmedCount + deletedCount + movedCount }
 
     func decision(for item: Item) -> Decision? { decisions[item.key] }
 
@@ -252,6 +256,18 @@ final class Runner: ObservableObject {
 
     func skip(_ item: Item) { set(.skipped, for: item.key) }
     func markForDeletion(_ item: Item) { set(.deleted, for: item.key) }
+    func move(_ item: Item, to folder: URL) { set(.moveTo(folder), for: item.key) }
+
+    /// Takes a file out of this run entirely. Nothing on disk changes; it simply stops
+    /// being something to decide about.
+    func remove(_ item: Item) {
+        guard let index = indexByKey[item.key] else { return }
+        set(nil, for: item.key)
+        var remaining = results
+        remaining.remove(at: index)
+        guesses[item.key] = nil
+        finish(remaining, keepingDecisions: true)
+    }
 
     func reopen(_ item: Item) {
         set(nil, for: item.key)
@@ -272,6 +288,7 @@ final class Runner: ObservableObject {
         case .applied: appliedCount += delta
         case .skipped: skippedCount += delta
         case .deleted: deletedCount += delta
+        case .moveTo: movedCount += delta
         case nil: break
         }
     }
@@ -336,9 +353,15 @@ final class Runner: ObservableObject {
         phase = .idle
     }
 
-    /// Entries are derived state like the tree and the counts, so they are built once
-    /// per change rather than in a view body.
-    private func refreshBib() {
+    /// Marks the entries out of date. They are not rebuilt here: most runs never open
+    /// the bibliography, and building them for a large collection on every rename is
+    /// work nobody asked for.
+    private func refreshBib() { bibStale = true }
+
+    /// Builds the entries if anything has moved since they were last needed.
+    func ensureBib() {
+        guard bibStale else { return }
+        bibStale = false
         bib = bibEntries(for: results, known: guesses)
         bibByItem = Dictionary(uniqueKeysWithValues: bib.map { ($0.itemKey, $0) })
     }
@@ -477,10 +500,12 @@ final class Runner: ObservableObject {
         }
         var overrides: [String: String] = [:]
         var trashed: Set<String> = []
+        var moves: [String: URL] = [:]
         for (key, decision) in decisions {
             switch decision {
             case .confirmed(let name): overrides[key] = name
             case .deleted: trashed.insert(key)
+            case .moveTo(let folder): moves[key] = folder
             case .skipped, .applied, nil: break
             }
         }
@@ -491,7 +516,7 @@ final class Runner: ObservableObject {
         Task.detached(priority: .userInitiated) { [self] in
             await MainActor.run { self.phase = .processing }
             let out = process(jobs: queue, options: options, overrides: overrides,
-                              trashed: trashed, progress: self.report)
+                              trashed: trashed, moves: moves, progress: self.report)
             await MainActor.run { self.finish(out) }
         }
     }
@@ -513,6 +538,7 @@ final class Runner: ObservableObject {
         appliedCount = 0
         skippedCount = 0
         deletedCount = 0
+        movedCount = 0
         cursor = 0
         done = 0
         total = 0
@@ -531,7 +557,8 @@ final class Runner: ObservableObject {
     }
 
     /// Everything derived from the results is built once, here.
-    private func finish(_ out: [Item]) {
+    private func finish(_ out: [Item], keepingDecisions: Bool = false) {
+        if !keepingDecisions { cursor = 0 }
         results = out
         tree = buildTree(out)
 
@@ -1251,6 +1278,28 @@ private struct ResultsPane: View {
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
+    @State private var choosingMoveTarget = false
+    @AppStorage("bibLineWidth") private var bibLineWidth = 80
+    @AppStorage("bibIndent") private var bibIndent = 2
+    @AppStorage("bibAlign") private var bibAlign = true
+    @AppStorage("bibDelimiter") private var bibDelimiter: BibStyle.Delimiter = .braces
+    @AppStorage("bibTrailingComma") private var bibTrailingComma = true
+    @AppStorage("bibBlankLines") private var bibBlankLines = true
+    @AppStorage("bibSortFields") private var bibSortFields = false
+    @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
+    @AppStorage("bibOmitFile") private var bibOmitFile = false
+
+    private var bibStyle: BibStyle {
+        BibStyle(lineWidth: bibLineWidth,
+                 indent: String(repeating: " ", count: max(0, bibIndent)),
+                 align: bibAlign,
+                 delimiter: bibDelimiter,
+                 trailingComma: bibTrailingComma,
+                 blankLines: bibBlankLines,
+                 sortFields: bibSortFields,
+                 dropAllCaps: bibDropAllCaps,
+                 omit: bibOmitFile ? ["file"] : [])
+    }
     @AppStorage("bibShowsFile") private var bibShowsFile = false
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
@@ -1325,6 +1374,14 @@ private struct ResultsPane: View {
         // A restyle rewrites the suggestions under the current selection.
         .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
         .onDisappear(perform: removeKeyMonitor)
+        .fileImporter(isPresented: $choosingMoveTarget,
+                      allowedContentTypes: [.folder],
+                      allowsMultipleSelection: false) { outcome in
+            guard case .success(let urls) = outcome, let folder = urls.first,
+                  let item = selectedItem else { return }
+            runner.move(item, to: folder)
+            advance()
+        }
         .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
                             isPresented: $confirmingBatchAI) {
             Button("Send \(runner.pendingCount) requests") {
@@ -1380,6 +1437,8 @@ private struct ResultsPane: View {
         case "f": skipFolder()
         case "a": applyNow()
         case "g": identifySelected()
+        case "m": choosingMoveTarget = true
+        case "x": removeSelected()
         case "d": markDeleted()
         case "r": reopenSelected()
         case "j", "n": step(by: 1)
@@ -1443,6 +1502,12 @@ private struct ResultsPane: View {
         advance()
     }
 
+    private func removeSelected() {
+        guard let item = selectedItem else { return }
+        runner.remove(item)
+        ensureSelection()
+    }
+
     private func markDeleted() {
         guard let item = selectedItem else { return }
         runner.markForDeletion(item)
@@ -1474,11 +1539,14 @@ private struct ResultsPane: View {
             bibBar
             Divider()
             if bibShowsFile {
-                BibFileView(entries: runner.bib, order: $bibOrder, completeOnly: $bibCompleteOnly)
+                BibFileView(entries: runner.bib, order: $bibOrder, completeOnly: $bibCompleteOnly,
+                            style: bibStyle)
             } else {
                 bibEntryList
             }
         }
+        .onAppear { runner.ensureBib() }
+        .onChange(of: runner.revision) { _, _ in runner.ensureBib() }
     }
 
     private var bibEntryList: some View {
@@ -1690,6 +1758,8 @@ private struct ResultsPane: View {
                 skipFolder: skipFolder,
                 applyNow: applyNow,
                 identify: identifySelected,
+                moveTo: { choosingMoveTarget = true },
+                remove: removeSelected,
                 aiReady: aiReady,
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
@@ -1880,6 +1950,8 @@ private struct ReviewInspector: View {
     let skipFolder: () -> Void
     let applyNow: () -> Void
     let identify: () -> Void
+    let moveTo: () -> Void
+    let remove: () -> Void
     let aiReady: Bool
     let markDeleted: () -> Void
     let reopen: () -> Void
@@ -1996,6 +2068,11 @@ private struct ReviewInspector: View {
                             .disabled(decision == .applied)
                             .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
                             .help("Rename this one file on disk right now, without waiting for the batch")
+                        Button(action: moveTo) { KeyLabel("M", "Move to…") }
+                            .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                            .help("Send this file to another folder, under its new name")
+                        Button(action: remove) { KeyLabel("X", "Remove") }
+                            .help("Drop it from this run. Nothing on disk changes.")
                         Button(action: markDeleted) { KeyLabel("D", "Delete") }
                             .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
                             .help("Move to the Trash when you apply")
@@ -2045,6 +2122,9 @@ private struct ReviewInspector: View {
         case .deleted:
             Label("Will be trashed", systemImage: "trash.circle.fill")
                 .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+        case .moveTo(let folder):
+            Label("Moving to \(folder.lastPathComponent)", systemImage: "arrow.right.circle.fill")
+                .foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
         case nil:
             Label("Not reviewed", systemImage: "circle.dotted")
                 .foregroundStyle(.tertiary)
@@ -2265,6 +2345,8 @@ private struct ResultRow: View {
         case .deleted:
             Image(systemName: "trash.circle.fill")
                 .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+        case .moveTo:
+            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
         case nil:
             Image(systemName: "circle.dotted").foregroundStyle(.tertiary)
         }
@@ -2349,6 +2431,7 @@ private struct CoverCard: View {
             case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
             case .deleted: Image(systemName: "trash.circle.fill")
                 .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
             case nil: EmptyView()
             }
         }
@@ -2380,6 +2463,7 @@ private struct StatusPill: View {
         case .renamed: return "textformat"
         case .locked: return "lock.fill"
         case .trashed: return "trash.fill"
+        case .moved: return "arrow.right.doc.on.clipboard"
         case .failed: return "exclamationmark.triangle.fill"
         }
     }
@@ -2392,6 +2476,7 @@ private struct StatusPill: View {
         case .renamed:   return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
         case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
+        case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
         case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
         }
     }
@@ -2480,6 +2565,7 @@ private struct BibFileView: View {
     let entries: [BibEntry]
     @Binding var order: BibOrder
     @Binding var completeOnly: Bool
+    let style: BibStyle
 
     @State private var blocks: [String] = []
     @State private var edited: String?
@@ -2488,11 +2574,19 @@ private struct BibFileView: View {
 
     /// What Copy and Save write: the edit if there is one, otherwise the blocks joined.
     private var text: String {
-        edited ?? (blocks.isEmpty ? "" : blocks.joined(separator: "\n\n") + "\n")
+        if let edited { return edited }
+        guard !blocks.isEmpty else { return "" }
+        return blocks.joined(separator: style.blankLines ? "\n\n" : "\n") + "\n"
     }
 
     private var signature: String {
-        "\(order.rawValue)|\(completeOnly)|\(entries.count)|\(entries.first?.key ?? "")|\(entries.last?.key ?? "")"
+        [
+            order.rawValue, "\(completeOnly)", "\(entries.count)",
+            entries.first?.key ?? "", entries.last?.key ?? "",
+            "\(style.lineWidth)", style.indent, "\(style.align)", style.delimiter.rawValue,
+            "\(style.trailingComma)", "\(style.blankLines)", "\(style.sortFields)",
+            "\(style.dropAllCaps)", style.omit.sorted().joined(separator: ","),
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -2525,9 +2619,10 @@ private struct BibFileView: View {
             let snapshot = entries
             let currentOrder = order
             let onlyComplete = completeOnly
+            let currentStyle = style
             let built = await Task.detached(priority: .userInitiated) {
                 bibtexOrdered(snapshot, includeIncomplete: !onlyComplete, order: currentOrder)
-                    .map(bibtexBlock)
+                    .map { bibtexBlock($0, style: currentStyle) }
             }.value
             guard !Task.isCancelled else { return }
             blocks = built

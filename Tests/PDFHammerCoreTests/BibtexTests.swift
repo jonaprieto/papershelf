@@ -140,9 +140,70 @@ extension BibtexTests {
         let entries = bibEntries(for: [at("b/1991-bbb.pdf"), at("a/1990-aaa.pdf")])
 
         for order in BibOrder.allCases {
-            let blocks = bibtexOrdered(entries, order: order).map(bibtexBlock)
+            let blocks = bibtexOrdered(entries, order: order).map { bibtexBlock($0) }
             XCTAssertEqual(blocks.joined(separator: "\n\n") + "\n",
                            bibtexDocument(entries, order: order))
         }
+    }
+}
+
+extension BibtexTests {
+
+    private func longEntry() -> BibEntry {
+        BibEntry(itemKey: "/tmp/a.pdf", key: "hofstadter:1979:geb",
+                 title: "Godel Escher Bach an Eternal Golden Braid a Metaphorical Fugue on Minds and Machines",
+                 author: "Hofstadter", year: "1979", file: "/tmp/a.pdf")
+    }
+
+    func testValuesWrapAtTheLineWidth() {
+        let block = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 80))
+        for line in block.components(separatedBy: "\n") {
+            XCTAssertLessThanOrEqual(line.count, 80, "line over budget: \(line)")
+        }
+        XCTAssertTrue(block.contains("\n"), "the long title should have wrapped")
+
+        // Off means one line per field, however long.
+        let unwrapped = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 0))
+        XCTAssertEqual(unwrapped.components(separatedBy: "\n").count, 6)
+    }
+
+    /// Breaking a path to satisfy a column is worse than going over it.
+    func testAWordLongerThanTheBudgetIsLeftWhole() {
+        let path = "/Users/someone/Library/CloudStorage/Provider-account/shelf/a-very-long-file-name.pdf"
+        let entry = BibEntry(itemKey: path, key: "k", title: "T", author: nil, year: nil, file: path)
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 40))
+        XCTAssertTrue(block.contains(path), "the path must survive intact")
+    }
+
+    func testStyleOptions() {
+        let entry = longEntry()
+
+        let quoted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, delimiter: .quotes))
+        XCTAssertTrue(quoted.contains("= \"Hofstadter\","))
+
+        let noComma = bibtexBlock(entry, style: BibStyle(lineWidth: 0, trailingComma: false))
+        XCTAssertTrue(noComma.contains("{/tmp/a.pdf}\n}"), "last field should have no comma")
+
+        let sorted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, sortFields: true))
+        let names = sorted.components(separatedBy: "\n").dropFirst().dropLast()
+            .map { $0.trimmingCharacters(in: .whitespaces).components(separatedBy: " ")[0] }
+        XCTAssertEqual(names, ["author", "file", "title", "year"])
+
+        let omitted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, omit: ["file"]))
+        XCTAssertFalse(omitted.contains("file"))
+
+        let shouty = BibEntry(itemKey: "k", key: "k", title: "AN OCR TITLE", author: "SMITH",
+                              year: "1999", file: "/tmp/a.pdf")
+        XCTAssertTrue(bibtexBlock(shouty, style: BibStyle(lineWidth: 0, dropAllCaps: true))
+            .contains("{an ocr title}"))
+        // A mixed-case title is left exactly as it is.
+        XCTAssertTrue(bibtexBlock(entry, style: BibStyle(lineWidth: 0, dropAllCaps: true))
+            .contains("{Hofstadter}"))
+    }
+
+    func testAlignmentCanBeTurnedOff() {
+        let ragged = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 0, align: false))
+        XCTAssertTrue(ragged.contains("  title = {"))
+        XCTAssertTrue(ragged.contains("  year = {1979},"))
     }
 }

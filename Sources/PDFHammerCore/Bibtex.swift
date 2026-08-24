@@ -119,22 +119,109 @@ public func bibtexOrdered(_ entries: [BibEntry],
     }
 }
 
-/// One entry, in the layout bibtex-tidy would leave behind: one field per line, aligned,
-/// trailing commas.
+/// Formatting choices, matching what bibtex-tidy offers.
+public struct BibStyle: Sendable, Equatable {
+    public enum Delimiter: String, Sendable, CaseIterable, Identifiable {
+        case braces, quotes
+        public var id: String { rawValue }
+        public var label: String { self == .braces ? "{braces}" : "\"quotes\"" }
+        var open: String { self == .braces ? "{" : "\"" }
+        var close: String { self == .braces ? "}" : "\"" }
+    }
+
+    /// Wrap values longer than this. Zero leaves them on one line.
+    public var lineWidth: Int
+    public var indent: String
+    /// Pad field names so the `=` line up.
+    public var align: Bool
+    public var delimiter: Delimiter
+    public var trailingComma: Bool
+    /// A blank line between entries.
+    public var blankLines: Bool
+    /// Sort the fields within each entry rather than keeping title, author, year, file.
+    public var sortFields: Bool
+    /// Lowercase values written entirely in capitals, which OCR and catalogues produce.
+    public var dropAllCaps: Bool
+    /// Fields to leave out, by name.
+    public var omit: Set<String>
+
+    public init(lineWidth: Int = 80,
+                indent: String = "  ",
+                align: Bool = true,
+                delimiter: Delimiter = .braces,
+                trailingComma: Bool = true,
+                blankLines: Bool = true,
+                sortFields: Bool = false,
+                dropAllCaps: Bool = false,
+                omit: Set<String> = []) {
+        self.lineWidth = lineWidth
+        self.indent = indent
+        self.align = align
+        self.delimiter = delimiter
+        self.trailingComma = trailingComma
+        self.blankLines = blankLines
+        self.sortFields = sortFields
+        self.dropAllCaps = dropAllCaps
+        self.omit = omit
+    }
+
+    public static let standard = BibStyle()
+}
+
+/// Wraps on spaces, indenting continuations past the `=`. A word longer than the budget
+/// is left whole: breaking a path or a URL to satisfy a column is worse than exceeding it.
+func wrapped(_ value: String, width: Int, continuation: String) -> [String] {
+    guard width > 0, value.count > width else { return [value] }
+    var lines: [String] = []
+    var current = ""
+    for word in value.split(separator: " ", omittingEmptySubsequences: false) {
+        let candidate = current.isEmpty ? String(word) : current + " " + word
+        let budget = lines.isEmpty ? width : width - continuation.count
+        if candidate.count > budget, !current.isEmpty {
+            lines.append(current)
+            current = String(word)
+        } else {
+            current = candidate
+        }
+    }
+    if !current.isEmpty { lines.append(current) }
+    return lines
+}
+
+/// One entry, in the layout bibtex-tidy would leave behind.
 ///
 /// Rendering per entry rather than per file is what lets the viewer highlight only what
 /// is on screen: a collection of thousands would otherwise be tokenized in full on every
 /// redraw.
-public func bibtexBlock(_ entry: BibEntry) -> String {
-    var fields: [(String, String)] = [("title", entry.title)]
-    if let author = entry.author { fields.append(("author", author)) }
+public func bibtexBlock(_ entry: BibEntry, style: BibStyle = .standard) -> String {
+    func maybeLower(_ value: String) -> String {
+        guard style.dropAllCaps else { return value }
+        let letters = value.filter(\.isLetter)
+        guard !letters.isEmpty, letters == letters.uppercased() else { return value }
+        return value.lowercased()
+    }
+
+    var fields: [(String, String)] = [("title", maybeLower(entry.title))]
+    if let author = entry.author { fields.append(("author", maybeLower(author))) }
     if let year = entry.year { fields.append(("year", year)) }
     fields.append(("file", entry.file))
+    fields.removeAll { style.omit.contains($0.0) }
+    if style.sortFields { fields.sort { $0.0 < $1.0 } }
+    guard !fields.isEmpty else { return "@book{\(entry.key),\n}" }
 
-    let width = fields.map(\.0.count).max() ?? 5
-    let body = fields.map { name, value in
-        let padding = String(repeating: " ", count: width - name.count)
-        return "  \(name)\(padding) = {\(bibtexEscape(value))},"
+    let width = style.align ? (fields.map(\.0.count).max() ?? 0) : 0
+    let body = fields.enumerated().map { index, field in
+        let (name, value) = field
+        let padding = String(repeating: " ", count: max(0, width - name.count))
+        let prefix = "\(style.indent)\(name)\(padding) = \(style.delimiter.open)"
+        let comma = (style.trailingComma || index < fields.count - 1) ? "," : ""
+        let continuation = String(repeating: " ", count: prefix.count)
+        let budget = style.lineWidth - prefix.count - style.delimiter.close.count - comma.count
+        let lines = wrapped(bibtexEscape(value), width: budget, continuation: continuation)
+        let joined = lines.enumerated()
+            .map { $0.offset == 0 ? $0.element : continuation + $0.element }
+            .joined(separator: "\n")
+        return prefix + joined + style.delimiter.close + comma
     }.joined(separator: "\n")
 
     return "@book{\(entry.key),\n\(body)\n}"
@@ -143,10 +230,12 @@ public func bibtexBlock(_ entry: BibEntry) -> String {
 /// The whole file, for copying and saving.
 public func bibtexDocument(_ entries: [BibEntry],
                            includeIncomplete: Bool = true,
-                           order: BibOrder = .alphabetical) -> String {
+                           order: BibOrder = .alphabetical,
+                           style: BibStyle = .standard) -> String {
     let ordered = bibtexOrdered(entries, includeIncomplete: includeIncomplete, order: order)
     guard !ordered.isEmpty else { return "" }
-    return ordered.map(bibtexBlock).joined(separator: "\n\n") + "\n"
+    let separator = style.blankLines ? "\n\n" : "\n"
+    return ordered.map { bibtexBlock($0, style: style) }.joined(separator: separator) + "\n"
 }
 
 // MARK: - Highlighting

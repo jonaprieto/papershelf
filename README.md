@@ -121,9 +121,17 @@ otherwise collide.
 The BibTeX view has two panes: **Entries**, the browser above, and **File**, the generated
 `.bib` itself, syntax-highlighted and ordered alphabetically or by folder.
 
-The file is rendered one entry at a time inside a lazy stack, so only what is on screen is
-ever tokenized, and it is rebuilt off the main thread and only when the entries, the order
-or the filter actually move. **Edit** switches to a plain editor and the text becomes
+Entries are built only when something is about to look at them, so a run that never opens
+this view never pays for it. The file is rendered one entry at a time inside a lazy stack,
+so only what is on screen is ever tokenized, and it is rebuilt off the main thread and
+only when its inputs actually move.
+
+Formatting follows bibtex-tidy: line width (80 by default, 0 to turn wrapping off),
+indent, `{braces}` or `"quotes"`, aligned equals signs, trailing comma, blank lines
+between entries, alphabetical fields, lowercasing ALL-CAPS values, and omitting the
+`file` field. All of it lives in Settings. A value longer than the line wraps onto
+indented continuations; a single word longer than the budget is left whole, since
+breaking a path to satisfy a column is worse than exceeding it. **Edit** switches to a plain editor and the text becomes
 yours; ordering is frozen while it is, and **Discard edits** goes back to the generated
 version. The highlighter's tokens rebuild their input exactly, so what you read is
 character for character what Copy and Save write.
@@ -157,6 +165,8 @@ next to an editable name.
 | `A` | apply this one file now |
 | `S` `F` | skip the file / the rest of its folder |
 | `D` | move to the Trash |
+| `M` | move to another folder, under its new name |
+| `X` | drop it from this run, changing nothing on disk |
 | `R` | reopen a decided file |
 | `J` `K` | move without deciding |
 

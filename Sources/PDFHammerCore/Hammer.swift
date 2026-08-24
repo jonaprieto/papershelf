@@ -422,6 +422,7 @@ public enum Status: String, Sendable, CaseIterable {
     case renamed     // not encrypted, passed through untouched
     case locked      // encrypted, no password matched, passed through still encrypted
     case trashed     // marked for deletion during review, moved to the Trash
+    case moved       // sent to a folder you chose, under its new name
     case failed
 }
 
@@ -844,18 +845,32 @@ public func sanitizedFilename(_ name: String) -> String {
 /// across cores.
 /// `overrides` maps `Job.key` (equivalently `Item.key`) to a name the user typed,
 /// replacing the one the rules would have produced.
-/// `trashed` holds `Job.key`s to move to the Trash instead of renaming.
+/// `trashed` holds `Job.key`s to move to the Trash instead of renaming, and `moves` maps
+/// a key to a folder the file should be sent to instead.
 public func process(
     jobs: [Job],
     options: Options,
     overrides: [String: String] = [:],
     trashed: Set<String> = [],
+    moves: [String: URL] = [:],
     progress: ((Int, Int, String) -> Void)? = nil
 ) -> [Item] {
     func run(_ job: Job) -> Item {
-        trashed.contains(job.key)
-            ? moveToTrash(job, dryRun: options.dryRun)
-            : process(job: job, options: options, overrideName: overrides[job.key])
+        if trashed.contains(job.key) { return moveToTrash(job, dryRun: options.dryRun) }
+        if let folder = moves[job.key] {
+            // The name it would have had anyway, unless one was typed.
+            let planned = overrides[job.key].map(sanitizedFilename)
+                ?? process(job: job, options: dryRunning(options), overrideName: nil).destinationName
+            return moveFile(job, to: folder, named: planned, dryRun: options.dryRun)
+        }
+        return process(job: job, options: options, overrideName: overrides[job.key])
+    }
+
+    /// Used only to work out a name without touching anything.
+    func dryRunning(_ options: Options) -> Options {
+        var copy = options
+        copy.dryRun = true
+        return copy
     }
 
     guard options.dryRun, jobs.count > 1 else {
@@ -883,6 +898,33 @@ public func process(
         }
     }
     return slots.compactMap { $0 }
+}
+
+/// Moves a file to a folder of the user's choosing, under the name it would have been
+/// given anyway. The folder is created if it does not exist yet.
+///
+/// No backup is taken: nothing is being rewritten or destroyed, the file is simply
+/// somewhere else, and a copy left behind would defeat the point of moving it.
+public func moveFile(_ job: Job, to folder: URL, named name: String, dryRun: Bool) -> Item {
+    let source = job.file
+    let target = folder.appendingPathComponent(name)
+    func item(_ destination: URL, _ status: Status, _ message: String = "") -> Item {
+        Item(root: job.root, source: source, destination: destination,
+             status: status, message: message)
+    }
+    guard !dryRun else {
+        return item(availableURL(target, ignoring: source), .moved, "will move to \(folder.path)")
+    }
+    do {
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = availableURL(target, ignoring: source)
+        if destination.standardizedFileURL != source.standardizedFileURL {
+            try fm.moveItem(at: source, to: destination)
+        }
+        return item(destination, .moved, "moved to \(folder.path)")
+    } catch {
+        return item(source, .failed, "could not move: \(error.localizedDescription)")
+    }
 }
 
 /// Deletion always means the Trash. Nothing here removes a file outright, so a mistake

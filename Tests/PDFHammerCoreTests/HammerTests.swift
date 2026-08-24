@@ -853,3 +853,75 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual(Set(results.map(\.destinationName)), ["2024-report-a.pdf", "2024-report-a-2.pdf"])
     }
 }
+
+extension HammerTests {
+
+    // MARK: - Moving files
+
+    func testMoveSendsTheFileUnderItsNewName() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let root = base.appendingPathComponent("inbox")
+        let shelf = base.appendingPathComponent("shelf/scifi")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Dune 1965.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               useFolderNames: false,
+                                               rules: NameRules(separator: .dash)),
+                              moves: [jobs[0].key: shelf])
+
+        XCTAssertEqual(results.first?.status, .moved)
+        // The destination folder did not exist, and the file arrives normalized.
+        XCTAssertTrue(fm.fileExists(atPath: shelf.appendingPathComponent("1965-dune.pdf").path))
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("Dune 1965.pdf").path))
+        // Moving is not rewriting, so nothing is backed up.
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("original_pdfs").path))
+    }
+
+    func testMoveHonoursATypedNameAndAvoidsCollisions() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let root = base.appendingPathComponent("inbox")
+        let shelf = base.appendingPathComponent("shelf")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try fm.createDirectory(at: shelf, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("a.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("b.pdf"), password: nil)
+        try makePDF(at: shelf.appendingPathComponent("taken.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let moves = Dictionary(uniqueKeysWithValues: jobs.map { ($0.key, shelf) })
+        let overrides = Dictionary(uniqueKeysWithValues: jobs.map { ($0.key, "taken") })
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: false),
+                              overrides: overrides, moves: moves)
+
+        XCTAssertEqual(Set(results.map(\.status)), [.moved])
+        XCTAssertEqual(Set(results.map(\.destinationName)), ["taken-2.pdf", "taken-3.pdf"])
+        // The file already sitting there is untouched.
+        XCTAssertTrue(fm.fileExists(atPath: shelf.appendingPathComponent("taken.pdf").path))
+    }
+
+    func testDryRunMovesNothing() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let root = base.appendingPathComponent("inbox")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Dune 1965.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let shelf = base.appendingPathComponent("shelf")
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: true),
+                              moves: [jobs[0].key: shelf])
+        XCTAssertEqual(results.first?.status, .moved)
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("Dune 1965.pdf").path))
+        XCTAssertFalse(fm.fileExists(atPath: shelf.path))
+    }
+}
