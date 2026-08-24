@@ -615,4 +615,108 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual(restyled(item, options: withMetadata).destinationName,
                        "\(monthPrefix(Date()))-sin-fecha.pdf")
     }
+
+    // MARK: - Duplicates
+
+    func testDuplicateKeyIgnoresDatesAndCopyMarkers() {
+        let same = [
+            "Godel Escher Bach.pdf",
+            "godel-escher-bach.pdf",
+            "Godel Escher Bach (1).pdf",
+            "Godel Escher Bach (2).pdf",
+            "godel_escher_bach copy.pdf",
+            "Godel Escher Bach 2024.pdf",
+            "godel escher bach-2.pdf",
+        ].map(duplicateKey(for:))
+        XCTAssertEqual(Set(same).count, 1, "all spellings should collapse to one key")
+        XCTAssertEqual(same[0], "godelescherbach")
+
+        // A number that is part of the title must survive. Only a dash or underscore
+        // with no space in front marks a copy.
+        XCTAssertNotEqual(duplicateKey(for: "Catch 22.pdf"), duplicateKey(for: "Catch.pdf"))
+        XCTAssertEqual(duplicateKey(for: "Catch 22.pdf"), duplicateKey(for: "catch-22-2.pdf"))
+        XCTAssertNotEqual(duplicateKey(for: "Book One.pdf"), duplicateKey(for: "Book Two.pdf"))
+    }
+
+    func testIdenticalBytesAreFoundAndTheBiggestCopyIsKept() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root.appendingPathComponent("shelf"), withIntermediateDirectories: true)
+
+        try makePDF(at: root.appendingPathComponent("Dune.pdf"), password: nil)
+        let bytes = try Data(contentsOf: root.appendingPathComponent("Dune.pdf"))
+        try bytes.write(to: root.appendingPathComponent("shelf/Dune (1).pdf"))
+        // Same name shape, but genuinely different content and larger.
+        try makePDF(at: root.appendingPathComponent("Neuromancer.pdf"), password: nil)
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        let groups = duplicateGroups(in: items)
+
+        XCTAssertEqual(groups.count, 1)
+        let group = try XCTUnwrap(groups.first)
+        XCTAssertEqual(group.kind, .identical)
+        XCTAssertEqual(Set(group.items.map(\.sourceName)), ["Dune.pdf", "Dune (1).pdf"])
+        // Same size, so the shorter name wins.
+        XCTAssertEqual(group.keeper.sourceName, "Dune.pdf")
+        XCTAssertEqual(group.extras.map(\.sourceName), ["Dune (1).pdf"])
+    }
+
+    func testDifferentContentIsNotADuplicateEvenAtTheSameSize() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        // Same byte count, different bytes: size alone must not be trusted.
+        let a = Data(repeating: 0x41, count: 4096)
+        let b = Data(repeating: 0x42, count: 4096)
+        try a.write(to: root.appendingPathComponent("Alpha.pdf"))
+        try b.write(to: root.appendingPathComponent("Beta.pdf"))
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        XCTAssertEqual(duplicateGroups(in: items).count, 0)
+    }
+
+    func testLikelyDuplicatesAreFoundByName() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        // Same book, re-downloaded, so the bytes differ but the name barely does.
+        try makePDF(at: root.appendingPathComponent("The Pragmatic Programmer.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("the-pragmatic-programmer (1).pdf"), password: "x")
+        try makePDF(at: root.appendingPathComponent("Refactoring.pdf"), password: nil)
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        let groups = duplicateGroups(in: items)
+
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.kind, .likely)
+        XCTAssertEqual(groups.first?.items.count, 2)
+    }
+
+    func testAFileIsNeverInTwoGroups() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        try makePDF(at: root.appendingPathComponent("Dune.pdf"), password: nil)
+        let bytes = try Data(contentsOf: root.appendingPathComponent("Dune.pdf"))
+        try bytes.write(to: root.appendingPathComponent("Dune (1).pdf"))
+        try bytes.write(to: root.appendingPathComponent("dune-2.pdf"))
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        let groups = duplicateGroups(in: items)
+        let keys = groups.flatMap { $0.items.map(\.key) }
+        XCTAssertEqual(keys.count, Set(keys).count, "no file may appear in two groups")
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.items.count, 3)
+    }
 }

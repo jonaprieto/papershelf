@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import CryptoKit
 
 // MARK: - Filename normalization
 
@@ -383,6 +384,7 @@ public struct Item: Identifiable, Sendable {
     /// answered from memory instead of opening every PDF again.
     public var metadataDate: Date?
     public var modifiedDate: Date?
+    public var byteCount: Int?
 
     /// Stable identity for the file on disk. Symlinks are resolved because a URL built
     /// by the caller (`/var/...`) and one handed back by the filesystem
@@ -548,6 +550,118 @@ private func modificationDate(_ url: URL) -> Date? {
     (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
 }
 
+private func byteCount(_ url: URL) -> Int? {
+    (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+}
+
+// MARK: - Duplicates
+
+/// Copy markers a downloader or a file manager appends: `(1)`, `-2`, `copy`, `copia`.
+///
+/// A bare trailing number is only treated as a marker when it follows a dash or
+/// underscore with no space. `Catch 22` is a title; `book-2` is a second copy.
+private let copyMarkers = regex("(?:[ _-]*\\((?:copy|copia|[0-9]{1,3})\\)|[ _-]+(?:copy|copia)|[_-][0-9]{1,2})$")
+
+/// A key that ignores everything a second download changes: the date, any copy marker,
+/// and every separator. `Book (1).pdf`, `book-2.pdf` and `Book 2024.pdf` all land on
+/// `book`.
+public func duplicateKey(for filename: String) -> String {
+    var stem = (filename as NSString).deletingPathExtension.lowercased()
+    if let found = findDate(in: stem) {
+        stem = (stem as NSString).replacingCharacters(in: found.range, with: " ")
+    }
+    // Exactly one marker is stripped. Stripping repeatedly would eat `catch-22-2` down
+    // to `catch`, merging Catch-22 with any book called Catch.
+    var trimmed = stem
+    if let match = copyMarkers.firstMatch(in: stem, range: NSRange(location: 0, length: (stem as NSString).length)) {
+        trimmed = (stem as NSString).replacingCharacters(in: match.range, with: "")
+    }
+    return trimmed.filter { $0.isLetter || $0.isNumber }
+}
+
+/// SHA-256 of the file, read in chunks so a large book is never held whole in memory.
+public func fileDigest(_ url: URL) -> String? {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+        hasher.update(data: chunk)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+}
+
+public struct DuplicateGroup: Identifiable, Sendable {
+    public enum Kind: String, Sendable { case identical, likely }
+
+    public let id: String
+    public let kind: Kind
+    /// Best copy first: the one worth keeping.
+    public let items: [Item]
+
+    public var keeper: Item { items[0] }
+    public var extras: [Item] { Array(items.dropFirst()) }
+}
+
+/// The copy worth keeping: biggest file first, since a truncated download is smaller,
+/// then the shortest name, which is the one without `(1)` bolted on.
+private func rank(_ a: Item, _ b: Item) -> Bool {
+    let sizeA = a.byteCount ?? 0, sizeB = b.byteCount ?? 0
+    if sizeA != sizeB { return sizeA > sizeB }
+    if a.sourceName.count != b.sourceName.count { return a.sourceName.count < b.sourceName.count }
+    return a.key < b.key
+}
+
+/// Finds files that are the same book twice.
+///
+/// Byte-identical copies are found by hashing, but only within groups that already share
+/// a size, so a collection of thousands is not read from end to end to answer a question
+/// most files settle by size alone. What is left is grouped by `duplicateKey`, which
+/// catches the same book downloaded twice under slightly different names.
+public func duplicateGroups(in items: [Item]) -> [DuplicateGroup] {
+    var bySize: [Int: [Item]] = [:]
+    for item in items where item.byteCount != nil {
+        bySize[item.byteCount!, default: []].append(item)
+    }
+
+    let candidates = bySize.values.filter { $0.count > 1 }.flatMap { $0 }
+    var digests: [String: String] = [:]
+    if !candidates.isEmpty {
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
+            guard let digest = fileDigest(candidates[index].source) else { return }
+            lock.lock()
+            digests[candidates[index].key] = digest
+            lock.unlock()
+        }
+    }
+
+    var identical: [String: [Item]] = [:]
+    for item in candidates {
+        guard let digest = digests[item.key] else { continue }
+        identical[digest, default: []].append(item)
+    }
+
+    var groups: [DuplicateGroup] = []
+    var claimed = Set<String>()
+    for (digest, group) in identical where group.count > 1 {
+        let sorted = group.sorted(by: rank)
+        groups.append(DuplicateGroup(id: digest, kind: .identical, items: sorted))
+        claimed.formUnion(sorted.map(\.key))
+    }
+
+    var byName: [String: [Item]] = [:]
+    for item in items where !claimed.contains(item.key) {
+        let key = duplicateKey(for: item.sourceName)
+        guard !key.isEmpty else { continue }
+        byName[key, default: []].append(item)
+    }
+    for (key, group) in byName where group.count > 1 {
+        groups.append(DuplicateGroup(id: "name:" + key, kind: .likely, items: group.sorted(by: rank)))
+    }
+
+    return groups.sorted { $0.keeper.sourceName < $1.keeper.sourceName }
+}
+
 /// Returns `url` if free, otherwise `name-2.pdf`, `name-3.pdf`, ...
 private func availableURL(_ url: URL, ignoring: URL? = nil) -> URL {
     if !fm.fileExists(atPath: url.path) { return url }
@@ -672,10 +786,11 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     let directory = source.deletingLastPathComponent()
 
     var facts: (metadata: Date?, modified: Date?) = (nil, nil)
+    var size: Int?
     func item(_ destination: URL, _ status: Status, _ message: String = "") -> Item {
         Item(root: job.root, source: source, destination: destination,
              status: status, message: message,
-             metadataDate: facts.metadata, modifiedDate: facts.modified)
+             metadataDate: facts.metadata, modifiedDate: facts.modified, byteCount: size)
     }
 
     // Read into memory: a real run moves the original out from under us part-way.
@@ -704,6 +819,7 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
         : .none
 
     facts = (metadataDate, modificationDate(source))
+    size = byteCount(source)
 
     var fallbacks: [String] = []
     if options.useFolderNames, let folderPrefix = context.prefix { fallbacks.append(folderPrefix) }

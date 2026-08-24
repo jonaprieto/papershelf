@@ -35,6 +35,73 @@ struct PDFHammerApp: App {
     }
 }
 
+// MARK: - Covers
+
+/// Renders and caches first-page thumbnails. Nothing is drawn until a card asks for it,
+/// so a shelf of thousands costs only what is on screen.
+@MainActor
+final class Covers: ObservableObject {
+    private let cache = NSCache<NSString, NSImage>()
+    private var inFlight: Set<String> = []
+    /// Bumped when a render lands, to redraw the cards waiting on one.
+    @Published private(set) var revision = 0
+
+    /// Four at a time: enough to fill a scroll, few enough to leave the UI responsive.
+    private static let queue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 4
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+
+    init() { cache.countLimit = 400 }
+
+    func cover(for item: Item, passwords: [String], height: CGFloat) -> NSImage? {
+        if let hit = cache.object(forKey: item.key as NSString) { return hit }
+        guard !inFlight.contains(item.key) else { return nil }
+        inFlight.insert(item.key)
+
+        let url = item.source
+        let key = item.key
+        Covers.queue.addOperation { [weak self] in
+            let image = Covers.render(url, passwords: passwords, height: height)
+            Task { @MainActor in
+                guard let self else { return }
+                self.inFlight.remove(key)
+                guard let image else { return }
+                self.cache.setObject(image, forKey: key as NSString)
+                self.revision &+= 1
+            }
+        }
+        return nil
+    }
+
+    func forget() {
+        cache.removeAllObjects()
+        inFlight.removeAll()
+        revision &+= 1
+    }
+
+    private nonisolated static func render(_ url: URL, passwords: [String], height: CGFloat) -> NSImage? {
+        guard let document = PDFDocument(url: url) else { return nil }
+        if document.isLocked {
+            for password in passwords where document.unlock(withPassword: password) { break }
+        }
+        guard let page = document.page(at: 0) else { return nil }
+        let box = page.bounds(for: .mediaBox)
+        guard box.height > 0 else { return nil }
+        let width = max(1, box.width * (height / box.height))
+        return page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+    }
+}
+
+enum ViewMode: String, CaseIterable, Identifiable {
+    case list, catalogue
+    var id: String { rawValue }
+    var label: String { self == .list ? "List" : "Catalogue" }
+    var icon: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+}
+
 // MARK: - Runner
 
 /// Coalesces the scan callback, which fires once per directory read and would otherwise
@@ -103,6 +170,11 @@ final class Runner: ObservableObject {
     /// Only ever sweeps forward, so walking the whole stack is linear overall rather than
     /// quadratic. Reopening a file earlier in the list pulls it back.
     private var cursor = 0
+
+    @Published private(set) var duplicates: [DuplicateGroup] = []
+    /// `Item.key` to the kind of duplicate it is, for the badge on a row or card.
+    @Published private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
+    @Published private(set) var findingDuplicates = false
 
     private var jobs: [Job] = []
 
@@ -231,6 +303,40 @@ final class Runner: ObservableObject {
         }
     }
 
+    var identicalExtras: Int {
+        duplicates.filter { $0.kind == .identical }.reduce(0) { $0 + $1.extras.count }
+    }
+
+    func findDuplicates() {
+        guard !results.isEmpty, !findingDuplicates else { return }
+        findingDuplicates = true
+        let snapshot = results
+        Task.detached(priority: .userInitiated) { [self] in
+            let found = duplicateGroups(in: snapshot)
+            await MainActor.run {
+                self.duplicates = found
+                self.duplicateKind = Dictionary(
+                    uniqueKeysWithValues: found.flatMap { group in
+                        group.items.map { ($0.key, group.kind) }
+                    }
+                )
+                self.findingDuplicates = false
+            }
+        }
+    }
+
+    /// Marks the spare copies of byte-identical files for the Trash, keeping the best of
+    /// each. Only identical groups: a likely match is a guess, and guesses do not get to
+    /// delete a book on their own.
+    func markIdenticalExtras() {
+        for group in duplicates where group.kind == .identical {
+            for extra in group.extras where decisions[extra.key] == nil {
+                decisions[extra.key] = .deleted
+                deletedCount += 1
+            }
+        }
+    }
+
     func preview(roots: [URL], options: Options, fingerprint: String) {
         begin(fingerprint: fingerprint, dry: true)
 
@@ -293,6 +399,8 @@ final class Runner: ObservableObject {
         byFolder = [:]
         indexByKey = [:]
         ancestorsByKey = [:]
+        duplicates = []
+        duplicateKind = [:]
         decisions = [:]
         confirmedCount = 0
         appliedCount = 0
@@ -850,6 +958,8 @@ private struct ResultsPane: View {
     private var hasSources: Bool { sourceCount > 0 }
 
 
+    @AppStorage("viewMode") private var mode: ViewMode = .list
+    @StateObject private var covers = Covers()
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
     /// a name you simply have not touched.
@@ -881,7 +991,7 @@ private struct ResultsPane: View {
                     summaryBar
                     Divider()
                     HSplitView {
-                        list.frame(minWidth: 330, maxWidth: .infinity, maxHeight: .infinity)
+                        browser.frame(minWidth: 330, maxWidth: .infinity, maxHeight: .infinity)
                         inspector.frame(minWidth: 340, maxHeight: .infinity)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1020,6 +1130,40 @@ private struct ResultsPane: View {
         loadDraft()
     }
 
+    @ViewBuilder
+    private var browser: some View {
+        if mode == .catalogue { catalogue } else { list }
+    }
+
+    /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store
+    /// only renders what is built, so the cost follows the window and not the collection.
+    private var catalogue: some View {
+        ScrollViewReader { scroll in
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: 18)],
+                          alignment: .leading, spacing: 18) {
+                    ForEach(runner.results) { item in
+                        CoverCard(
+                            item: item,
+                            decision: runner.decision(for: item),
+                            duplicate: runner.duplicateKind[item.key],
+                            passwords: passwords,
+                            covers: covers,
+                            isSelected: selected == item.key
+                        )
+                        .id(item.key)
+                        .onTapGesture { selected = item.key }
+                    }
+                }
+                .padding(18)
+            }
+            .onChange(of: selected) { _, new in
+                guard let new else { return }
+                withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
+            }
+        }
+    }
+
     private var list: some View {
         ScrollViewReader { scroll in
             List(selection: $selected) {
@@ -1100,6 +1244,17 @@ private struct ResultsPane: View {
             }
             if runner.lastRunWasDry {
                 HStack(spacing: 10) {
+                    Picker("View", selection: $mode) {
+                        ForEach(ViewMode.allCases) { Label($0.label, systemImage: $0.icon).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 96)
+
+                    duplicateControls
+                    Divider().frame(height: 16)
+                }
+                HStack(spacing: 10) {
                     ProgressView(value: Double(runner.reviewed),
                                  total: Double(max(runner.results.count, 1)))
                         .frame(maxWidth: 220)
@@ -1127,6 +1282,29 @@ private struct ResultsPane: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private var duplicateControls: some View {
+        if runner.findingDuplicates {
+            ProgressView().controlSize(.small)
+            Text("Comparing…").font(.callout).foregroundStyle(.secondary)
+        } else if runner.duplicates.isEmpty {
+            Button("Find duplicates") { runner.findDuplicates() }
+                .controlSize(.small)
+        } else {
+            let identical = runner.duplicates.filter { $0.kind == .identical }.count
+            let likely = runner.duplicates.count - identical
+            Text("\(identical) identical, \(likely) likely")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Button("Trash \(runner.identicalExtras) spare copies") {
+                runner.markIdenticalExtras()
+                ensureSelection()
+            }
+            .controlSize(.small)
+            .disabled(runner.identicalExtras == 0)
+        }
     }
 
     @ViewBuilder
@@ -1465,7 +1643,8 @@ private struct NodeView: View {
 
     var body: some View {
         if let key = node.itemKey, let item = runner.item(key) {
-            ResultRow(item: item, decision: runner.decision(for: item))
+            ResultRow(item: item, decision: runner.decision(for: item),
+                      duplicate: runner.duplicateKind[item.key])
                 .tag(key)
                 .id(key)
         } else {
@@ -1504,6 +1683,7 @@ private struct NodeView: View {
 private struct ResultRow: View {
     let item: Item
     let decision: Decision?
+    var duplicate: DuplicateGroup.Kind?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1546,6 +1726,13 @@ private struct ResultRow: View {
                 }
             }
             Spacer(minLength: 0)
+            if let duplicate {
+                Image(systemName: duplicate == .identical ? "doc.on.doc.fill" : "doc.on.doc")
+                    .foregroundStyle(duplicate == .identical
+                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .help(duplicate == .identical ? "Byte-identical copy" : "Probably the same book")
+            }
         }
         .padding(.vertical, 3)
         .opacity(decision == .skipped ? 0.45 : 1)
@@ -1573,6 +1760,92 @@ private struct ResultRow: View {
         case nil:
             Image(systemName: "circle.dotted").foregroundStyle(.tertiary)
         }
+    }
+}
+
+/// One book on the shelf: cover, name, and the two badges that matter (what you decided,
+/// and whether another copy of it exists).
+private struct CoverCard: View {
+    let item: Item
+    let decision: Decision?
+    let duplicate: DuplicateGroup.Kind?
+    let passwords: [String]
+    @ObservedObject var covers: Covers
+    let isSelected: Bool
+
+    private var name: String {
+        if case .confirmed(let confirmed) = decision { return confirmed }
+        return item.destinationName
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(.quaternary.opacity(0.5))
+                // Touching `revision` is what redraws this card when its render lands.
+                let _ = covers.revision
+                if let cover = covers.cover(for: item, passwords: passwords, height: 320) {
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                } else {
+                    Image(systemName: item.status == .locked ? "lock.fill" : "book.closed")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(height: 168)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .topTrailing) { badges }
+
+            Text(name)
+                .font(.caption)
+                .lineLimit(2, reservesSpace: true)
+                .truncationMode(.middle)
+                .foregroundStyle(decision == .deleted ? .secondary : .primary)
+                .strikethrough(decision == .deleted)
+        }
+        .padding(7)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
+        )
+        .opacity(decision == .skipped ? 0.5 : 1)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        HStack(spacing: 3) {
+            if let duplicate {
+                Image(systemName: duplicate == .identical ? "doc.on.doc.fill" : "doc.on.doc")
+                    .foregroundStyle(duplicate == .identical
+                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .help(duplicate == .identical
+                          ? "Byte-identical copy of another file here"
+                          : "Probably the same book as another file here")
+            }
+            switch decision {
+            case .confirmed: Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+            case .applied: Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+            case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            case .deleted: Image(systemName: "trash.circle.fill")
+                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            case nil: EmptyView()
+            }
+        }
+        .font(.body)
+        .padding(5)
     }
 }
 

@@ -34,6 +34,26 @@ Optional rules cover casing, separator style (kebab or snake), symbol stripping 
 accent folding. Flip one and the whole list restyles instantly, without reopening a
 single PDF.
 
+## Two views
+
+**List** groups results by folder. **Catalogue** lays them out as covers, which is the
+one you want for a book collection. Covers render lazily and are cached, so the cost
+follows the window rather than the size of the shelf.
+
+## Duplicates
+
+**Find duplicates** groups files that are the same book twice.
+
+Byte-identical copies are found by hashing, but only within groups that already share a
+file size, so a large collection is not read end to end to answer a question most files
+settle by size alone. Everything else is grouped by a name key that ignores the date and
+copy markers, so `Dune.pdf`, `dune-2.pdf` and `Dune (1).pdf` land together while
+`Catch 22.pdf` stays clear of `Catch.pdf`.
+
+**Trash spare copies** marks the extras of byte-identical groups only, keeping the
+largest, then the shortest-named. A likely match is a guess, and guesses do not get to
+delete a book on their own: those are badged and left for you.
+
 ## Preview, review, apply
 
 Nothing on disk moves until you have looked at every file. **Preview** is read-only
