@@ -712,6 +712,11 @@ struct ContentView: View {
     @AppStorage("ruleSeparator") private var ruleSeparator: NameRules.Separator = .keep
     @AppStorage("ruleStripSymbols") private var ruleStripSymbols = false
     @AppStorage("ruleStripDiacritics") private var ruleStripDiacritics = false
+    @AppStorage("ruleAsciiOnly") private var ruleAsciiOnly = false
+    @AppStorage("ruleDropArticles") private var ruleDropArticles = false
+    @AppStorage("ruleMaxLength") private var ruleMaxLength = 0
+    @AppStorage("ruleDatePosition") private var ruleDatePosition: NameRules.DatePosition = .prefix
+    @AppStorage("ruleDateFormat") private var ruleDateFormat: NameRules.DateFormat = .dashed
 
     @AppStorage("sources") private var storedSources = ""
     @AppStorage("autoPreview") private var autoPreview = true
@@ -799,7 +804,10 @@ struct ContentView: View {
 
     private var rules: NameRules {
         NameRules(casing: ruleCasing, separator: ruleSeparator,
-                  stripSymbols: ruleStripSymbols, stripDiacritics: ruleStripDiacritics)
+                  stripSymbols: ruleStripSymbols, stripDiacritics: ruleStripDiacritics,
+                  asciiOnly: ruleAsciiOnly, dropLeadingArticles: ruleDropArticles,
+                  maxLength: ruleMaxLength, datePosition: ruleDatePosition,
+                  dateFormat: ruleDateFormat)
     }
 
     /// Exercises every rule at once, so the footer shows what each switch actually does.
@@ -829,7 +837,9 @@ struct ContentView: View {
         [
             "\(useFolderNames)", "\(useMetadataDate)", "\(useFileDate)",
             ruleCasing.rawValue, ruleSeparator.rawValue,
-            "\(ruleStripSymbols)", "\(ruleStripDiacritics)",
+            "\(ruleStripSymbols)", "\(ruleStripDiacritics)", "\(ruleAsciiOnly)",
+            "\(ruleDropArticles)", "\(ruleMaxLength)",
+            ruleDatePosition.rawValue, ruleDateFormat.rawValue,
         ].joined(separator: "\u{1}")
     }
 
@@ -1096,11 +1106,41 @@ struct ContentView: View {
                 Picker("Case", selection: $ruleCasing) {
                     ForEach(NameRules.Casing.allCases) { Text($0.label).tag($0) }
                 }
+                .help("Applied to the whole name, date aside")
                 Picker("Separators", selection: $ruleSeparator) {
                     ForEach(NameRules.Separator.allCases) { Text($0.label).tag($0) }
                 }
+                .help("Keep leaves the dashes and underscores already in the name; the "
+                      + "others normalise every run to one character")
                 Toggle("Remove symbols", isOn: $ruleStripSymbols)
+                    .help("Anything that is not a letter or digit becomes a separator, so "
+                          + "report (1)! reads report-1")
                 Toggle("Remove accents", isOn: $ruleStripDiacritics)
+                    .help("señor becomes senor. Separate from Remove symbols, since ñ is a letter")
+                Toggle("ASCII only", isOn: $ruleAsciiOnly)
+                    .help("Anything outside ASCII becomes a separator rather than vanishing, "
+                          + "so the words either side stay apart")
+                Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
+                    .help("So a shelf sorts by what the book is called rather than by its article")
+                Picker("Date goes", selection: $ruleDatePosition) {
+                    ForEach(NameRules.DatePosition.allCases) { Text($0.label).tag($0) }
+                }
+                .help("Whether the date leads the name or trails it")
+                Picker("Date looks like", selection: $ruleDateFormat) {
+                    ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
+                }
+                LabeledContent("Max length") {
+                    HStack(spacing: 6) {
+                        Slider(value: Binding(get: { Double(ruleMaxLength) },
+                                              set: { ruleMaxLength = Int($0) }),
+                               in: 0...120, step: 5)
+                        Text(ruleMaxLength == 0 ? "off" : "\(ruleMaxLength)")
+                            .monospacedDigit()
+                            .frame(width: 26, alignment: .trailing)
+                    }
+                }
+                .help("Cuts the name back on a word boundary. The date and the extension are "
+                      + "never counted or cut.")
             } header: {
                 Text("Name rules")
             } footer: {
@@ -1125,8 +1165,14 @@ struct ContentView: View {
     private var datesPanel: some View {
             Section {
                 Toggle("Use the folder name", isOn: $useFolderNames)
+                    .help("bank/2024/Extracto.pdf becomes 2024-extracto.pdf. Also stands in "
+                          + "for a stem that says nothing, like scan001")
                 Toggle("Use the PDF's creation date", isOn: $useMetadataDate)
+                    .help("When the PDF was written, which for a statement is often long "
+                          + "after the period it covers")
                 Toggle("Use the file's modification date", isOn: $useFileDate)
+                    .help("Least trustworthy: on a synced volume this is usually just when "
+                          + "the file last landed on this machine")
             } header: {
                 Text("When the filename has no date")
             } footer: {
@@ -1149,6 +1195,7 @@ struct ContentView: View {
 
             Section {
                 Toggle("Keep the originals", isOn: $moveOriginals)
+                    .help("Off replaces each file in place, with no copy kept and no undo")
                 if moveOriginals {
                     if backupCustomPath.isEmpty {
                         LabeledContent("Folder") {
@@ -1257,6 +1304,7 @@ struct ContentView: View {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Preview as soon as a source is added", isOn: $autoPreview)
+                    .help("Preview is read-only, so this changes nothing on disk")
             }
     }
 
@@ -2025,6 +2073,8 @@ private struct ResultsPane: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                .help("List groups by folder, Catalogue shows covers, BibTeX builds a "
+                      + "bibliography, Duplicates finds repeats")
 
                 ForEach(runner.statusCounts, id: \.0) { status, count in
                     StatusPill(status: status, count: count)

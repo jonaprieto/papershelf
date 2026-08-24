@@ -925,3 +925,62 @@ extension HammerTests {
         XCTAssertFalse(fm.fileExists(atPath: shelf.path))
     }
 }
+
+extension HammerTests {
+
+    // MARK: - The newer name rules
+
+    func testDatePositionAndFormat() {
+        let name = "Extracto Marzo 2024-06.pdf"
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .dash)),
+                       "2024-06-extracto-marzo.pdf")
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .dash, datePosition: .suffix)),
+                       "extracto-marzo-2024-06.pdf")
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .dash, dateFormat: .compact)),
+                       "202406-extracto-marzo.pdf")
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .dash,
+                                                                 datePosition: .suffix,
+                                                                 dateFormat: .compact)),
+                       "extracto-marzo-202406.pdf")
+    }
+
+    func testLeadingArticlesCanBeDropped() {
+        let rules = NameRules(separator: .dash, dropLeadingArticles: true)
+        XCTAssertEqual(normalizedName(for: "The Pragmatic Programmer 1999.pdf", rules: rules),
+                       "1999-pragmatic-programmer.pdf")
+        XCTAssertEqual(normalizedName(for: "El Aleph 1945.pdf", rules: rules), "1945-aleph.pdf")
+        // Only leading ones, and only whole words.
+        XCTAssertEqual(normalizedName(for: "Theory of Games 1944.pdf", rules: rules),
+                       "1944-theory-of-games.pdf")
+        XCTAssertEqual(normalizedName(for: "A Tale of Two Cities.pdf", rules: rules),
+                       "tale-of-two-cities.pdf")
+    }
+
+    func testMaxLengthCutsOnAWordBoundary() {
+        let rules = NameRules(separator: .dash, maxLength: 20)
+        // The limit applies to the slug, never to the date or the extension. Twenty
+        // characters reaches into "an", so the cut falls back to the boundary before it.
+        XCTAssertEqual(normalizedName(for: "Godel Escher Bach an Eternal Golden Braid 1979.pdf", rules: rules),
+                       "1979-godel-escher-bach.pdf")
+        // One word with no boundary inside the budget is cut at the budget, not lost.
+        XCTAssertEqual(normalizedName(for: "Supercalifragilisticexpialidocious.pdf", rules: rules),
+                       "supercalifragilistic.pdf")
+        XCTAssertEqual(normalizedName(for: "short 2020.pdf", rules: rules), "2020-short.pdf")
+    }
+
+    func testAsciiOnlyBreaksRatherThanGluing() {
+        let rules = NameRules(separator: .dash, asciiOnly: true)
+        // Unrepresentable characters become breaks, so words do not run together.
+        XCTAssertEqual(normalizedName(for: "日本語 book 2020.pdf", rules: rules), "2020-book.pdf")
+        XCTAssertEqual(normalizedName(for: "Señor Muñoz 2020.pdf", rules: rules), "2020-se-or-mu-oz.pdf")
+        // Folding accents first keeps the words whole, which is usually what is wanted.
+        XCTAssertEqual(
+            normalizedName(for: "Señor Muñoz 2020.pdf",
+                           rules: NameRules(separator: .dash, stripDiacritics: true, asciiOnly: true)),
+            "2020-senor-munoz.pdf")
+    }
+
+    func testTheNewRulesAreOffByDefault() {
+        XCTAssertEqual(normalizedName(for: "The Señor 2024.pdf", rules: .standard), "2024-the-señor.pdf")
+    }
+}

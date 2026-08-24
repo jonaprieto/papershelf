@@ -70,6 +70,20 @@ public struct NameRules: Sendable, Equatable {
         public var id: String { rawValue }
     }
 
+    /// Where the date goes once it has been lifted out of the name.
+    public enum DatePosition: String, Sendable, CaseIterable, Identifiable {
+        case prefix, suffix
+        public var id: String { rawValue }
+        public var label: String { self == .prefix ? "Front" : "End" }
+    }
+
+    /// How the date itself is written.
+    public enum DateFormat: String, Sendable, CaseIterable, Identifiable {
+        case dashed, compact
+        public var id: String { rawValue }
+        public var label: String { self == .dashed ? "2024-06" : "202406" }
+    }
+
     public var casing: Casing
     public var separator: Separator
     /// Treat anything that is not a letter or digit as a separator, so `report (1)!`
@@ -77,17 +91,37 @@ public struct NameRules: Sendable, Equatable {
     public var stripSymbols: Bool
     /// Fold accents: `señor` becomes `senor`.
     public var stripDiacritics: Bool
+    /// Treat anything outside ASCII as a separator, for filesystems and tools that are
+    /// unhappy with anything else.
+    public var asciiOnly: Bool
+    /// Drop a leading `the`, `a`, `el`, `los`, and their friends, so a shelf sorts by
+    /// what the book is called rather than by its article.
+    public var dropLeadingArticles: Bool
+    /// Cut the name back to this many characters, on a word boundary. Zero leaves it.
+    public var maxLength: Int
+    public var datePosition: DatePosition
+    public var dateFormat: DateFormat
 
     public init(
         casing: Casing = .lowercase,
         separator: Separator = .keep,
         stripSymbols: Bool = false,
-        stripDiacritics: Bool = false
+        stripDiacritics: Bool = false,
+        asciiOnly: Bool = false,
+        dropLeadingArticles: Bool = false,
+        maxLength: Int = 0,
+        datePosition: DatePosition = .prefix,
+        dateFormat: DateFormat = .dashed
     ) {
         self.casing = casing
         self.separator = separator
         self.stripSymbols = stripSymbols
         self.stripDiacritics = stripDiacritics
+        self.asciiOnly = asciiOnly
+        self.dropLeadingArticles = dropLeadingArticles
+        self.maxLength = maxLength
+        self.datePosition = datePosition
+        self.dateFormat = dateFormat
     }
 
     public static let standard = NameRules()
@@ -98,6 +132,35 @@ public struct NameRules: Sendable, Equatable {
 }
 
 private let plainSeparators: Set<Character> = ["-", "_", " "]
+
+/// Leading words worth dropping so a shelf sorts by the title rather than the article.
+private let leadingArticles: Set<String> = [
+    "the", "a", "an", "el", "la", "los", "las", "un", "una", "unos", "unas",
+    "le", "les", "der", "die", "das", "il", "lo", "o", "os", "as",
+]
+
+/// Removes leading articles, one at a time, from an already-tidied slug.
+private func withoutLeadingArticles(_ slug: String) -> String {
+    var current = slug
+    while let index = current.firstIndex(where: { plainSeparators.contains($0) }) {
+        let head = String(current[current.startIndex..<index]).lowercased()
+        guard leadingArticles.contains(head) else { break }
+        current = String(current[current.index(after: index)...])
+    }
+    return current
+}
+
+/// Cuts a slug back to `limit`, preferring the last word boundary inside the budget so a
+/// name ends on a whole word rather than mid-syllable.
+private func clipped(_ slug: String, to limit: Int) -> String {
+    guard limit > 0, slug.count > limit else { return slug }
+    let cut = String(slug.prefix(limit))
+    if let boundary = cut.lastIndex(where: { plainSeparators.contains($0) }) {
+        let head = String(cut[cut.startIndex..<boundary])
+        if !head.isEmpty { return head }
+    }
+    return cut.trimmingCharacters(in: CharacterSet(charactersIn: "-_ "))
+}
 
 /// Collapses runs of separators to a single character, trims them from both ends, and
 /// applies the casing, symbol and accent rules. Whitespace of every kind, including
@@ -115,6 +178,9 @@ private func tidy(_ input: String, _ rules: NameRules) -> String {
 
     func isSeparator(_ ch: Character) -> Bool {
         if plainSeparators.contains(ch) || ch.isWhitespace { return true }
+        // Anything unrepresentable becomes a break rather than vanishing, so the words
+        // either side do not run together.
+        if rules.asciiOnly && !ch.isASCII { return true }
         return rules.stripSymbols && !ch.isLetter && !ch.isNumber
     }
 
@@ -246,11 +312,20 @@ public func normalizedName(
         slug = slug.isEmpty ? folderSlug : "\(folderSlug)\(rules.joiner)\(slug)"
     }
 
+    if rules.dropLeadingArticles { slug = withoutLeadingArticles(slug) }
+    slug = clipped(slug, to: rules.maxLength)
+
     let prefix = found?.prefix ?? fallbackPrefixes.first { !$0.isEmpty }
 
     // A stem made entirely of stripped punctuation would otherwise leave just ".pdf".
     guard let prefix else { return slug.isEmpty ? filename : slug + ".pdf" }
-    return slug.isEmpty ? "\(prefix).pdf" : "\(prefix)\(rules.joiner)\(slug).pdf"
+    let date = rules.dateFormat == .compact
+        ? prefix.replacingOccurrences(of: "-", with: "")
+        : prefix
+    guard !slug.isEmpty else { return "\(date).pdf" }
+    return rules.datePosition == .prefix
+        ? "\(date)\(rules.joiner)\(slug).pdf"
+        : "\(slug)\(rules.joiner)\(date).pdf"
 }
 
 /// Recomputes what a file would be called under different naming rules, using only the
