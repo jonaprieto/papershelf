@@ -118,9 +118,15 @@ result can be copied or saved.
 Citation keys are `surname:year:firstword`, with a letter appended when two works would
 otherwise collide.
 
-**Show .bib** opens the flattened file, syntax-highlighted, ordered alphabetically or by
-folder. The highlighter's tokens rebuild the input exactly, so what you read is character
-for character what Copy and Save write.
+The BibTeX view has two panes: **Entries**, the browser above, and **File**, the generated
+`.bib` itself, syntax-highlighted and ordered alphabetically or by folder.
+
+The file is rendered one entry at a time inside a lazy stack, so only what is on screen is
+ever tokenized, and it is rebuilt off the main thread and only when the entries, the order
+or the filter actually move. **Edit** switches to a plain editor and the text becomes
+yours; ordering is frozen while it is, and **Discard edits** goes back to the generated
+version. The highlighter's tokens rebuild their input exactly, so what you read is
+character for character what Copy and Save write.
 
 ## Naming with AI
 

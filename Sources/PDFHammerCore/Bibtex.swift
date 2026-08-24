@@ -102,40 +102,51 @@ public enum BibOrder: String, Sendable, CaseIterable, Identifiable {
     public var label: String { self == .alphabetical ? "Alphabetical" : "By folder" }
 }
 
-/// Renders entries as a .bib file, in the layout bibtex-tidy would leave behind: one
-/// field per line, aligned, trailing commas.
-public func bibtexDocument(_ entries: [BibEntry],
-                           includeIncomplete: Bool = true,
-                           order: BibOrder = .alphabetical) -> String {
+/// Orders entries for output without rendering them.
+public func bibtexOrdered(_ entries: [BibEntry],
+                          includeIncomplete: Bool = true,
+                          order: BibOrder = .alphabetical) -> [BibEntry] {
     let usable = includeIncomplete ? entries : entries.filter(\.isComplete)
-    guard !usable.isEmpty else { return "" }
-
-    let sorted: [BibEntry]
     switch order {
     case .alphabetical:
-        sorted = usable.sorted { $0.key < $1.key }
+        return usable.sorted { $0.key < $1.key }
     case .folder:
-        sorted = usable.sorted {
+        return usable.sorted {
             let a = ($0.file as NSString).deletingLastPathComponent
             let b = ($1.file as NSString).deletingLastPathComponent
             return a == b ? $0.key < $1.key : a < b
         }
     }
+}
 
-    return sorted.map { entry -> String in
-        var fields: [(String, String)] = [("title", entry.title)]
-        if let author = entry.author { fields.append(("author", author)) }
-        if let year = entry.year { fields.append(("year", year)) }
-        fields.append(("file", entry.file))
+/// One entry, in the layout bibtex-tidy would leave behind: one field per line, aligned,
+/// trailing commas.
+///
+/// Rendering per entry rather than per file is what lets the viewer highlight only what
+/// is on screen: a collection of thousands would otherwise be tokenized in full on every
+/// redraw.
+public func bibtexBlock(_ entry: BibEntry) -> String {
+    var fields: [(String, String)] = [("title", entry.title)]
+    if let author = entry.author { fields.append(("author", author)) }
+    if let year = entry.year { fields.append(("year", year)) }
+    fields.append(("file", entry.file))
 
-        let width = fields.map(\.0.count).max() ?? 5
-        let body = fields.map { name, value in
-            let padding = String(repeating: " ", count: width - name.count)
-            return "  \(name)\(padding) = {\(bibtexEscape(value))},"
-        }.joined(separator: "\n")
+    let width = fields.map(\.0.count).max() ?? 5
+    let body = fields.map { name, value in
+        let padding = String(repeating: " ", count: width - name.count)
+        return "  \(name)\(padding) = {\(bibtexEscape(value))},"
+    }.joined(separator: "\n")
 
-        return "@book{\(entry.key),\n\(body)\n}"
-    }.joined(separator: "\n\n") + "\n"
+    return "@book{\(entry.key),\n\(body)\n}"
+}
+
+/// The whole file, for copying and saving.
+public func bibtexDocument(_ entries: [BibEntry],
+                           includeIncomplete: Bool = true,
+                           order: BibOrder = .alphabetical) -> String {
+    let ordered = bibtexOrdered(entries, includeIncomplete: includeIncomplete, order: order)
+    guard !ordered.isEmpty else { return "" }
+    return ordered.map(bibtexBlock).joined(separator: "\n\n") + "\n"
 }
 
 // MARK: - Highlighting

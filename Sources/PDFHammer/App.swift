@@ -1251,7 +1251,7 @@ private struct ResultsPane: View {
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
-    @State private var showingBibOutput = false
+    @AppStorage("bibShowsFile") private var bibShowsFile = false
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
     /// a name you simply have not touched.
@@ -1473,6 +1473,16 @@ private struct ResultsPane: View {
         VStack(spacing: 0) {
             bibBar
             Divider()
+            if bibShowsFile {
+                BibFileView(entries: runner.bib, order: $bibOrder, completeOnly: $bibCompleteOnly)
+            } else {
+                bibEntryList
+            }
+        }
+    }
+
+    private var bibEntryList: some View {
+        Group {
             ScrollViewReader { scroll in
                 List(selection: $selected) {
                     ForEach(runner.tree) { node in
@@ -1487,9 +1497,6 @@ private struct ResultsPane: View {
                     withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
                 }
             }
-        }
-        .sheet(isPresented: $showingBibOutput) {
-            BibOutputSheet(text: bibDocument, order: $bibOrder, completeOnly: $bibCompleteOnly)
         }
     }
 
@@ -1575,7 +1582,13 @@ private struct ResultsPane: View {
                     .help("Ask AI on those files to fill in author and year")
             }
             Spacer()
-            Button("Show .bib") { showingBibOutput = true }.controlSize(.small)
+            Picker("", selection: $bibShowsFile) {
+                Text("Entries").tag(false)
+                Text("File").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -2460,62 +2473,112 @@ private struct BibRow: View {
     }
 }
 
-/// The flattened file, on demand. Editing happens in the browser behind it; this is for
-/// reading, copying and saving.
-private struct BibOutputSheet: View {
-    let text: String
+/// The generated file. Entries are rendered one block at a time inside a LazyVStack, so
+/// only what is on screen is ever tokenized: highlighting the whole document on every
+/// redraw is what made this slow.
+private struct BibFileView: View {
+    let entries: [BibEntry]
     @Binding var order: BibOrder
     @Binding var completeOnly: Bool
-    @Environment(\.dismiss) private var dismiss
+
+    @State private var blocks: [String] = []
+    @State private var edited: String?
     @State private var copied = false
     @State private var saving = false
 
+    /// What Copy and Save write: the edit if there is one, otherwise the blocks joined.
+    private var text: String {
+        edited ?? (blocks.isEmpty ? "" : blocks.joined(separator: "\n\n") + "\n")
+    }
+
+    private var signature: String {
+        "\(order.rawValue)|\(completeOnly)|\(entries.count)|\(entries.first?.key ?? "")|\(entries.last?.key ?? "")"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Picker("Order", selection: $order) {
-                    ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                Toggle("Complete only", isOn: $completeOnly).toggleStyle(.checkbox)
-                Spacer()
-                Button(copied ? "Copied" : "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    copied = true
-                    Task { try? await Task.sleep(for: .seconds(2)); copied = false }
-                }
-                Button("Save…") { saving = true }
-                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
-            }
-            .padding(14)
-
+            controls
             Divider()
-
-            ScrollView([.vertical, .horizontal]) {
-                if text.isEmpty {
-                    Text("Nothing to write yet.").foregroundStyle(.secondary).padding(14)
-                } else {
-                    Text(highlighted(text))
-                        .font(.system(.callout, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
+            if edited != nil {
+                TextEditor(text: Binding(get: { edited ?? "" }, set: { edited = $0 }))
+                    .font(.system(.callout, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+            } else if blocks.isEmpty {
+                ContentUnavailableView("Nothing to write yet", systemImage: "text.quote")
+            } else {
+                ScrollView([.vertical, .horizontal]) {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                            Text(highlighted(block))
+                                .font(.system(.callout, design: .monospaced))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                    }
+                    .padding(14)
                 }
             }
         }
-        .frame(minWidth: 720, minHeight: 520)
+        // Rebuilt only when the inputs actually move, off the main thread.
+        .task(id: signature) {
+            let snapshot = entries
+            let currentOrder = order
+            let onlyComplete = completeOnly
+            let built = await Task.detached(priority: .userInitiated) {
+                bibtexOrdered(snapshot, includeIncomplete: !onlyComplete, order: currentOrder)
+                    .map(bibtexBlock)
+            }.value
+            guard !Task.isCancelled else { return }
+            blocks = built
+        }
         .fileExporter(isPresented: $saving,
                       document: BibDocument(text: text),
                       contentType: .plainText,
                       defaultFilename: "library.bib") { _ in }
     }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("Order", selection: $order) {
+                ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .disabled(edited != nil)
+
+            Toggle("Complete only", isOn: $completeOnly)
+                .toggleStyle(.checkbox)
+                .disabled(edited != nil)
+
+            if edited != nil {
+                Label("Edited by hand", systemImage: "pencil")
+                    .font(.callout)
+                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                Button("Discard edits") { edited = nil }.controlSize(.small)
+            } else {
+                Button("Edit") { edited = text }.controlSize(.small)
+            }
+
+            Spacer()
+
+            Button(copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                copied = true
+                Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+            }
+            .controlSize(.small)
+            Button("Save…") { saving = true }.controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
 }
 
-/// Colours the .bib for reading. The tokens rebuild the input exactly, so what is shown
-/// is character for character what Copy and Save produce.
+/// Colours one block for reading. The tokens rebuild their input exactly, so what is
+/// shown is character for character what Copy and Save produce.
 private func highlighted(_ text: String) -> AttributedString {
     var out = AttributedString()
     for token in bibtexTokens(text) {

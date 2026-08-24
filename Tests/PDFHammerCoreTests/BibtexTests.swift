@@ -127,3 +127,22 @@ extension BibtexTests {
         XCTAssertEqual(tokens.first { $0.kind == .value }?.text, "a \\{b\\} c")
     }
 }
+
+extension BibtexTests {
+
+    /// The lazily-rendered blocks must add up to exactly the file that gets saved.
+    func testBlocksJoinIntoTheDocument() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        func at(_ path: String) -> Item {
+            Item(root: root, source: root.appendingPathComponent(path),
+                 destination: root.appendingPathComponent(path), status: .renamed)
+        }
+        let entries = bibEntries(for: [at("b/1991-bbb.pdf"), at("a/1990-aaa.pdf")])
+
+        for order in BibOrder.allCases {
+            let blocks = bibtexOrdered(entries, order: order).map(bibtexBlock)
+            XCTAssertEqual(blocks.joined(separator: "\n\n") + "\n",
+                           bibtexDocument(entries, order: order))
+        }
+    }
+}
