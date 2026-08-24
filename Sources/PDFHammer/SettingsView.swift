@@ -62,10 +62,17 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Model") {
-                TextField("Model", text: $model)
+            Section {
                 TextField("Base URL", text: $baseURL)
                     .font(.system(.callout, design: .monospaced))
+            } header: {
+                Text("Endpoint")
+            } footer: {
+                Text("Any OpenAI-compatible endpoint. The model list is read from it, "
+                     + "and picked in the AI panel of the sidebar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

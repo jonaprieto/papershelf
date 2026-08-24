@@ -95,3 +95,18 @@ public func openingText(of url: URL, passwords: [String], pages: Int = 3) -> Str
     }
     return collected
 }
+
+
+/// Model families that cannot answer a chat request, by the words their names carry.
+private let nonChatMarkers = [
+    "embedding", "whisper", "tts", "dall-e", "moderation", "audio", "realtime",
+    "image", "search", "similarity", "edit", "davinci", "babbage", "transcribe",
+]
+
+/// Whether a model id is worth offering. Deliberately permissive: an OpenAI-compatible
+/// endpoint names its models whatever it likes, and hiding one the user has is worse than
+/// listing one they cannot use.
+public func looksLikeChatModel(_ id: String) -> Bool {
+    let lowered = id.lowercased()
+    return !nonChatMarkers.contains { lowered.contains($0) }
+}

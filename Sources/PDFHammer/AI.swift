@@ -103,6 +103,31 @@ struct AIClient {
         return key.isEmpty ? nil : key
     }
 
+    /// Asks the endpoint what it can run. Anything that clearly is not a chat model is
+    /// dropped, but the filter stays permissive: an OpenAI-compatible endpoint is free to
+    /// name its models whatever it likes, and hiding one the user has is worse than
+    /// listing one they cannot use.
+    func models() async throws -> [String] {
+        guard !apiKey.isEmpty else { throw AIError.noKey }
+        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/models")
+        else { throw AIError.unreadable("bad base URL") }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw AIError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let ids = ((object?["data"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }
+        guard !ids.isEmpty else { throw AIError.unreadable("no models listed") }
+        return ids.filter(looksLikeChatModel).sorted()
+    }
+
     func identify(filename: String, excerpt: String) async throws -> BookGuess {
         guard !apiKey.isEmpty else { throw AIError.noKey }
         guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")

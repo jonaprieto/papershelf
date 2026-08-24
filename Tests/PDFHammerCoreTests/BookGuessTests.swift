@@ -99,3 +99,20 @@ final class BookGuessTests: XCTestCase {
                        "SCAN001.pdf")
     }
 }
+
+
+final class ModelFilterTests: XCTestCase {
+
+    /// The filter drops what plainly cannot answer a chat request and keeps the rest,
+    /// including names from endpoints that are not OpenAI's.
+    func testChatModelsSurviveAndOthersDoNot() {
+        let kept = ["gpt-4o-mini", "gpt-4.1", "o3-mini", "claude-3-5-sonnet",
+                    "llama-3.3-70b", "mistral-large", "deepseek-chat", "qwen2.5-72b"]
+        let dropped = ["text-embedding-3-small", "whisper-1", "tts-1-hd", "dall-e-3",
+                       "omni-moderation-latest", "gpt-4o-realtime-preview",
+                       "gpt-4o-audio-preview", "gpt-4o-transcribe", "davinci-002"]
+
+        for id in kept { XCTAssertTrue(looksLikeChatModel(id), "\(id) should be offered") }
+        for id in dropped { XCTAssertFalse(looksLikeChatModel(id), "\(id) should be hidden") }
+    }
+}

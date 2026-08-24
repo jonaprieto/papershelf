@@ -728,6 +728,10 @@ struct ContentView: View {
     @AppStorage("bibSortFields") private var bibSortFields = false
     @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
     @AppStorage("bibOmitFile") private var bibOmitFile = false
+    @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
+    @State private var availableModels: [String] = []
+    @State private var loadingModels = false
+    @State private var modelsError: String?
 
     @StateObject private var runner = Runner()
     @StateObject private var covers = Covers()
@@ -776,6 +780,22 @@ struct ContentView: View {
     }
 
     private var aiReady: Bool { !aiClient.apiKey.isEmpty }
+
+    /// The list is asked for once a key exists, and on demand after that.
+    private func loadModels() {
+        guard aiReady, !loadingModels else { return }
+        loadingModels = true
+        modelsError = nil
+        let client = aiClient
+        Task {
+            do {
+                availableModels = try await client.models()
+            } catch {
+                modelsError = error.localizedDescription
+            }
+            loadingModels = false
+        }
+    }
 
     private var rules: NameRules {
         NameRules(casing: ruleCasing, separator: ruleSeparator,
@@ -899,6 +919,7 @@ struct ContentView: View {
             sizeWindowOnFirstLaunch()
             NSApp.appearance = appearance.nsAppearance
             restoreSources()
+            if aiReady && availableModels.isEmpty { loadModels() }
         }
         .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
         // Restyling is cheap but not free, so let a run of toggles settle first.
@@ -950,8 +971,54 @@ struct ContentView: View {
 
     // MARK: Sidebar
 
+    /// An icon rail with one panel behind it, the way an editor does it. Everything used
+    /// to be one long scroll of nine sections; this shows one job at a time.
     private var sidebar: some View {
-        Form {
+        HStack(spacing: 0) {
+            rail
+            Divider()
+            Form {
+                switch sidebarTab {
+                case .sources: sourcesPanel
+                case .passwords: passwordsPanel
+                case .naming:
+                    namingPanel
+                    datesPanel
+                case .files:
+                    originalsPanel
+                    runningPanel
+                case .ai: aiPanel
+                case .bibtex: bibtexPanel
+                case .appearance: appearancePanel
+                }
+            }
+            .formStyle(.grouped)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var rail: some View {
+        VStack(spacing: 2) {
+            ForEach(SidebarTab.allCases) { tab in
+                RailButton(tab: tab, isSelected: sidebarTab == tab) { sidebarTab = tab }
+            }
+            Spacer()
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15))
+                    .frame(width: 34, height: 32)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Settings")
+        }
+        .padding(.vertical, 8)
+        .frame(width: 46)
+        .background(.quaternary.opacity(0.25))
+    }
+
+    @ViewBuilder
+    private var sourcesPanel: some View {
             Section("Sources") {
                 if selection.isEmpty {
                     Text("Nothing selected")
@@ -975,7 +1042,11 @@ struct ContentView: View {
                     .buttonStyle(.link)
                 }
             }
+    }
 
+
+    @ViewBuilder
+    private var passwordsPanel: some View {
             Section {
                 ForEach(Array(passwordRows.enumerated()), id: \.offset) { index, _ in
                     HStack(spacing: 6) {
@@ -1016,7 +1087,11 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+    }
 
+
+    @ViewBuilder
+    private var namingPanel: some View {
             Section {
                 Picker("Case", selection: $ruleCasing) {
                     ForEach(NameRules.Casing.allCases) { Text($0.label).tag($0) }
@@ -1043,7 +1118,11 @@ struct ContentView: View {
                 .truncationMode(.middle)
                 .padding(.top, 2)
             }
+    }
 
+
+    @ViewBuilder
+    private var datesPanel: some View {
             Section {
                 Toggle("Use the folder name", isOn: $useFolderNames)
                 Toggle("Use the PDF's creation date", isOn: $useMetadataDate)
@@ -1056,6 +1135,17 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+    }
+
+
+    @ViewBuilder
+    private var originalsPanel: some View {
+        if !moveOriginals {
+            Section {
+                Note(icon: "exclamationmark.triangle.fill", tint: .orange,
+                     text: "Applying will replace the originals. Nothing is kept and there is no undo.")
+            }
+        }
 
             Section {
                 Toggle("Keep the originals", isOn: $moveOriginals)
@@ -1094,7 +1184,11 @@ struct ContentView: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
+    }
 
+
+    @ViewBuilder
+    private var aiPanel: some View {
             Section {
                 LabeledContent("API key") {
                     if aiReady {
@@ -1105,8 +1199,32 @@ struct ContentView: View {
                             .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
                     }
                 }
-                LabeledContent("Model") {
-                    Text(aiModel).font(.callout.monospaced()).foregroundStyle(.secondary)
+                if availableModels.isEmpty {
+                    LabeledContent("Model") {
+                        TextField("", text: $aiModel, prompt: Text("gpt-4o-mini"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.callout, design: .monospaced))
+                    }
+                } else {
+                    Picker("Model", selection: $aiModel) {
+                        // The stored one may not be in the list; keep it selectable.
+                        if !availableModels.contains(aiModel) {
+                            Text(aiModel).tag(aiModel)
+                        }
+                        ForEach(availableModels, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                HStack {
+                    Button(loadingModels ? "Loading…" : "Refresh models", action: loadModels)
+                        .buttonStyle(.link)
+                        .disabled(!aiReady || loadingModels)
+                    if let modelsError {
+                        Text(modelsError)
+                            .font(.caption)
+                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .lineLimit(2)
+                    }
                 }
                 SettingsLink {
                     Label("Open settings", systemImage: "gearshape")
@@ -1129,52 +1247,62 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+    }
 
+
+    @ViewBuilder
+    private var runningPanel: some View {
             Section("Running") {
                 Picker("Default view", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Preview as soon as a source is added", isOn: $autoPreview)
             }
+    }
 
-            if mode == .bibliography {
-                Section {
-                    LabeledContent("Line width") {
-                        HStack(spacing: 6) {
-                            Slider(value: Binding(get: { Double(bibLineWidth) },
-                                                  set: { bibLineWidth = Int($0) }),
-                                   in: 0...200, step: 10)
-                            Text(bibLineWidth == 0 ? "off" : "\(bibLineWidth)")
-                                .monospacedDigit()
-                                .frame(width: 30, alignment: .trailing)
-                        }
+
+    @ViewBuilder
+    private var bibtexPanel: some View {
+            Section {
+                LabeledContent("Line width") {
+                    HStack(spacing: 6) {
+                        Slider(value: Binding(get: { Double(bibLineWidth) },
+                                              set: { bibLineWidth = Int($0) }),
+                               in: 0...200, step: 10)
+                        Text(bibLineWidth == 0 ? "off" : "\(bibLineWidth)")
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .trailing)
                     }
-                    Picker("Indent", selection: $bibIndent) {
-                        Text("2 spaces").tag(2)
-                        Text("4 spaces").tag(4)
-                        Text("None").tag(0)
-                    }
-                    Picker("Values in", selection: $bibDelimiter) {
-                        ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
-                    }
-                    Toggle("Align the equals signs", isOn: $bibAlign)
-                    Toggle("Trailing comma", isOn: $bibTrailingComma)
-                    Toggle("Blank line between entries", isOn: $bibBlankLines)
-                    Toggle("Sort fields alphabetically", isOn: $bibSortFields)
-                    Toggle("Lowercase ALL-CAPS values", isOn: $bibDropAllCaps)
-                    Toggle("Omit the file field", isOn: $bibOmitFile)
-                } header: {
-                    Text("BibTeX")
-                } footer: {
-                    Text("A long value wraps onto indented continuations. A single word "
-                         + "longer than the budget is left whole, since breaking a path to "
-                         + "satisfy a column is worse than exceeding it.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Picker("Indent", selection: $bibIndent) {
+                    Text("2 spaces").tag(2)
+                    Text("4 spaces").tag(4)
+                    Text("None").tag(0)
+                }
+                Picker("Values in", selection: $bibDelimiter) {
+                    ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle("Align the equals signs", isOn: $bibAlign)
+                Toggle("Trailing comma", isOn: $bibTrailingComma)
+                Toggle("Blank line between entries", isOn: $bibBlankLines)
+                Toggle("Sort fields alphabetically", isOn: $bibSortFields)
+                Toggle("Lowercase ALL-CAPS values", isOn: $bibDropAllCaps)
+                Toggle("Omit the file field", isOn: $bibOmitFile)
+            } header: {
+                Text("BibTeX")
+            } footer: {
+                Text("A long value wraps onto indented continuations. A single word "
+                     + "longer than the budget is left whole, since breaking a path to "
+                     + "satisfy a column is worse than exceeding it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+    }
 
+
+    @ViewBuilder
+    private var appearancePanel: some View {
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
@@ -1182,16 +1310,8 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
-
-            if !moveOriginals {
-                Section {
-                    Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                         text: "Applying will replace the originals. Nothing is kept and there is no undo.")
-                }
-            }
-        }
-        .formStyle(.grouped)
     }
+
 
     // MARK: Toolbar
 
@@ -2909,5 +3029,70 @@ private struct DuplicateRow: View {
         }
         .padding(.vertical, 3)
         .opacity(decision == .deleted ? 0.55 : 1)
+    }
+}
+
+// MARK: - Sidebar rail
+
+enum SidebarTab: String, CaseIterable, Identifiable {
+    case sources, passwords, naming, files, ai, bibtex, appearance
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .sources: return "folder"
+        case .passwords: return "key"
+        case .naming: return "textformat"
+        case .files: return "tray.full"
+        case .ai: return "sparkles"
+        case .bibtex: return "text.quote"
+        case .appearance: return "paintbrush"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .sources: return "Sources"
+        case .passwords: return "Passwords"
+        case .naming: return "Name rules"
+        case .files: return "Files"
+        case .ai: return "AI"
+        case .bibtex: return "BibTeX"
+        case .appearance: return "Appearance"
+        }
+    }
+}
+
+private struct RailButton: View {
+    let tab: SidebarTab
+    let isSelected: Bool
+    let select: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: select) {
+            Image(systemName: tab.icon)
+                .font(.system(size: 15))
+                .frame(width: 34, height: 32)
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isSelected ? Color.accentColor.opacity(0.15)
+                              : hovering ? Color.secondary.opacity(0.12) : .clear)
+                )
+                // The marker an editor puts on the active tab.
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(isSelected ? Color.accentColor : .clear)
+                        .frame(width: 2, height: 18)
+                        .offset(x: -6)
+                }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tab.title)
+        .accessibilityLabel(tab.title)
     }
 }
