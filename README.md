@@ -36,9 +36,14 @@ single PDF.
 
 ## Two views
 
-**List** groups results by folder. **Catalogue** lays them out as covers, which is the
-one you want for a book collection. Covers render lazily and are cached, so the cost
-follows the window rather than the size of the shelf.
+**Catalogue** is the default: covers laid out as a shelf. Thumbnails render lazily and
+are cached, so the cost follows the window rather than the size of the collection.
+**List** groups the same results by folder instead.
+
+Sources are kept as a set of non-overlapping roots. Picking a folder absorbs anything
+already selected inside it, and a file or folder already covered is never added twice.
+Overlap is not harmless: a file reachable from two roots would be attributed to whichever
+was scanned first, and that root decides where its `original_pdfs/` backup lands.
 
 ## Duplicates
 

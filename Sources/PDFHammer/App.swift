@@ -870,10 +870,10 @@ struct ContentView: View {
         }
     }
 
+    /// The selection is a set of non-overlapping roots: a folder absorbs anything already
+    /// picked inside it, and nothing already covered is added twice.
     private func add(_ urls: [URL]) {
-        for url in urls where !selection.contains(url) {
-            selection.append(url)
-        }
+        selection = mergedSources(selection, adding: urls)
     }
 
     /// The results list is greedy, which makes `.defaultSize` lose and the window open at
@@ -958,7 +958,7 @@ private struct ResultsPane: View {
     private var hasSources: Bool { sourceCount > 0 }
 
 
-    @AppStorage("viewMode") private var mode: ViewMode = .list
+    @AppStorage("viewMode") private var mode: ViewMode = .catalogue
     @StateObject private var covers = Covers()
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from

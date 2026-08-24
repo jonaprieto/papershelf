@@ -309,6 +309,37 @@ public func items(under folder: String, in list: [Item]) -> [Item] {
     return list.filter { $0.key.hasPrefix(prefix) }
 }
 
+// MARK: - Sources
+
+/// True when `child` is `parent` itself, or sits anywhere beneath it.
+private func covers(_ parent: URL, _ child: URL) -> Bool {
+    guard isDirectory(parent) else { return false }
+    let parentPath = parent.resolvingSymlinksInPath().path
+    let childPath = child.resolvingSymlinksInPath().path
+    return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
+}
+
+/// Folds `adding` into `current` so the selection stays a set of non-overlapping roots.
+///
+/// Overlap is not harmless: a file reachable from two selected folders would be
+/// attributed to whichever was scanned first, and that root decides where its
+/// `original_pdfs/` backup lands. Selecting a folder therefore absorbs anything already
+/// selected beneath it, and anything already covered is never added.
+public func mergedSources(_ current: [URL], adding additions: [URL]) -> [URL] {
+    var result = current
+    for candidate in additions {
+        let resolved = candidate.resolvingSymlinksInPath()
+        // Already covered, by itself or by a folder above it.
+        if result.contains(where: { covers($0, resolved) || $0.resolvingSymlinksInPath() == resolved }) {
+            continue
+        }
+        // This one supersedes anything already selected inside it.
+        result.removeAll { covers(resolved, $0) }
+        result.append(candidate)
+    }
+    return result
+}
+
 // MARK: - Password list
 
 /// The password list is stored as one newline-separated string so it fits in a single

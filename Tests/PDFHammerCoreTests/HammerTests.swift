@@ -719,4 +719,51 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual(groups.count, 1)
         XCTAssertEqual(groups.first?.items.count, 3)
     }
+
+    // MARK: - Sources
+
+    func testSourcesStayANonOverlappingSet() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let shelf = root.appendingPathComponent("shelf")
+        let scifi = shelf.appendingPathComponent("scifi")
+        try fm.createDirectory(at: scifi, withIntermediateDirectories: true)
+        let book = scifi.appendingPathComponent("Dune.pdf")
+        try makePDF(at: book, password: nil)
+
+        // The same folder twice is one entry.
+        XCTAssertEqual(mergedSources([], adding: [shelf, shelf]).count, 1)
+
+        // A subfolder of something already selected is not added.
+        XCTAssertEqual(mergedSources([shelf], adding: [scifi]).map(\.lastPathComponent), ["shelf"])
+
+        // Nor is a file inside it.
+        XCTAssertEqual(mergedSources([shelf], adding: [book]).map(\.lastPathComponent), ["shelf"])
+
+        // Selecting the parent afterwards absorbs what was already there.
+        XCTAssertEqual(mergedSources([scifi, book], adding: [shelf]).map(\.lastPathComponent), ["shelf"])
+
+        // Siblings coexist, and a name that merely shares a prefix is not "inside".
+        let other = root.appendingPathComponent("shelf-old")
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        XCTAssertEqual(Set(mergedSources([shelf], adding: [other]).map(\.lastPathComponent)),
+                       ["shelf", "shelf-old"])
+    }
+
+    func testOverlappingSourcesWouldOtherwiseSplitTheBackupLocation() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let inner = root.appendingPathComponent("inner")
+        try fm.createDirectory(at: inner, withIntermediateDirectories: true)
+        try makePDF(at: inner.appendingPathComponent("Extracto_2024-06.pdf"), password: nil)
+
+        // Merged first, the file is attributed to the outer root only.
+        let sources = mergedSources([], adding: [root, inner])
+        XCTAssertEqual(sources.count, 1)
+        let jobs = collectJobs(roots: sources, recursive: true)
+        XCTAssertEqual(jobs.count, 1)
+        XCTAssertEqual(jobs.first?.root.lastPathComponent, root.lastPathComponent)
+    }
 }
