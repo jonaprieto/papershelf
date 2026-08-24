@@ -25,6 +25,7 @@ struct PDFHammerApp: App {
         Window("PDF Hammer", id: "main") {
             ContentView(chrome: chrome)
         }
+        Settings { SettingsView() }
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .sidebar) {
@@ -337,6 +338,54 @@ final class Runner: ObservableObject {
         }
     }
 
+    @Published private(set) var thinking: Set<String> = []
+    @Published var aiError: String?
+
+    /// Asks the model what a file is and puts the answer in as the suggested name.
+    /// Nothing is decided: the suggestion still has to be confirmed like any other.
+    func identify(_ item: Item, client: AIClient, passwords: [String], rules: NameRules) async {
+        guard !thinking.contains(item.key) else { return }
+        thinking.insert(item.key)
+        defer { thinking.remove(item.key) }
+
+        let source = item.source
+        let excerpt = await Task.detached(priority: .userInitiated) {
+            openingText(of: source, passwords: passwords)
+        }.value
+
+        do {
+            let guess = try await client.identify(filename: item.sourceName, excerpt: excerpt)
+            let name = filename(for: guess, rules: rules)
+            guard !name.isEmpty, let index = indexByKey[item.key] else { return }
+            var updated = results[index]
+            updated.destination = updated.source.deletingLastPathComponent()
+                .appendingPathComponent(name)
+            replace(item.key, with: updated)
+        } catch {
+            aiError = error.localizedDescription
+        }
+    }
+
+    func isThinking(_ item: Item) -> Bool { thinking.contains(item.key) }
+
+    /// Runs over everything still undecided, a few at a time so one slow reply does not
+    /// hold up the rest and the service is not hit with hundreds at once.
+    func identifyPending(client: AIClient, passwords: [String], rules: NameRules) async {
+        let queue = results.filter { decisions[$0.key] == nil }
+        var index = 0
+        while index < queue.count {
+            let slice = queue[index..<min(index + 4, queue.count)]
+            await withTaskGroup(of: Void.self) { group in
+                for item in slice {
+                    group.addTask { @MainActor in
+                        await self.identify(item, client: client, passwords: passwords, rules: rules)
+                    }
+                }
+            }
+            index += 4
+        }
+    }
+
     func preview(roots: [URL], options: Options, fingerprint: String) {
         begin(fingerprint: fingerprint, dry: true)
 
@@ -516,7 +565,7 @@ extension Color {
     }
 }
 
-private func srgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor {
+func srgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor {
     NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
 }
 
@@ -527,6 +576,9 @@ struct ContentView: View {
     // warns while the list is empty, and what you type is kept in UserDefaults.
     @AppStorage("passwords") private var passwordsText = ""
     @AppStorage("moveOriginals") private var moveOriginals = true
+    @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
+    @AppStorage("backupCustomPath") private var backupCustomPath = ""
+    @State private var choosingBackupFolder = false
     @AppStorage("useFolderNames") private var useFolderNames = true
     @AppStorage("useMetadataDate") private var useMetadataDate = false
     @AppStorage("useFileDate") private var useFileDate = false
@@ -568,6 +620,14 @@ struct ContentView: View {
         )
     }
 
+    private var backup: BackupSettings {
+        BackupSettings(
+            enabled: moveOriginals,
+            folderName: backupFolderName,
+            customLocation: backupCustomPath.isEmpty ? nil : URL(fileURLWithPath: backupCustomPath)
+        )
+    }
+
     private var rules: NameRules {
         NameRules(casing: ruleCasing, separator: ruleSeparator,
                   stripSymbols: ruleStripSymbols, stripDiacritics: ruleStripDiacritics)
@@ -579,7 +639,7 @@ struct ContentView: View {
     private func options(dryRun: Bool) -> Options {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
-                moveOriginals: moveOriginals, useFolderNames: useFolderNames,
+                backup: backup, useFolderNames: useFolderNames,
                 useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
     }
 
@@ -587,8 +647,11 @@ struct ContentView: View {
     /// Change one of these and the preview no longer describes reality, so Apply is
     /// blocked until Preview runs again.
     private var fingerprint: String {
-        [selection.map(\.path).joined(separator: "|"), passwords.joined(separator: "|")]
-            .joined(separator: "\u{1}")
+        [
+            selection.map(\.path).joined(separator: "|"),
+            passwords.joined(separator: "|"),
+            "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
+        ].joined(separator: "\u{1}")
     }
 
     /// What only changes the names. These are answered from dates already captured, so
@@ -599,6 +662,17 @@ struct ContentView: View {
             ruleCasing.rawValue, ruleSeparator.rawValue,
             "\(ruleStripSymbols)", "\(ruleStripDiacritics)",
         ].joined(separator: "\u{1}")
+    }
+
+    private var backupSummary: String {
+        guard moveOriginals else {
+            return "Originals are replaced in place. Nothing is kept and there is no undo."
+        }
+        if backupCustomPath.isEmpty {
+            return "Moved to \(backup.safeFolderName)/ inside each source you pick, "
+                 + "mirroring their subfolders."
+        }
+        return "Moved to the folder above, under one subfolder per source."
     }
 
     private var previewIsCurrent: Bool {
@@ -654,6 +728,7 @@ struct ContentView: View {
                 sourceCount: selection.count,
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
+                rules: rules,
                 chooseFiles: { importing = true },
                 preview: preview,
                 apply: confirmApply,
@@ -687,6 +762,15 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(applyWarnings.joined(separator: "\n\n"))
+        }
+        .fileImporter(
+            isPresented: $choosingBackupFolder,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { outcome in
+            if case .success(let urls) = outcome, let folder = urls.first {
+                backupCustomPath = folder.path
+            }
         }
         .fileImporter(
             isPresented: $importing,
@@ -816,8 +900,42 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Files") {
-                Toggle("Move originals to original_pdfs/", isOn: $moveOriginals)
+            Section {
+                Toggle("Keep the originals", isOn: $moveOriginals)
+                if moveOriginals {
+                    if backupCustomPath.isEmpty {
+                        LabeledContent("Folder") {
+                            TextField("", text: $backupFolderName, prompt: Text(defaultBackupFolderName))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.callout, design: .monospaced))
+                        }
+                    } else {
+                        LabeledContent("Folder") {
+                            Text(backupCustomPath)
+                                .font(.caption.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                        }
+                    }
+                    HStack {
+                        Button("Choose folder…") { choosingBackupFolder = true }
+                            .buttonStyle(.link)
+                        Spacer()
+                        if !backupCustomPath.isEmpty {
+                            Button("Use a folder per source") { backupCustomPath = "" }
+                                .buttonStyle(.link)
+                        }
+                    }
+                }
+            } header: {
+                Text("Originals")
+            } footer: {
+                Text(backupSummary)
+                    .font(.caption)
+                    .foregroundStyle(moveOriginals ? .secondary : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Appearance") {
@@ -842,6 +960,11 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            SettingsLink { Label("Settings", systemImage: "gearshape") }
+                .help("API key, model and endpoint")
+        }
+
         ToolbarItemGroup(placement: .primaryAction) {
             switch runner.phase {
             case .scanning:
@@ -950,6 +1073,7 @@ private struct ResultsPane: View {
     let sourceCount: Int
     let previewIsCurrent: Bool
     let passwords: [String]
+    let rules: NameRules
     let chooseFiles: () -> Void
     let preview: () -> Void
     let apply: () -> Void
@@ -959,6 +1083,10 @@ private struct ResultsPane: View {
 
 
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
+    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
+    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
+    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
+    @State private var confirmingBatchAI = false
     @StateObject private var covers = Covers()
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
@@ -973,6 +1101,18 @@ private struct ResultsPane: View {
 
     private var selectedItem: Item? {
         runner.results.first { $0.key == selected }
+    }
+
+    private var aiClient: AIClient {
+        AIClient(baseURL: aiBaseURL, model: aiModel,
+                 apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+    }
+
+    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
+
+    private func identifySelected() {
+        guard let item = selectedItem, aiReady else { return }
+        Task { await runner.identify(item, client: aiClient, passwords: passwords, rules: rules) }
     }
 
     private func currentName(_ item: Item) -> String {
@@ -1020,6 +1160,23 @@ private struct ResultsPane: View {
         // A restyle rewrites the suggestions under the current selection.
         .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
         .onDisappear(perform: removeKeyMonitor)
+        .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
+                            isPresented: $confirmingBatchAI) {
+            Button("Send \(runner.pendingCount) requests") {
+                Task { await runner.identifyPending(client: aiClient, passwords: passwords, rules: rules) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("One request per file, each carrying the filename and the first pages' text. "
+                 + "You are billed by \(aiModel)'s provider.")
+        }
+        .alert("The service could not be reached",
+               isPresented: Binding(get: { runner.aiError != nil },
+                                    set: { if !$0 { runner.aiError = nil } })) {
+            Button("OK") { runner.aiError = nil }
+        } message: {
+            Text(runner.aiError ?? "")
+        }
     }
 
     // MARK: Keys
@@ -1057,6 +1214,7 @@ private struct ResultsPane: View {
         case "s": skip()
         case "f": skipFolder()
         case "a": applyNow()
+        case "g": identifySelected()
         case "d": markDeleted()
         case "r": reopenSelected()
         case "j", "n": step(by: 1)
@@ -1198,6 +1356,8 @@ private struct ResultsPane: View {
                 skip: skip,
                 skipFolder: skipFolder,
                 applyNow: applyNow,
+                identify: identifySelected,
+                aiReady: aiReady,
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
                 reset: { draft = item.destinationName },
@@ -1252,6 +1412,10 @@ private struct ResultsPane: View {
                     .frame(width: 96)
 
                     duplicateControls
+                    if aiReady && runner.pendingCount > 0 {
+                        Button("Ask AI for \(runner.pendingCount) names") { confirmingBatchAI = true }
+                            .controlSize(.small)
+                    }
                     Divider().frame(height: 16)
                 }
                 HStack(spacing: 10) {
@@ -1384,6 +1548,8 @@ private struct ReviewInspector: View {
     let skip: () -> Void
     let skipFolder: () -> Void
     let applyNow: () -> Void
+    let identify: () -> Void
+    let aiReady: Bool
     let markDeleted: () -> Void
     let reopen: () -> Void
     let reset: () -> Void
@@ -1422,6 +1588,9 @@ private struct ReviewInspector: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     StatusPill(status: item.status, count: nil)
+                    if runner.isThinking(item) {
+                        ProgressView().controlSize(.small)
+                    }
                     Text(folderPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1476,6 +1645,11 @@ private struct ReviewInspector: View {
                     Button(action: applyNow) { KeyLabel("A", "Apply now") }
                         .disabled(decision == .applied)
                         .help("Rename this one file right now, without waiting for the batch")
+                    Button(action: identify) { KeyLabel("G", "Ask AI") }
+                        .disabled(!aiReady || runner.isThinking(item))
+                        .help(aiReady
+                              ? "Read the opening pages and suggest a title"
+                              : "Add an API key in Settings first")
                     Button(action: skip) { KeyLabel("S", "Skip") }
                     Button(action: skipFolder) {
                         KeyLabel("F", folderScopeLabel)

@@ -1,0 +1,71 @@
+import XCTest
+@testable import PDFHammerCore
+
+final class BookGuessTests: XCTestCase {
+
+    func testParsesAPlainObject() {
+        let guess = parseBookGuess(#"{"title": "Gödel, Escher, Bach", "author": "Hofstadter", "year": "1979"}"#)
+        XCTAssertEqual(guess, BookGuess(title: "Gödel, Escher, Bach", author: "Hofstadter", year: "1979"))
+    }
+
+    func testToleratesFencesAndSurroundingProse() {
+        let reply = """
+        Sure, here is the result:
+        ```json
+        {"title": "Dune", "author": "Herbert", "year": 1965}
+        ```
+        Let me know if you need anything else.
+        """
+        XCTAssertEqual(parseBookGuess(reply), BookGuess(title: "Dune", author: "Herbert", year: "1965"))
+    }
+
+    func testMissingFieldsStayMissing() {
+        // Both real nulls and the string "null", which models emit often enough to matter.
+        XCTAssertEqual(parseBookGuess(#"{"title": "Untitled", "author": null, "year": "null"}"#),
+                       BookGuess(title: "Untitled", author: nil, year: nil))
+        XCTAssertEqual(parseBookGuess(#"{"title": "Solo", "author": "  "}"#),
+                       BookGuess(title: "Solo", author: nil, year: nil))
+    }
+
+    func testUnusableRepliesAreRejected() {
+        XCTAssertNil(parseBookGuess("I could not identify this document."))
+        XCTAssertNil(parseBookGuess("{}"))
+        XCTAssertNil(parseBookGuess(#"{"author": "Herbert"}"#), "a guess without a title is useless")
+        XCTAssertNil(parseBookGuess("{not json at all}"))
+    }
+
+    func testFilenameLeadsWithTheYear() {
+        let guess = BookGuess(title: "Gödel, Escher, Bach", author: "Hofstadter", year: "1979")
+        XCTAssertEqual(
+            filename(for: guess, rules: NameRules(separator: .dash, stripSymbols: true)),
+            "1979-gödel-escher-bach-hofstadter.pdf")
+        XCTAssertEqual(
+            filename(for: guess, rules: NameRules(separator: .dash, stripSymbols: true, stripDiacritics: true)),
+            "1979-godel-escher-bach-hofstadter.pdf")
+    }
+
+    /// The year of publication must win over a number that happens to be the title.
+    func testATitleThatIsANumberDoesNotBecomeTheDate() {
+        let rules = NameRules(separator: .dash, stripSymbols: true)
+        XCTAssertEqual(filename(for: BookGuess(title: "1984", author: "Orwell", year: "1949"), rules: rules),
+                       "1949-1984-orwell.pdf")
+    }
+
+    func testPartialGuessesStillProduceAName() {
+        let rules = NameRules(separator: .dash, stripSymbols: true)
+        XCTAssertEqual(filename(for: BookGuess(title: "Refactoring"), rules: rules), "refactoring.pdf")
+        XCTAssertEqual(filename(for: BookGuess(title: "Dune", year: "1965"), rules: rules), "1965-dune.pdf")
+        XCTAssertEqual(filename(for: BookGuess(title: "  "), rules: rules), "")
+    }
+
+    func testPromptCarriesTheFilenameAndIsClipped() {
+        let prompt = bookGuessPrompt(filename: "scan001.pdf", excerpt: String(repeating: "a", count: 5000), limit: 100)
+        XCTAssertTrue(prompt.contains("scan001.pdf"))
+        XCTAssertLessThan(prompt.count, 300)
+    }
+
+    func testPromptSaysSoWhenThereIsNoTextLayer() {
+        let prompt = bookGuessPrompt(filename: "scan.pdf", excerpt: "   \n \n ")
+        XCTAssertTrue(prompt.contains("no text layer"))
+    }
+}

@@ -59,6 +59,22 @@ copy markers, so `Dune.pdf`, `dune-2.pdf` and `Dune (1).pdf` land together while
 largest, then the shortest-named. A likely match is a guess, and guesses do not get to
 delete a book on their own: those are badged and left for you.
 
+## Naming with AI
+
+`G`, or **Ask AI**, reads the opening pages and suggests a title. The reply becomes a
+suggestion like any other: it still has to be confirmed, and you can type over it.
+**Ask AI for N names** runs the whole pending queue, four at a time, behind a
+confirmation that names the count, since you are billed per request.
+
+Settings (the gear, or ⌘,) holds the key, model and endpoint. Any OpenAI-compatible
+endpoint works. The key is kept in your Keychain rather than in preferences, which are a
+plain file any process running as you can read. `OPENAI_API_KEY` is used as a fallback,
+though an app launched from Finder does not inherit a shell's environment, so that only
+helps when it is launched from a terminal.
+
+Only the filename and the first pages' text are sent. The file itself never leaves the
+machine, and nothing is sent unless you ask.
+
 ## Preview, review, apply
 
 Nothing on disk moves until you have looked at every file. **Preview** is read-only
@@ -79,8 +95,10 @@ Apply runs the reviewed plan against the exact files the preview found and uses
 your confirmed names verbatim. Change a source, a password or a rule and it greys
 out until you preview again, so a stale plan can never run.
 
-Originals move to `original_pdfs/` by default, mirroring their subfolders. Delete
-always means the Trash, never an outright removal.
+Originals move to `original_pdfs/` inside each source by default, mirroring their
+subfolders. You can rename that folder or point everything at one folder anywhere on
+disk, in which case each source gets its own subfolder so two roots holding the same
+relative path do not collide. Delete always means the Trash, never an outright removal.
 
 ## Notes
 

@@ -434,8 +434,9 @@ public struct Options: Sendable {
     public var passwords: [String]
     public var recursive: Bool
     public var dryRun: Bool
-    /// Move each original into `original_pdfs/`. Off means the file is replaced in place.
-    public var moveOriginals: Bool
+    public var backup: BackupSettings
+    /// Move each original aside. Off means the file is replaced in place.
+    public var moveOriginals: Bool { backup.enabled }
     /// All three only apply when the filename itself carries no date, and are consulted
     /// in this order. None of them can displace a date the filename already states.
     public var useFolderNames: Bool
@@ -447,7 +448,7 @@ public struct Options: Sendable {
         passwords: [String],
         recursive: Bool,
         dryRun: Bool,
-        moveOriginals: Bool = true,
+        backup: BackupSettings = .standard,
         useFolderNames: Bool = true,
         useMetadataDate: Bool = false,
         useFileDate: Bool = false,
@@ -456,7 +457,7 @@ public struct Options: Sendable {
         self.passwords = passwords
         self.recursive = recursive
         self.dryRun = dryRun
-        self.moveOriginals = moveOriginals
+        self.backup = backup
         self.useFolderNames = useFolderNames
         self.useMetadataDate = useMetadataDate
         self.useFileDate = useFileDate
@@ -464,7 +465,38 @@ public struct Options: Sendable {
     }
 }
 
-public let backupDirectoryName = "original_pdfs"
+public let defaultBackupFolderName = "original_pdfs"
+
+/// Where originals go once a file has been rewritten.
+public struct BackupSettings: Sendable, Equatable {
+    public var enabled: Bool
+    /// A single path component, created inside each selected root.
+    public var folderName: String
+    /// One folder for everything, anywhere on disk. Wins over `folderName`.
+    public var customLocation: URL?
+
+    public init(enabled: Bool = true,
+                folderName: String = defaultBackupFolderName,
+                customLocation: URL? = nil) {
+        self.enabled = enabled
+        self.folderName = folderName
+        self.customLocation = customLocation
+    }
+
+    /// A usable single path component. Anything that would escape the root, name the
+    /// root itself, or hide the folder is refused and the default is used instead.
+    public var safeFolderName: String {
+        let trimmed = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains("/"),
+              !trimmed.contains(":"),
+              !trimmed.hasPrefix("."),
+              trimmed != ".." else { return defaultBackupFolderName }
+        return trimmed
+    }
+
+    public static let standard = BackupSettings()
+}
 
 /// A PDF paired with the root the user selected, which is where its backup goes.
 public struct Job: Identifiable, Sendable {
@@ -509,8 +541,11 @@ private struct PendingDirectory {
 public func collectJobs(
     roots: [URL],
     recursive: Bool,
+    backup: BackupSettings = .standard,
     progress: (@Sendable (String, Int) -> Void)? = nil
 ) -> [Job] {
+    let skipName = backup.safeFolderName
+    let skipPath = backup.customLocation?.resolvingSymlinksInPath().path
     let lock = NSLock()
     var jobs: [Job] = []
     var seen = Set<String>()
@@ -530,7 +565,7 @@ public func collectJobs(
             frontier.append(PendingDirectory(root: selection, url: selection))
         } else {
             // A file named directly still has to be checked, since no walk filtered it.
-            guard !selection.pathComponents.contains(backupDirectoryName) else { continue }
+            guard !selection.pathComponents.contains(skipName) else { continue }
             lock.lock()
             record(root: selection.deletingLastPathComponent(), file: selection.standardizedFileURL)
             lock.unlock()
@@ -555,7 +590,8 @@ public func collectJobs(
             for url in entries {
                 let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 if isDir {
-                    guard recursive, url.lastPathComponent != backupDirectoryName else { continue }
+                    guard recursive, url.lastPathComponent != skipName else { continue }
+                    if let skipPath, url.resolvingSymlinksInPath().path == skipPath { continue }
                     directories.append(PendingDirectory(root: pending.root, url: url))
                 } else {
                     files.append(url)
@@ -707,11 +743,20 @@ private func availableURL(_ url: URL, ignoring: URL? = nil) -> URL {
     }
 }
 
-/// Path under `<root>/original_pdfs/` mirroring the file's position beneath `root`.
-private func backupURL(for job: Job) -> URL {
-    job.root
-        .appendingPathComponent(backupDirectoryName)
-        .appendingPathComponent(relative(job.file, under: job.root))
+/// Where this file's original belongs, mirroring its position beneath the selected root.
+///
+/// A custom location holds every root, so the root's own name is kept as the first
+/// component: without it, two roots each holding `2024/statement.pdf` would collide.
+private func backupURL(for job: Job, _ backup: BackupSettings) -> URL {
+    let tail = relative(job.file, under: job.root)
+    if let custom = backup.customLocation {
+        return custom
+            .appendingPathComponent(job.root.lastPathComponent)
+            .appendingPathComponent(tail)
+    }
+    return job.root
+        .appendingPathComponent(backup.safeFolderName)
+        .appendingPathComponent(tail)
 }
 
 /// PDFKit's `write(to:)` carries the source document's encryption dictionary over even
@@ -870,7 +915,7 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     }
 
     if options.moveOriginals {
-        let backup = availableURL(backupURL(for: job))
+        let backup = availableURL(backupURL(for: job, options.backup))
         do {
             try fm.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: source, to: backup)

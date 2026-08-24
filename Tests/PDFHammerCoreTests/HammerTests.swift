@@ -275,7 +275,7 @@ final class HammerTests: XCTestCase {
 
         let results = process(jobs: collectJobs(roots: [root], recursive: false),
                               options: Options(passwords: [fixturePassword], recursive: false,
-                                               dryRun: false, moveOriginals: false))
+                                               dryRun: false, backup: BackupSettings(enabled: false)))
         XCTAssertEqual(results.first?.status, .decrypted)
         XCTAssertFalse(fm.fileExists(atPath: pdf.path))
         XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("original_pdfs").path))
@@ -765,5 +765,55 @@ final class HammerTests: XCTestCase {
         let jobs = collectJobs(roots: sources, recursive: true)
         XCTAssertEqual(jobs.count, 1)
         XCTAssertEqual(jobs.first?.root.lastPathComponent, root.lastPathComponent)
+    }
+
+    // MARK: - Backup location
+
+    func testBackupFolderCanBeRenamed() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root.appendingPathComponent("bank"), withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("bank/Extracto_2024-06.pdf"), password: nil)
+
+        let backup = BackupSettings(folderName: "originales")
+        let options = Options(passwords: [], recursive: true, dryRun: false, backup: backup)
+        _ = process(jobs: collectJobs(roots: [root], recursive: true, backup: backup), options: options)
+
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("originales/bank/Extracto_2024-06.pdf").path))
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("bank/2024-06-extracto.pdf").path))
+
+        // And the renamed folder is skipped on a second run, as original_pdfs was.
+        let again = collectJobs(roots: [root], recursive: true, backup: backup)
+        XCTAssertEqual(again.map(\.file.lastPathComponent), ["2024-06-extracto.pdf"])
+    }
+
+    func testCustomBackupLocationKeepsRootsApart() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let one = base.appendingPathComponent("one")
+        let two = base.appendingPathComponent("two")
+        let vault = base.appendingPathComponent("vault")
+        for dir in [one, two] {
+            try fm.createDirectory(at: dir.appendingPathComponent("2024"), withIntermediateDirectories: true)
+            try makePDF(at: dir.appendingPathComponent("2024/statement.pdf"), password: nil)
+        }
+
+        let backup = BackupSettings(customLocation: vault)
+        let jobs = collectJobs(roots: [one, two], recursive: true, backup: backup)
+        _ = process(jobs: jobs, options: Options(passwords: [], recursive: true, dryRun: false, backup: backup))
+
+        // Same relative path under both roots, so the root name has to disambiguate.
+        XCTAssertTrue(fm.fileExists(atPath: vault.appendingPathComponent("one/2024/statement.pdf").path))
+        XCTAssertTrue(fm.fileExists(atPath: vault.appendingPathComponent("two/2024/statement.pdf").path))
+    }
+
+    func testUnsafeBackupNamesFallBackToTheDefault() {
+        for bad in ["", "   ", "..", "../escape", "a/b", ".hidden", "with:colon"] {
+            XCTAssertEqual(BackupSettings(folderName: bad).safeFolderName, defaultBackupFolderName,
+                           "\(bad) must not be used as a folder name")
+        }
+        XCTAssertEqual(BackupSettings(folderName: " originales ").safeFolderName, "originales")
     }
 }
