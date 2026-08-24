@@ -1,0 +1,618 @@
+import XCTest
+import PDFKit
+@testable import PDFHammerCore
+
+final class HammerTests: XCTestCase {
+
+    /// Fixtures are encrypted with this, not with anything real.
+    private let fixturePassword = "correct-horse-battery"
+
+
+    func testSpecExamples() {
+        XCTAssertEqual(normalizedName(for: "Cuenta_ABC123_2024-06.pdf"), "2024-06-cuenta_abc123.pdf")
+        XCTAssertEqual(normalizedName(for: "2024-broker-account-statement.pdf"), "2024-broker-account-statement.pdf")
+        XCTAssertEqual(normalizedName(for: "reporte-anual-de-costos-2024.pdf"), "2024-reporte-anual-de-costos.pdf")
+    }
+
+    func testDatePrefixIsNotDuplicated() {
+        XCTAssertEqual(normalizedName(for: "2024-06-cuenta_abc123.pdf"), "2024-06-cuenta_abc123.pdf")
+    }
+
+    func testMonthBeatsBareYear() {
+        XCTAssertEqual(normalizedName(for: "2024 summary 2023-11.pdf"), "2023-11-2024-summary.pdf")
+    }
+
+    func testDigitRunIsNotSplit() {
+        XCTAssertEqual(normalizedName(for: "invoice20240612.pdf"), "invoice20240612.pdf")
+    }
+
+    func testInvalidMonthFallsBackToYear() {
+        XCTAssertEqual(normalizedName(for: "acme-2024-13-report.pdf"), "2024-acme-13-report.pdf")
+    }
+
+    func testFallbackUsedWhenNameHasNoDate() {
+        let date = DateComponents(calendar: .current, year: 2021, month: 3, day: 9).date!
+        XCTAssertEqual(normalizedName(for: "Bank Statement.pdf", fallbackPrefixes: [monthPrefix(date)]),
+                       "2021-03-bank-statement.pdf")
+    }
+
+    func testFallbacksAreTriedInOrder() {
+        XCTAssertEqual(normalizedName(for: "Bank Statement.pdf", fallbackPrefixes: ["", "2019-04", "2020-01"]),
+                       "2019-04-bank-statement.pdf")
+    }
+
+    func testNoDateAnywhereJustSlugifies() {
+        XCTAssertEqual(normalizedName(for: "Bank  Statement.pdf"), "bank-statement.pdf")
+    }
+
+    func testDateOnlyNameSurvives() {
+        XCTAssertEqual(normalizedName(for: "2024-06.pdf"), "2024-06.pdf")
+    }
+
+    // MARK: - File operations
+
+    func testBackupTreeMirrorsSubfolders() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let nested = root.appendingPathComponent("bank/2024")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+
+        let pdf = nested.appendingPathComponent("Extracto_2024-06.pdf")
+        try makePDF(at: pdf, password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        XCTAssertEqual(jobs.count, 1)
+
+        let results = process(jobs: jobs, options: Options(passwords: [], recursive: true, dryRun: false))
+        XCTAssertEqual(results.first?.status, .renamed)
+        XCTAssertEqual(results.first?.destinationName, "2024-06-extracto.pdf")
+        XCTAssertTrue(fm.fileExists(atPath: nested.appendingPathComponent("2024-06-extracto.pdf").path))
+        XCTAssertTrue(fm.fileExists(atPath:
+            root.appendingPathComponent("original_pdfs/bank/2024/Extracto_2024-06.pdf").path))
+        XCTAssertFalse(fm.fileExists(atPath: pdf.path))
+    }
+
+    func testPasswordIsRemoved() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let pdf = root.appendingPathComponent("Secret_2023-01.pdf")
+        try makePDF(at: pdf, password: fixturePassword)
+
+        let jobs = collectJobs(roots: [root], recursive: false)
+        let results = process(jobs: jobs, options: Options(passwords: ["nope", fixturePassword],
+                                                           recursive: false, dryRun: false))
+        XCTAssertEqual(results.first?.status, .decrypted)
+
+        let out = root.appendingPathComponent("2023-01-secret.pdf")
+        let doc = try XCTUnwrap(loadPDF(out))
+        XCTAssertFalse(doc.isEncrypted)
+        XCTAssertFalse(doc.isLocked)
+        XCTAssertEqual(doc.pageCount, 1)
+    }
+
+    func testWrongPasswordStillRenamesAndStaysLocked() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let pdf = root.appendingPathComponent("Secret_2023-02.pdf")
+        try makePDF(at: pdf, password: "correct-horse")
+
+        let jobs = collectJobs(roots: [root], recursive: false)
+        let results = process(jobs: jobs, options: Options(passwords: ["wrong"],
+                                                           recursive: false, dryRun: false))
+        XCTAssertEqual(results.first?.status, .locked)
+
+        let out = root.appendingPathComponent("2023-02-secret.pdf")
+        let doc = try XCTUnwrap(loadPDF(out))
+        XCTAssertTrue(doc.isLocked)
+    }
+
+    func testDryRunTouchesNothing() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let pdf = root.appendingPathComponent("Extracto_2024-06.pdf")
+        try makePDF(at: pdf, password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: false)
+        let results = process(jobs: jobs, options: Options(passwords: [], recursive: false, dryRun: true))
+        XCTAssertEqual(results.first?.destinationName, "2024-06-extracto.pdf")
+        XCTAssertTrue(fm.fileExists(atPath: pdf.path))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasSuffix(".pdf") }, ["Extracto_2024-06.pdf"])
+    }
+
+    func testCollidingNamesGetSuffixes() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        try makePDF(at: root.appendingPathComponent("Report_2024-06.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("report-2024-06.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: false)
+        XCTAssertEqual(jobs.count, 2)
+        let results = process(jobs: jobs, options: Options(passwords: [], recursive: false, dryRun: false))
+        let names = Set(results.map(\.destinationName))
+        XCTAssertEqual(names, ["2024-06-report.pdf", "2024-06-report-2.pdf"])
+    }
+
+    func testBackupDirectoryIsNeverReprocessed() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Extracto_2024-06.pdf"), password: nil)
+
+        let options = Options(passwords: [], recursive: true, dryRun: false)
+        _ = process(jobs: collectJobs(roots: [root], recursive: true), options: options)
+        let second = collectJobs(roots: [root], recursive: true)
+        XCTAssertEqual(second.map(\.file.lastPathComponent), ["2024-06-extracto.pdf"])
+    }
+
+    // MARK: - Date shapes and metadata
+
+    func testDayMonthYearInFilename() {
+        XCTAssertEqual(normalizedName(for: "extracto_23_08_2026_acme66.pdf"),
+                       "2026-08-extracto_acme66.pdf")
+        XCTAssertEqual(normalizedName(for: "extracto_23_08_2026_acme66 (3).pdf"),
+                       "2026-08-extracto_acme66-(3).pdf")
+    }
+
+    func testYearMonthDayInFilename() {
+        XCTAssertEqual(normalizedName(for: "statement 2026-08-23 acme.pdf"),
+                       "2026-08-statement-acme.pdf")
+    }
+
+    /// A date in the filename is the only one the document itself asserts. An annual
+    /// statement for 2024 is routinely generated in 2025, so a timestamp taken off the
+    /// file must never displace it.
+    func testFilenameDateIsNeverDisplacedByAFallback() {
+        XCTAssertEqual(normalizedName(for: "2024-broker-tax-report.pdf", fallbackPrefixes: ["2015-09"]),
+                       "2024-broker-tax-report.pdf")
+        XCTAssertEqual(normalizedName(for: "extracto_23_08_2026_acme66.pdf", fallbackPrefixes: ["2021-05"]),
+                       "2026-08-extracto_acme66.pdf")
+    }
+
+    func testMetadataDateOnlyFillsAGap() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Extracto_1999-01.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("Sin Fecha.pdf"), password: nil)
+
+        let results = process(
+            jobs: collectJobs(roots: [root], recursive: true),
+            options: Options(passwords: [], recursive: true, dryRun: true,
+                             useFolderNames: false, useMetadataDate: true)
+        )
+        let bySource = Dictionary(uniqueKeysWithValues: results.map { ($0.sourceName, $0.destinationName) })
+
+        // The fixtures were written moments ago, so their creation date is this month.
+        let thisMonth = monthPrefix(Date())
+        XCTAssertEqual(bySource["Extracto_1999-01.pdf"], "1999-01-extracto.pdf")
+        XCTAssertEqual(bySource["Sin Fecha.pdf"], "\(thisMonth)-sin-fecha.pdf")
+    }
+
+    // MARK: - Folder context
+
+    func testFolderDateFillsAMissingFilenameDate() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let nested = root.appendingPathComponent("bank/2024")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+        try makePDF(at: nested.appendingPathComponent("Extracto Marzo.pdf"), password: nil)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: true))
+        XCTAssertEqual(results.first?.destinationName, "2024-extracto-marzo.pdf")
+    }
+
+    func testFolderNameReplacesAnUninformativeStem() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let nested = root.appendingPathComponent("2025-acme66")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+        try makePDF(at: nested.appendingPathComponent("scan001.pdf"), password: nil)
+        try makePDF(at: nested.appendingPathComponent("Extracto Agosto.pdf"), password: nil)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: true))
+        let bySource = Dictionary(uniqueKeysWithValues: results.map { ($0.sourceName, $0.destinationName) })
+        XCTAssertEqual(bySource["scan001.pdf"], "2025-acme66-scan001.pdf")
+        // A stem that already says something is left alone.
+        XCTAssertEqual(bySource["Extracto Agosto.pdf"], "2025-extracto-agosto.pdf")
+    }
+
+    func testFolderContextWalksUpToTheSelectedRoot() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let file = root.appendingPathComponent("bank/2024/doc.pdf")
+        let context = folderContext(for: file, under: root)
+        XCTAssertEqual(context.prefix, "2024")
+        XCTAssertEqual(context.slug, "bank")
+    }
+
+    func testFolderContextIsOffByRequest() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let nested = root.appendingPathComponent("2024")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+        try makePDF(at: nested.appendingPathComponent("Extracto Marzo.pdf"), password: nil)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: true,
+                                               useFolderNames: false))
+        XCTAssertEqual(results.first?.destinationName, "extracto-marzo.pdf")
+    }
+
+    // MARK: - Whitespace
+
+    func testEveryKindOfWhitespaceIsRemoved() {
+        // Non-breaking space, tab, and a plain space.
+        XCTAssertEqual(normalizedName(for: "Extracto\u{00A0}Marzo\tAcme 66 2024.pdf"),
+                       "2024-extracto-marzo-acme-66.pdf")
+    }
+
+    func testWithoutBackupTheOriginalIsReplacedInPlace() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let pdf = root.appendingPathComponent("Secret_2023-01.pdf")
+        try makePDF(at: pdf, password: fixturePassword)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: false),
+                              options: Options(passwords: [fixturePassword], recursive: false,
+                                               dryRun: false, moveOriginals: false))
+        XCTAssertEqual(results.first?.status, .decrypted)
+        XCTAssertFalse(fm.fileExists(atPath: pdf.path))
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("original_pdfs").path))
+
+        let out = root.appendingPathComponent("2023-01-secret.pdf")
+        let doc = try XCTUnwrap(loadPDF(out))
+        XCTAssertFalse(doc.isEncrypted)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasSuffix(".pdf") },
+                       ["2023-01-secret.pdf"])
+    }
+
+    func testRelativePathTracksSubfolder() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let nested = root.appendingPathComponent("bank/2024")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+        try makePDF(at: nested.appendingPathComponent("Extracto_2024-06.pdf"), password: nil)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: true))
+        XCTAssertEqual(results.first?.relativePath, "bank/2024/Extracto_2024-06.pdf")
+        XCTAssertEqual(results.first?.root, root)
+    }
+
+    // MARK: - Results tree
+
+    private func fakeItems(_ root: URL, _ relativePaths: [String]) -> [Item] {
+        relativePaths.map {
+            Item(root: root, source: root.appendingPathComponent($0),
+                 destination: root.appendingPathComponent($0), status: .renamed)
+        }
+    }
+
+    func testTreeFlattensOneRootWithNoSubfolders() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let tree = buildTree(fakeItems(root, ["a.pdf", "b.pdf"]))
+        XCTAssertEqual(tree.map(\.name), ["a.pdf", "b.pdf"])
+        XCTAssertTrue(tree.allSatisfy { $0.itemKey != nil })
+    }
+
+    func testTreeKeepsNestedFolders() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let tree = buildTree(fakeItems(root, ["top.pdf", "bank/2024/x.pdf", "bank/2024/y.pdf", "bank/z.pdf"]))
+        XCTAssertEqual(tree.count, 1)
+        XCTAssertEqual(tree[0].name, "pick")
+        XCTAssertEqual((tree[0].children ?? []).map(\.name), ["top.pdf", "bank"])
+
+        let bank = tree[0].children?.first { $0.name == "bank" }
+        XCTAssertEqual((bank?.children ?? []).map(\.name), ["2024", "z.pdf"])
+        let year = bank?.children?.first { $0.name == "2024" }
+        XCTAssertEqual((year?.children ?? []).map(\.name), ["x.pdf", "y.pdf"])
+    }
+
+    func testTreeKeepsBothRootsWhenTwoAreSelected() {
+        let a = URL(fileURLWithPath: "/tmp/one")
+        let b = URL(fileURLWithPath: "/tmp/two")
+        let tree = buildTree(fakeItems(a, ["x.pdf"]) + fakeItems(b, ["y.pdf"]))
+        XCTAssertEqual(tree.map(\.name), ["one", "two"])
+    }
+
+    // MARK: - Name rules
+
+    func testDefaultsMatchTheOriginalBehaviour() {
+        XCTAssertEqual(normalizedName(for: "Cuenta_ABC123_2024-06.pdf", rules: .standard),
+                       "2024-06-cuenta_abc123.pdf")
+    }
+
+    func testSeparatorNormalisation() {
+        let name = "Extracto Marzo_Acme 66-2024.pdf"
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .dash)),
+                       "2024-extracto-marzo-acme-66.pdf")
+        XCTAssertEqual(normalizedName(for: name, rules: NameRules(separator: .underscore)),
+                       "2024_extracto_marzo_acme_66.pdf")
+    }
+
+    func testSnakeCaseKeepsTheDatePrefixDashed() {
+        XCTAssertEqual(normalizedName(for: "Extracto 2024-06.pdf", rules: NameRules(separator: .underscore)),
+                       "2024-06_extracto.pdf")
+    }
+
+    func testStripSymbolsTurnsPunctuationIntoSeparators() {
+        XCTAssertEqual(
+            normalizedName(for: "extracto_23_08_2026_acme66 (1).pdf",
+                           rules: NameRules(separator: .dash, stripSymbols: true)),
+            "2026-08-extracto-acme66-1.pdf")
+        XCTAssertEqual(
+            normalizedName(for: "report!!! [final]#2 2024.pdf",
+                           rules: NameRules(separator: .dash, stripSymbols: true)),
+            "2024-report-final-2.pdf")
+    }
+
+    func testSymbolsAreKeptWhenTheRuleIsOff() {
+        XCTAssertEqual(normalizedName(for: "report (1) 2024.pdf", rules: NameRules(separator: .dash)),
+                       "2024-report-(1).pdf")
+    }
+
+    func testStripDiacritics() {
+        XCTAssertEqual(
+            normalizedName(for: "Extracto Señor Muñoz 2024.pdf",
+                           rules: NameRules(separator: .dash, stripDiacritics: true)),
+            "2024-extracto-senor-munoz.pdf")
+        XCTAssertEqual(
+            normalizedName(for: "Extracto Señor 2024.pdf", rules: NameRules(separator: .dash)),
+            "2024-extracto-señor.pdf")
+    }
+
+    func testCasing() {
+        XCTAssertEqual(normalizedName(for: "Extracto Marzo 2024.pdf",
+                                      rules: NameRules(casing: .unchanged, separator: .dash)),
+                       "2024-Extracto-Marzo.pdf")
+        XCTAssertEqual(normalizedName(for: "Extracto Marzo 2024.pdf",
+                                      rules: NameRules(casing: .uppercase, separator: .dash)),
+                       "2024-EXTRACTO-MARZO.pdf")
+    }
+
+    func testStrippedNameCannotCollapseToNothing() {
+        XCTAssertEqual(normalizedName(for: "!!! 2024.pdf", rules: NameRules(separator: .dash, stripSymbols: true)),
+                       "2024.pdf")
+        // Nothing survives the rules and there is no date to fall back on, so the
+        // original name is left alone rather than reduced to ".pdf".
+        XCTAssertEqual(normalizedName(for: "!!!.pdf", rules: NameRules(separator: .dash, stripSymbols: true)),
+                       "!!!.pdf")
+    }
+
+    // MARK: - Typed names
+
+    func testSanitizedFilename() {
+        XCTAssertEqual(sanitizedFilename("2024-report"), "2024-report.pdf")
+        XCTAssertEqual(sanitizedFilename("  spaced  "), "spaced.pdf")
+        XCTAssertEqual(sanitizedFilename("a/b:c.pdf"), "a-b-c.pdf")
+        XCTAssertEqual(sanitizedFilename(""), "untitled.pdf")
+        XCTAssertEqual(sanitizedFilename("   "), "untitled.pdf")
+        XCTAssertEqual(sanitizedFilename("../../etc/passwd"), "etc-passwd.pdf")
+        XCTAssertEqual(sanitizedFilename(".hidden"), "hidden.pdf")
+        XCTAssertEqual(sanitizedFilename("Already.PDF"), "Already.PDF")
+        // A key built from a caller's URL still matches one from the filesystem.
+        XCTAssertEqual(jobKeyRoundTrip(), true)
+    }
+
+    private func jobKeyRoundTrip() -> Bool {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let pdf = root.appendingPathComponent("x.pdf")
+        fm.createFile(atPath: pdf.path, contents: Data())
+        let jobs = collectJobs(roots: [root], recursive: true)
+        return jobs.first?.key == pdf.resolvingSymlinksInPath().path
+    }
+
+    func testOverrideReplacesTheSuggestedName() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let pdf = root.appendingPathComponent("Secret_2023-01.pdf")
+        try makePDF(at: pdf, password: fixturePassword)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [fixturePassword], recursive: true, dryRun: false),
+                              overrides: [jobs[0].key: "mi extracto/enero"])
+        XCTAssertEqual(results.first?.status, .decrypted)
+        XCTAssertEqual(results.first?.destinationName, "mi extracto-enero.pdf")
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("mi extracto-enero.pdf").path))
+    }
+
+    func testOverrideStillGetsACollisionSuffix() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("a.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("b.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let overrides = Dictionary(uniqueKeysWithValues: jobs.map { ($0.key, "same") })
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: false),
+                              overrides: overrides)
+        XCTAssertEqual(Set(results.map(\.destinationName)), ["same.pdf", "same-2.pdf"])
+    }
+
+    // MARK: - Deletion
+
+    func testTrashedFileGoesToTheTrashNotOblivion() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("junk_2024-01.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("keep_2024-02.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let doomed = try XCTUnwrap(jobs.first { $0.file.lastPathComponent.hasPrefix("junk") })
+
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: false),
+                              trashed: [doomed.key])
+        let byName = Dictionary(uniqueKeysWithValues: results.map { ($0.sourceName, $0) })
+
+        let trashed = try XCTUnwrap(byName["junk_2024-01.pdf"])
+        XCTAssertEqual(trashed.status, .trashed)
+        XCTAssertFalse(fm.fileExists(atPath: doomed.file.path))
+        // Recoverable: the file still exists, at the URL the Trash gave back.
+        XCTAssertTrue(fm.fileExists(atPath: trashed.destination.path))
+        try? fm.removeItem(at: trashed.destination)
+
+        XCTAssertEqual(byName["keep_2024-02.pdf"]?.status, .renamed)
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("2024-02-keep.pdf").path))
+    }
+
+    func testDryRunNeverTrashesAnything() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let pdf = root.appendingPathComponent("junk_2024-01.pdf")
+        try makePDF(at: pdf, password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: true),
+                              trashed: Set(jobs.map(\.key)))
+        XCTAssertEqual(results.first?.status, .trashed)
+        XCTAssertTrue(fm.fileExists(atPath: pdf.path))
+    }
+
+    // MARK: - Password list
+
+    func testAddingAPasswordAlwaysAddsARow() {
+        XCTAssertEqual(PasswordList.rows("").count, 1)
+        // The case that used to dead-end: with the list emptied, Add did nothing.
+        XCTAssertEqual(PasswordList.rows(PasswordList.adding(to: "")).count, 2)
+        XCTAssertEqual(PasswordList.rows(PasswordList.adding(to: "a")).count, 2)
+        XCTAssertEqual(PasswordList.rows(PasswordList.adding(to: "a\nb")).count, 3)
+    }
+
+    func testEditingAndRemovingRows() {
+        XCTAssertEqual(PasswordList.setting(1, to: "beta", in: "a\nb"), "a\nbeta")
+        XCTAssertEqual(PasswordList.setting(0, to: "no\nnewlines", in: "a"), "nonewlines")
+        XCTAssertEqual(PasswordList.setting(9, to: "x", in: "a"), "a")
+        XCTAssertEqual(PasswordList.removing(0, from: "a\nb"), "b")
+        XCTAssertEqual(PasswordList.removing(9, from: "a"), "a")
+        // Removing the last row leaves one blank row, never zero.
+        XCTAssertEqual(PasswordList.rows(PasswordList.removing(0, from: "a")).count, 1)
+    }
+
+    func testActivePasswordsIgnoreBlanksPaddingAndDuplicates() {
+        XCTAssertEqual(PasswordList.active("  a  \n\n b\n   "), ["a", "b"])
+        XCTAssertEqual(PasswordList.active(""), [])
+        XCTAssertEqual(PasswordList.active("a\nb\na\n a "), ["a", "b"])
+    }
+
+    func testAddingRowReusesATrailingBlankInsteadOfStacking() {
+        // A fresh blank row is offered rather than a second one piled on top.
+        let first = PasswordList.addingRow(to: "a")
+        XCTAssertEqual(first.text, "a\n")
+        XCTAssertEqual(first.focus, 1)
+
+        let again = PasswordList.addingRow(to: first.text)
+        XCTAssertEqual(again.text, first.text)
+        XCTAssertEqual(again.focus, 1)
+
+        // An emptied list still has one row to type into.
+        XCTAssertEqual(PasswordList.addingRow(to: "").focus, 0)
+        XCTAssertEqual(PasswordList.addingRow(to: "").text, "")
+    }
+
+    // MARK: - Folder scope
+
+    func testItemsUnderFolderIncludesNestedButNotSiblings() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let list = fakeItems(root, [
+            "bank/a.pdf",
+            "bank/2024/b.pdf",
+            "bank-old/c.pdf",
+            "other.pdf",
+        ])
+        let bank = items(under: "/tmp/pick/bank", in: list).map(\.sourceName)
+        XCTAssertEqual(Set(bank), ["a.pdf", "b.pdf"])
+        XCTAssertEqual(items(under: "/tmp/pick/bank-old", in: list).map(\.sourceName), ["c.pdf"])
+        XCTAssertEqual(items(under: "/tmp/pick", in: list).count, 4)
+    }
+
+    func testFolderPathOfAnItem() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let item = fakeItems(root, ["bank/2024/b.pdf"])[0]
+        XCTAssertEqual(folderPath(of: item), "/tmp/pick/bank/2024")
+        XCTAssertEqual(items(under: folderPath(of: item), in: [item]).count, 1)
+    }
+
+    // MARK: - Restyling without re-reading
+
+    func testRestyleFollowsTheRulesWithoutOpeningAnything() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Extracto Señor (1) 2024-06.pdf"), password: nil)
+
+        let base = Options(passwords: [], recursive: true, dryRun: true, useFolderNames: false)
+        let item = try XCTUnwrap(process(jobs: collectJobs(roots: [root], recursive: true),
+                                         options: base).first)
+        XCTAssertEqual(item.destinationName, "2024-06-extracto-señor-(1).pdf")
+
+        var strict = base
+        strict.rules = NameRules(separator: .dash, stripSymbols: true, stripDiacritics: true)
+        XCTAssertEqual(restyled(item, options: strict).destinationName,
+                       "2024-06-extracto-senor-1.pdf")
+
+        var snake = base
+        snake.rules = NameRules(separator: .underscore, stripSymbols: true)
+        XCTAssertEqual(restyled(item, options: snake).destinationName,
+                       "2024-06_extracto_señor_1.pdf")
+
+        // Restyling is a pure recomputation: the file is untouched either way.
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("Extracto Señor (1) 2024-06.pdf").path))
+    }
+
+    func testRestyleReusesTheCapturedDatesForGapFilling() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Sin Fecha.pdf"), password: nil)
+
+        let base = Options(passwords: [], recursive: true, dryRun: true, useFolderNames: false)
+        let item = try XCTUnwrap(process(jobs: collectJobs(roots: [root], recursive: true),
+                                         options: base).first)
+        XCTAssertEqual(item.destinationName, "sin-fecha.pdf")
+        XCTAssertNotNil(item.metadataDate)
+
+        var withMetadata = base
+        withMetadata.useMetadataDate = true
+        XCTAssertEqual(restyled(item, options: withMetadata).destinationName,
+                       "\(monthPrefix(Date()))-sin-fecha.pdf")
+    }
+}
