@@ -118,6 +118,12 @@ result can be copied or saved.
 Citation keys are `surname:year:firstword`, with a letter appended when two works would
 otherwise collide.
 
+The **entry type** decides what counts as missing: `@book`, `@article` and `@techreport`
+want an author, a title and a year, `@online` wants a title and a year, and `@misc` wants
+only a title. Publisher, journal and institution are never written and never reported as
+missing, because nothing here can read them off a PDF and a complaint you cannot act on is
+just noise. The `file` field is omitted by default.
+
 The BibTeX view has two panes: **Entries**, the browser above, and **File**, the generated
 `.bib` itself, syntax-highlighted and ordered alphabetically or by folder.
 

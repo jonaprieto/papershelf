@@ -398,10 +398,15 @@ final class Runner: ObservableObject {
     private func refreshBib() { bibStale = true }
 
     /// Builds the entries if anything has moved since they were last needed.
+    /// The entry type the next rebuild should use.
+    var bibType: BibType = .book {
+        didSet { if bibType != oldValue { bibStale = true } }
+    }
+
     func ensureBib() {
         guard bibStale else { return }
         bibStale = false
-        bib = bibEntries(for: results, known: guesses)
+        bib = bibEntries(for: results, known: guesses, type: bibType)
         bibByItem = Dictionary(uniqueKeysWithValues: bib.map { ($0.itemKey, $0) })
     }
 
@@ -705,7 +710,8 @@ struct ContentView: View {
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     @State private var choosingBackupFolder = false
     @AppStorage("useFolderNames") private var useFolderNames = true
-    @AppStorage("useMetadataDate") private var useMetadataDate = false
+    // On by default so a file nearly always ends up with a year in front of it.
+    @AppStorage("useMetadataDate") private var useMetadataDate = true
     @AppStorage("useFileDate") private var useFileDate = false
     @AppStorage("appearance") private var appearance: Appearance = .system
     @AppStorage("ruleCasing") private var ruleCasing: NameRules.Casing = .lowercase
@@ -732,7 +738,8 @@ struct ContentView: View {
     @AppStorage("bibBlankLines") private var bibBlankLines = true
     @AppStorage("bibSortFields") private var bibSortFields = false
     @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
-    @AppStorage("bibOmitFile") private var bibOmitFile = false
+    @AppStorage("bibOmitFile") private var bibOmitFile = true
+    @AppStorage("bibType") private var bibType: BibType = .book
     @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
     @State private var availableModels: [String] = []
     @State private var loadingModels = false
@@ -1312,6 +1319,21 @@ struct ContentView: View {
     @ViewBuilder
     private var bibtexPanel: some View {
             Section {
+                Picker("Entry type", selection: $bibType) {
+                    ForEach(BibType.allCases) { Text($0.label).tag($0) }
+                }
+                .help("Decides which fields count as missing. @misc asks only for a title.")
+            } header: {
+                Text("Entries")
+            } footer: {
+                Text("Publisher, journal and institution are never written: nothing here "
+                     + "can read them off a PDF, so they are not reported as missing either.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
                 LabeledContent("Line width") {
                     HStack(spacing: 6) {
                         Slider(value: Binding(get: { Double(bibLineWidth) },
@@ -1547,6 +1569,7 @@ private struct ResultsPane: View {
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
+    @AppStorage("bibType") private var bibType: BibType = .book
     @State private var choosingMoveTarget = false
     @AppStorage("bibLineWidth") private var bibLineWidth = 80
     @AppStorage("bibIndent") private var bibIndent = 2
@@ -1814,8 +1837,15 @@ private struct ResultsPane: View {
                 bibEntryList
             }
         }
-        .onAppear { runner.ensureBib() }
+        .onAppear {
+            runner.bibType = bibType
+            runner.ensureBib()
+        }
         .onChange(of: runner.revision) { _, _ in runner.ensureBib() }
+        .onChange(of: bibType) { _, new in
+            runner.bibType = new
+            runner.ensureBib()
+        }
     }
 
     private var bibEntryList: some View {

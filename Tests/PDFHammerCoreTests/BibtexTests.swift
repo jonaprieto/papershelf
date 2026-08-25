@@ -207,3 +207,52 @@ extension BibtexTests {
         XCTAssertTrue(ragged.contains("  year = {1979},"))
     }
 }
+
+extension BibtexTests {
+
+    // MARK: - Entry types
+
+    private func bare(_ name: String) -> Item {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        return Item(root: root, source: root.appendingPathComponent(name),
+                    destination: root.appendingPathComponent(name), status: .renamed)
+    }
+
+    func testTheTypeDecidesWhatCountsAsMissing() {
+        // A name gives a title and a year, never an author.
+        let item = bare("1979-godel-escher-bach.pdf")
+
+        XCTAssertEqual(bibEntries(for: [item], type: .book).first?.missing, ["author"])
+        XCTAssertEqual(bibEntries(for: [item], type: .article).first?.missing, ["author"])
+        XCTAssertEqual(bibEntries(for: [item], type: .report).first?.missing, ["author"])
+        // Misc asks for a title and nothing else, so this is complete.
+        XCTAssertEqual(bibEntries(for: [item], type: .misc).first?.missing, [])
+        XCTAssertTrue(bibEntries(for: [item], type: .misc).first?.isComplete == true)
+        // Online wants a year but not an author.
+        XCTAssertEqual(bibEntries(for: [item], type: .online).first?.missing, [])
+    }
+
+    func testMissingYearIsReportedWhenTheTypeWantsOne() {
+        let undated = bare("no-date-here.pdf")
+        XCTAssertEqual(Set(bibEntries(for: [undated], type: .book).first?.missing ?? []),
+                       ["author", "year"])
+        XCTAssertEqual(bibEntries(for: [undated], type: .online).first?.missing, ["year"])
+        XCTAssertEqual(bibEntries(for: [undated], type: .misc).first?.missing, [])
+    }
+
+    func testTheTypeIsWrittenOut() {
+        for type in BibType.allCases {
+            let entry = bibEntries(for: [bare("1979-x.pdf")], type: type)[0]
+            XCTAssertTrue(bibtexBlock(entry).hasPrefix("@\(type.keyword){"),
+                          "\(type) should write @\(type.keyword)")
+        }
+        // techreport is spelled out even though the option is called report.
+        XCTAssertEqual(BibType.report.keyword, "techreport")
+    }
+
+    func testTheFileFieldCanBeLeftOut() {
+        let entry = bibEntries(for: [bare("1979-x.pdf")])[0]
+        XCTAssertTrue(bibtexBlock(entry).contains("file"))
+        XCTAssertFalse(bibtexBlock(entry, style: BibStyle(omit: ["file"])).contains("file"))
+    }
+}

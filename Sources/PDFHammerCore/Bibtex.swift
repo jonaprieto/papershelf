@@ -1,5 +1,40 @@
 import Foundation
 
+/// What kind of thing an entry describes. BibTeX expects different fields for each, so
+/// this decides what counts as incomplete.
+public enum BibType: String, Sendable, CaseIterable, Identifiable {
+    case book, article, misc, report, inbook, online
+
+    public var id: String { rawValue }
+
+    /// What goes after the `@`.
+    public var keyword: String { self == .report ? "techreport" : rawValue }
+
+    public var label: String {
+        switch self {
+        case .book: return "@book"
+        case .article: return "@article"
+        case .misc: return "@misc"
+        case .report: return "@techreport"
+        case .inbook: return "@inbook"
+        case .online: return "@online"
+        }
+    }
+
+    /// Of the fields this app can actually produce, the ones this type needs.
+    ///
+    /// BibTeX also wants publisher, journal or institution depending on the type, but
+    /// nothing here can read those off a PDF, so reporting them as missing would be a
+    /// permanent complaint with no way to act on it.
+    public var expected: Set<String> {
+        switch self {
+        case .misc: return ["title"]
+        case .online: return ["title", "year"]
+        default: return ["title", "author", "year"]
+        }
+    }
+}
+
 /// One bibliography record. Everything but the file path may be missing, and a missing
 /// field is reported rather than filled in with a guess.
 public struct BibEntry: Identifiable, Sendable, Equatable {
@@ -10,15 +45,16 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
     public var author: String?
     public var year: String?
     public var file: String
+    public var type: BibType = .book
 
     public var id: String { itemKey }
 
-    /// Fields a usable entry needs. Shown so the gaps can be filled deliberately.
+    /// The fields this type expects that this entry does not have.
     public var missing: [String] {
         var gaps: [String] = []
-        if author == nil { gaps.append("author") }
-        if year == nil { gaps.append("year") }
-        if title.isEmpty { gaps.append("title") }
+        if type.expected.contains("author"), author == nil { gaps.append("author") }
+        if type.expected.contains("year"), year == nil { gaps.append("year") }
+        if type.expected.contains("title"), title.isEmpty { gaps.append("title") }
         return gaps
     }
 
@@ -73,7 +109,9 @@ public func citationKey(author: String?, year: String?, title: String) -> String
 
 /// Builds entries for the given files. `known` supplies anything already learned about a
 /// file, by `Item.key`; whatever is missing is read out of the name.
-public func bibEntries(for items: [Item], known: [String: BookGuess] = [:]) -> [BibEntry] {
+public func bibEntries(for items: [Item],
+                       known: [String: BookGuess] = [:],
+                       type: BibType = .book) -> [BibEntry] {
     var used: [String: Int] = [:]
     return items.map { item in
         let guess = known[item.key]
@@ -88,7 +126,7 @@ public func bibEntries(for items: [Item], known: [String: BookGuess] = [:]) -> [
         if count > 0 { key += String(UnicodeScalar(UInt8(97 + min(count - 1, 25)))) }
 
         return BibEntry(itemKey: item.key, key: key, title: title, author: guess?.author,
-                        year: year, file: item.destination.path)
+                        year: year, file: item.destination.path, type: type)
     }
 }
 
@@ -207,7 +245,7 @@ public func bibtexBlock(_ entry: BibEntry, style: BibStyle = .standard) -> Strin
     fields.append(("file", entry.file))
     fields.removeAll { style.omit.contains($0.0) }
     if style.sortFields { fields.sort { $0.0 < $1.0 } }
-    guard !fields.isEmpty else { return "@book{\(entry.key),\n}" }
+    guard !fields.isEmpty else { return "@\(entry.type.keyword){\(entry.key),\n}" }
 
     let width = style.align ? (fields.map(\.0.count).max() ?? 0) : 0
     let body = fields.enumerated().map { index, field in
@@ -224,7 +262,7 @@ public func bibtexBlock(_ entry: BibEntry, style: BibStyle = .standard) -> Strin
         return prefix + joined + style.delimiter.close + comma
     }.joined(separator: "\n")
 
-    return "@book{\(entry.key),\n\(body)\n}"
+    return "@\(entry.type.keyword){\(entry.key),\n\(body)\n}"
 }
 
 /// The whole file, for copying and saving.
