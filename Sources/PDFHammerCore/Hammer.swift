@@ -515,6 +515,9 @@ public struct Item: Identifiable, Sendable {
     public var modifiedDate: Date?
     public var byteCount: Int?
     public var pageCount: Int?
+    /// What the PDF says about itself. Often empty, often wrong, occasionally the one
+    /// thing that identifies a file whose name says nothing.
+    public var documentInfo: [String: String] = [:]
 
     /// Stable identity for the file on disk. Symlinks are resolved because a URL built
     /// by the caller (`/var/...`) and one handed back by the filesystem
@@ -1165,11 +1168,12 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     var facts: (metadata: Date?, modified: Date?) = (nil, nil)
     var size: Int?
     var pages: Int?
+    var info: [String: String] = [:]
     func item(_ destination: URL, _ status: Status, _ message: String = "") -> Item {
         Item(root: job.root, source: source, destination: destination,
              status: status, message: message,
              metadataDate: facts.metadata, modifiedDate: facts.modified,
-             byteCount: size, pageCount: pages)
+             byteCount: size, pageCount: pages, documentInfo: info)
     }
 
     // Read into memory: a real run moves the original out from under us part-way.
@@ -1203,6 +1207,15 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     size = byteCount(source)
     // Readable even while locked: the page tree is not encrypted, only its contents.
     pages = doc.pageCount
+    if unlocked, let attributes = doc.documentAttributes {
+        for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute,
+                    .creatorAttribute, .producerAttribute, .keywordsAttribute] {
+            guard let value = attributes[key] else { continue }
+            let text = (value as? String) ?? (value as? [String])?.joined(separator: ", ") ?? ""
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { info[key.rawValue] = trimmed }
+        }
+    }
 
     var fallbacks: [String] = []
     if options.useFolderNames, let folderPrefix = context.prefix { fallbacks.append(folderPrefix) }

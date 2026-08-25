@@ -1191,3 +1191,41 @@ extension HammerTests {
         XCTAssertTrue(doc.unlock(withPassword: "unknown"))
     }
 }
+
+extension HammerTests {
+
+    func testDocumentInfoIsCapturedWhenReadable() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let url = root.appendingPathComponent("COA 2024.pdf")
+        try makeTextPDF(at: url, text: "Coalgebras and their uses.")
+        let doc = try XCTUnwrap(loadPDF(url))
+        doc.documentAttributes?[PDFDocumentAttribute.titleAttribute] = "Coalgebras"
+        doc.documentAttributes?[PDFDocumentAttribute.authorAttribute] = "Cosme"
+        XCTAssertTrue(doc.write(to: url))
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        XCTAssertEqual(items.first?.documentInfo["Title"], "Coalgebras")
+        XCTAssertEqual(items.first?.documentInfo["Author"], "Cosme")
+    }
+
+    /// A locked file's attributes cannot be read, and empty values are not recorded as
+    /// if they were facts.
+    func testUnreadableOrBlankInfoIsNotInvented() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Sealed 2024.pdf"), password: "shut")
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        XCTAssertEqual(items.first?.status, .locked)
+        XCTAssertNil(items.first?.documentInfo["Title"])
+        XCTAssertFalse(items.first?.documentInfo.values.contains("") ?? false)
+    }
+}

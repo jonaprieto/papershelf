@@ -496,6 +496,32 @@ final class Runner: ObservableObject {
         }
     }
 
+    @Published private(set) var excerpts: [String: String] = [:]
+
+    /// Reads the opening words of one file, for the panel under the actions. One file at
+    /// a time and cached, so browsing costs a single read per file at most.
+    func loadExcerpt(for item: Item, passwords: [String]) {
+        guard excerpts[item.key] == nil, textCache[item.key] == nil else { return }
+        let source = item.source
+        let key = item.key
+        Task.detached(priority: .utility) { [self] in
+            let text = openingText(of: source, passwords: passwords, pages: 2)
+            let squeezed = text
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+            await MainActor.run { self.excerpts[key] = squeezed }
+        }
+    }
+
+    func excerpt(for item: Item) -> String? {
+        if let ready = excerpts[item.key] { return ready.isEmpty ? nil : ready }
+        if let cached = textCache[item.key] {
+            let squeezed = cached.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return squeezed.isEmpty ? nil : squeezed
+        }
+        return nil
+    }
+
     /// Re-orders in place. Everything derived hangs off the results, so the tree, the
     /// folder index and the cursor are rebuilt from the new order.
     func sortResults(by order: ItemSort, descending: Bool) {
@@ -701,6 +727,7 @@ final class Runner: ObservableObject {
         matchingKeys = nil
         searchText = ""
         textCache = [:]
+        excerpts = [:]
         decisions = [:]
         confirmedCount = 0
         appliedCount = 0
@@ -2035,6 +2062,7 @@ private struct ResultsPane: View {
     /// Leaving the name field has to hand focus somewhere, or Return drops it on the
     /// floor: the row stops looking selected even though it still is.
     private func loadDraft() {
+        if let item = selectedItem { runner.loadExcerpt(for: item, passwords: passwords) }
         editingName = false
         draft = selectedItem.map(currentName) ?? ""
         suggestion = selectedItem?.destinationName ?? ""
@@ -2419,7 +2447,8 @@ private struct ResultsPane: View {
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
                 reset: { draft = item.destinationName },
-                leaveField: { editingName = false; listFocused = true }
+                leaveField: { editingName = false; listFocused = true },
+                excerpt: runner.excerpt(for: item)
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(
@@ -2673,6 +2702,7 @@ private struct ReviewInspector: View {
     let reopen: () -> Void
     let reset: () -> Void
     let leaveField: () -> Void
+    let excerpt: String?
 
     private var decision: Decision? { runner.decision(for: item) }
     private var isEdited: Bool { sanitizedFilename(draft) != item.destinationName }
@@ -3748,5 +3778,77 @@ private struct ShortcutsSheet: View {
             }
         }
         .frame(width: 520, height: 560)
+    }
+}
+
+// MARK: - Metadata
+
+/// What the file says about itself, under the actions that act on it.
+///
+/// Only what exists is shown. A grid of mostly-empty rows would push the useful line off
+/// the bottom, and an absent field is not worth a row saying so.
+private struct MetadataPanel: View {
+    let item: Item
+    let excerpt: String?
+
+    private var facts: [(String, String)] {
+        var rows: [(String, String)] = []
+        for key in ["Title", "Author", "Subject", "Keywords", "Creator", "Producer"] {
+            if let value = item.documentInfo[key] { rows.append((key.lowercased(), value)) }
+        }
+        if let date = item.metadataDate {
+            rows.append(("created", date.formatted(date: .abbreviated, time: .omitted)))
+        }
+        return rows
+    }
+
+    private var physical: String {
+        [
+            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
+            item.modifiedDate.map { "modified \($0.formatted(date: .abbreviated, time: .omitted))" },
+        ].compactMap { $0 }.joined(separator: "   ·   ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(physical)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            if !facts.isEmpty {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
+                    ForEach(facts, id: \.0) { label, value in
+                        GridRow {
+                            Text(label)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .gridColumnAlignment(.trailing)
+                            Text(value)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+
+            if let excerpt, !excerpt.isEmpty {
+                Text(excerpt)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+            } else if item.status == .locked {
+                Label("Locked, so nothing inside can be read", systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
