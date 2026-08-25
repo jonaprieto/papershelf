@@ -1123,7 +1123,6 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 290, ideal: 310, max: 400)
-                .toolbar(removing: .sidebarToggle)
         } detail: {
             ResultsPane(
                 runner: runner,
