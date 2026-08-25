@@ -465,6 +465,18 @@ final class Runner: ObservableObject {
     /// Opening text, read once per file and only when a text query has asked for it.
     private var textCache: [String: String] = [:]
 
+    /// The searchable projection of every file, built once per result set. Rebuilding it
+    /// per keystroke was most of what a metadata search cost.
+    private var projections: [Searchable] = []
+    private var projectionsIncludeText = false
+
+    private func buildProjections(includingText: Bool) {
+        projections = results.map {
+            Searchable(item: $0, text: includingText ? textCache[$0.key] : nil)
+        }
+        projectionsIncludeText = includingText
+    }
+
     func search(_ text: String, passwords: [String]) {
         searchText = text
         let query = Query(text)
@@ -474,7 +486,11 @@ final class Runner: ObservableObject {
         }
 
         guard query.needsText else {
-            matchingKeys = Set(results.filter { matches(Searchable(item: $0), query) }.map(\.key))
+            if projections.count != results.count { buildProjections(includingText: projectionsIncludeText) }
+            let prepared = PreparedQuery(query)
+            matchingKeys = Set(zip(results, projections)
+                .filter { matches($0.1, prepared) }
+                .map(\.0.key))
             return
         }
 
@@ -499,9 +515,11 @@ final class Runner: ObservableObject {
             await MainActor.run {
                 self.textCache.merge(fresh) { _, new in new }
                 guard self.searchText == text else { return }
-                self.matchingKeys = Set(snapshot.filter {
-                    matches(Searchable(item: $0, text: self.textCache[$0.key]), query)
-                }.map(\.key))
+                self.buildProjections(includingText: true)
+                let prepared = PreparedQuery(query)
+                self.matchingKeys = Set(zip(self.results, self.projections)
+                    .filter { matches($0.1, prepared) }
+                    .map(\.0.key))
                 self.searching = false
             }
         }
@@ -741,6 +759,8 @@ final class Runner: ObservableObject {
         searchText = ""
         textCache = [:]
         excerpts = [:]
+        projections = []
+        projectionsIncludeText = false
         decisions = [:]
         confirmedCount = 0
         appliedCount = 0
@@ -821,6 +841,7 @@ final class Runner: ObservableObject {
         indexByKey = parts.indexByKey
         ancestorsByKey = parts.ancestorsByKey
         refreshBib()
+        projections = []
 
         done = out.count
         current = ""

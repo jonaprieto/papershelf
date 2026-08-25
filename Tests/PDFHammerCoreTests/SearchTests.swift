@@ -90,3 +90,36 @@ final class SearchTests: XCTestCase {
         XCTAssertTrue(Query("   ").isEmpty)
     }
 }
+
+extension SearchTests {
+
+    /// Byte comparison must not lose what String comparison gets right: an accent written
+    /// as one code point has to match one written as two.
+    func testComposedAndDecomposedAccentsMatchEachOther() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let composed = "señor"                    // ñ as one scalar
+        let decomposed = "sen\u{0303}or"          // n followed by a combining tilde
+        XCTAssertNotEqual(composed.unicodeScalars.count, decomposed.unicodeScalars.count)
+
+        let item = Item(root: root, source: root.appendingPathComponent(composed + ".pdf"),
+                        destination: root.appendingPathComponent(composed + ".pdf"),
+                        status: .renamed)
+        let subject = Searchable(item: item, text: decomposed)
+
+        XCTAssertTrue(matches(subject, Query(composed)))
+        XCTAssertTrue(matches(subject, Query(decomposed)))
+        XCTAssertTrue(matches(subject, Query("text:\(composed)")))
+        XCTAssertTrue(matches(subject, Query("text:\(decomposed)")))
+    }
+
+    func testByteScanAgreesWithTheObviousImplementation() {
+        let samples = ["", "a", "abc", "the quick brown fox", "ααβγ", "señor muñoz", "🙂 ok"]
+        for haystack in samples {
+            for needle in samples {
+                XCTAssertEqual(contains(normalised(haystack), normalised(needle)),
+                               haystack.lowercased().contains(needle.lowercased()) || needle.isEmpty,
+                               "\(haystack) / \(needle)")
+            }
+        }
+    }
+}

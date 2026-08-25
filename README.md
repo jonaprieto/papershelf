@@ -188,8 +188,14 @@ narrow, `size>` `size<` `pages>` `pages<` compare, and sizes take `k`, `mb`, `gb
 are joined with and. An unrecognised field is searched for as literal text rather than
 rejected, because a search box that refuses input is worse than one that finds nothing.
 
-Metadata filters as you type. A `text:` query waits for Return, since it has to read the
-documents; the text is read concurrently and cached, so the second such search is instant.
+Metadata filters as you type: **1 ms** over 10,000 files, because each file's searchable
+form is built once per result set rather than per keystroke.
+
+A `text:` query waits for Return, since it has to read the documents. That read is
+concurrent and cached: about 6 s for 10,000 files the first time, and **42 ms** per query
+after. Matching is a byte scan over normalised UTF-8 rather than `String.contains`, which
+is grapheme-cluster aware and roughly fifty times slower. Both sides are canonically
+composed first, so an accent written as one code point still matches one written as two.
 
 ## Encryption
 
