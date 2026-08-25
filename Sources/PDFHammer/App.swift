@@ -1123,6 +1123,7 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 290, ideal: 310, max: 400)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             ResultsPane(
                 runner: runner,
@@ -1145,6 +1146,8 @@ struct ContentView: View {
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
         }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 1000, minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
@@ -1964,6 +1967,7 @@ private struct ResultsPane: View {
                     summaryBar
                     Divider()
                     split
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
