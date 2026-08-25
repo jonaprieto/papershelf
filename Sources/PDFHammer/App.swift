@@ -1714,6 +1714,9 @@ private struct ResultsPane: View {
     @AppStorage("autoIdentify") private var autoIdentify = false
     @AppStorage("sortOrder") private var sortOrder: ItemSort = .folder
     @AppStorage("sortDescending") private var sortDescending = false
+    /// Kept in step with the grid so the arrow keys can move by a row.
+    @State private var gridColumns = 1
+    @State private var showingShortcuts = false
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
@@ -1826,6 +1829,7 @@ private struct ResultsPane: View {
             runner.sortResults(by: sortOrder, descending: sortDescending)
         }
         .onDisappear(perform: removeKeyMonitor)
+        .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
         .fileImporter(isPresented: $choosingMoveTarget,
                       allowedContentTypes: [.folder],
                       allowsMultipleSelection: false) { outcome in
@@ -1872,7 +1876,24 @@ private struct ResultsPane: View {
 
     private func handle(_ event: NSEvent) -> Bool {
         guard !runner.busy, !runner.results.isEmpty, selectedItem != nil else { return false }
-        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+        // Command combinations first: these are app-level and must work wherever focus is,
+        // including while a name is being typed.
+        if event.modifierFlags.contains(.command) {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "1": mode = .list; return true
+            case "2": mode = .catalogue; return true
+            case "3": mode = .bibliography; return true
+            case "4": mode = .duplicates; return true
+            case "r": revealInFinder(); return true
+            case "d": runner.findDuplicates(passwords: passwords); return true
+            case "\r" where event.modifierFlags.contains(.shift):
+                runner.confirmAllPending()
+                ensureSelection()
+                return true
+            default: return false
+            }
+        }
+        guard event.modifierFlags.intersection([.option, .control]).isEmpty else { return false }
 
         // Anything being typed into, or any control that has its own idea of what a key
         // means, keeps the event. A table view does not: its type-select is what we are
@@ -1886,9 +1907,14 @@ private struct ResultsPane: View {
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
         if !onATable {
+            // In a grid a row is a row: up and down cross `gridColumns` items, while left
+            // and right move to the neighbour.
+            let row = mode == .catalogue ? max(1, gridColumns) : 1
             switch event.keyCode {
-            case 125, 124: step(by: 1); return true   // down, right
-            case 126, 123: step(by: -1); return true  // up, left
+            case 125: step(by: row); return true    // down
+            case 126: step(by: -row); return true   // up
+            case 124: step(by: 1); return true      // right
+            case 123: step(by: -1); return true     // left
             default: break
             }
         }
@@ -1903,6 +1929,7 @@ private struct ResultsPane: View {
         case "m": choosingMoveTarget = true
         case "o": openInViewer()
         case "b": copyCitation()
+        case "?": showingShortcuts = true
         case "d": markDeleted()
         case "r": reopenSelected()
         case "j", "n": step(by: 1)
@@ -1947,10 +1974,13 @@ private struct ResultsPane: View {
     }
 
     /// Moves through the list without deciding anything.
+    /// Moves by `offset`, clamped to the ends. A row jump near the last row should land
+    /// on the last file rather than doing nothing.
     private func step(by offset: Int) {
-        guard let current = runner.results.firstIndex(where: { $0.key == selected }) else { return }
-        let next = current + offset
-        guard runner.results.indices.contains(next) else { return }
+        guard let current = runner.results.firstIndex(where: { $0.key == selected }),
+              !runner.results.isEmpty else { return }
+        let next = min(max(current + offset, 0), runner.results.count - 1)
+        guard next != current else { return }
         selected = runner.results[next].key
     }
 
@@ -2175,11 +2205,29 @@ private struct ResultsPane: View {
 
     /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store
     /// only renders what is built, so the cost follows the window and not the collection.
+    ///
+    /// The column count is computed here rather than left to `.adaptive`, because the
+    /// arrow keys need to know it: in a grid, up and down mean a row, not a neighbour.
     private var catalogue: some View {
-        ScrollViewReader { scroll in
+        GeometryReader { geometry in
+            let count = catalogueColumns(for: geometry.size.width)
+            catalogueGrid(columns: count)
+                .onAppear { gridColumns = count }
+                .onChange(of: count) { _, new in gridColumns = new }
+        }
+    }
+
+    private func catalogueColumns(for width: CGFloat) -> Int {
+        let spacing: CGFloat = 18
+        let ideal: CGFloat = 168
+        return max(1, Int((width - spacing + spacing) / (ideal + spacing)))
+    }
+
+    private func catalogueGrid(columns: Int) -> some View {
+        let layout = Array(repeating: GridItem(.flexible(), spacing: 18), count: columns)
+        return ScrollViewReader { scroll in
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: 18)],
-                          alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: layout, alignment: .leading, spacing: 18) {
                     ForEach(runner.results) { item in
                         CoverCard(
                             item: item,
@@ -3466,5 +3514,86 @@ private struct RailButton: View {
         .onHover { hovering = $0 }
         .help(tab.title)
         .accessibilityLabel(tab.title)
+    }
+}
+
+// MARK: - Shortcuts
+
+/// Every key in one place, reachable with ? so it does not have to be remembered or
+/// looked up outside the app.
+private struct ShortcutsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let groups: [(String, [(String, String)])] = [
+        ("Deciding", [
+            ("Return  C", "confirm the name and go to the next file"),
+            ("E", "edit the name; Escape leaves the field"),
+            ("G", "ask the model for a name"),
+            ("B", "copy this file's BibTeX entry"),
+            ("A", "apply this one file now"),
+            ("S", "leave this file alone"),
+            ("F", "leave the rest of this folder alone"),
+            ("M", "move to another folder"),
+            ("D", "move to the Trash on apply"),
+            ("R", "reopen a decided file"),
+        ]),
+        ("Moving", [
+            ("J  N  ↓", "next file; in the catalogue ↓ moves a whole row"),
+            ("K  P  ↑", "previous file"),
+            ("→  ←", "neighbour in the catalogue"),
+        ]),
+        ("Everything else", [
+            ("⌘1 … ⌘4", "list, catalogue, BibTeX, duplicates"),
+            ("⌘P", "preview"),
+            ("⌘Return", "apply the reviewed plan"),
+            ("⌘⇧Return", "confirm everything still pending"),
+            ("⌘D", "find duplicates"),
+            ("⌘R", "reveal in Finder"),
+            ("O", "open in the default PDF viewer"),
+            ("⌘Z", "undo the last decision"),
+            ("⌘B", "show or hide the sidebar"),
+            ("?", "this list"),
+        ]),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Keyboard").font(.title3.weight(.semibold))
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+            }
+            .padding(16)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(groups, id: \.0) { title, rows in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(title)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach(rows, id: \.0) { key, meaning in
+                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                    Text(key)
+                                        .font(.system(.callout, design: .monospaced))
+                                        .frame(width: 110, alignment: .leading)
+                                    Text(meaning)
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                        }
+                    }
+                    Text("Letters work whenever the name field is not focused. Anything with "
+                         + "Command works regardless.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+            }
+        }
+        .frame(width: 520, height: 560)
     }
 }

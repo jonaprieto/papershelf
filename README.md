@@ -186,7 +186,11 @@ next to an editable name.
 | `D` | move to the Trash |
 | `M` | move to another folder, under its new name |
 | `R` | reopen a decided file |
-| `J` `K` `N` `P` arrows | move without deciding |
+| `J` `K` `N` `P` arrows | move without deciding; in the catalogue `↑``↓` cross a row |
+| `?` | every shortcut, in one sheet |
+| `⌘1`…`⌘4` | list, catalogue, BibTeX, duplicates |
+| `⌘D` `⌘R` | find duplicates, reveal in Finder |
+| `⌘⇧Return` | confirm everything still pending |
 | `B` | copy this file's BibTeX entry, asking the model first if fields are missing |
 | `O` | open in the default PDF viewer |
 | `⌘Z` | undo the last decision |
