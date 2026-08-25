@@ -70,7 +70,7 @@ final class Covers: ObservableObject {
         guard !inFlight.contains(item.key) else { return nil }
         inFlight.insert(item.key)
 
-        let url = item.source
+        let url = item.currentURL
         let key = item.key
         Covers.queue.addOperation { [weak self] in
             let image = Covers.render(url, passwords: passwords, height: height)
@@ -429,6 +429,9 @@ final class Runner: ObservableObject {
     /// Updates one row in place. The tree holds keys, so it needs no rebuilding.
     private func replace(_ key: String, with item: Item) {
         guard let index = indexByKey[key] else { return }
+        // The file may have moved, so anything read from the old path is now stale.
+        excerpts[key] = nil
+        textCache[key] = nil
         let previous = results[index].status
         results[index] = item
         refreshBib()
@@ -507,7 +510,7 @@ final class Runner: ObservableObject {
             if !missing.isEmpty {
                 DispatchQueue.concurrentPerform(iterations: missing.count) { index in
                     let item = missing[index]
-                    let text = openingText(of: item.source, passwords: passwords, pages: 6)
+                    let text = openingText(of: item.currentURL, passwords: passwords, pages: 6)
                     lock.lock()
                     fresh[item.key] = text
                     lock.unlock()
@@ -532,7 +535,7 @@ final class Runner: ObservableObject {
     /// a time and cached, so browsing costs a single read per file at most.
     func loadExcerpt(for item: Item, passwords: [String]) {
         guard excerpts[item.key] == nil, textCache[item.key] == nil else { return }
-        let source = item.source
+        let source = item.currentURL
         let key = item.key
         Task.detached(priority: .utility) { [self] in
             let text = openingText(of: source, passwords: passwords, pages: 2)
@@ -631,7 +634,7 @@ final class Runner: ObservableObject {
         thinking.insert(item.key)
         defer { thinking.remove(item.key) }
 
-        let source = item.source
+        let source = item.currentURL
         let excerpt = await Task.detached(priority: .userInitiated) {
             openingText(of: source, passwords: passwords)
         }.value
@@ -2249,12 +2252,12 @@ private struct ResultsPane: View {
 
     private func revealInFinder() {
         guard let item = selectedItem else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([item.source])
+        NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
     }
 
     private func openInViewer() {
         guard let item = selectedItem else { return }
-        NSWorkspace.shared.open(item.source)
+        NSWorkspace.shared.open(item.currentURL)
     }
 
     /// Copies this file's BibTeX entry. When the entry is short of what its type wants and
@@ -2860,7 +2863,7 @@ private struct ReviewInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PDFPreview(url: item.source, passwords: passwords)
+            PDFPreview(url: item.currentURL, passwords: passwords)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.quaternary.opacity(0.35))
                 .overlay(alignment: .topTrailing) { lockedOverlay }

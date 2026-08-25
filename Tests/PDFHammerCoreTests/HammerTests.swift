@@ -1229,3 +1229,52 @@ extension HammerTests {
         XCTAssertFalse(items.first?.documentInfo.values.contains("") ?? false)
     }
 }
+
+extension HammerTests {
+
+    /// After a real run the original path is gone, so anything that reads or shows the
+    /// file has to follow it. `source` stays put because identity is derived from it.
+    func testCurrentURLFollowsTheFileAfterItMoves() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Extracto 2024-06.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let before = process(jobs: jobs, options: Options(passwords: [], recursive: true, dryRun: true))[0]
+        XCTAssertFalse(before.carriedOut)
+        XCTAssertEqual(before.currentURL, before.source, "nothing has happened yet")
+
+        let after = process(jobs: jobs, options: Options(passwords: [], recursive: true, dryRun: false))[0]
+        XCTAssertTrue(after.carriedOut)
+        XCTAssertEqual(after.currentURL, after.destination)
+        XCTAssertTrue(fm.fileExists(atPath: after.currentURL.path))
+        XCTAssertFalse(fm.fileExists(atPath: after.source.path), "the old path is gone")
+        XCTAssertEqual(after.key, before.key, "identity survives the move")
+        XCTAssertNotNil(loadPDF(after.currentURL))
+    }
+
+    func testMovedAndTrashedFilesAlsoFollow() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let root = base.appendingPathComponent("in")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("a 2024.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("b 2024.pdf"), password: nil)
+
+        let jobs = collectJobs(roots: [root], recursive: true)
+        let shelf = base.appendingPathComponent("shelf")
+        let results = process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: false),
+                              trashed: [jobs[1].key], moves: [jobs[0].key: shelf])
+
+        for item in results {
+            XCTAssertTrue(item.carriedOut)
+            XCTAssertTrue(fm.fileExists(atPath: item.currentURL.path),
+                          "\(item.status) should still be readable at currentURL")
+        }
+        try? fm.removeItem(at: results.first { $0.status == .trashed }!.currentURL)
+    }
+}

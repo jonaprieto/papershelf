@@ -515,6 +515,9 @@ public struct Item: Identifiable, Sendable, Codable {
     public var modifiedDate: Date?
     public var byteCount: Int?
     public var pageCount: Int?
+    /// True once the file has actually been written or moved, which is when `source`
+    /// stops describing anywhere that exists.
+    public var carriedOut: Bool = false
     /// What the PDF says about itself. Often empty, often wrong, occasionally the one
     /// thing that identifies a file whose name says nothing.
     public var documentInfo: [String: String] = [:]
@@ -528,6 +531,13 @@ public struct Item: Identifiable, Sendable, Codable {
     public var destinationName: String { destination.lastPathComponent }
     public var isRenamed: Bool { sourceName != destinationName }
 
+    /// Where the file is now.
+    ///
+    /// `source` is where it started and stays fixed, because `key` is derived from it and
+    /// identity has to survive the operation. Anything that reads or shows the file has
+    /// to use this instead, or it will be looking at a path that no longer exists.
+    public var currentURL: URL { carriedOut ? destination : source }
+
     /// Path of the source relative to the selected root, used to build the results tree.
     public var relativePath: String { relative(source, under: root) }
 
@@ -535,7 +545,7 @@ public struct Item: Identifiable, Sendable, Codable {
     /// written down. `key` is the identity that survives, and it is derived from `source`.
     private enum CodingKeys: String, CodingKey {
         case root, source, destination, status, message
-        case metadataDate, modifiedDate, byteCount, pageCount, documentInfo
+        case metadataDate, modifiedDate, byteCount, pageCount, documentInfo, carriedOut
     }
 }
 
@@ -913,7 +923,7 @@ private func rank(_ a: Item, _ b: Item) -> Bool {
 /// different works that happen to open with the same boilerplate stay apart.
 public func contentKey(for item: Item, passwords: [String], pages: Int = 3,
                        minimumCharacters: Int = 240) -> String? {
-    let text = openingText(of: item.source, passwords: passwords, pages: pages)
+    let text = openingText(of: item.currentURL, passwords: passwords, pages: pages)
     let squeezed = text.lowercased().filter { $0.isLetter || $0.isNumber }
     guard squeezed.count >= minimumCharacters else { return nil }
     var hasher = SHA256()
@@ -933,7 +943,7 @@ public func duplicateGroups(in items: [Item], passwords: [String] = []) -> [Dupl
     if !candidates.isEmpty {
         let lock = NSLock()
         DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
-            guard let digest = fileDigest(candidates[index].source) else { return }
+            guard let digest = fileDigest(candidates[index].currentURL) else { return }
             lock.lock()
             digests[candidates[index].key] = digest
             lock.unlock()
@@ -1157,7 +1167,9 @@ public func moveFile(_ job: Job, to folder: URL, named name: String, dryRun: Boo
         if destination.standardizedFileURL != source.standardizedFileURL {
             try fm.moveItem(at: source, to: destination)
         }
-        return item(destination, .moved, "moved to \(folder.path)")
+        var done = item(destination, .moved, "moved to \(folder.path)")
+        done.carriedOut = true
+        return done
     } catch {
         return item(source, .failed, "could not move: \(error.localizedDescription)")
     }
@@ -1175,7 +1187,9 @@ public func moveToTrash(_ job: Job, dryRun: Bool) -> Item {
     do {
         var moved: NSURL?
         try fm.trashItem(at: source, resultingItemURL: &moved)
-        return item((moved as URL?) ?? source, .trashed, "moved to the Trash")
+        var done = item((moved as URL?) ?? source, .trashed, "moved to the Trash")
+        done.carriedOut = true
+        return done
     } catch {
         return item(source, .failed, "could not move to the Trash: \(error.localizedDescription)")
     }
@@ -1287,7 +1301,9 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
         } catch {
             return item(destination, .failed, error.localizedDescription)
         }
-        return item(destination, status)
+        var done = item(destination, status)
+        done.carriedOut = true
+        return done
     }
 
     // No backup: the original is consumed. Write the replacement to a temporary file
@@ -1309,7 +1325,9 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     } catch {
         return item(destination, .failed, error.localizedDescription)
     }
-    return item(destination, status)
+    var done = item(destination, status)
+    done.carriedOut = true
+    return done
 }
 
 // MARK: - Results tree

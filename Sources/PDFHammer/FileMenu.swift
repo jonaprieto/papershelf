@@ -19,25 +19,25 @@ struct FileContextMenu: View {
     let skip: () -> Void
 
     var body: some View {
-        Button("Open") { NSWorkspace.shared.open(item.source) }
+        Button("Open") { NSWorkspace.shared.open(item.currentURL) }
 
         Menu("Open With") {
             ForEach(applications(), id: \.self) { app in
                 Button(app.deletingPathExtension().lastPathComponent) {
-                    NSWorkspace.shared.open([item.source], withApplicationAt: app,
+                    NSWorkspace.shared.open([item.currentURL], withApplicationAt: app,
                                             configuration: NSWorkspace.OpenConfiguration())
                 }
             }
         }
         .disabled(applications().isEmpty)
 
-        Button("Quick Look") { QuickLook.show(item.source) }
-        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.source]) }
+        Button("Quick Look") { QuickLook.show(item.currentURL) }
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.currentURL]) }
 
         Divider()
 
         Button("Copy Name") { copy(item.sourceName) }
-        Button("Copy Path") { copy(item.source.path) }
+        Button("Copy Path") { copy(item.currentURL.path) }
         Button("Copy Suggested Name") { copy(item.destinationName) }
 
         Divider()
@@ -52,7 +52,7 @@ struct FileContextMenu: View {
     /// Every application the system says can open this file, which is the same list
     /// Finder shows.
     private func applications() -> [URL] {
-        NSWorkspace.shared.urlsForApplications(toOpen: item.source)
+        NSWorkspace.shared.urlsForApplications(toOpen: item.currentURL)
     }
 
     private func copy(_ text: String) {
