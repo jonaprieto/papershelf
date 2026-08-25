@@ -2543,7 +2543,8 @@ private struct ResultsPane: View {
 
     private var summaryBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+            ScrollView(.horizontal) {
+              HStack(spacing: 10) {
                 searchField
                 Picker("View", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
@@ -2559,9 +2560,13 @@ private struct ResultsPane: View {
                 }
                 Spacer(minLength: 8)
                 stateLabel
+              }
+              .padding(.trailing, 2)
             }
+            .scrollIndicators(.hidden)
 
             if runner.lastRunWasDry {
+              ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     ProgressView(value: Double(runner.reviewed),
                                  total: Double(max(runner.results.count, 1)))
@@ -2611,10 +2616,17 @@ private struct ResultsPane: View {
                     .controlSize(.small)
                     .disabled(runner.pendingCount == 0)
                 }
+                .padding(.trailing, 2)
+              }
+              .scrollIndicators(.hidden)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // A bar keeps its natural height. Without this it absorbs whatever room the panes
+        // below leave, and everything inside it stretches to match.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
         .background(.bar)
     }
 
@@ -2808,6 +2820,7 @@ private struct ReviewInspector: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                         .frame(minWidth: 0)
+                        .layoutPriority(-1)
                     Spacer(minLength: 8)
                     Button(action: reveal) { Image(systemName: "folder") }
                         .buttonStyle(.borderless)
@@ -2855,7 +2868,8 @@ private struct ReviewInspector: View {
                 }
 
                 VStack(spacing: 7) {
-                    // Deciding on the name.
+                  // Deciding on the name.
+                  ScrollView(.horizontal) {
                     HStack(spacing: 7) {
                         Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
                             .buttonStyle(.borderedProminent)
@@ -2879,8 +2893,11 @@ private struct ReviewInspector: View {
                                   : "Add an API key in Settings first")
                         Spacer(minLength: 0)
                     }
+                  }
+                  .scrollIndicators(.hidden)
 
-                    // Moving on, and the two that touch the disk.
+                  // Moving on, and the two that touch the disk.
+                  ScrollView(.horizontal) {
                     HStack(spacing: 7) {
                         Button(action: skip) { KeyLabel("S", "Skip") }
                             .help("Leave this file exactly as it is")
@@ -2903,6 +2920,8 @@ private struct ReviewInspector: View {
                             .help("Moves it to the Trash when you apply, recoverable from "
                                   + "Finder. Skip is what leaves a file untouched.")
                     }
+                  }
+                  .scrollIndicators(.hidden)
                 }
 
                 Text(decision == .deleted
