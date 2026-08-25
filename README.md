@@ -171,6 +171,36 @@ variable is not visible the login shell is asked for it once, in memory only.
 Only the filename and the first pages' text are sent. The file itself never leaves the
 machine, and nothing is sent unless you ask.
 
+## Search
+
+A query bar over the results, filtering the tree, the catalogue and the bibliography
+alike. `/` focuses it.
+
+```
+extracto 2024            both words appear in either name
+folder:bank size>10mb    in a folder called bank, over ten megabytes
+pages>100 status:locked  long, and no password opened it
+text:"quick brown"       those words are in the opening pages
+```
+
+Bare words match the new and the old name, `name:` `was:` `folder:` `status:` `year:`
+narrow, `size>` `size<` `pages>` `pages<` compare, and sizes take `k`, `mb`, `gb`. Terms
+are joined with and. An unrecognised field is searched for as literal text rather than
+rejected, because a search box that refuses input is worse than one that finds nothing.
+
+Metadata filters as you type. A `text:` query waits for Return, since it has to read the
+documents; the text is read concurrently and cached, so the second such search is instant.
+
+## Encryption
+
+**Lock the output with a password** writes every file out encrypted with a password of
+your choosing, which is the inverse of the rest of the app. A file that no password opened
+is passed through as it is rather than being sealed with a new one, since that would
+strand it behind a password it never had.
+
+The password is held in memory only and never written to preferences, so it has to be
+given again each launch.
+
 ## Preview, review, apply
 
 Nothing on disk moves until you have looked at every file. **Preview** is read-only

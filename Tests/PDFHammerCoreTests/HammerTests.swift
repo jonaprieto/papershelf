@@ -1128,3 +1128,66 @@ extension HammerTests {
                        sorted(items, by: .size).map(\.sourceName))
     }
 }
+
+extension HammerTests {
+
+    // MARK: - Locking output back up
+
+    func testOutputCanBeEncryptedWithADifferentPassword() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Locked 2024-06.pdf"), password: "old-one")
+        try makePDF(at: root.appendingPathComponent("Plain 2024-07.pdf"), password: nil)
+
+        let options = Options(passwords: ["old-one"], recursive: true, dryRun: false,
+                              encryption: EncryptionSettings(enabled: true, password: "new-one"))
+        let results = process(jobs: collectJobs(roots: [root], recursive: true), options: options)
+        XCTAssertEqual(Set(results.map(\.status)), [.encrypted])
+
+        // Both come out locked with the new password, whatever they started as.
+        for name in ["2024-06-locked.pdf", "2024-07-plain.pdf"] {
+            let doc = try XCTUnwrap(loadPDF(root.appendingPathComponent(name)))
+            XCTAssertTrue(doc.isLocked, "\(name) should be locked")
+            XCTAssertFalse(doc.unlock(withPassword: "old-one"), "the old password must not open it")
+            XCTAssertTrue(doc.unlock(withPassword: "new-one"))
+            XCTAssertEqual(doc.pageCount, 1)
+        }
+    }
+
+    func testEncryptionWithoutAPasswordIsIgnored() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Plain 2024-07.pdf"), password: nil)
+
+        // Enabled but empty is not a request to encrypt with nothing.
+        XCTAssertFalse(EncryptionSettings(enabled: true, password: "").isUsable)
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               encryption: EncryptionSettings(enabled: true)))
+        XCTAssertEqual(results.first?.status, .renamed)
+        let doc = try XCTUnwrap(loadPDF(root.appendingPathComponent("2024-07-plain.pdf")))
+        XCTAssertFalse(doc.isLocked)
+    }
+
+    func testAFileNoPasswordOpensIsNotReEncrypted() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Sealed 2024-06.pdf"), password: "unknown")
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["wrong"], recursive: true, dryRun: false,
+                                               encryption: EncryptionSettings(enabled: true,
+                                                                              password: "new-one")))
+        // Still sealed with its own password: it passes through untouched rather than
+        // being re-locked with one that would strand it.
+        XCTAssertEqual(results.first?.status, .locked)
+        let doc = try XCTUnwrap(loadPDF(root.appendingPathComponent("2024-06-sealed.pdf")))
+        XCTAssertTrue(doc.unlock(withPassword: "unknown"))
+    }
+}

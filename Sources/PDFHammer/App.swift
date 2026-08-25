@@ -447,6 +447,55 @@ final class Runner: ObservableObject {
     private func refreshBib() { bibStale = true }
 
     /// Builds the entries if anything has moved since they were last needed.
+    @Published private(set) var searchText = ""
+    @Published private(set) var searching = false
+    /// Nil when no query is active, so the views can tell "no filter" from "no matches".
+    @Published private(set) var matchingKeys: Set<String>?
+    /// Opening text, read once per file and only when a text query has asked for it.
+    private var textCache: [String: String] = [:]
+
+    func search(_ text: String, passwords: [String]) {
+        searchText = text
+        let query = Query(text)
+        guard !query.isEmpty else {
+            matchingKeys = nil
+            return
+        }
+
+        guard query.needsText else {
+            matchingKeys = Set(results.filter { matches(Searchable(item: $0), query) }.map(\.key))
+            return
+        }
+
+        // A text query has to read the documents. Cached, concurrent, and off the main
+        // thread, because this is the one search that costs real work.
+        searching = true
+        let snapshot = results
+        let cached = textCache
+        Task.detached(priority: .userInitiated) { [self] in
+            var fresh: [String: String] = [:]
+            let lock = NSLock()
+            let missing = snapshot.filter { cached[$0.key] == nil }
+            if !missing.isEmpty {
+                DispatchQueue.concurrentPerform(iterations: missing.count) { index in
+                    let item = missing[index]
+                    let text = openingText(of: item.source, passwords: passwords, pages: 6)
+                    lock.lock()
+                    fresh[item.key] = text
+                    lock.unlock()
+                }
+            }
+            await MainActor.run {
+                self.textCache.merge(fresh) { _, new in new }
+                guard self.searchText == text else { return }
+                self.matchingKeys = Set(snapshot.filter {
+                    matches(Searchable(item: $0, text: self.textCache[$0.key]), query)
+                }.map(\.key))
+                self.searching = false
+            }
+        }
+    }
+
     /// Re-orders in place. Everything derived hangs off the results, so the tree, the
     /// folder index and the cursor are rebuilt from the new order.
     func sortResults(by order: ItemSort, descending: Bool) {
@@ -630,6 +679,7 @@ final class Runner: ObservableObject {
         case .decrypted: return .decrypted
         case .renamed: return .renamed
         case .moved: return .moved
+        case .encrypted: return .decrypted
         case .trashed: return .trashed
         case .failed: return .failed
         case .locked: return .renamed
@@ -648,6 +698,9 @@ final class Runner: ObservableObject {
         duplicateKind = [:]
         duplicatesChecked = false
         guesses = [:]
+        matchingKeys = nil
+        searchText = ""
+        textCache = [:]
         decisions = [:]
         confirmedCount = 0
         appliedCount = 0
@@ -779,6 +832,9 @@ struct ContentView: View {
     @AppStorage("moveOriginals") private var moveOriginals = true
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
+    @AppStorage("encryptOutput") private var encryptOutput = false
+    /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
+    @State private var encryptPassword = ""
     @State private var choosingBackupFolder = false
     @State private var savingLog = false
     @AppStorage("useFolderNames") private var useFolderNames = true
@@ -896,7 +952,9 @@ struct ContentView: View {
     private func options(dryRun: Bool) -> Options {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
-                backup: backup, useFolderNames: useFolderNames,
+                backup: backup,
+                encryption: EncryptionSettings(enabled: encryptOutput, password: encryptPassword),
+                useFolderNames: useFolderNames,
                 useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
     }
 
@@ -908,6 +966,7 @@ struct ContentView: View {
             selection.map(\.path).joined(separator: "|"),
             passwords.joined(separator: "|"),
             "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
+            "\(encryptOutput)", encryptPassword.isEmpty ? "" : "set",
         ].joined(separator: "\u{1}")
     }
 
@@ -1280,6 +1339,30 @@ struct ContentView: View {
                      text: "Applying will replace the originals. Nothing is kept and there is no undo.")
             }
         }
+
+            Section {
+                Toggle("Lock the output with a password", isOn: $encryptOutput)
+                    .help("Writes every file out encrypted. Files no password opened are "
+                          + "passed through as they are rather than sealed with a new one.")
+                if encryptOutput {
+                    LabeledContent("Password") {
+                        SecureField("", text: $encryptPassword, prompt: Text("required"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+            } header: {
+                Text("Encryption")
+            } footer: {
+                Text(encryptOutput && encryptPassword.isEmpty
+                     ? "Without a password nothing is encrypted."
+                     : "Kept in memory only, never written to preferences. Set it again next launch.")
+                    .font(.caption)
+                    .foregroundStyle(encryptOutput && encryptPassword.isEmpty
+                                     ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                     : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Section {
                 Toggle("Keep the originals", isOn: $moveOriginals)
@@ -1717,6 +1800,8 @@ private struct ResultsPane: View {
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
     @State private var showingShortcuts = false
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
@@ -1758,6 +1843,12 @@ private struct ResultsPane: View {
 
     private var selectedItem: Item? {
         runner.results.first { $0.key == selected }
+    }
+
+    /// What the views show: everything, or only what the query matched.
+    private var shown: [Item] {
+        guard let keys = runner.matchingKeys else { return runner.results }
+        return runner.results.filter { keys.contains($0.key) }
     }
 
     private var aiClient: AIClient {
@@ -1898,6 +1989,7 @@ private struct ResultsPane: View {
         // Anything being typed into, or any control that has its own idea of what a key
         // means, keeps the event. A table view does not: its type-select is what we are
         // deliberately replacing.
+        if searchFocused { return false }
         if let responder = event.window?.firstResponder,
            responder is NSTextView || (responder is NSControl && !(responder is NSTableView)) {
             return false
@@ -1930,6 +2022,7 @@ private struct ResultsPane: View {
         case "o": openInViewer()
         case "b": copyCitation()
         case "?": showingShortcuts = true
+        case "/": searchFocused = true
         case "d": markDeleted()
         case "r": reopenSelected()
         case "j", "n": step(by: 1)
@@ -2285,7 +2378,8 @@ private struct ResultsPane: View {
         ScrollViewReader { scroll in
             List(selection: $selected) {
                 ForEach(runner.tree) { node in
-                    NodeView(node: node, expanded: $expanded, runner: runner)
+                    NodeView(node: node, expanded: $expanded, runner: runner,
+                             visible: runner.matchingKeys)
                 }
             }
             .listStyle(.inset)
@@ -2359,6 +2453,7 @@ private struct ResultsPane: View {
     private var summaryBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
+                searchField
                 Picker("View", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
@@ -2380,7 +2475,14 @@ private struct ResultsPane: View {
                     ProgressView(value: Double(runner.reviewed),
                                  total: Double(max(runner.results.count, 1)))
                         .frame(width: 140)
-                    if runner.pendingCount == 0 {
+                    if let keys = runner.matchingKeys {
+                        Text("\(keys.count) of \(runner.results.count) shown")
+                            .font(.callout)
+                            .monospacedDigit()
+                            .foregroundStyle(keys.isEmpty
+                                             ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                             : .secondary)
+                    } else if runner.pendingCount == 0 {
                         Label("All \(runner.results.count) reviewed", systemImage: "checkmark.circle.fill")
                             .font(.callout)
                             .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
@@ -2423,6 +2525,40 @@ private struct ResultsPane: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search", text: $query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onSubmit { runner.search(query, passwords: passwords) }
+                .onChange(of: query) { _, new in
+                    // Metadata is instant; a text query waits for Return so a shelf is
+                    // not read from end to end on every keystroke.
+                    if new.isEmpty || !Query(new).needsText {
+                        runner.search(new, passwords: passwords)
+                    }
+                }
+            if runner.searching { ProgressView().controlSize(.small) }
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                    runner.search("", passwords: passwords)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+        .frame(width: 240)
+        .help("Words match the name. folder: was: status: year: narrow it, size> pages> "
+              + "compare, text:\"…\" reads the pages. Return runs a text search.")
     }
 
     @ViewBuilder
@@ -2826,9 +2962,24 @@ private struct NodeView: View {
     let node: Node
     @Binding var expanded: Set<String>
     @ObservedObject var runner: Runner
+    /// Nil means no filter. A folder with nothing visible under it disappears too.
+    var visible: Set<String>?
+
+    private var isHidden: Bool {
+        guard let visible else { return false }
+        if let key = node.itemKey { return !visible.contains(key) }
+        return !anyVisible(node, visible)
+    }
+
+    private func anyVisible(_ node: Node, _ visible: Set<String>) -> Bool {
+        if let key = node.itemKey { return visible.contains(key) }
+        return (node.children ?? []).contains { anyVisible($0, visible) }
+    }
 
     var body: some View {
-        if let key = node.itemKey, let item = runner.item(key) {
+        if isHidden {
+            EmptyView()
+        } else if let key = node.itemKey, let item = runner.item(key) {
             ResultRow(item: item, decision: runner.decision(for: item),
                       duplicate: runner.duplicateKind[item.key])
                 .tag(key)
@@ -2836,7 +2987,7 @@ private struct NodeView: View {
         } else {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
-                    NodeView(node: child, expanded: $expanded, runner: runner)
+                    NodeView(node: child, expanded: $expanded, runner: runner, visible: visible)
                 }
             } label: {
                 Label {
@@ -3075,6 +3226,7 @@ private struct StatusPill: View {
         case .renamed: return "textformat"
         case .locked: return "lock.fill"
         case .trashed: return "trash.fill"
+        case .encrypted: return "lock.fill"
         case .moved: return "arrow.right.doc.on.clipboard"
         case .failed: return "exclamationmark.triangle.fill"
         }
@@ -3089,6 +3241,7 @@ private struct StatusPill: View {
         case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
         case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
         case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
+        case .encrypted: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
         }
     }
