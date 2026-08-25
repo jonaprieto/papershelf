@@ -12,41 +12,42 @@ permissions:
 jobs:
   dmg:
     runs-on: macos-latest
+
+    # Secrets are lifted into the environment here because the `secrets` context is not
+    # available in a step's `if:`, while `env` is. Signing and notarization are skipped
+    # when they are absent, so a fork still gets an unsigned build rather than a failure.
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+      NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+      NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+      NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Test
         run: swift test
 
-      # Signing only happens when the secrets exist, so a fork builds an unsigned
-      # image rather than failing.
       - name: Import signing certificate
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
-        env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        if: env.MACOS_CERTIFICATE != ''
         run: |
           KEYCHAIN=build.keychain
           security create-keychain -p actions "$KEYCHAIN"
           security default-keychain -s "$KEYCHAIN"
           security unlock-keychain -p actions "$KEYCHAIN"
-          echo "$CERTIFICATE" | base64 --decode > certificate.p12
-          security import certificate.p12 -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" \
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
           rm certificate.p12
 
       - name: Build the disk image
-        env:
-          DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
         run: ./Tools/make-dmg.sh
 
       - name: Notarize
-        if: ${{ secrets.NOTARY_APPLE_ID != '' }}
-        env:
-          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
-          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
-          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        if: env.NOTARY_APPLE_ID != ''
         run: |
           DMG=$(ls dist/*.dmg)
           xcrun notarytool submit "$DMG" --apple-id "$NOTARY_APPLE_ID" \
