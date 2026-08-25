@@ -239,9 +239,20 @@ final class Runner: ObservableObject {
     /// still what Apply will use. Reopening a file picks up the new suggestion.
     func restyle(options: Options) {
         guard lastRunWasDry, !results.isEmpty else { return }
-        results = PDFHammerCore.restyled(results, options: options, known: guesses)
-        refreshBib()
-        revision += 1
+        let snapshot = results
+        let known = guesses
+        // Off the main actor: at ten thousand files this is most of a second, and it runs
+        // on every rule toggle. Doing it here would freeze the window each time.
+        Task.detached(priority: .userInitiated) { [self] in
+            let restyled = PDFHammerCore.restyled(snapshot, options: options, known: known)
+            await MainActor.run {
+                // A newer run may have landed while this was working.
+                guard self.results.count == snapshot.count, self.lastRunWasDry else { return }
+                self.results = restyled
+                self.refreshBib()
+                self.revision += 1
+            }
+        }
     }
 
     /// The next file still waiting, from the cursor onwards, wrapping once.
@@ -660,7 +671,8 @@ final class Runner: ObservableObject {
                 self.current = ""
             }
             let out = process(jobs: found, options: options, progress: self.report)
-            await MainActor.run { self.finish(out) }
+            let derived = Runner.derive(out)
+            await MainActor.run { self.finish(out, derived: derived) }
         }
     }
 
@@ -692,10 +704,11 @@ final class Runner: ObservableObject {
             await MainActor.run { self.phase = .processing }
             let out = process(jobs: queue, options: options, overrides: overrides,
                               trashed: trashed, moves: moves, progress: self.report)
+            let derived = Runner.derive(out)
             await MainActor.run {
                 for item in out { self.note(self.kind(for: item.status), for: item,
                                             detail: "-> \(item.destinationName)") }
-                self.finish(out)
+                self.finish(out, derived: derived)
             }
         }
     }
@@ -752,10 +765,20 @@ final class Runner: ObservableObject {
     }
 
     /// Everything derived from the results is built once, here.
-    private func finish(_ out: [Item], keepingDecisions: Bool = false) {
-        if !keepingDecisions { cursor = 0 }
-        results = out
-        tree = buildTree(out)
+    /// Everything derived from a result set, computed together so it can be built away
+    /// from the main actor.
+    struct Derived: Sendable {
+        let tree: [Node]
+        let statusCounts: [(Status, Int)]
+        let byFolder: [String: [Int]]
+        let indexByKey: [String: Int]
+        let ancestorsByKey: [String: [String]]
+    }
+
+    /// Building the tree and the indexes is linear in the collection, which at ten
+    /// thousand files is long enough to be felt if it happens on the main actor.
+    nonisolated static func derive(_ out: [Item]) -> Derived {
+        let tree = buildTree(out)
 
         var counts: [Status: Int] = [:]
         var folders: [String: [Int]] = [:]
@@ -765,7 +788,6 @@ final class Runner: ObservableObject {
             folders[folderPath(of: item), default: []].append(index)
             keys[item.key] = index
         }
-        indexByKey = keys
 
         var ancestors: [String: [String]] = [:]
         func walk(_ nodes: [Node], path: [String]) {
@@ -778,12 +800,27 @@ final class Runner: ObservableObject {
             }
         }
         walk(tree, path: [])
-        ancestorsByKey = ancestors
+
+        return Derived(
+            tree: tree,
+            statusCounts: Status.allCases.compactMap { status in counts[status].map { (status, $0) } },
+            byFolder: folders,
+            indexByKey: keys,
+            ancestorsByKey: ancestors
+        )
+    }
+
+    private func finish(_ out: [Item], keepingDecisions: Bool = false,
+                        derived: Derived? = nil) {
+        if !keepingDecisions { cursor = 0 }
+        results = out
+        let parts = derived ?? Runner.derive(out)
+        tree = parts.tree
+        statusCounts = parts.statusCounts
+        byFolder = parts.byFolder
+        indexByKey = parts.indexByKey
+        ancestorsByKey = parts.ancestorsByKey
         refreshBib()
-        statusCounts = Status.allCases.compactMap { status in
-            counts[status].map { (status, $0) }
-        }
-        byFolder = folders
 
         done = out.count
         current = ""

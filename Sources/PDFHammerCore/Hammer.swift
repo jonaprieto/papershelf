@@ -774,32 +774,45 @@ public enum ItemSort: String, Sendable, CaseIterable, Identifiable {
 
 /// Orders items. The tree keeps insertion order, so sorting the list sorts within each
 /// folder as well as across a flat view.
+///
+/// Positions are sorted rather than the items themselves. An `Item` carries three URLs
+/// and a dictionary, so every swap during a sort retains and releases them; comparing is
+/// cheap, moving is not. String keys are computed once up front for the same reason,
+/// since `localizedStandardCompare` is far too expensive to call O(n log n) times.
 public func sorted(_ items: [Item], by order: ItemSort, descending: Bool? = nil) -> [Item] {
+    guard items.count > 1 else { return items }
     let down = descending ?? order.descendsByDefault
-    func compare(_ a: Item, _ b: Item) -> Bool {
-        switch order {
-        case .folder:
-            return a.source.path.localizedStandardCompare(b.source.path) == .orderedAscending
-        case .newName:
-            return a.destinationName.localizedStandardCompare(b.destinationName) == .orderedAscending
-        case .originalName:
-            return a.sourceName.localizedStandardCompare(b.sourceName) == .orderedAscending
-        case .size:
-            let x = a.byteCount ?? 0, y = b.byteCount ?? 0
-            return x == y ? a.key < b.key : x < y
-        case .pages:
-            let x = a.pageCount ?? 0, y = b.pageCount ?? 0
-            return x == y ? a.key < b.key : x < y
-        case .modified:
-            let x = a.modifiedDate ?? .distantPast, y = b.modifiedDate ?? .distantPast
-            return x == y ? a.key < b.key : x < y
-        case .status:
-            return a.status.rawValue == b.status.rawValue
-                ? a.key < b.key
-                : a.status.rawValue < b.status.rawValue
+
+    var indices = Array(items.indices)
+    switch order {
+    case .folder, .newName, .originalName, .status:
+        let keys: [String] = items.map { item in
+            switch order {
+            case .folder: return item.source.path
+            case .newName: return item.destinationName
+            case .originalName: return item.sourceName
+            default: return item.status.rawValue + "\u{1}" + item.key
+            }
+        }
+        indices.sort { a, b in
+            let result = keys[a].localizedStandardCompare(keys[b])
+            if result == .orderedSame { return a < b }
+            return down ? result == .orderedDescending : result == .orderedAscending
+        }
+    case .size, .pages, .modified:
+        let keys: [Double] = items.map { item in
+            switch order {
+            case .size: return Double(item.byteCount ?? 0)
+            case .pages: return Double(item.pageCount ?? 0)
+            default: return item.modifiedDate?.timeIntervalSince1970 ?? 0
+            }
+        }
+        indices.sort { a, b in
+            if keys[a] == keys[b] { return a < b }
+            return down ? keys[a] > keys[b] : keys[a] < keys[b]
         }
     }
-    return items.sorted { down ? compare($1, $0) : compare($0, $1) }
+    return indices.map { items[$0] }
 }
 
 // MARK: - Duplicates
