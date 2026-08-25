@@ -719,6 +719,64 @@ private func byteCount(_ url: URL) -> Int? {
     (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
 }
 
+// MARK: - Sorting
+
+/// How the results are ordered. Folder order is the default, since it matches where the
+/// files actually live; the rest are for answering a question about the set.
+public enum ItemSort: String, Sendable, CaseIterable, Identifiable {
+    case folder, newName, originalName, size, pages, modified, status
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .folder: return "Folder"
+        case .newName: return "New name"
+        case .originalName: return "Original name"
+        case .size: return "Size"
+        case .pages: return "Pages"
+        case .modified: return "Date"
+        case .status: return "Status"
+        }
+    }
+
+    /// True when bigger or newer belongs at the top, which is what you want from a
+    /// question like "what is taking up the space".
+    public var descendsByDefault: Bool {
+        self == .size || self == .pages || self == .modified
+    }
+}
+
+/// Orders items. The tree keeps insertion order, so sorting the list sorts within each
+/// folder as well as across a flat view.
+public func sorted(_ items: [Item], by order: ItemSort, descending: Bool? = nil) -> [Item] {
+    let down = descending ?? order.descendsByDefault
+    func compare(_ a: Item, _ b: Item) -> Bool {
+        switch order {
+        case .folder:
+            return a.source.path.localizedStandardCompare(b.source.path) == .orderedAscending
+        case .newName:
+            return a.destinationName.localizedStandardCompare(b.destinationName) == .orderedAscending
+        case .originalName:
+            return a.sourceName.localizedStandardCompare(b.sourceName) == .orderedAscending
+        case .size:
+            let x = a.byteCount ?? 0, y = b.byteCount ?? 0
+            return x == y ? a.key < b.key : x < y
+        case .pages:
+            let x = a.pageCount ?? 0, y = b.pageCount ?? 0
+            return x == y ? a.key < b.key : x < y
+        case .modified:
+            let x = a.modifiedDate ?? .distantPast, y = b.modifiedDate ?? .distantPast
+            return x == y ? a.key < b.key : x < y
+        case .status:
+            return a.status.rawValue == b.status.rawValue
+                ? a.key < b.key
+                : a.status.rawValue < b.status.rawValue
+        }
+    }
+    return items.sorted { down ? compare($1, $0) : compare($0, $1) }
+}
+
 // MARK: - Duplicates
 
 /// Copy markers a downloader or a file manager appends: `(1)`, `-2`, `copy`, `copia`.
@@ -756,7 +814,15 @@ public func fileDigest(_ url: URL) -> String? {
 }
 
 public struct DuplicateGroup: Identifiable, Sendable {
-    public enum Kind: String, Sendable { case identical, likely }
+    /// How the copies were matched, most trustworthy first.
+    public enum Kind: String, Sendable {
+        /// The same bytes.
+        case identical
+        /// Different bytes, but the opening pages read the same.
+        case sameText
+        /// Only the names agree.
+        case likely
+    }
 
     public let id: String
     public let kind: Kind
@@ -793,7 +859,25 @@ private func rank(_ a: Item, _ b: Item) -> Bool {
 /// a size, so a collection of thousands is not read from end to end to answer a question
 /// most files settle by size alone. What is left is grouped by `duplicateKey`, which
 /// catches the same book downloaded twice under slightly different names.
-public func duplicateGroups(in items: [Item]) -> [DuplicateGroup] {
+/// A fingerprint of what the opening pages say, or nil when there is not enough text to
+/// be sure of anything.
+///
+/// The length floor is the important part: a scan with no text layer yields nothing, and
+/// without a floor every such file would fingerprint identically and the whole shelf
+/// would be reported as one enormous duplicate. Page count joins the hash so two
+/// different works that happen to open with the same boilerplate stay apart.
+public func contentKey(for item: Item, passwords: [String], pages: Int = 3,
+                       minimumCharacters: Int = 240) -> String? {
+    let text = openingText(of: item.source, passwords: passwords, pages: pages)
+    let squeezed = text.lowercased().filter { $0.isLetter || $0.isNumber }
+    guard squeezed.count >= minimumCharacters else { return nil }
+    var hasher = SHA256()
+    hasher.update(data: Data(squeezed.utf8))
+    let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    return "\(item.pageCount ?? 0):\(digest)"
+}
+
+public func duplicateGroups(in items: [Item], passwords: [String] = []) -> [DuplicateGroup] {
     var bySize: [Int: [Item]] = [:]
     for item in items where item.byteCount != nil {
         bySize[item.byteCount!, default: []].append(item)
@@ -823,6 +907,27 @@ public func duplicateGroups(in items: [Item]) -> [DuplicateGroup] {
         let sorted = group.sorted(by: rank)
         groups.append(DuplicateGroup(id: digest, kind: .identical, items: sorted))
         claimed.formUnion(sorted.map(\.key))
+    }
+
+    // Same book, different bytes: re-encoded, re-downloaded, or one copy encrypted.
+    let unclaimed = items.filter { !claimed.contains($0.key) }
+    if !unclaimed.isEmpty {
+        var keys = [String?](repeating: nil, count: unclaimed.count)
+        keys.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: unclaimed.count) { index in
+                buffer[index] = contentKey(for: unclaimed[index], passwords: passwords)
+            }
+        }
+        var byText: [String: [Item]] = [:]
+        for (index, item) in unclaimed.enumerated() {
+            guard let key = keys[index] else { continue }
+            byText[key, default: []].append(item)
+        }
+        for (key, group) in byText where group.count > 1 {
+            let sorted = group.sorted(by: rank)
+            groups.append(DuplicateGroup(id: "text:" + key, kind: .sameText, items: sorted))
+            claimed.formUnion(sorted.map(\.key))
+        }
     }
 
     var byName: [String: [Item]] = [:]

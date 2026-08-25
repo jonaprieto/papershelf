@@ -98,6 +98,19 @@ settle by size alone. Everything else is grouped by a name key that ignores the 
 copy markers, so `Dune.pdf`, `dune-2.pdf` and `Dune (1).pdf` land together while
 `Catch 22.pdf` stays clear of `Catch.pdf`.
 
+Three passes, weakest claim last:
+
+1. **Identical** — the same bytes, by SHA-256, hashed only within groups that already
+   share a size.
+2. **Same pages** — different bytes, but the opening pages read the same. Catches a
+   re-download, a re-encode, or one copy encrypted and one not, under names that share
+   nothing. A file with too little extractable text is skipped entirely: without that
+   floor every scan with no text layer would fingerprint alike and the whole shelf would
+   report as one enormous duplicate.
+3. **Similar names** — only the names agree, once dates and copy markers are removed.
+
+A file lands in at most one group, and the stronger claim wins.
+
 Duplicates get their own view, because choosing between two copies means seeing them
 beside each other and beside the page. Each group shows its copies with sizes, the keeper
 starred, and **Keep this one** on the others to change that choice. **Trash the other N**
@@ -195,6 +208,16 @@ Originals move to `original_pdfs/` inside each source by default, mirroring thei
 subfolders. You can rename that folder or point everything at one folder anywhere on
 disk, in which case each source gets its own subfolder so two roots holding the same
 relative path do not collide. Delete always means the Trash, never an outright removal.
+
+## Sorting
+
+**Sort by** on the results bar reorders on the fly: folder, new name, original name, size,
+pages, date or status. Size, pages and date start largest-or-newest first, since that is
+the question being asked when you sort by them; the arrow reverses any of them. Names sort
+the way a person reads them, so `chapter 9` comes before `chapter 10`.
+
+Ordering applies within each folder in the tree views, and across the whole grid in the
+catalogue.
 
 ## Activity
 

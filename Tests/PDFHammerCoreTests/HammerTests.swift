@@ -1014,3 +1014,117 @@ extension HammerTests {
         XCTAssertGreaterThan(locked.byteCount ?? 0, 0)
     }
 }
+
+extension HammerTests {
+
+    // MARK: - Duplicates by content
+
+    private var chapter: String {
+        String(repeating: "The quick brown fox jumps over the lazy dog near the riverbank. ", count: 12)
+    }
+
+    func testSameOpeningPagesAreFoundEvenWhenTheBytesDiffer() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        // The same text twice: once plain, once encrypted. Different bytes, same book,
+        // and names that share nothing, so only content can match them.
+        try makeTextPDF(at: root.appendingPathComponent("Dune.pdf"), text: chapter)
+        try makeTextPDF(at: root.appendingPathComponent("wholly-different-name.pdf"),
+                        text: chapter, password: "shut")
+        try makeTextPDF(at: root.appendingPathComponent("Neuromancer.pdf"),
+                        text: String(repeating: "A wholly unrelated body of prose here. ", count: 12))
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: ["shut"], recursive: true, dryRun: true))
+        let groups = duplicateGroups(in: items, passwords: ["shut"])
+
+        XCTAssertEqual(groups.count, 1)
+        let group = try XCTUnwrap(groups.first)
+        XCTAssertEqual(group.kind, .sameText)
+        XCTAssertEqual(Set(group.items.map(\.sourceName)), ["Dune.pdf", "wholly-different-name.pdf"])
+    }
+
+    /// Without a floor on how much text counts, every scan with no text layer would
+    /// fingerprint the same and the whole shelf would be one giant group.
+    func testTextlessScansAreNotAllDuplicatesOfEachOther() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        // Drawn rectangles, no text layer, and names that do not match either.
+        try makePDF(at: root.appendingPathComponent("scan-one.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("another-thing.pdf"), password: "a")
+        try makeTextPDF(at: root.appendingPathComponent("too-short.pdf"), text: "Hello.")
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: ["a"], recursive: true, dryRun: true))
+        for item in items { XCTAssertNil(contentKey(for: item, passwords: ["a"])) }
+        XCTAssertEqual(duplicateGroups(in: items, passwords: ["a"]).count, 0)
+    }
+
+    func testIdenticalBytesWinOverContent() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makeTextPDF(at: root.appendingPathComponent("a.pdf"), text: chapter)
+        let bytes = try Data(contentsOf: root.appendingPathComponent("a.pdf"))
+        try bytes.write(to: root.appendingPathComponent("b.pdf"))
+
+        let items = process(jobs: collectJobs(roots: [root], recursive: true),
+                            options: Options(passwords: [], recursive: true, dryRun: true))
+        let groups = duplicateGroups(in: items)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.kind, .identical, "byte equality is the stronger claim")
+    }
+}
+
+extension HammerTests {
+
+    // MARK: - Sorting
+
+    private func sortable(_ name: String, size: Int, pages: Int, day: Int) -> Item {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        return Item(root: root, source: root.appendingPathComponent(name),
+                    destination: root.appendingPathComponent("out-" + name), status: .renamed,
+                    modifiedDate: Date(timeIntervalSince1970: Double(day) * 86_400),
+                    byteCount: size, pageCount: pages)
+    }
+
+    func testSortOrders() {
+        let items = [
+            sortable("b.pdf", size: 300, pages: 10, day: 3),
+            sortable("a.pdf", size: 100, pages: 30, day: 1),
+            sortable("c.pdf", size: 200, pages: 20, day: 2),
+        ]
+
+        XCTAssertEqual(sorted(items, by: .originalName).map(\.sourceName),
+                       ["a.pdf", "b.pdf", "c.pdf"])
+        // Size, pages and date read biggest or newest first, which is the question asked.
+        XCTAssertEqual(sorted(items, by: .size).map(\.sourceName), ["b.pdf", "c.pdf", "a.pdf"])
+        XCTAssertEqual(sorted(items, by: .pages).map(\.sourceName), ["a.pdf", "c.pdf", "b.pdf"])
+        XCTAssertEqual(sorted(items, by: .modified).map(\.sourceName), ["b.pdf", "c.pdf", "a.pdf"])
+        // And the direction can be turned around: 100, 200, 300.
+        XCTAssertEqual(sorted(items, by: .size, descending: false).map(\.sourceName),
+                       ["a.pdf", "c.pdf", "b.pdf"])
+    }
+
+    /// Numbers inside names sort the way a person reads them, not by character code.
+    func testNamesSortNaturally() {
+        let items = [sortable("chapter 10.pdf", size: 1, pages: 1, day: 1),
+                     sortable("chapter 9.pdf", size: 1, pages: 1, day: 1),
+                     sortable("chapter 2.pdf", size: 1, pages: 1, day: 1)]
+        XCTAssertEqual(sorted(items, by: .originalName).map(\.sourceName),
+                       ["chapter 2.pdf", "chapter 9.pdf", "chapter 10.pdf"])
+    }
+
+    func testSortingIsStableForEqualKeys() {
+        let items = (1...5).map { sortable("f\($0).pdf", size: 100, pages: 1, day: 1) }
+        XCTAssertEqual(sorted(items, by: .size).map(\.sourceName),
+                       sorted(items, by: .size).map(\.sourceName))
+    }
+}

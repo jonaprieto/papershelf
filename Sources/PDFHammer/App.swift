@@ -457,6 +457,13 @@ final class Runner: ObservableObject {
     private func refreshBib() { bibStale = true }
 
     /// Builds the entries if anything has moved since they were last needed.
+    /// Re-orders in place. Everything derived hangs off the results, so the tree, the
+    /// folder index and the cursor are rebuilt from the new order.
+    func sortResults(by order: ItemSort, descending: Bool) {
+        guard !results.isEmpty else { return }
+        finish(sorted(results, by: order, descending: descending), keepingDecisions: true)
+    }
+
     /// The entry type the next rebuild should use.
     var bibType: BibType = .book {
         didSet { if bibType != oldValue { bibStale = true } }
@@ -469,12 +476,12 @@ final class Runner: ObservableObject {
         bibByItem = Dictionary(uniqueKeysWithValues: bib.map { ($0.itemKey, $0) })
     }
 
-    func findDuplicates() {
+    func findDuplicates(passwords: [String] = []) {
         guard !results.isEmpty, !findingDuplicates else { return }
         findingDuplicates = true
         let snapshot = results
         Task.detached(priority: .userInitiated) { [self] in
-            let found = duplicateGroups(in: snapshot)
+            let found = duplicateGroups(in: snapshot, passwords: passwords)
             await MainActor.run {
                 self.duplicates = found
                 self.duplicateKind = Dictionary(
@@ -1715,6 +1722,8 @@ private struct ResultsPane: View {
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @AppStorage("autoIdentify") private var autoIdentify = false
+    @AppStorage("sortOrder") private var sortOrder: ItemSort = .folder
+    @AppStorage("sortDescending") private var sortDescending = false
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
@@ -1815,6 +1824,17 @@ private struct ResultsPane: View {
         }
         // A restyle rewrites the suggestions under the current selection.
         .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
+        .onChange(of: sortOrder) { _, order in
+            sortDescending = order.descendsByDefault
+            runner.sortResults(by: order, descending: sortDescending)
+        }
+        .onChange(of: sortDescending) { _, down in
+            runner.sortResults(by: sortOrder, descending: down)
+        }
+        .onChange(of: runner.results.count) { _, count in
+            guard count > 0, sortOrder != .folder else { return }
+            runner.sortResults(by: sortOrder, descending: sortDescending)
+        }
         .onDisappear(perform: removeKeyMonitor)
         .fileImporter(isPresented: $choosingMoveTarget,
                       allowedContentTypes: [.folder],
@@ -2080,7 +2100,8 @@ private struct ResultsPane: View {
                 VStack(spacing: 10) {
                     ProgressView().controlSize(.large)
                     Text("Comparing \(runner.results.count) files").font(.headline)
-                    Text("Hashing only what shares a size").foregroundStyle(.secondary)
+                    Text("Hashing what shares a size, then reading opening pages")
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if runner.duplicates.isEmpty {
@@ -2093,7 +2114,7 @@ private struct ResultsPane: View {
                          : "Compare the \(runner.results.count) files by content and by name.")
                 } actions: {
                     if !runner.duplicatesChecked {
-                        Button("Find duplicates") { runner.findDuplicates() }
+                        Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -2115,9 +2136,11 @@ private struct ResultsPane: View {
 
     private var duplicatesBar: some View {
         let identical = runner.duplicates.filter { $0.kind == .identical }.count
+        let sameText = runner.duplicates.filter { $0.kind == .sameText }.count
         let reclaimable = runner.duplicates.reduce(0) { $0 + $1.reclaimable }
         return HStack(spacing: 10) {
-            Text("\(identical) identical, \(runner.duplicates.count - identical) likely")
+            Text("\(identical) identical, \(sameText) same pages, "
+                 + "\(runner.duplicates.count - identical - sameText) by name")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Text(ByteCountFormatter.string(fromByteCount: Int64(reclaimable), countStyle: .file)
@@ -2125,7 +2148,7 @@ private struct ResultsPane: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
-            Button("Recheck") { runner.findDuplicates() }.controlSize(.small)
+            Button("Recheck") { runner.findDuplicates(passwords: passwords) }.controlSize(.small)
             Button("Trash \(runner.identicalExtras) identical spares") {
                 runner.markIdenticalExtras()
                 ensureSelection()
@@ -2340,6 +2363,19 @@ private struct ResultsPane: View {
 
                     Spacer(minLength: 8)
 
+                    Picker("Sort", selection: $sortOrder) {
+                        ForEach(ItemSort.allCases) { Text($0.label).tag($0) }
+                    }
+                    .frame(width: 150)
+                    .help("Reorders within each folder, and across the catalogue")
+                    Button {
+                        sortDescending.toggle()
+                    } label: {
+                        Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
+                    }
+                    .controlSize(.small)
+                    .help(sortDescending ? "Largest or newest first" : "Smallest or oldest first")
+
                     duplicateControls
                     if aiReady && runner.pendingCount > 0 {
                         Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
@@ -2369,8 +2405,9 @@ private struct ResultsPane: View {
                 .controlSize(.small)
         } else {
             let identical = runner.duplicates.filter { $0.kind == .identical }.count
-            let likely = runner.duplicates.count - identical
-            Text("\(identical) identical, \(likely) likely")
+            let sameText = runner.duplicates.filter { $0.kind == .sameText }.count
+            let likely = runner.duplicates.count - identical - sameText
+            Text("\(identical) identical, \(sameText) same pages, \(likely) by name")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Button("Trash \(runner.identicalExtras) spare copies") {
@@ -2851,11 +2888,9 @@ private struct ResultRow: View {
             }
             Spacer(minLength: 0)
             if let duplicate {
-                Image(systemName: duplicate == .identical ? "doc.on.doc.fill" : "doc.on.doc")
-                    .foregroundStyle(duplicate == .identical
-                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                    .help(duplicate == .identical ? "Byte-identical copy" : "Probably the same book")
+                Image(systemName: duplicateIcon(duplicate))
+                    .foregroundStyle(duplicateColour(duplicate))
+                    .help(duplicateExplanation(duplicate))
             }
         }
         .padding(.vertical, 3)
@@ -2967,13 +3002,9 @@ private struct CoverCard: View {
     private var badges: some View {
         HStack(spacing: 3) {
             if let duplicate {
-                Image(systemName: duplicate == .identical ? "doc.on.doc.fill" : "doc.on.doc")
-                    .foregroundStyle(duplicate == .identical
-                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                    .help(duplicate == .identical
-                          ? "Byte-identical copy of another file here"
-                          : "Probably the same book as another file here")
+                Image(systemName: duplicateIcon(duplicate))
+                    .foregroundStyle(duplicateColour(duplicate))
+                    .help(duplicateExplanation(duplicate))
             }
             switch decision {
             case .confirmed: Image(systemName: "checkmark.circle.fill")
@@ -3290,12 +3321,10 @@ private struct DuplicateSection: View {
             }
         } header: {
             HStack(spacing: 8) {
-                Label(group.kind == .identical ? "Identical" : "Probably the same",
-                      systemImage: group.kind == .identical ? "doc.on.doc.fill" : "doc.on.doc")
+                Label(duplicateLabel(group.kind), systemImage: duplicateIcon(group.kind))
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(group.kind == .identical
-                                     ? Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-                                     : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(duplicateColour(group.kind))
+                    .help(duplicateExplanation(group.kind))
                 Text("\(group.items.count) copies")
                     .foregroundStyle(.secondary)
                 Text(ByteCountFormatter.string(fromByteCount: Int64(group.reclaimable), countStyle: .file)
@@ -3311,6 +3340,38 @@ private struct DuplicateSection: View {
             .font(.callout)
             .padding(.vertical, 2)
         }
+    }
+}
+
+func duplicateLabel(_ kind: DuplicateGroup.Kind) -> String {
+    switch kind {
+    case .identical: return "Identical"
+    case .sameText: return "Same pages"
+    case .likely: return "Similar names"
+    }
+}
+
+func duplicateIcon(_ kind: DuplicateGroup.Kind) -> String {
+    switch kind {
+    case .identical: return "doc.on.doc.fill"
+    case .sameText: return "text.magnifyingglass"
+    case .likely: return "doc.on.doc"
+    }
+}
+
+func duplicateColour(_ kind: DuplicateGroup.Kind) -> Color {
+    switch kind {
+    case .identical: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+    case .sameText: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
+    case .likely: return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+    }
+}
+
+func duplicateExplanation(_ kind: DuplicateGroup.Kind) -> String {
+    switch kind {
+    case .identical: return "Byte for byte the same file"
+    case .sameText: return "Different bytes, but the opening pages read the same"
+    case .likely: return "Only the names agree, which is a guess"
     }
 }
 
