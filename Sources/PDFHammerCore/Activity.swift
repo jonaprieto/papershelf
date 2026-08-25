@@ -8,7 +8,7 @@ import Foundation
 public struct LogEntry: Identifiable, Sendable, Equatable {
     public enum Kind: String, Sendable {
         case scanned, previewed
-        case confirmed, edited, skipped, removed
+        case confirmed, edited, skipped
         case renamed, decrypted, moved, trashed, applied
         case failed
     }

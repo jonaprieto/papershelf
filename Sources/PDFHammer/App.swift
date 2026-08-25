@@ -328,16 +328,6 @@ final class Runner: ObservableObject {
         self.fingerprint = fingerprint
     }
 
-    /// Takes a file out of this run entirely. Nothing on disk changes; it simply stops
-    /// being something to decide about.
-    func remove(_ item: Item) {
-        guard let index = indexByKey[item.key] else { return }
-        set(nil, for: item.key)
-        var remaining = results
-        remaining.remove(at: index)
-        guesses[item.key] = nil
-        finish(remaining, keepingDecisions: true)
-    }
 
     func reopen(_ item: Item) {
         remember([item.key])
@@ -1522,7 +1512,7 @@ struct ContentView: View {
         case .trashed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
         case .moved: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
         case .decrypted, .renamed, .applied: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
-        case .skipped, .removed: return .secondary
+        case .skipped: return .secondary
         default: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         }
     }
@@ -1911,7 +1901,6 @@ private struct ResultsPane: View {
         case "a": applyNow()
         case "g": identifySelected()
         case "m": choosingMoveTarget = true
-        case "x": removeSelected()
         case "o": openInViewer()
         case "b": copyCitation()
         case "d": markDeleted()
@@ -1988,12 +1977,6 @@ private struct ResultsPane: View {
         guard let item = selectedItem, runner.decision(for: item) != .applied else { return }
         applyOne(item, draft)
         advance()
-    }
-
-    private func removeSelected() {
-        guard let item = selectedItem else { return }
-        runner.remove(item)
-        ensureSelection()
     }
 
     private func revealInFinder() {
@@ -2290,7 +2273,6 @@ private struct ResultsPane: View {
                 reveal: revealInFinder,
                 openExternally: openInViewer,
                 moveTo: { choosingMoveTarget = true },
-                remove: removeSelected,
                 aiReady: aiReady,
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
@@ -2502,7 +2484,6 @@ private struct ReviewInspector: View {
     let reveal: () -> Void
     let openExternally: () -> Void
     let moveTo: () -> Void
-    let remove: () -> Void
     let aiReady: Bool
     let markDeleted: () -> Void
     let reopen: () -> Void
@@ -2626,6 +2607,7 @@ private struct ReviewInspector: View {
                     // Moving on, and the two that touch the disk.
                     HStack(spacing: 7) {
                         Button(action: skip) { KeyLabel("S", "Skip") }
+                            .help("Leave this file exactly as it is")
                         Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
                             .disabled(pendingInFolder == 0)
                             .help("Skip everything still undecided in \(folderName) and below it")
@@ -2640,11 +2622,10 @@ private struct ReviewInspector: View {
                         Button(action: moveTo) { KeyLabel("M", "Move to…") }
                             .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
                             .help("Send this file to another folder, under its new name")
-                        Button(action: remove) { KeyLabel("X", "Remove") }
-                            .help("Drop it from this run. Nothing on disk changes.")
-                        Button(action: markDeleted) { KeyLabel("D", "Delete") }
+                        Button(action: markDeleted) { KeyLabel("D", "Trash") }
                             .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                            .help("Move to the Trash when you apply")
+                            .help("Moves it to the Trash when you apply, recoverable from "
+                                  + "Finder. Skip is what leaves a file untouched.")
                     }
                 }
 

@@ -182,10 +182,9 @@ next to an editable name.
 | `Return` `C` | confirm and go to the next file |
 | `E` | edit the name |
 | `A` | apply this one file now |
-| `S` `F` | skip the file / the rest of its folder |
+| `S` `F` | leave the file alone / the rest of its folder |
 | `D` | move to the Trash |
 | `M` | move to another folder, under its new name |
-| `X` | drop it from this run, changing nothing on disk |
 | `R` | reopen a decided file |
 | `J` `K` `N` `P` arrows | move without deciding |
 | `B` | copy this file's BibTeX entry, asking the model first if fields are missing |
