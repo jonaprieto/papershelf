@@ -805,6 +805,7 @@ struct ContentView: View {
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
+    @AppStorage("autoIdentify") private var autoIdentify = false
     @AppStorage("bibLineWidth") private var bibLineWidth = 80
     @AppStorage("bibIndent") private var bibIndent = 2
     @AppStorage("bibAlign") private var bibAlign = true
@@ -1363,6 +1364,9 @@ struct ContentView: View {
                             .lineLimit(2)
                     }
                 }
+                Toggle("Ask on each new file", isOn: $autoIdentify)
+                    .disabled(!aiReady)
+                    .help("One request per file as you reach it, billed like any other")
                 SettingsLink {
                     Label("Open settings", systemImage: "gearshape")
                 }
@@ -1710,6 +1714,7 @@ private struct ResultsPane: View {
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
+    @AppStorage("autoIdentify") private var autoIdentify = false
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
@@ -1905,6 +1910,19 @@ private struct ResultsPane: View {
         draft = selectedItem.map(currentName) ?? ""
         suggestion = selectedItem?.destinationName ?? ""
         if !runner.results.isEmpty { listFocused = true }
+        askOnArrival()
+    }
+
+    /// With the toggle on, landing on a file that is still undecided and has never been
+    /// looked at asks the model for a name. Guarded on all three, so browsing back over
+    /// files already dealt with costs nothing.
+    private func askOnArrival() {
+        guard autoIdentify, aiReady, let item = selectedItem,
+              runner.decision(for: item) == nil,
+              runner.guesses[item.key] == nil,
+              !runner.isThinking(item)
+        else { return }
+        Task { await runner.identify(item, client: aiClient, passwords: passwords, rules: rules) }
     }
 
     private func refreshSuggestion() {
@@ -2245,6 +2263,7 @@ private struct ResultsPane: View {
                 applyNow: applyNow,
                 identify: identifySelected,
                 copyCitation: copyCitation,
+                autoIdentify: $autoIdentify,
                 reveal: revealInFinder,
                 openExternally: openInViewer,
                 moveTo: { choosingMoveTarget = true },
@@ -2442,6 +2461,7 @@ private struct ReviewInspector: View {
     let applyNow: () -> Void
     let identify: () -> Void
     let copyCitation: () -> Void
+    @Binding var autoIdentify: Bool
     let reveal: () -> Void
     let openExternally: () -> Void
     let moveTo: () -> Void
@@ -2549,6 +2569,15 @@ private struct ReviewInspector: View {
                         Button(action: copyCitation) { KeyLabel("B", "Citation") }
                             .help("Copy this file's BibTeX entry, asking the model first "
                                   + "when fields are missing")
+                        Toggle(isOn: $autoIdentify) {
+                            Image(systemName: autoIdentify ? "sparkles.rectangle.stack.fill"
+                                                           : "sparkles.rectangle.stack")
+                        }
+                        .toggleStyle(.button)
+                        .disabled(!aiReady)
+                        .help(autoIdentify
+                              ? "Asking the model automatically as you reach each new file"
+                              : "Ask the model automatically when you reach a new file")
                         Button(action: identify) { KeyLabel("G", "Ask AI") }
                             .disabled(!aiReady || runner.isThinking(item))
                             .help(aiReady
@@ -2793,6 +2822,7 @@ private struct ResultRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .strikethrough(decision == .deleted)
+                stats
                 if decision == .deleted {
                     Label("will be moved to the Trash", systemImage: "trash")
                         .font(.caption)
@@ -2835,6 +2865,22 @@ private struct ResultRow: View {
     private var shownName: String {
         if case .confirmed(let name) = decision { return name }
         return item.destinationName
+    }
+
+    /// Size, length and age, which is what tells two similar-looking files apart.
+    @ViewBuilder
+    private var stats: some View {
+        let parts = [
+            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
+            item.modifiedDate.map { $0.formatted(date: .abbreviated, time: .omitted) },
+        ].compactMap { $0 }
+        if !parts.isEmpty {
+            Text(parts.joined(separator: "  ·  "))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+        }
     }
 
     @ViewBuilder

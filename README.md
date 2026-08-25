@@ -180,7 +180,12 @@ next to an editable name.
 | `⌘Z` | undo the last decision |
 
 The header of the inspector has buttons to reveal the file in Finder and to open it
-externally.
+externally. List rows carry the file's size, page count and date, which is what tells two
+similar-looking files apart.
+
+A toggle beside **Ask AI** makes the model answer automatically as you reach each new
+file. It fires only for a file that is undecided and has never been asked about, so
+browsing back over work already done costs nothing.
 
 Apply runs the reviewed plan against the exact files the preview found and uses
 your confirmed names verbatim. Change a source, a password or a rule and it greys

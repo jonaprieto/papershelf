@@ -513,6 +513,7 @@ public struct Item: Identifiable, Sendable {
     public var metadataDate: Date?
     public var modifiedDate: Date?
     public var byteCount: Int?
+    public var pageCount: Int?
 
     /// Stable identity for the file on disk. Symlinks are resolved because a URL built
     /// by the caller (`/var/...`) and one handed back by the filesystem
@@ -1026,10 +1027,12 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
 
     var facts: (metadata: Date?, modified: Date?) = (nil, nil)
     var size: Int?
+    var pages: Int?
     func item(_ destination: URL, _ status: Status, _ message: String = "") -> Item {
         Item(root: job.root, source: source, destination: destination,
              status: status, message: message,
-             metadataDate: facts.metadata, modifiedDate: facts.modified, byteCount: size)
+             metadataDate: facts.metadata, modifiedDate: facts.modified,
+             byteCount: size, pageCount: pages)
     }
 
     // Read into memory: a real run moves the original out from under us part-way.
@@ -1059,6 +1062,8 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
 
     facts = (metadataDate, modificationDate(source))
     size = byteCount(source)
+    // Readable even while locked: the page tree is not encrypted, only its contents.
+    pages = doc.pageCount
 
     var fallbacks: [String] = []
     if options.useFolderNames, let folderPrefix = context.prefix { fallbacks.append(folderPrefix) }

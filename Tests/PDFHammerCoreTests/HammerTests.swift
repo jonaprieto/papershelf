@@ -984,3 +984,33 @@ extension HammerTests {
         XCTAssertEqual(normalizedName(for: "The Señor 2024.pdf", rules: .standard), "2024-the-señor.pdf")
     }
 }
+
+extension HammerTests {
+
+    // MARK: - File statistics
+
+    func testItemsCarryTheirSizeAndLength() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Plain 2024.pdf"), password: nil)
+        try makePDF(at: root.appendingPathComponent("Locked 2024.pdf"), password: "shut")
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: true))
+        let byName = Dictionary(uniqueKeysWithValues: results.map { ($0.sourceName, $0) })
+
+        let plain = try XCTUnwrap(byName["Plain 2024.pdf"])
+        XCTAssertEqual(plain.pageCount, 1)
+        XCTAssertGreaterThan(plain.byteCount ?? 0, 0)
+        XCTAssertNotNil(plain.modifiedDate)
+
+        // The page tree is not encrypted, so a locked file still reports its length even
+        // though no password matched.
+        let locked = try XCTUnwrap(byName["Locked 2024.pdf"])
+        XCTAssertEqual(locked.status, .locked)
+        XCTAssertEqual(locked.pageCount, 1)
+        XCTAssertGreaterThan(locked.byteCount ?? 0, 0)
+    }
+}
