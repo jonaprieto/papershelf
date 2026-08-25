@@ -174,7 +174,13 @@ next to an editable name.
 | `M` | move to another folder, under its new name |
 | `X` | drop it from this run, changing nothing on disk |
 | `R` | reopen a decided file |
-| `J` `K` | move without deciding |
+| `J` `K` `N` `P` arrows | move without deciding |
+| `B` | copy this file's BibTeX entry, asking the model first if fields are missing |
+| `O` | open in the default PDF viewer |
+| `⌘Z` | undo the last decision |
+
+The header of the inspector has buttons to reveal the file in Finder and to open it
+externally.
 
 Apply runs the reviewed plan against the exact files the preview found and uses
 your confirmed names verbatim. Change a source, a password or a rule and it greys
@@ -184,6 +190,23 @@ Originals move to `original_pdfs/` inside each source by default, mirroring thei
 subfolders. You can rename that folder or point everything at one folder anywhere on
 disk, in which case each source gets its own subfolder so two roots holding the same
 relative path do not collide. Delete always means the Trash, never an outright removal.
+
+## Activity
+
+Every decision and every operation is recorded as it happens, with a timestamp, and shown
+newest-first in the Activity panel. It can be copied or saved as fixed-width text:
+
+```
+2026-08-24 10:12:03  renamed    bank/2024/Extracto.pdf  -> 2024-06-extracto.pdf
+2026-08-24 10:12:03  trashed    junk.pdf
+```
+
+Greppable rather than pretty, on the grounds that a log is read when something has gone
+wrong and piping it through `grep` matters more than alignment.
+
+`⌘Z` takes back the last decision. A step that touched many files, like **Confirm all
+remaining** or `F`, is undone as one step. It undoes decisions, not disk operations: once
+Apply or `A` has run, the originals folder or the Trash is the way back.
 
 ## Notes
 

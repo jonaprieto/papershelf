@@ -9,6 +9,9 @@ import PDFHammerCore
 @MainActor
 final class Chrome: ObservableObject {
     @Published var columnVisibility: NavigationSplitViewVisibility = .all
+    /// Set by the window so the menu can reach the runner without owning it.
+    @Published var undo: () -> Void = {}
+    @Published var canUndo = false
 
     func toggleSidebar() {
         withAnimation(.easeOut(duration: 0.18)) {
@@ -28,6 +31,11 @@ struct PDFHammerApp: App {
         Settings { SettingsView() }
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo", action: chrome.undo)
+                    .keyboardShortcut("z", modifiers: .command)
+                    .disabled(!chrome.canUndo)
+            }
             CommandGroup(after: .sidebar) {
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
@@ -177,6 +185,12 @@ final class Runner: ObservableObject {
     @Published private(set) var bib: [BibEntry] = []
     @Published private(set) var bibByItem: [String: BibEntry] = [:]
     private var bibStale = true
+    @Published private(set) var log: [LogEntry] = []
+    /// One entry per undoable step. A step can touch many files, so each holds the
+    /// decisions exactly as they were before it ran.
+    private var undoStack: [[(key: String, decision: Decision?)]] = []
+
+    var canUndo: Bool { !undoStack.isEmpty }
     @Published private(set) var confirmedCount = 0
     @Published private(set) var appliedCount = 0
     /// Bumped whenever the suggested names change without the list itself changing.
@@ -252,12 +266,29 @@ final class Runner: ObservableObject {
     }
 
     func confirm(_ item: Item, as name: String) {
-        set(.confirmed(sanitizedFilename(name)), for: item.key)
+        remember([item.key])
+        let final = sanitizedFilename(name)
+        set(.confirmed(final), for: item.key)
+        note(.confirmed, for: item, detail: final == item.destinationName ? "" : "as \(final)")
     }
 
-    func skip(_ item: Item) { set(.skipped, for: item.key) }
-    func markForDeletion(_ item: Item) { set(.deleted, for: item.key) }
-    func move(_ item: Item, to folder: URL) { set(.moveTo(folder), for: item.key) }
+    func skip(_ item: Item) {
+        remember([item.key])
+        set(.skipped, for: item.key)
+        note(.skipped, for: item)
+    }
+
+    func markForDeletion(_ item: Item) {
+        remember([item.key])
+        set(.deleted, for: item.key)
+        note(.trashed, for: item, detail: "marked")
+    }
+
+    func move(_ item: Item, to folder: URL) {
+        remember([item.key])
+        set(.moveTo(folder), for: item.key)
+        note(.moved, for: item, detail: "marked for \(folder.path)")
+    }
 
     /// Drops every file that came from a source, in place. A rescan would give the same
     /// answer at the cost of walking the disk again, and everything downstream, the tree,
@@ -309,6 +340,7 @@ final class Runner: ObservableObject {
     }
 
     func reopen(_ item: Item) {
+        remember([item.key])
         set(nil, for: item.key)
         if let index = results.firstIndex(where: { $0.key == item.key }) {
             cursor = min(cursor, index)
@@ -319,6 +351,27 @@ final class Runner: ObservableObject {
         tally(decisions[key], by: -1)
         decisions[key] = decision
         tally(decision, by: 1)
+    }
+
+    /// Records what the given keys looked like, so one step can be taken back.
+    private func remember(_ keys: [String]) {
+        guard !keys.isEmpty else { return }
+        undoStack.append(keys.map { (key: $0, decision: decisions[$0]) })
+        if undoStack.count > 200 { undoStack.removeFirst() }
+    }
+
+    func undo() {
+        guard let step = undoStack.popLast() else { return }
+        for (key, decision) in step { set(decision, for: key) }
+        note(.edited, subject: "\(step.count) file\(step.count == 1 ? "" : "s")", detail: "undone")
+    }
+
+    func note(_ kind: LogEntry.Kind, subject: String, detail: String = "") {
+        log.append(LogEntry(kind: kind, subject: subject, detail: detail))
+    }
+
+    private func note(_ kind: LogEntry.Kind, for item: Item, detail: String = "") {
+        note(kind, subject: item.relativePath, detail: detail)
     }
 
     private func tally(_ decision: Decision?, by delta: Int) {
@@ -335,6 +388,8 @@ final class Runner: ObservableObject {
     /// Accepts every suggestion still waiting, for when reviewing thousands of files one
     /// at a time is not what you came here for.
     func confirmAllPending() {
+        remember(results.filter { decisions[$0.key] == nil }.map(\.key))
+        note(.confirmed, subject: "\(pendingCount) pending", detail: "all remaining")
         for item in results where decisions[item.key] == nil {
             decisions[item.key] = .confirmed(item.destinationName)
             confirmedCount += 1
@@ -343,6 +398,9 @@ final class Runner: ObservableObject {
     }
 
     func skipFolder(of item: Item) {
+        let scope = (byFolder[folderPath(of: item)] ?? []).map { results[$0].key }
+        remember(scope.filter { decisions[$0] == nil })
+        note(.skipped, subject: folderPath(of: item), detail: "rest of folder")
         for index in byFolder[folderPath(of: item)] ?? [] where decisions[results[index].key] == nil {
             decisions[results[index].key] = .skipped
             skippedCount += 1
@@ -364,6 +422,7 @@ final class Runner: ObservableObject {
             : process(job: job, options: options, overrideName: name)
         replace(item.key, with: done)
         set(.applied, for: item.key)
+        note(kind(for: done.status), for: item, detail: "-> \(done.destinationName)")
     }
 
     /// Updates one row in place. The tree holds keys, so it needs no rebuilding.
@@ -561,7 +620,22 @@ final class Runner: ObservableObject {
             await MainActor.run { self.phase = .processing }
             let out = process(jobs: queue, options: options, overrides: overrides,
                               trashed: trashed, moves: moves, progress: self.report)
-            await MainActor.run { self.finish(out) }
+            await MainActor.run {
+                for item in out { self.note(self.kind(for: item.status), for: item,
+                                            detail: "-> \(item.destinationName)") }
+                self.finish(out)
+            }
+        }
+    }
+
+    private func kind(for status: Status) -> LogEntry.Kind {
+        switch status {
+        case .decrypted: return .decrypted
+        case .renamed: return .renamed
+        case .moved: return .moved
+        case .trashed: return .trashed
+        case .failed: return .failed
+        case .locked: return .renamed
         }
     }
 
@@ -709,6 +783,7 @@ struct ContentView: View {
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     @State private var choosingBackupFolder = false
+    @State private var savingLog = false
     @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
     @AppStorage("useMetadataDate") private var useMetadataDate = true
@@ -932,7 +1007,10 @@ struct ContentView: View {
             add(urls)
             return true
         }
+        .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
         .onAppear {
+            chrome.undo = { runner.undo() }
+            chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
             NSApp.appearance = appearance.nsAppearance
             restoreSources()
@@ -952,6 +1030,10 @@ struct ContentView: View {
         } message: {
             Text(applyWarnings.joined(separator: "\n\n"))
         }
+        .fileExporter(isPresented: $savingLog,
+                      document: BibDocument(text: logText(runner.log)),
+                      contentType: .plainText,
+                      defaultFilename: "pdf-hammer-log.txt") { _ in }
         .fileImporter(
             isPresented: $choosingBackupFolder,
             allowedContentTypes: [.folder],
@@ -1006,6 +1088,7 @@ struct ContentView: View {
                     runningPanel
                 case .ai: aiPanel
                 case .bibtex: bibtexPanel
+                case .log: logPanel
                 case .appearance: appearancePanel
                 }
             }
@@ -1372,6 +1455,68 @@ struct ContentView: View {
 
 
     @ViewBuilder
+    private var logPanel: some View {
+        Section {
+            if runner.log.isEmpty {
+                Text("Nothing yet").foregroundStyle(.secondary)
+            } else {
+                // Newest first: the last thing that happened is what you came to check.
+                ForEach(runner.log.reversed().prefix(200)) { entry in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text(entry.kind.rawValue)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(logColour(entry.kind))
+                            Text(entry.at, style: .time)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Text(entry.subject)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        if !entry.detail.isEmpty {
+                            Text(entry.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+        } header: {
+            Text("Activity")
+        } footer: {
+            HStack {
+                Button("Copy log") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(logText(runner.log), forType: .string)
+                }
+                .buttonStyle(.link)
+                .disabled(runner.log.isEmpty)
+                Spacer()
+                Button("Save…") { savingLog = true }
+                    .buttonStyle(.link)
+                    .disabled(runner.log.isEmpty)
+            }
+        }
+    }
+
+    private func logColour(_ kind: LogEntry.Kind) -> Color {
+        switch kind {
+        case .failed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+        case .trashed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+        case .moved: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
+        case .decrypted, .renamed, .applied: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+        case .skipped, .removed: return .secondary
+        default: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
+        }
+    }
+
+    @ViewBuilder
     private var appearancePanel: some View {
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
@@ -1722,6 +1867,17 @@ private struct ResultsPane: View {
             return false
         }
 
+        // The lists are table views and move themselves; the catalogue is a grid and has
+        // no such thing, so the arrows are handled here when a table is not in charge.
+        let onATable = event.window?.firstResponder is NSTableView
+        if !onATable {
+            switch event.keyCode {
+            case 125, 124: step(by: 1); return true   // down, right
+            case 126, 123: step(by: -1); return true  // up, left
+            default: break
+            }
+        }
+
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "\r", "c": confirm()
         case "e": editingName = true
@@ -1731,6 +1887,8 @@ private struct ResultsPane: View {
         case "g": identifySelected()
         case "m": choosingMoveTarget = true
         case "x": removeSelected()
+        case "o": openInViewer()
+        case "b": copyCitation()
         case "d": markDeleted()
         case "r": reopenSelected()
         case "j", "n": step(by: 1)
@@ -1798,6 +1956,35 @@ private struct ResultsPane: View {
         guard let item = selectedItem else { return }
         runner.remove(item)
         ensureSelection()
+    }
+
+    private func revealInFinder() {
+        guard let item = selectedItem else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([item.source])
+    }
+
+    private func openInViewer() {
+        guard let item = selectedItem else { return }
+        NSWorkspace.shared.open(item.source)
+    }
+
+    /// Copies this file's BibTeX entry. When the entry is short of what its type wants and
+    /// a key is configured, the model is asked first, so one action produces a citation
+    /// worth pasting rather than a stub.
+    private func copyCitation() {
+        guard let item = selectedItem else { return }
+        Task {
+            runner.ensureBib()
+            if let entry = runner.bibByItem[item.key], !entry.isComplete,
+               aiReady, runner.guesses[item.key] == nil {
+                await runner.identify(item, client: aiClient, passwords: passwords, rules: rules)
+                runner.ensureBib()
+            }
+            guard let entry = runner.bibByItem[item.key] else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(bibtexBlock(entry, style: bibStyle) + "\n", forType: .string)
+            runner.note(.edited, subject: item.relativePath, detail: "citation copied")
+        }
     }
 
     private func markDeleted() {
@@ -2057,6 +2244,9 @@ private struct ResultsPane: View {
                 skipFolder: skipFolder,
                 applyNow: applyNow,
                 identify: identifySelected,
+                copyCitation: copyCitation,
+                reveal: revealInFinder,
+                openExternally: openInViewer,
                 moveTo: { choosingMoveTarget = true },
                 remove: removeSelected,
                 aiReady: aiReady,
@@ -2251,6 +2441,9 @@ private struct ReviewInspector: View {
     let skipFolder: () -> Void
     let applyNow: () -> Void
     let identify: () -> Void
+    let copyCitation: () -> Void
+    let reveal: () -> Void
+    let openExternally: () -> Void
     let moveTo: () -> Void
     let remove: () -> Void
     let aiReady: Bool
@@ -2302,6 +2495,12 @@ private struct ReviewInspector: View {
                         .truncationMode(.head)
                         .frame(minWidth: 0)
                     Spacer(minLength: 8)
+                    Button(action: reveal) { Image(systemName: "folder") }
+                        .buttonStyle(.borderless)
+                        .help("Reveal in Finder")
+                    Button(action: openExternally) { Image(systemName: "arrow.up.forward.app") }
+                        .buttonStyle(.borderless)
+                        .help("Open in the default PDF viewer (O)")
                     decisionBadge
                 }
 
@@ -2347,6 +2546,9 @@ private struct ReviewInspector: View {
                         Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
                             .buttonStyle(.borderedProminent)
                         Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
+                        Button(action: copyCitation) { KeyLabel("B", "Citation") }
+                            .help("Copy this file's BibTeX entry, asking the model first "
+                                  + "when fields are missing")
                         Button(action: identify) { KeyLabel("G", "Ask AI") }
                             .disabled(!aiReady || runner.isThinking(item))
                             .help(aiReady
@@ -3115,7 +3317,7 @@ private struct DuplicateRow: View {
 // MARK: - Sidebar rail
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, passwords, naming, files, ai, bibtex, appearance
+    case sources, passwords, naming, files, ai, bibtex, log, appearance
 
     var id: String { rawValue }
 
@@ -3127,6 +3329,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "tray.full"
         case .ai: return "sparkles"
         case .bibtex: return "text.quote"
+        case .log: return "list.bullet.rectangle"
         case .appearance: return "paintbrush"
         }
     }
@@ -3139,6 +3342,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .ai: return "AI"
         case .bibtex: return "BibTeX"
+        case .log: return "Activity"
         case .appearance: return "Appearance"
         }
     }
