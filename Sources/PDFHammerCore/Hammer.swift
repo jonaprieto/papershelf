@@ -492,7 +492,7 @@ public enum PasswordList {
 
 // MARK: - Processing
 
-public enum Status: String, Sendable, CaseIterable {
+public enum Status: String, Sendable, CaseIterable, Codable {
     case decrypted   // was encrypted, password found, written out unencrypted
     case renamed     // not encrypted, passed through untouched
     case locked      // encrypted, no password matched, passed through still encrypted
@@ -502,7 +502,7 @@ public enum Status: String, Sendable, CaseIterable {
     case failed
 }
 
-public struct Item: Identifiable, Sendable {
+public struct Item: Identifiable, Sendable, Codable {
     public let id = UUID()
     public let root: URL
     public let source: URL
@@ -530,6 +530,13 @@ public struct Item: Identifiable, Sendable {
 
     /// Path of the source relative to the selected root, used to build the results tree.
     public var relativePath: String { relative(source, under: root) }
+
+    /// `id` is deliberately absent: it is fresh per process and means nothing once
+    /// written down. `key` is the identity that survives, and it is derived from `source`.
+    private enum CodingKeys: String, CodingKey {
+        case root, source, destination, status, message
+        case metadataDate, modifiedDate, byteCount, pageCount, documentInfo
+    }
 }
 
 /// Locking output back up again, which is the inverse of what the rest of this does.

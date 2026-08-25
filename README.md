@@ -80,6 +80,16 @@ single PDF.
 are cached, so the cost follows the window rather than the size of the collection.
 **List** groups the same results by folder instead.
 
+The last run is written to Application Support and shown the instant the window opens,
+labelled "From last time, rechecking the disk", while a real scan runs behind it and
+replaces it. The cache is keyed to the sources it came from, so a different selection
+never reuses it.
+
+Right-clicking a file gives Open, Open With, Quick Look, Reveal in Finder, the three
+copies, and the review actions. Finder's own contextual menu cannot be borrowed by another
+app, but everything behind it can: Open With is the real list of applications the system
+says can open the file, and Quick Look is the system panel.
+
 Sources are remembered between launches, and adding one runs a preview straight away
 unless you turn that off. **Forget sources and cached covers** clears both.
 

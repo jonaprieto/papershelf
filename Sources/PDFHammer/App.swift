@@ -450,6 +450,7 @@ final class Runner: ObservableObject {
     func reset() {
         begin(fingerprint: "", dry: true)
         phase = .idle
+        clearRunCache()
     }
 
     /// Marks the entries out of date. They are not rebuilt here: most runs never open
@@ -669,8 +670,30 @@ final class Runner: ObservableObject {
         }
     }
 
-    func preview(roots: [URL], options: Options, fingerprint: String) {
+    /// True while what is on screen came from the last launch rather than from a scan.
+    @Published private(set) var showingCached = false
+
+    /// Puts the previous run on screen at once. Nothing here is a claim about the present:
+    /// it is what was true last time, shown so the window is not empty while the disk is
+    /// read, and replaced the moment a real scan lands.
+    @discardableResult
+    func showCached(fingerprint: String) -> Bool {
+        guard results.isEmpty, let cache = loadRunCache(matching: fingerprint) else { return false }
         begin(fingerprint: fingerprint, dry: true)
+        showingCached = true
+        finish(cache.items)
+        phase = .idle
+        note(.previewed, subject: "\(cache.items.count) files",
+             detail: "from \(cache.savedAt.formatted(date: .abbreviated, time: .shortened))")
+        return true
+    }
+
+    func preview(roots: [URL], options: Options, fingerprint: String) {
+        let wasCached = showingCached
+        begin(fingerprint: fingerprint, dry: true)
+        // Keep the old rows visible while the new ones are being worked out, so a refresh
+        // does not blank the window.
+        showingCached = wasCached
 
         Task.detached(priority: .userInitiated) { [self] in
             let throttle = Throttle(milliseconds: 80)
@@ -690,7 +713,11 @@ final class Runner: ObservableObject {
             }
             let out = process(jobs: found, options: options, progress: self.report)
             let derived = Runner.derive(out)
-            await MainActor.run { self.finish(out, derived: derived) }
+            saveRunCache(RunCache(fingerprint: fingerprint, items: out))
+            await MainActor.run {
+                self.showingCached = false
+                self.finish(out, derived: derived)
+            }
         }
     }
 
@@ -745,6 +772,7 @@ final class Runner: ObservableObject {
 
     private func begin(fingerprint: String, dry: Bool) {
         phase = dry ? .scanning : .processing
+        showingCached = false
         results = []
         tree = []
         statusCounts = []
@@ -1158,6 +1186,11 @@ struct ContentView: View {
             sizeWindowOnFirstLaunch()
             NSApp.appearance = appearance.nsAppearance
             restoreSources()
+            if !selection.isEmpty {
+                // Show last time's answer at once, then check the disk behind it.
+                let hadCache = runner.showCached(fingerprint: fingerprint)
+                if autoPreview || hadCache { preview() }
+            }
             if aiReady && availableModels.isEmpty { loadModels() }
         }
         .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
@@ -2191,6 +2224,29 @@ private struct ResultsPane: View {
         advance()
     }
 
+    /// One menu, built for whichever file was right-clicked rather than the selected one,
+    /// because a right-click on a row people have not selected still means that row.
+    private func fileMenu(_ item: Item) -> FileContextMenu {
+        FileContextMenu(
+            item: item,
+            confirm: {
+                selected = item.key
+                runner.confirm(item, as: item.destinationName)
+                advance()
+            },
+            identify: {
+                selected = item.key
+                Task { await runner.identify(item, client: aiClient, passwords: passwords, rules: rules) }
+            },
+            moveTo: {
+                selected = item.key
+                choosingMoveTarget = true
+            },
+            trash: { runner.markForDeletion(item) },
+            skip: { runner.skip(item) }
+        )
+    }
+
     private func revealInFinder() {
         guard let item = selectedItem else { return }
         NSWorkspace.shared.activateFileViewerSelecting([item.source])
@@ -2468,7 +2524,7 @@ private struct ResultsPane: View {
             List(selection: $selected) {
                 ForEach(runner.tree) { node in
                     NodeView(node: node, expanded: $expanded, runner: runner,
-                             visible: runner.matchingKeys)
+                             menu: fileMenu, visible: runner.matchingKeys)
                 }
             }
             .listStyle(.inset)
@@ -2697,6 +2753,10 @@ private struct ResultsPane: View {
             Label("Settings changed, preview again", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
                 .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+        } else if runner.showingCached {
+            Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         } else if runner.appliedCount > 0 {
             Label("\(runner.appliedCount) applied so far, the rest is still a preview",
                   systemImage: "checkmark.seal")
@@ -3072,6 +3132,9 @@ private struct NodeView: View {
     let node: Node
     @Binding var expanded: Set<String>
     @ObservedObject var runner: Runner
+    var menu: (Item) -> FileContextMenu = { item in
+        FileContextMenu(item: item, confirm: {}, identify: {}, moveTo: {}, trash: {}, skip: {})
+    }
     /// Nil means no filter. A folder with nothing visible under it disappears too.
     var visible: Set<String>?
 
@@ -3094,10 +3157,12 @@ private struct NodeView: View {
                       duplicate: runner.duplicateKind[item.key])
                 .tag(key)
                 .id(key)
+                .contextMenu { menu(item) }
         } else {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
-                    NodeView(node: child, expanded: $expanded, runner: runner, visible: visible)
+                    NodeView(node: child, expanded: $expanded, runner: runner,
+                             menu: menu, visible: visible)
                 }
             } label: {
                 Label {
