@@ -697,6 +697,64 @@ final class Runner: ObservableObject {
         return true
     }
 
+    @Published private(set) var absorbing = false
+    /// How many files the last absorb brought in, for the status strip to report.
+    @Published private(set) var lastAbsorbed = 0
+
+    /// Folds changes on disk into the current results without starting over.
+    ///
+    /// Only new files are opened; ones already known keep the item they have, and with it
+    /// any decision made about them. Files that have gone are dropped. A full rescan would
+    /// be correct too, but it would reopen every PDF and discard the review in progress,
+    /// which is the opposite of what a watcher is for.
+    func absorbChanges(roots: [URL], options: Options, fingerprint: String) async {
+        guard !busy, !absorbing, lastRunWasDry, !results.isEmpty else { return }
+        absorbing = true
+        defer { absorbing = false }
+
+        let known = Dictionary(uniqueKeysWithValues: results.map { ($0.key, $0) })
+        let backup = options.backup
+        let recursive = options.recursive
+        let found = await Task.detached(priority: .utility) {
+            collectJobs(roots: roots, recursive: recursive, backup: backup)
+        }.value
+
+        let fresh = found.filter { known[$0.key] == nil }
+        let present = Set(found.map(\.key))
+        let vanished = results.filter { !present.contains($0.key) }.map(\.key)
+        guard !fresh.isEmpty || !vanished.isEmpty else { return }
+
+        var arrived: [String: Item] = [:]
+        if !fresh.isEmpty {
+            total = fresh.count
+            done = 0
+            let previewed = await Task.detached(priority: .utility) {
+                process(jobs: fresh, options: options)
+            }.value
+            arrived = Dictionary(uniqueKeysWithValues: previewed.map { ($0.key, $0) })
+            note(.scanned, subject: "\(fresh.count) new file\(fresh.count == 1 ? "" : "s")",
+                 detail: "picked up while watching")
+        }
+        if !vanished.isEmpty {
+            note(.vanished, subject: "\(vanished.count) file\(vanished.count == 1 ? "" : "s")",
+                 detail: "no longer on disk")
+        }
+
+        // Rebuilt in scan order, so a new file lands where it belongs rather than at the end.
+        let merged = found.compactMap { known[$0.key] ?? arrived[$0.key] }
+        for key in vanished {
+            set(nil, for: key)
+            guesses[key] = nil
+        }
+        jobs = found
+        lastAbsorbed = fresh.count
+
+        let derived = await Task.detached(priority: .utility) { Runner.derive(merged) }.value
+        finish(merged, keepingDecisions: true, derived: derived)
+        self.fingerprint = fingerprint
+        saveRunCache(RunCache(fingerprint: fingerprint, items: merged))
+    }
+
     func preview(roots: [URL], options: Options, fingerprint: String) {
         let wasCached = showingCached
         begin(fingerprint: fingerprint, dry: true)
@@ -959,6 +1017,7 @@ struct ContentView: View {
     @State private var encryptPassword = ""
     @State private var choosingBackupFolder = false
     @State private var savingLog = false
+    @State private var watcher: FolderWatcher?
     @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
     @AppStorage("useMetadataDate") private var useMetadataDate = true
@@ -976,6 +1035,7 @@ struct ContentView: View {
 
     @AppStorage("sources") private var storedSources = ""
     @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("watchSources") private var watchSources = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
@@ -1170,6 +1230,7 @@ struct ContentView: View {
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
                 reading: chrome.reading,
+                watching: watchSources && !selection.isEmpty,
                 rules: rules,
                 chooseFiles: { importing = true },
                 preview: preview,
@@ -1196,6 +1257,7 @@ struct ContentView: View {
             sizeWindowOnFirstLaunch()
             NSApp.appearance = appearance.nsAppearance
             restoreSources()
+            startWatching()
             if !selection.isEmpty {
                 // Show last time's answer at once, then check the disk behind it.
                 let hadCache = runner.showCached(fingerprint: fingerprint)
@@ -1604,6 +1666,10 @@ struct ContentView: View {
     @ViewBuilder
     private var runningPanel: some View {
             Section("Running") {
+                Toggle("Watch the sources for changes", isOn: $watchSources)
+                    .help("New files are picked up on their own, and only the new ones are "
+                          + "opened, so a review in progress is kept")
+                    .onChange(of: watchSources) { _, _ in startWatching() }
                 Picker("Default view", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
@@ -1799,6 +1865,7 @@ struct ContentView: View {
         selection = mergedSources(selection, adding: urls)
         guard selection.map(\.path) != before.map(\.path) else { return }
         persistSources()
+        startWatching()
         if autoPreview { preview() }
     }
 
@@ -1807,6 +1874,7 @@ struct ContentView: View {
         selection.removeAll { $0 == url }
         persistSources()
         runner.removeSource(url, fingerprint: fingerprint)
+        startWatching()
         expanded = []
         ensureSelectionAfterSourceChange()
     }
@@ -1818,6 +1886,25 @@ struct ContentView: View {
         } else if let current = reviewing, runner.item(current) == nil {
             reviewing = nil
         }
+    }
+
+    /// Watches whatever is selected, so files copied in while the app is open are picked
+    /// up without being asked for.
+    private func startWatching() {
+        watcher?.stop()
+        guard watchSources, !selection.isEmpty else {
+            watcher = nil
+            return
+        }
+        let created = FolderWatcher { Task { @MainActor in await absorbChanges() } }
+        created.watch(selection)
+        watcher = created
+    }
+
+    private func absorbChanges() async {
+        guard watchSources, !selection.isEmpty else { return }
+        await runner.absorbChanges(roots: selection, options: options(dryRun: true),
+                                   fingerprint: fingerprint)
     }
 
     private func persistSources() {
@@ -1921,6 +2008,7 @@ private struct ResultsPane: View {
     let previewIsCurrent: Bool
     let passwords: [String]
     let reading: Bool
+    let watching: Bool
     let rules: NameRules
     let chooseFiles: () -> Void
     let preview: () -> Void
@@ -2009,6 +2097,10 @@ private struct ResultsPane: View {
     }
 
     var body: some View {
+        withDialogs(withKeys(core))
+    }
+
+    private var core: some View {
         Group {
             if runner.busy {
                 busyState
@@ -2022,21 +2114,32 @@ private struct ResultsPane: View {
                     }
                     split
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if !reading {
+                        Divider()
+                        StatusStrip(runner: runner, watching: watching)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($paneFocused)
-        .animation(.easeOut(duration: 0.18), value: runner.results.count)
-        .onChange(of: runner.results.count) { _, _ in
+    }
+
+    /// The chain is split in two because one body carrying all of it is past what the
+    /// type-checker will work through in reasonable time. Generic wrappers are checked
+    /// independently, which is what makes it compile.
+    private func withKeys<V: View>(_ view: V) -> some View {
+        view
+            .focusable()
+            .focusEffectDisabled()
+            .focused($paneFocused)
+            .animation(.easeOut(duration: 0.18), value: runner.results.count)
+            .onChange(of: runner.results.count) { _, _ in
             // Open the first level only, so a run lands looking like `ls` rather than
             // one closed folder or the whole tree at once.
             expanded.formUnion(runner.tree.filter { $0.children != nil }.map(\.id))
             ensureSelection()
         }
-        .onChange(of: selected) { previous, new in
+            .onChange(of: selected) { previous, new in
             // Folder rows carry no tag, so clicking one clears the selection. Put the
             // file back rather than letting the inspector swap out from under you.
             if new == nil, let previous, runner.results.contains(where: { $0.key == previous }) {
@@ -2045,26 +2148,30 @@ private struct ResultsPane: View {
             }
             loadDraft()
         }
-        .onAppear {
+            .onAppear {
             ensureSelection()
             installKeyMonitor()
         }
         // A restyle rewrites the suggestions under the current selection.
-        .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
-        .onChange(of: sortOrder) { _, order in
+            .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
+            .onChange(of: sortOrder) { _, order in
             sortDescending = order.descendsByDefault
             runner.sortResults(by: order, descending: sortDescending)
         }
-        .onChange(of: sortDescending) { _, down in
+            .onChange(of: sortDescending) { _, down in
             runner.sortResults(by: sortOrder, descending: down)
         }
-        .onChange(of: runner.results.count) { _, count in
+            .onChange(of: runner.results.count) { _, count in
             guard count > 0, sortOrder != .folder else { return }
             runner.sortResults(by: sortOrder, descending: sortDescending)
         }
-        .onDisappear(perform: removeKeyMonitor)
-        .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
-        .fileImporter(isPresented: $choosingMoveTarget,
+            .onDisappear(perform: removeKeyMonitor)
+    }
+
+    private func withDialogs<V: View>(_ view: V) -> some View {
+        view
+            .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
+            .fileImporter(isPresented: $choosingMoveTarget,
                       allowedContentTypes: [.folder],
                       allowsMultipleSelection: false) { outcome in
             guard case .success(let urls) = outcome, let folder = urls.first,
@@ -2072,7 +2179,7 @@ private struct ResultsPane: View {
             runner.move(item, to: folder)
             advance()
         }
-        .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
+            .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
                             isPresented: $confirmingBatchAI) {
             Button("Send \(runner.pendingCount) requests") {
                 Task { await runner.identifyPending(client: aiClient, passwords: passwords, rules: rules) }
@@ -2082,13 +2189,17 @@ private struct ResultsPane: View {
             Text("One request per file, each carrying the filename and the first pages' text. "
                  + "You are billed by \(aiModel)'s provider.")
         }
-        .alert("The service could not be reached",
-               isPresented: Binding(get: { runner.aiError != nil },
-                                    set: { if !$0 { runner.aiError = nil } })) {
+            .alert("The service could not be reached", isPresented: aiErrorShown) {
             Button("OK") { runner.aiError = nil }
         } message: {
             Text(runner.aiError ?? "")
         }
+    }
+
+    /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
+    /// past what the type-checker will work through.
+    private var aiErrorShown: Binding<Bool> {
+        Binding(get: { runner.aiError != nil }, set: { if !$0 { runner.aiError = nil } })
     }
 
     // MARK: Keys
@@ -2879,6 +2990,7 @@ private struct ReviewInspector: View {
     @AppStorage("notesShown") private var notesShown = false
     @State private var addingNote = false
     @State private var noteText = ""
+    @State private var clearingMarks = false
 
     /// While reading, the deciding controls stay out of the way.
     private var showBottom: Bool { !collapsed && !reading }
@@ -2936,6 +3048,16 @@ private struct ReviewInspector: View {
                 Divider()
                 notesRail.frame(width: 264)
             }
+        }
+        .confirmationDialog("Remove every mark from this document?",
+                            isPresented: $clearingMarks) {
+            Button("Remove \(annotator.marks.count)", role: .destructive) {
+                annotator.removeAll()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Highlights and notes are written into the PDF itself, so this cannot be "
+                 + "undone from here.")
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
         .onChange(of: item.key) { _, _ in
@@ -3035,6 +3157,14 @@ private struct ReviewInspector: View {
                 Text("\(annotator.marks.count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                if !annotator.marks.isEmpty {
+                    Button(role: .destructive) { clearingMarks = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .help("Remove every mark from this document")
+                }
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { notesShown = false }
                 } label: {
@@ -3080,9 +3210,13 @@ private struct ReviewInspector: View {
                     }
 
                     ForEach(annotator.marks) { mark in
-                        MarkRow(mark: mark,
-                                jump: { annotator.jump(to: mark) },
-                                remove: { annotator.remove(mark) })
+                        MarkRow(
+                            mark: mark,
+                            isSelected: annotator.selectedMark == mark.id,
+                            jump: { annotator.jump(to: mark) },
+                            remove: { annotator.remove(mark) },
+                            save: { annotator.setNote($0, on: mark) }
+                        )
                     }
 
                     if let problem = annotator.lastError {
@@ -4169,29 +4303,65 @@ enum InspectorPanel: String, CaseIterable, Identifiable {
 /// One highlight or note, in the rail beside the page.
 private struct MarkRow: View {
     let mark: Annotator.Mark
+    let isSelected: Bool
     let jump: () -> Void
     let remove: () -> Void
+    let save: (String) -> Void
+
+    @State private var editing = false
+    @State private var text = ""
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: mark.kind == "Highlight" ? "highlighter" : "text.bubble")
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 2) {
-                if !mark.quoted.isEmpty {
-                    Text(mark.quoted).font(.callout).lineLimit(3)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: mark.kind == "Highlight" ? "highlighter" : "text.bubble")
+                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    if !mark.quoted.isEmpty {
+                        Text(mark.quoted).font(.callout).lineLimit(3)
+                    }
+                    if !mark.note.isEmpty && !editing {
+                        Text(mark.note).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                    }
+                    Text("page \(mark.page)").font(.caption).foregroundStyle(.tertiary)
                 }
-                if !mark.note.isEmpty {
-                    Text(mark.note).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                Spacer(minLength: 0)
+                Button {
+                    text = mark.note
+                    editing.toggle()
+                } label: {
+                    Image(systemName: "square.and.pencil")
                 }
-                Text("page \(mark.page)").font(.caption).foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: 0)
-            Button(action: remove) { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tertiary)
-                .help("Remove this mark from the file")
+                .help(mark.note.isEmpty ? "Add a note here" : "Edit this note")
+                Button(action: remove) { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.tertiary)
+                    .help("Remove this mark from the file")
+            }
+
+            if editing {
+                TextField("Note", text: $text, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...6)
+                HStack {
+                    Button("Save") {
+                        save(text)
+                        editing = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    Button("Cancel") { editing = false }.controlSize(.small)
+                }
+            }
         }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.14) : .clear)
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: jump)
     }
@@ -4266,5 +4436,53 @@ private struct MetadataPanel: View {
         }
         .padding(.top, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Status
+
+/// A thin line along the bottom for what the app is doing when nothing asked it to:
+/// watching, taking in what turned up, or idle. Its own view so the pane's modifier chain
+/// does not grow any further.
+private struct StatusStrip: View {
+    @ObservedObject var runner: Runner
+    let watching: Bool
+
+    private var absorbingText: String {
+        runner.total > 0 ? "Reading \(runner.done) of \(runner.total) new files"
+                         : "Checking what changed"
+    }
+
+    private var watchingText: String {
+        let count = runner.lastAbsorbed
+        guard count > 0 else { return "Watching for changes" }
+        return "Watching. Last took in \(count) new file" + (count == 1 ? "." : "s.")
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if runner.absorbing {
+                ProgressView().controlSize(.small)
+                Text(absorbingText)
+            } else if watching {
+                Image(systemName: "eye").foregroundStyle(.secondary)
+                Text(watchingText)
+            } else {
+                Image(systemName: "eye.slash").foregroundStyle(.tertiary)
+                Text("Not watching")
+            }
+            Spacer()
+            if runner.showingCached {
+                Label("From last time", systemImage: "clock.arrow.circlepath")
+            }
+            Text("\(runner.results.count) files").monospacedDigit()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
     }
 }
