@@ -12,6 +12,8 @@ final class Chrome: ObservableObject {
     /// Set by the window so the menu can reach the runner without owning it.
     @Published var undo: () -> Void = {}
     @Published var canUndo = false
+    /// Hides everything that is about deciding, leaving the page.
+    @AppStorage("readingMode") var reading = false
 
     func toggleSidebar() {
         withAnimation(.easeOut(duration: 0.18)) {
@@ -37,6 +39,10 @@ struct PDFHammerApp: App {
                     .disabled(!chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
+                Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode") {
+                    chrome.reading.toggle()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
             }
@@ -1163,6 +1169,7 @@ struct ContentView: View {
                 sourceCount: selection.count,
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
+                reading: chrome.reading,
                 rules: rules,
                 chooseFiles: { importing = true },
                 preview: preview,
@@ -1744,6 +1751,15 @@ struct ContentView: View {
                 .help("API key, model and endpoint")
         }
 
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { chrome.reading.toggle() }
+            } label: {
+                Label("Reading", systemImage: chrome.reading ? "book.fill" : "book")
+            }
+            .help("Reading mode hides everything but the page (⌘⇧R)")
+        }
+
         ToolbarItemGroup(placement: .primaryAction) {
             switch runner.phase {
             case .scanning:
@@ -1904,6 +1920,7 @@ private struct ResultsPane: View {
     let sourceCount: Int
     let previewIsCurrent: Bool
     let passwords: [String]
+    let reading: Bool
     let rules: NameRules
     let chooseFiles: () -> Void
     let preview: () -> Void
@@ -1999,8 +2016,10 @@ private struct ResultsPane: View {
                 emptyState
             } else {
                 VStack(spacing: 0) {
-                    summaryBar
-                    Divider()
+                    if !reading {
+                        summaryBar
+                        Divider()
+                    }
                     split
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -2494,32 +2513,44 @@ private struct ResultsPane: View {
     /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
     /// whenever its children change, which is why the inspector kept jumping; here the
     /// width only ever changes because someone dragged it, and it is remembered.
+    /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
+    /// whenever its children change, which is why the inspector kept jumping; here the
+    /// width only ever changes because someone dragged it, and it is remembered.
     private var split: some View {
         GeometryReader { geometry in
             let maximum = max(360, geometry.size.width - 360)
             let width = min(max(inspectorWidth, 360), maximum)
             HStack(spacing: 0) {
-                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                    .background(.separator)
-                    .frame(width: 1)
-                    .overlay {
-                        // A 10pt grab strip: a 1pt divider is not a target anyone can hit.
-                        Rectangle()
-                            .fill(.clear)
-                            .frame(width: 10)
-                            .contentShape(Rectangle())
-                            .onHover { NSCursor.resizeLeftRight.set(); if !$0 { NSCursor.arrow.set() } }
-                            .gesture(
-                                DragGesture(coordinateSpace: .global)
-                                    .onChanged { value in
-                                        inspectorWidth = min(max(width - value.translation.width, 360), maximum)
-                                    }
-                            )
-                    }
-                inspector.frame(width: width).frame(maxHeight: .infinity)
+                // Reading gives the whole window to the page.
+                if !reading {
+                    browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    divider(width: width, maximum: maximum)
+                }
+                inspector
+                    .frame(width: reading ? nil : width)
+                    .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
             }
         }
+    }
+
+    private func divider(width: CGFloat, maximum: CGFloat) -> some View {
+        Divider()
+            .background(.separator)
+            .frame(width: 1)
+            .overlay {
+                // A 10pt grab strip: a 1pt divider is not a target anyone can hit.
+                Rectangle()
+                    .fill(.clear)
+                    .frame(width: 10)
+                    .contentShape(Rectangle())
+                    .onHover { NSCursor.resizeLeftRight.set(); if !$0 { NSCursor.arrow.set() } }
+                    .gesture(
+                        DragGesture(coordinateSpace: .global)
+                            .onChanged { value in
+                                inspectorWidth = min(max(width - value.translation.width, 360), maximum)
+                            }
+                    )
+            }
     }
 
     private var list: some View {
@@ -2568,7 +2599,8 @@ private struct ResultsPane: View {
                 reopen: reopenSelected,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
-                excerpt: runner.excerpt(for: item)
+                excerpt: runner.excerpt(for: item),
+                reading: reading
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(
@@ -2839,6 +2871,17 @@ private struct ReviewInspector: View {
     let reset: () -> Void
     let leaveField: () -> Void
     let excerpt: String?
+    let reading: Bool
+
+    @StateObject private var annotator = Annotator()
+    @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
+    @AppStorage("inspectorCollapsed") private var collapsed = false
+    @AppStorage("notesShown") private var notesShown = false
+    @State private var addingNote = false
+    @State private var noteText = ""
+
+    /// While reading, the deciding controls stay out of the way.
+    private var showBottom: Bool { !collapsed && !reading }
 
     private var decision: Decision? { runner.decision(for: item) }
     private var isEdited: Bool { sanitizedFilename(draft) != item.destinationName }
@@ -2862,144 +2905,309 @@ private struct ReviewInspector: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary.opacity(0.35))
+                    .overlay(alignment: .topTrailing) { lockedOverlay }
+                    .overlay(alignment: .bottom) { selectionBar }
+
+                Divider()
+                panelHeader
+
+                if showBottom {
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if panel == .rename { renamePanel }
+                            else { MetadataPanel(item: item, excerpt: excerpt) }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 300)
+                }
+            }
+
+            // Notes sit beside the page rather than under it: a mark belongs next to the
+            // line it is on, and the bottom pane is for deciding about the file.
+            if notesShown {
+                Divider()
+                notesRail.frame(width: 264)
+            }
+        }
+        .onAppear { if draft.isEmpty { draft = item.destinationName } }
+        .onChange(of: item.key) { _, _ in
+            editing = false
+            addingNote = false
+            noteText = ""
+        }
+    }
+
+    private var panelHeader: some View {
+        HStack(spacing: 8) {
+            StatusPill(status: item.status, count: nil)
+
+            if !reading {
+                Picker("", selection: $panel) {
+                    ForEach(InspectorPanel.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .disabled(collapsed)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: reveal) { Image(systemName: "folder") }
+                .buttonStyle(.borderless)
+                .help("Reveal in Finder")
+            Button(action: openExternally) { Image(systemName: "arrow.up.forward.app") }
+                .buttonStyle(.borderless)
+                .help("Open in the default PDF viewer (O)")
+
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { notesShown.toggle() }
+            } label: {
+                Image(systemName: notesShown ? "sidebar.trailing" : "note.text")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(notesShown ? Color.accentColor : .secondary)
+            .help(notesShown ? "Hide the notes" : "Show notes and highlights")
+            .overlay(alignment: .topTrailing) {
+                if !annotator.marks.isEmpty && !notesShown {
+                    Circle()
+                        .fill(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                        .frame(width: 6, height: 6)
+                        .offset(x: 3, y: -2)
+                }
+            }
+
+            if !reading {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { collapsed.toggle() }
+                } label: {
+                    Image(systemName: collapsed ? "chevron.up" : "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .help(collapsed ? "Show the panel" : "Hide the panel, give the room to the page")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var selectionBar: some View {
+        if annotator.hasSelection {
+            HStack(spacing: 8) {
+                Button {
+                    _ = annotator.highlightSelection()
+                    notesShown = true
+                } label: {
+                    Label("Highlight", systemImage: "highlighter")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+
+                Button {
+                    notesShown = true
+                    addingNote = true
+                } label: {
+                    Label("Add note", systemImage: "text.bubble")
+                }
+            }
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+            .padding(12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private var notesRail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PDFPreview(url: item.currentURL, passwords: passwords)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.quaternary.opacity(0.35))
-                .overlay(alignment: .topTrailing) { lockedOverlay }
+            HStack {
+                Text("Notes").font(.callout.weight(.semibold))
+                Spacer()
+                Text("\(annotator.marks.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { notesShown = false }
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    StatusPill(status: item.status, count: nil)
-                    if runner.isThinking(item) {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text(folderPath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .frame(minWidth: 0)
-                        .layoutPriority(-1)
-                    Spacer(minLength: 8)
-                    Button(action: reveal) { Image(systemName: "folder") }
-                        .buttonStyle(.borderless)
-                        .help("Reveal in Finder")
-                    Button(action: openExternally) { Image(systemName: "arrow.up.forward.app") }
-                        .buttonStyle(.borderless)
-                        .help("Open in the default PDF viewer (O)")
-                    decisionBadge
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("New name")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("Name", text: $draft)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .focused($editing)
-                        .onSubmit(confirm)
-                        .onKeyPress(.escape) {
-                            leaveField()
-                            return .handled
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if addingNote {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Note on the selection")
+                                .font(.caption).foregroundStyle(.secondary)
+                            TextField("What is worth remembering", text: $noteText, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...5)
+                            HStack {
+                                Button("Save") {
+                                    _ = annotator.highlightSelection(note: noteText)
+                                    noteText = ""
+                                    addingNote = false
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                                Button("Cancel") { noteText = ""; addingNote = false }
+                            }
                         }
-                        .strikethrough(decision == .deleted)
-                    HStack(spacing: 6) {
-                        Text("was \(item.sourceName)")
-                        if isEdited {
-                            Text("edited")
-                                .foregroundStyle(Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255)))
-                            Button("Reset", action: reset).buttonStyle(.link)
-                        }
+                        Divider()
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                }
 
-                if !item.message.isEmpty {
-                    Text(item.message)
-                        .font(.caption)
-                        .foregroundStyle(item.status == .failed ? .red : .orange)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                VStack(spacing: 7) {
-                  // Deciding on the name.
-                  ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
-                        Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
-                            .buttonStyle(.borderedProminent)
-                        Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
-                        Button(action: copyCitation) { KeyLabel("B", "Citation") }
-                            .help("Copy this file's BibTeX entry, asking the model first "
-                                  + "when fields are missing")
-                        Toggle(isOn: $autoIdentify) {
-                            Image(systemName: autoIdentify ? "sparkles.rectangle.stack.fill"
-                                                           : "sparkles.rectangle.stack")
-                        }
-                        .toggleStyle(.button)
-                        .disabled(!aiReady)
-                        .help(autoIdentify
-                              ? "Asking the model automatically as you reach each new file"
-                              : "Ask the model automatically when you reach a new file")
-                        Button(action: identify) { KeyLabel("G", "Ask AI") }
-                            .disabled(!aiReady || runner.isThinking(item))
-                            .help(aiReady
-                                  ? "Read the opening pages and suggest a title"
-                                  : "Add an API key in Settings first")
-                        Spacer(minLength: 0)
+                    if annotator.marks.isEmpty && !addingNote {
+                        Text("Select text on the page to highlight it or attach a note.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                  }
-                  .scrollIndicators(.hidden)
 
-                  // Moving on, and the two that touch the disk.
-                  ScrollView(.horizontal) {
-                    HStack(spacing: 7) {
-                        Button(action: skip) { KeyLabel("S", "Skip") }
-                            .help("Leave this file exactly as it is")
-                        Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
-                            .disabled(pendingInFolder == 0)
-                            .help("Skip everything still undecided in \(folderName) and below it")
-                        if decision != nil {
-                            Button(action: reopen) { KeyLabel("R", "Reopen") }
-                        }
-                        Spacer(minLength: 0)
-                        Button(action: applyNow) { KeyLabel("A", "Apply now") }
-                            .disabled(decision == .applied)
-                            .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
-                            .help("Rename this one file on disk right now, without waiting for the batch")
-                        Button(action: moveTo) { KeyLabel("M", "Move to…") }
-                            .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
-                            .help("Send this file to another folder, under its new name")
-                        Button(action: markDeleted) { KeyLabel("D", "Trash") }
-                            .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                            .help("Moves it to the Trash when you apply, recoverable from "
-                                  + "Finder. Skip is what leaves a file untouched.")
+                    ForEach(annotator.marks) { mark in
+                        MarkRow(mark: mark,
+                                jump: { annotator.jump(to: mark) },
+                                remove: { annotator.remove(mark) })
                     }
-                  }
-                  .scrollIndicators(.hidden)
-                }
 
-                Text(decision == .deleted
-                     ? "Moves to the Trash on apply, so it stays recoverable. R puts it back."
-                     : "J or N next file, K or P previous, without deciding. F skips the rest of \(folderName).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    if let problem = annotator.lastError {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { if draft.isEmpty { draft = item.destinationName } }
-        .onChange(of: item.key) { _, _ in editing = false }
+        .background(.background.secondary)
+    }
+
+    @ViewBuilder
+    private var renamePanel: some View {
+        Text(folderPath)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.head)
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("New name").font(.caption).foregroundStyle(.secondary)
+            TextField("Name", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .focused($editing)
+                .onSubmit(confirm)
+                .onKeyPress(.escape) {
+                    leaveField()
+                    return .handled
+                }
+                .strikethrough(decision == .deleted)
+            HStack(spacing: 6) {
+                Text("was \(item.sourceName)")
+                if isEdited {
+                    Text("edited")
+                        .foregroundStyle(Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255)))
+                    Button("Reset", action: reset).buttonStyle(.link)
+                }
+                Spacer(minLength: 0)
+                decisionBadge
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+
+        if !item.message.isEmpty {
+            Text(item.message)
+                .font(.caption)
+                .foregroundStyle(item.status == .failed ? .red : .orange)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        actionRows
+
+        Text(decision == .deleted
+             ? "Moves to the Trash on apply, so it stays recoverable. R puts it back."
+             : "J or N next, K or P previous. ? lists every shortcut.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var actionRows: some View {
+        VStack(spacing: 7) {
+          ScrollView(.horizontal) {
+            HStack(spacing: 7) {
+                Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
+                    .buttonStyle(.borderedProminent)
+                Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
+                Button(action: copyCitation) { KeyLabel("B", "Citation") }
+                    .help("Copy this file's BibTeX entry, asking the model first when fields are missing")
+                Toggle(isOn: $autoIdentify) {
+                    Image(systemName: autoIdentify ? "sparkles.rectangle.stack.fill"
+                                                   : "sparkles.rectangle.stack")
+                }
+                .toggleStyle(.button)
+                .disabled(!aiReady)
+                .help(autoIdentify
+                      ? "Asking the model automatically as you reach each new file"
+                      : "Ask the model automatically when you reach a new file")
+                Button(action: identify) { KeyLabel("G", "Ask AI") }
+                    .disabled(!aiReady || runner.isThinking(item))
+                    .help(aiReady ? "Read the opening pages and suggest a title"
+                                  : "Add an API key in Settings first")
+                Spacer(minLength: 0)
+            }
+          }
+          .scrollIndicators(.hidden)
+
+          ScrollView(.horizontal) {
+            HStack(spacing: 7) {
+                Button(action: skip) { KeyLabel("S", "Skip") }
+                    .help("Leave this file exactly as it is")
+                Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
+                    .disabled(pendingInFolder == 0)
+                    .help("Skip everything still undecided in \(folderName) and below it")
+                if decision != nil {
+                    Button(action: reopen) { KeyLabel("R", "Reopen") }
+                }
+                Spacer(minLength: 0)
+                Button(action: applyNow) { KeyLabel("A", "Apply now") }
+                    .disabled(decision == .applied)
+                    .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                    .help("Rename this one file on disk right now, without waiting for the batch")
+                Button(action: moveTo) { KeyLabel("M", "Move to…") }
+                    .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                Button(action: markDeleted) { KeyLabel("D", "Trash") }
+                    .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .help("Moves it to the Trash when you apply, recoverable from Finder. "
+                          + "Skip is what leaves a file untouched.")
+            }
+          }
+          .scrollIndicators(.hidden)
+        }
     }
 
     @ViewBuilder
@@ -3106,6 +3314,9 @@ private final class FitWidthPDFView: PDFView {
 private struct PDFPreview: NSViewRepresentable {
     let url: URL
     let passwords: [String]
+    var annotator: Annotator?
+
+    func makeCoordinator() -> Coordinator { Coordinator(annotator: annotator) }
 
     func makeNSView(context: Context) -> FitWidthPDFView {
         let view = FitWidthPDFView()
@@ -3115,6 +3326,11 @@ private struct PDFPreview: NSViewRepresentable {
         view.displayMode = .singlePageContinuous
         view.displaysPageBreaks = true
         view.backgroundColor = .clear
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.selectionChanged),
+            name: .PDFViewSelectionChanged, object: view
+        )
         return view
     }
 
@@ -3128,6 +3344,18 @@ private struct PDFPreview: NSViewRepresentable {
         }
         view.document = document
         view.showFromTop()
+        if let annotator {
+            Task { @MainActor in annotator.attach(view, url: url) }
+        }
+    }
+
+    final class Coordinator: NSObject {
+        let annotator: Annotator?
+        init(annotator: Annotator?) { self.annotator = annotator }
+
+        @objc func selectionChanged() {
+            Task { @MainActor in annotator?.selectionChanged() }
+        }
     }
 }
 
@@ -3161,6 +3389,8 @@ private struct NodeView: View {
                 .tag(key)
                 .id(key)
                 .contextMenu { menu(item) }
+                // A real file drag: Finder and anything else that takes one gets a copy.
+                .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
         } else {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
@@ -3926,6 +4156,44 @@ private struct ShortcutsSheet: View {
             }
         }
         .frame(width: 520, height: 560)
+    }
+}
+
+/// Which panel the inspector's bottom pane shows.
+enum InspectorPanel: String, CaseIterable, Identifiable {
+    case rename, details
+    var id: String { rawValue }
+    var label: String { self == .rename ? "Rename" : "Details" }
+}
+
+/// One highlight or note, in the rail beside the page.
+private struct MarkRow: View {
+    let mark: Annotator.Mark
+    let jump: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: mark.kind == "Highlight" ? "highlighter" : "text.bubble")
+                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                if !mark.quoted.isEmpty {
+                    Text(mark.quoted).font(.callout).lineLimit(3)
+                }
+                if !mark.note.isEmpty {
+                    Text(mark.note).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }
+                Text("page \(mark.page)").font(.caption).foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 0)
+            Button(action: remove) { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tertiary)
+                .help("Remove this mark from the file")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: jump)
     }
 }
 

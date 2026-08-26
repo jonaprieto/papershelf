@@ -1367,3 +1367,64 @@ extension HammerTests {
         XCTAssertEqual(after.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String, "Rich")
     }
 }
+
+extension HammerTests {
+
+    /// Whatever a reader has added to a file has to survive every operation. A rename
+    /// copies bytes and cannot lose anything, but decrypting rebuilds the document, and
+    /// that is where marks would be dropped if they were not carried deliberately.
+    func testHighlightsSurviveDecrypting() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let doc = PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: 2)))!
+        let page = try XCTUnwrap(doc.page(at: 1))
+        let highlight = PDFAnnotation(bounds: CGRect(x: 60, y: 300, width: 200, height: 18),
+                                      forType: .highlight, withProperties: nil)
+        highlight.color = .yellow
+        highlight.contents = "worth remembering"
+        page.addAnnotation(highlight)
+
+        let url = root.appendingPathComponent("Marked 2024.pdf")
+        XCTAssertTrue(doc.write(to: url, withOptions: [.ownerPasswordOption: "o",
+                                                       .userPasswordOption: "u"]))
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["u"], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .decrypted)
+
+        let after = try XCTUnwrap(loadPDF(try XCTUnwrap(results.first).currentURL))
+        XCTAssertFalse(after.isEncrypted)
+        let kept = try XCTUnwrap(after.page(at: 1)).annotations
+        XCTAssertTrue(kept.contains { $0.contents == "worth remembering" },
+                      "the note travelled with its page")
+        XCTAssertTrue(kept.contains { $0.type == "Highlight" }, "and so did the highlight")
+    }
+
+    /// A file that needs no decrypting is copied byte for byte, so nothing in it can be
+    /// lost, marks included.
+    func testAPlainRenameCopiesTheFileExactly() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let doc = PDFDocument(data: try Data(contentsOf: try makeScratchPDF()))!
+        let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 30, height: 12),
+                                 forType: .highlight, withProperties: nil)
+        doc.page(at: 0)?.addAnnotation(note)
+        let url = root.appendingPathComponent("Marked plain 2024.pdf")
+        XCTAssertTrue(doc.write(to: url))
+        let before = try Data(contentsOf: url)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .renamed)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(results.first).currentURL), before,
+                       "byte for byte, so nothing inside it can have been lost")
+    }
+}
