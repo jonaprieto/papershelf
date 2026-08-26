@@ -1368,7 +1368,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Settings")
+            .tip("API key, model and endpoint", key: "⌘,")
         }
         .padding(.vertical, 8)
         .frame(width: 46)
@@ -1398,6 +1398,7 @@ struct ContentView: View {
                         Label("Forget sources and cached covers", systemImage: "trash")
                     }
                     .buttonStyle(.link)
+                    .tip("Clears the selection, the results and the thumbnails")
                 }
             }
     }
@@ -1424,6 +1425,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.tertiary)
+                        .tip("Remove this password")
                         .help("Remove this password")
                         .accessibilityLabel("Remove password \(index + 1)")
                     }
@@ -1431,6 +1433,7 @@ struct ContentView: View {
                 Button(action: addPassword) {
                     Label("Add password", systemImage: "plus.circle")
                 }
+                .tip("Another password to try, in order")
                 .buttonStyle(.link)
             } header: {
                 Text("Passwords")
@@ -1458,16 +1461,13 @@ struct ContentView: View {
                 Picker("Separators", selection: $ruleSeparator) {
                     ForEach(NameRules.Separator.allCases) { Text($0.label).tag($0) }
                 }
-                .help("Keep leaves the dashes and underscores already in the name; the "
-                      + "others normalise every run to one character")
+                .tip("How runs of spaces, dashes and underscores are written")
                 Toggle("Remove symbols", isOn: $ruleStripSymbols)
-                    .help("Anything that is not a letter or digit becomes a separator, so "
-                          + "report (1)! reads report-1")
+                    .tip("Punctuation becomes a separator: report (1)! reads report-1")
                 Toggle("Remove accents", isOn: $ruleStripDiacritics)
                     .help("señor becomes senor. Separate from Remove symbols, since ñ is a letter")
                 Toggle("ASCII only", isOn: $ruleAsciiOnly)
-                    .help("Anything outside ASCII becomes a separator rather than vanishing, "
-                          + "so the words either side stay apart")
+                    .tip("Non-ASCII becomes a separator, so words stay apart")
                 Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
                     .help("So a shelf sorts by what the book is called rather than by its article")
                 Picker("Date goes", selection: $ruleDatePosition) {
@@ -1487,8 +1487,7 @@ struct ContentView: View {
                             .frame(width: 26, alignment: .trailing)
                     }
                 }
-                .help("Cuts the name back on a word boundary. The date and the extension are "
-                      + "never counted or cut.")
+                .tip("Trims the name on a word boundary; the date is never cut")
             } header: {
                 Text("Name rules")
             } footer: {
@@ -1513,14 +1512,11 @@ struct ContentView: View {
     private var datesPanel: some View {
             Section {
                 Toggle("Use the folder name", isOn: $useFolderNames)
-                    .help("bank/2024/Extracto.pdf becomes 2024-extracto.pdf. Also stands in "
-                          + "for a stem that says nothing, like scan001")
+                    .tip("Take the date, and a name for scan001, from the folder")
                 Toggle("Use the PDF's creation date", isOn: $useMetadataDate)
-                    .help("When the PDF was written, which for a statement is often long "
-                          + "after the period it covers")
+                    .tip("When the PDF was written, often long after the period it covers")
                 Toggle("Use the file's modification date", isOn: $useFileDate)
-                    .help("Least trustworthy: on a synced volume this is usually just when "
-                          + "the file last landed on this machine")
+                    .tip("Least trustworthy: often just when the file landed here")
             } header: {
                 Text("When the filename has no date")
             } footer: {
@@ -1543,8 +1539,7 @@ struct ContentView: View {
 
             Section {
                 Toggle("Lock the output with a password", isOn: $encryptOutput)
-                    .help("Writes every file out encrypted. Files no password opened are "
-                          + "passed through as they are rather than sealed with a new one.")
+                    .tip("Write every file out locked with your password")
                 if encryptOutput {
                     LabeledContent("Password") {
                         SecureField("", text: $encryptPassword, prompt: Text("required"))
@@ -1587,6 +1582,7 @@ struct ContentView: View {
                     HStack {
                         Button("Choose folder…") { choosingBackupFolder = true }
                             .buttonStyle(.link)
+                            .tip("One folder for the originals of every source")
                         Spacer()
                         if !backupCustomPath.isEmpty {
                             Button("Use a folder per source") { backupCustomPath = "" }
@@ -1637,6 +1633,7 @@ struct ContentView: View {
                 HStack {
                     Button(loadingModels ? "Loading…" : "Refresh models", action: loadModels)
                         .buttonStyle(.link)
+                        .tip("Ask the endpoint what it can run")
                         .disabled(!aiReady || loadingModels)
                     if let modelsError {
                         Text(modelsError)
@@ -1676,8 +1673,7 @@ struct ContentView: View {
     private var runningPanel: some View {
             Section("Running") {
                 Toggle("Watch the sources for changes", isOn: $watchSources)
-                    .help("New files are picked up on their own, and only the new ones are "
-                          + "opened, so a review in progress is kept")
+                    .tip("Pick up new files on their own, keeping this review")
                     .onChange(of: watchSources) { _, _ in startWatching() }
                 Picker("Default view", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
@@ -1878,7 +1874,7 @@ struct ContentView: View {
             } label: {
                 Label("Reading", systemImage: chrome.reading ? "book.fill" : "book")
             }
-            .help("Reading mode hides everything but the page (⌘⇧R)")
+            .tip("Hide everything but the page", key: "⌘⇧R")
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -1897,6 +1893,7 @@ struct ContentView: View {
                 Label("Preview", systemImage: "eye")
             }
             .labelStyle(.titleAndIcon)
+            .tip("Read-only: builds the plan, touches nothing", key: "⌘P")
             .disabled(selection.isEmpty || runner.busy)
             .keyboardShortcut("p", modifiers: .command)
             .help("Read-only. Builds the plan without touching a file.")
@@ -1908,6 +1905,7 @@ struct ContentView: View {
             .labelStyle(.titleAndIcon)
             .buttonStyle(.borderedProminent)
             .disabled(!canApply)
+            .tip("Carry out the reviewed plan on disk", key: "⌘Return")
             .keyboardShortcut(.return, modifiers: .command)
             .help("Carry out the reviewed plan on disk")
         }
@@ -2030,6 +2028,7 @@ private struct SourceRow: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tertiary)
+            .tip("Stop working on this source")
             .help("Remove this source")
             .accessibilityLabel("Remove \(url.lastPathComponent)")
         }
@@ -2554,6 +2553,7 @@ private struct ResultsPane: View {
                 } actions: {
                     if !runner.duplicatesChecked {
                         Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
+                .tip("Compare by bytes, by opening pages, and by name", key: "⌘D")
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -2587,12 +2587,15 @@ private struct ResultsPane: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
-            Button("Recheck") { runner.findDuplicates(passwords: passwords) }.controlSize(.small)
+            Button("Recheck") { runner.findDuplicates(passwords: passwords) }
+                .controlSize(.small)
+                .tip("Compare again, after changes", key: "⌘D")
             Button("Trash \(runner.identicalExtras) identical spares") {
                 runner.markIdenticalExtras()
                 ensureSelection()
             }
             .controlSize(.small)
+            .tip("Byte-identical groups only; name matches are left alone")
             .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
             .disabled(runner.identicalExtras == 0)
         }
@@ -2623,6 +2626,7 @@ private struct ResultsPane: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            .tip("Browse the entries, or read the generated file")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -2808,8 +2812,7 @@ private struct ResultsPane: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                .help("List groups by folder, Catalogue shows covers, BibTeX builds a "
-                      + "bibliography, Duplicates finds repeats")
+                .tip("Which view of the same files", key: "⌘1 to ⌘4")
 
                 ForEach(runner.statusCounts, id: \.0) { status, count in
                     StatusPill(status: status, count: count)
@@ -2858,18 +2861,21 @@ private struct ResultsPane: View {
                         Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
                     }
                     .controlSize(.small)
+                    .tip(sortDescending ? "Largest or newest first" : "Smallest or oldest first")
                     .help(sortDescending ? "Largest or newest first" : "Smallest or oldest first")
 
                     duplicateControls
                     if aiReady && runner.pendingCount > 0 {
                         Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
                             .controlSize(.small)
+                            .tip("One billed request per file still waiting")
                     }
                     Button("Confirm all remaining") {
                         runner.confirmAllPending()
                         ensureSelection()
                     }
                     .controlSize(.small)
+                    .tip("Accept every suggestion still waiting", key: "⌘⇧Return")
                     .disabled(runner.pendingCount == 0)
                 }
                 .padding(.trailing, 2)
@@ -2910,14 +2916,14 @@ private struct ResultsPane: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.tertiary)
+                .tip("Clear the search")
             }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
         .frame(width: 240)
-        .help("Words match the name. folder: was: status: year: narrow it, size> pages> "
-              + "compare, text:\"…\" reads the pages. Return runs a text search.")
+        .tip("Search names, or use folder: size> text: …", key: "/")
     }
 
     @ViewBuilder
@@ -3135,16 +3141,17 @@ private struct ReviewInspector: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(collapsed)
+                .tip("Rename this file, or read what it says about itself")
             }
 
             Spacer(minLength: 8)
 
             Button(action: reveal) { Image(systemName: "folder") }
                 .buttonStyle(.borderless)
-                .help("Reveal in Finder")
+                .tip("Reveal in Finder", key: "⌘R")
             Button(action: openExternally) { Image(systemName: "arrow.up.forward.app") }
                 .buttonStyle(.borderless)
-                .help("Open in the default PDF viewer (O)")
+                .tip("Open in the default PDF viewer", key: "O")
 
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { notesShown.toggle() }
@@ -3243,6 +3250,7 @@ private struct ReviewInspector: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tertiary)
+                .tip("Hide the notes", key: "⌘⇧N")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -3370,20 +3378,19 @@ private struct ReviewInspector: View {
                     .buttonStyle(.borderedProminent)
                 Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
                 Button(action: copyCitation) { KeyLabel("B", "Citation") }
-                    .help("Copy this file's BibTeX entry, asking the model first when fields are missing")
+                    .tip("Copy its BibTeX entry, asking the model if fields are missing", key: "B")
                 Toggle(isOn: $autoIdentify) {
                     Image(systemName: autoIdentify ? "sparkles.rectangle.stack.fill"
                                                    : "sparkles.rectangle.stack")
                 }
                 .toggleStyle(.button)
                 .disabled(!aiReady)
-                .help(autoIdentify
-                      ? "Asking the model automatically as you reach each new file"
-                      : "Ask the model automatically when you reach a new file")
+                .tip(autoIdentify ? "Asking the model on each new file"
+                                  : "Ask the model on each new file")
                 Button(action: identify) { KeyLabel("G", "Ask AI") }
                     .disabled(!aiReady || runner.isThinking(item))
-                    .help(aiReady ? "Read the opening pages and suggest a title"
-                                  : "Add an API key in Settings first")
+                    .tip(aiReady ? "Read the opening pages and suggest a title"
+                             : "Add an API key in Settings first", key: "G")
                 Spacer(minLength: 0)
             }
           }
@@ -3392,10 +3399,10 @@ private struct ReviewInspector: View {
           ScrollView(.horizontal) {
             HStack(spacing: 7) {
                 Button(action: skip) { KeyLabel("S", "Skip") }
-                    .help("Leave this file exactly as it is")
+                    .tip("Leave this file exactly as it is", key: "S")
                 Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
                     .disabled(pendingInFolder == 0)
-                    .help("Skip everything still undecided in \(folderName) and below it")
+                    .tip("Skip the rest of \(folderName)", key: "F")
                 if decision != nil {
                     Button(action: reopen) { KeyLabel("R", "Reopen") }
                 }
@@ -3403,13 +3410,12 @@ private struct ReviewInspector: View {
                 Button(action: applyNow) { KeyLabel("A", "Apply now") }
                     .disabled(decision == .applied)
                     .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
-                    .help("Rename this one file on disk right now, without waiting for the batch")
+                    .tip("Rename this one file on disk now", key: "A")
                 Button(action: moveTo) { KeyLabel("M", "Move to…") }
                     .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
                 Button(action: markDeleted) { KeyLabel("D", "Trash") }
                     .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                    .help("Moves it to the Trash when you apply, recoverable from Finder. "
-                          + "Skip is what leaves a file untouched.")
+                    .tip("To the Trash on apply, recoverable", key: "D")
             }
           }
           .scrollIndicators(.hidden)
@@ -3714,6 +3720,11 @@ private struct ResultRow: View {
 
     @ViewBuilder
     private var reviewMark: some View {
+        markGlyph.tip(decision?.explanation ?? undecidedExplanation)
+    }
+
+    @ViewBuilder
+    private var markGlyph: some View {
         switch decision {
         case .confirmed:
             Image(systemName: "checkmark.circle.fill")
@@ -4032,9 +4043,13 @@ private struct BibFileView: View {
                 Label("Edited by hand", systemImage: "pencil")
                     .font(.callout)
                     .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                Button("Discard edits") { edited = nil }.controlSize(.small)
+                Button("Discard edits") { edited = nil }
+                    .controlSize(.small)
+                    .tip("Throw away your edits, back to the generated file")
             } else {
-                Button("Edit") { edited = text }.controlSize(.small)
+                Button("Edit") { edited = text }
+                    .controlSize(.small)
+                    .tip("Take the text over by hand; ordering freezes")
             }
 
             Spacer()
@@ -4131,6 +4146,7 @@ private struct DuplicateSection: View {
                     runner.trashExtras(of: group.id)
                 }
                 .controlSize(.small)
+                .tip("Keeps the starred copy, trashes the rest of this group")
                 .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
             }
             .font(.callout)
@@ -4209,7 +4225,9 @@ private struct DuplicateRow: View {
                     .font(.caption)
                     .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
             } else if !isKeeper {
-                Button("Keep this one", action: keep).controlSize(.small)
+                Button("Keep this one", action: keep)
+                    .controlSize(.small)
+                    .tip("Make this the copy the group keeps")
             }
         }
         .padding(.vertical, 3)
@@ -4281,7 +4299,7 @@ private struct RailButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(tab.title)
+        .tip(tab.title)
         .accessibilityLabel(tab.title)
     }
 }
