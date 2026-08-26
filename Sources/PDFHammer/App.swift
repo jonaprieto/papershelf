@@ -14,6 +14,8 @@ final class Chrome: ObservableObject {
     @Published var canUndo = false
     /// Hides everything that is about deciding, leaving the page.
     @AppStorage("readingMode") var reading = false
+    /// Shared with the inspector through the same key, so the menu can reach it.
+    @AppStorage("notesShown") var notesShown = false
 
     func toggleSidebar() {
         withAnimation(.easeOut(duration: 0.18)) {
@@ -43,6 +45,10 @@ struct PDFHammerApp: App {
                     chrome.reading.toggle()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
+                    chrome.notesShown.toggle()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
             }
@@ -3143,11 +3149,16 @@ private struct ReviewInspector: View {
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { notesShown.toggle() }
             } label: {
-                Image(systemName: notesShown ? "sidebar.trailing" : "note.text")
+                if reading {
+                    Label(notesShown ? "Hide notes" : "Notes",
+                          systemImage: notesShown ? "sidebar.trailing" : "note.text")
+                } else {
+                    Image(systemName: notesShown ? "sidebar.trailing" : "note.text")
+                }
             }
             .buttonStyle(.borderless)
             .foregroundStyle(notesShown ? Color.accentColor : .secondary)
-            .help(notesShown ? "Hide the notes" : "Show notes and highlights")
+            .help(notesShown ? "Hide the notes (⌘⇧N)" : "Show notes and highlights (⌘⇧N)")
             .overlay(alignment: .topTrailing) {
                 if !annotator.marks.isEmpty && !notesShown {
                     Circle()
@@ -4310,6 +4321,8 @@ private struct ShortcutsSheet: View {
             ("O", "open in the default PDF viewer"),
             ("⌘Z", "undo the last decision"),
             ("⌘B", "show or hide the sidebar"),
+            ("⌘⇧R", "reading mode: just the page"),
+            ("⌘⇧N", "show or hide the notes beside the page"),
             ("?", "this list"),
         ]),
     ]
