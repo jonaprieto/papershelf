@@ -1278,3 +1278,92 @@ extension HammerTests {
         try? fm.removeItem(at: results.first { $0.status == .trashed }!.currentURL)
     }
 }
+
+extension HammerTests {
+
+    // MARK: - What "removing the protection" actually removes
+
+    /// Owner-password protection: the file opens with no prompt, but printing and copying
+    /// are refused. No password is needed to strip it, and none is asked for.
+    func testOwnerOnlyRestrictionsAreLifted() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let url = root.appendingPathComponent("Restricted 2024.pdf")
+        let source = PDFDocument(data: try Data(contentsOf: try makeScratchPDF()))!
+        XCTAssertTrue(source.write(to: url, withOptions: [
+            .ownerPasswordOption: "owner-secret",
+            .accessPermissionsOption: NSNumber(value: 0),
+        ]))
+
+        let before = try XCTUnwrap(loadPDF(url))
+        XCTAssertTrue(before.isEncrypted)
+        XCTAssertFalse(before.isLocked, "an owner password does not lock the document")
+        XCTAssertFalse(before.allowsPrinting)
+        XCTAssertFalse(before.allowsCopying)
+
+        // No passwords supplied at all.
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: [], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .decrypted)
+
+        let after = try XCTUnwrap(loadPDF(try XCTUnwrap(results.first).currentURL))
+        XCTAssertFalse(after.isEncrypted)
+        XCTAssertTrue(after.allowsPrinting)
+        XCTAssertTrue(after.allowsCopying)
+    }
+
+    /// The rebuild that removes encryption must not quietly cost the reader anything.
+    /// Annotations ride along with their page; the outline hangs off the document and has
+    /// to be carried over deliberately, or a book loses its table of contents.
+    func testDecryptingKeepsTheOutlineAndAnnotations() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let doc = PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: 3)))!
+        doc.documentAttributes?[PDFDocumentAttribute.titleAttribute] = "Rich"
+        let outline = PDFOutline()
+        for index in 0..<doc.pageCount {
+            let child = PDFOutline()
+            child.label = "Chapter \(index + 1)"
+            child.destination = PDFDestination(page: doc.page(at: index)!, at: .zero)
+            outline.insertChild(child, at: index)
+        }
+        doc.outlineRoot = outline
+        let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 40, height: 20),
+                                 forType: .text, withProperties: nil)
+        doc.page(at: 0)?.addAnnotation(note)
+
+        let url = root.appendingPathComponent("Book 2024.pdf")
+        XCTAssertTrue(doc.write(to: url, withOptions: [.ownerPasswordOption: "o",
+                                                       .userPasswordOption: "u"]))
+
+        // Read back what was actually stored: a text annotation carries a popup with it,
+        // so the count on disk is not the number that was added.
+        let original = try XCTUnwrap(loadPDF(url))
+        XCTAssertTrue(original.unlock(withPassword: "u"))
+        let annotationsBefore = original.page(at: 0)?.annotations.count ?? 0
+        XCTAssertGreaterThan(annotationsBefore, 0)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["u"], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .decrypted)
+
+        let after = try XCTUnwrap(loadPDF(try XCTUnwrap(results.first).currentURL))
+        XCTAssertFalse(after.isEncrypted)
+        XCTAssertEqual(after.pageCount, 3)
+        XCTAssertEqual(after.outlineRoot?.numberOfChildren, 3, "the table of contents survives")
+        XCTAssertEqual(after.outlineRoot?.child(at: 1)?.label, "Chapter 2")
+        // And its destinations point into the new document, not the old one.
+        XCTAssertEqual(after.index(for: try XCTUnwrap(after.outlineRoot?.child(at: 2)?.destination?.page)), 2)
+        XCTAssertEqual(after.page(at: 0)?.annotations.count, annotationsBefore,
+                       "annotations ride along with their page")
+        XCTAssertEqual(after.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String, "Rich")
+    }
+}

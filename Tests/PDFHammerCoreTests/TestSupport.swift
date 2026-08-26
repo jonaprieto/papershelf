@@ -66,3 +66,21 @@ func makeTextPDF(at url: URL, text: String, password: String? = nil) throws {
         throw NSError(domain: "TestSupport", code: 4)
     }
 }
+
+/// A throwaway PDF on disk, for tests that need to build a document up before writing it.
+func makeScratchPDF(pages: Int = 1) throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("scratch-\(UUID().uuidString).pdf")
+    let raw = NSMutableData()
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
+    for _ in 0..<pages {
+        ctx.beginPDFPage(nil)
+        ctx.setFillColor(CGColor(gray: 0.6, alpha: 1))
+        ctx.fill(CGRect(x: 40, y: 40, width: 500, height: 700))
+        ctx.endPDFPage()
+    }
+    ctx.closePDF()
+    try (raw as Data).write(to: url)
+    return url
+}

@@ -1063,7 +1063,35 @@ private func decryptedCopy(of doc: PDFDocument) -> PDFDocument? {
         clean.insert(page, at: clean.pageCount)
     }
     clean.documentAttributes = doc.documentAttributes
+    // Annotations travel with their page, but the outline hangs off the document and
+    // would be left behind. For a book that is its table of contents.
+    if let outline = doc.outlineRoot {
+        clean.outlineRoot = copiedOutline(outline, from: doc, to: clean)
+    }
     return clean
+}
+
+/// Rebuilds an outline against the new document, remapping each destination by page
+/// index. A destination still pointing at the old document's page would be dead.
+private func copiedOutline(_ node: PDFOutline, from source: PDFDocument,
+                           to target: PDFDocument) -> PDFOutline {
+    let copy = PDFOutline()
+    copy.label = node.label
+    if let destination = node.destination, let page = destination.page {
+        let index = source.index(for: page)
+        if index != NSNotFound, let moved = target.page(at: index) {
+            copy.destination = PDFDestination(page: moved, at: destination.point)
+        }
+    } else if let action = node.action {
+        // A link out of the document needs no remapping.
+        copy.action = action
+    }
+    for position in 0..<node.numberOfChildren {
+        guard let child = node.child(at: position) else { continue }
+        copy.insertChild(copiedOutline(child, from: source, to: target),
+                         at: copy.numberOfChildren)
+    }
+    return copy
 }
 
 /// Makes a user-typed name safe to use as a filename: no path separators, no colons,
