@@ -1428,3 +1428,39 @@ extension HammerTests {
                        "byte for byte, so nothing inside it can have been lost")
     }
 }
+
+extension HammerTests {
+
+    /// A highlight covering several lines is one mark. It has to be drawn as one quad per
+    /// line to sit on the text correctly, which is what `quadrilateralPoints` is for;
+    /// making one annotation per line drew the same thing but reported it as several.
+    func testAMultiLineHighlightIsOneAnnotation() throws {
+        let fm = FileManager.default
+        let url = fm.temporaryDirectory.appendingPathComponent("quads-\(UUID().uuidString).pdf")
+        defer { try? fm.removeItem(at: url) }
+        try makeTextPDF(at: url, text: String(repeating: "Sentences that wrap across lines. ", count: 30))
+
+        let doc = try XCTUnwrap(loadPDF(url))
+        let page = try XCTUnwrap(doc.page(at: 0))
+
+        // Two line boxes, as a multi-line selection produces.
+        let lines = [CGRect(x: 40, y: 400, width: 500, height: 14),
+                     CGRect(x: 40, y: 380, width: 320, height: 14)]
+        let union = lines[1].union(lines[0])
+        let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
+        mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
+            let box = line.offsetBy(dx: -union.minX, dy: -union.minY)
+            return [NSValue(point: NSPoint(x: box.minX, y: box.maxY)),
+                    NSValue(point: NSPoint(x: box.maxX, y: box.maxY)),
+                    NSValue(point: NSPoint(x: box.minX, y: box.minY)),
+                    NSValue(point: NSPoint(x: box.maxX, y: box.minY))]
+        }
+        page.addAnnotation(mark)
+        XCTAssertTrue(doc.write(to: url))
+
+        let saved = try XCTUnwrap(loadPDF(url))
+        let annotations = try XCTUnwrap(saved.page(at: 0)).annotations.filter { $0.type == "Highlight" }
+        XCTAssertEqual(annotations.count, 1, "two lines, one mark")
+        XCTAssertEqual(annotations[0].quadrilateralPoints?.count, 8, "four points per line")
+    }
+}

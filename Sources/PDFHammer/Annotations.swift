@@ -25,6 +25,7 @@ final class Annotator: ObservableObject {
         /// What the mark sits on, read off the page.
         let quoted: String
         let note: String
+        let colour: HighlightColour
         let annotation: PDFAnnotation
     }
 
@@ -49,31 +50,77 @@ final class Annotator: ObservableObject {
             for annotation in page.annotations {
                 let type = annotation.type ?? "Note"
                 guard type != "Popup" else { continue }   // the tail of a text note, not a mark
-                let quoted = page.selection(for: annotation.bounds)?.string?
-                    .split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
+                let quoted = quotedText(of: annotation, on: page)
                 found.append(Mark(page: index + 1, kind: type, quoted: quoted,
-                                  note: annotation.contents ?? "", annotation: annotation))
+                                  note: annotation.contents ?? "",
+                                  colour: HighlightColour.matching(annotation.color),
+                                  annotation: annotation))
             }
         }
         marks = found
     }
 
-    /// Highlights whatever is selected. A selection can run across pages, so one mark is
-    /// made per page it touches, which is how the geometry actually works.
-    func highlightSelection(note: String = "") -> Int {
+    /// The text a mark covers. Read per quad where there are quads: the bounding box of
+    /// a mark spanning two lines also covers the start of the line between them.
+    private func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String {
+        let quads = annotation.quadrilateralPoints ?? []
+        var boxes: [CGRect] = []
+        if quads.count >= 4 {
+            for start in stride(from: 0, to: quads.count - 3, by: 4) {
+                let points = (0..<4).map { quads[start + $0].pointValue }
+                let xs = points.map(\.x), ys = points.map(\.y)
+                boxes.append(CGRect(x: xs.min()! + annotation.bounds.minX,
+                                    y: ys.min()! + annotation.bounds.minY,
+                                    width: xs.max()! - xs.min()!,
+                                    height: ys.max()! - ys.min()!))
+            }
+        } else {
+            boxes = [annotation.bounds]
+        }
+        let pieces = boxes.compactMap { page.selection(for: $0)?.string }
+        return pieces.joined(separator: " ")
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// Highlights whatever is selected.
+    ///
+    /// One annotation per page, not one per line. A highlight has to follow the line
+    /// boxes to look right, but that is what `quadrilateralPoints` is for: several quads
+    /// on one annotation. Making one annotation per line drew the same thing and then
+    /// reported a two-line highlight as two separate marks, which is not what was made.
+    ///
+    /// A selection crossing a page break still yields one mark per page, because an
+    /// annotation belongs to a page and cannot span two.
+    @discardableResult
+    func highlightSelection(colour: HighlightColour = .yellow, note: String = "") -> Int {
         guard let view, let selection = view.currentSelection else { return 0 }
         var made = 0
+
         for page in selection.pages {
-            for bounds in selection.selectionsByLine()
-                .filter({ $0.pages.contains(page) })
-                .map({ $0.bounds(for: page) }) {
-                let mark = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-                mark.color = .systemYellow
-                if !note.isEmpty { mark.contents = note }
-                page.addAnnotation(mark)
-                made += 1
+            let lines = selection.selectionsByLine()
+                .filter { $0.pages.contains(page) }
+                .map { $0.bounds(for: page) }
+                .filter { $0.width > 0 && $0.height > 0 }
+            guard !lines.isEmpty else { continue }
+
+            let union = lines.dropFirst().reduce(lines[0]) { $0.union($1) }
+            let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
+            mark.color = colour.nsColor
+            if !note.isEmpty { mark.contents = note }
+            // Quads are given in the annotation's own coordinate space.
+            mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
+                let box = line.offsetBy(dx: -union.minX, dy: -union.minY)
+                return [
+                    NSValue(point: NSPoint(x: box.minX, y: box.maxY)),
+                    NSValue(point: NSPoint(x: box.maxX, y: box.maxY)),
+                    NSValue(point: NSPoint(x: box.minX, y: box.minY)),
+                    NSValue(point: NSPoint(x: box.maxX, y: box.minY)),
+                ]
             }
+            page.addAnnotation(mark)
+            made += 1
         }
+
         guard made > 0 else { return 0 }
         save()
         view.clearSelection()
@@ -84,6 +131,14 @@ final class Annotator: ObservableObject {
         refresh()
         selectedMark = marks.last?.id
         return made
+    }
+
+    /// Repaints an existing mark.
+    func setColour(_ colour: HighlightColour, on mark: Mark) {
+        mark.annotation.color = colour.nsColor
+        save()
+        view?.layoutDocumentView()
+        refresh()
     }
 
     func remove(_ mark: Mark) {

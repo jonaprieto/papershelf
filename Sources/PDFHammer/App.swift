@@ -1018,6 +1018,8 @@ struct ContentView: View {
     @State private var choosingBackupFolder = false
     @State private var savingLog = false
     @State private var watcher: FolderWatcher?
+    /// Bumped when a colour is renamed, so the fields redraw.
+    @State private var meaningsRevision = 0
     @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
     @AppStorage("useMetadataDate") private var useMetadataDate = true
@@ -1337,6 +1339,7 @@ struct ContentView: View {
                     runningPanel
                 case .ai: aiPanel
                 case .bibtex: bibtexPanel
+                case .reading: readingPanel
                 case .log: logPanel
                 case .appearance: appearancePanel
                 }
@@ -1733,6 +1736,52 @@ struct ContentView: View {
             }
     }
 
+
+    @ViewBuilder
+    private var readingPanel: some View {
+        Section {
+            ForEach(HighlightColour.allCases) { colour in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(colour.swatch)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1))
+                    TextField("", text: meaningBinding(colour), prompt: Text(colour.defaultMeaning))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+        } header: {
+            Text("What each colour means")
+        } footer: {
+            Text("Shown on the swatch when highlighting and beside every mark, so the "
+                 + "convention is legible where it is used rather than remembered.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        Section("Mode") {
+            Toggle("Reading mode", isOn: $chrome.reading)
+                .help("Hides the list, the header and the deciding controls (⌘⇧R)")
+        }
+    }
+
+    /// Meanings live in preferences rather than in the palette, so they can be renamed.
+    private func meaningBinding(_ colour: HighlightColour) -> Binding<String> {
+        Binding(
+            get: { UserDefaults.standard.string(forKey: colour.meaningKey) ?? "" },
+            set: { new in
+                let trimmed = new.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: colour.meaningKey)
+                } else {
+                    UserDefaults.standard.set(trimmed, forKey: colour.meaningKey)
+                }
+                meaningsRevision &+= 1
+            }
+        )
+    }
 
     @ViewBuilder
     private var logPanel: some View {
@@ -2991,6 +3040,7 @@ private struct ReviewInspector: View {
     @State private var addingNote = false
     @State private var noteText = ""
     @State private var clearingMarks = false
+    @AppStorage("lastHighlightColour") private var lastColour: HighlightColour = .yellow
 
     /// While reading, the deciding controls stay out of the way.
     private var showBottom: Bool { !collapsed && !reading }
@@ -3126,14 +3176,24 @@ private struct ReviewInspector: View {
     private var selectionBar: some View {
         if annotator.hasSelection {
             HStack(spacing: 8) {
-                Button {
-                    _ = annotator.highlightSelection()
-                    notesShown = true
-                } label: {
-                    Label("Highlight", systemImage: "highlighter")
+                ForEach(HighlightColour.allCases) { colour in
+                    Button {
+                        annotator.highlightSelection(colour: colour)
+                        lastColour = colour
+                        notesShown = true
+                    } label: {
+                        Circle()
+                            .fill(colour.swatch)
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(.primary.opacity(
+                                colour == lastColour ? 0.55 : 0.15), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    // The convention is only useful if it is legible where it is used.
+                    .help(colour.meaning)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+
+                Divider().frame(height: 18)
 
                 Button {
                     notesShown = true
@@ -3190,7 +3250,7 @@ private struct ReviewInspector: View {
                                 .lineLimit(2...5)
                             HStack {
                                 Button("Save") {
-                                    _ = annotator.highlightSelection(note: noteText)
+                                    annotator.highlightSelection(colour: lastColour, note: noteText)
                                     noteText = ""
                                     addingNote = false
                                 }
@@ -3215,7 +3275,8 @@ private struct ReviewInspector: View {
                             isSelected: annotator.selectedMark == mark.id,
                             jump: { annotator.jump(to: mark) },
                             remove: { annotator.remove(mark) },
-                            save: { annotator.setNote($0, on: mark) }
+                            save: { annotator.setNote($0, on: mark) },
+                            recolour: { annotator.setColour($0, on: mark) }
                         )
                     }
 
@@ -4148,7 +4209,7 @@ private struct DuplicateRow: View {
 // MARK: - Sidebar rail
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, passwords, naming, files, ai, bibtex, log, appearance
+    case sources, passwords, naming, files, ai, bibtex, reading, log, appearance
 
     var id: String { rawValue }
 
@@ -4160,6 +4221,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "tray.full"
         case .ai: return "sparkles"
         case .bibtex: return "text.quote"
+        case .reading: return "highlighter"
         case .log: return "list.bullet.rectangle"
         case .appearance: return "paintbrush"
         }
@@ -4173,6 +4235,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .ai: return "AI"
         case .bibtex: return "BibTeX"
+        case .reading: return "Reading"
         case .log: return "Activity"
         case .appearance: return "Appearance"
         }
@@ -4307,6 +4370,7 @@ private struct MarkRow: View {
     let jump: () -> Void
     let remove: () -> Void
     let save: (String) -> Void
+    let recolour: (HighlightColour) -> Void
 
     @State private var editing = false
     @State private var text = ""
@@ -4314,9 +4378,25 @@ private struct MarkRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: mark.kind == "Highlight" ? "highlighter" : "text.bubble")
-                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                    .padding(.top, 2)
+                Menu {
+                    ForEach(HighlightColour.allCases) { colour in
+                        Button { recolour(colour) } label: {
+                            Label(colour.meaning, systemImage: colour == mark.colour
+                                  ? "largecircle.fill.circle" : "circle.fill")
+                        }
+                    }
+                } label: {
+                    Circle()
+                        .fill(mark.colour.swatch)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 14)
+                .padding(.top, 3)
+                .help(mark.colour.meaning)
+
                 VStack(alignment: .leading, spacing: 2) {
                     if !mark.quoted.isEmpty {
                         Text(mark.quoted).font(.callout).lineLimit(3)
