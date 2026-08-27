@@ -13,7 +13,8 @@ trap 'rm -rf "$FOLDER"' EXIT
 # A library-shaped scratch database, built straight with sqlite3 rather than through the app,
 # so this script owns every row in it and does not depend on PDF Hammer having been run on
 # this machine. The schema mirrors Library.swift's own schemaV1 (documents, locations, tags,
-# document_tags, projects, project_members, extracted_text/_fts); a change to that schema is
+# document_tags, projects, project_members with its section, extracted_text/_fts); a
+# change to that schema is
 # expected to need a matching change here.
 LIBRARY_DB="$FOLDER/library.sqlite"
 sqlite3 "$LIBRARY_DB" <<'SQL'
@@ -52,6 +53,8 @@ CREATE TABLE project_members (
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     added_at    TEXT NOT NULL,
+    -- Added by schemaV4: which part of the reading list a document is filed under.
+    section     TEXT,
     PRIMARY KEY (project_id, document_id)
 );
 CREATE TABLE extracted_text (
@@ -86,7 +89,7 @@ INSERT INTO tags(id, name) VALUES (1, 'ethics'), (2, 'unused');
 INSERT INTO document_tags(document_id, tag_id) VALUES ('doc-1', 1);
 INSERT INTO projects(id, name, created_at) VALUES (1, 'Dissertation', '2026-01-01T00:00:00Z'),
                                                    (2, 'Empty', '2026-01-02T00:00:00Z');
-INSERT INTO project_members(project_id, document_id, added_at) VALUES (1, 'doc-1', '2026-01-01T00:00:00Z');
+INSERT INTO project_members(project_id, document_id, added_at, section) VALUES (1, 'doc-1', '2026-01-01T00:00:00Z', 'background');
 SQL
 
 # Three separate runs of the server, each answering into the same combined stream: one era

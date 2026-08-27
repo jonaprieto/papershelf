@@ -160,21 +160,25 @@ final class LibraryReader {
         )
     }
 
-    func documents(inProject projectID: Int64, limit: Int) throws -> [DocumentSummary] {
+    /// A project's documents with the section each is filed under, nil for the ones that
+    /// are in the project but filed under nothing. Ordered by section so a reader sees the
+    /// list the way it was organised rather than the order things were added.
+    func documents(inProject projectID: Int64, limit: Int) throws -> [(DocumentSummary, String?)] {
         try withStatement("""
-            SELECT \(Self.documentColumns)
+            SELECT \(Self.documentColumns), m.section
             FROM documents d
             JOIN project_members m ON m.document_id = d.id
             WHERE m.project_id = ?
-            ORDER BY m.added_at
+            ORDER BY m.section IS NULL, m.section COLLATE NOCASE, m.added_at
             LIMIT ?;
             """, bind: { statement in
             sqlite3_bind_int64(statement, 1, projectID)
             sqlite3_bind_int64(statement, 2, Int64(limit))
         }) { statement in
-            var results: [DocumentSummary] = []
+            var results: [(DocumentSummary, String?)] = []
             while sqlite3_step(statement) == SQLITE_ROW {
-                results.append(documentSummary(from: statement))
+                let section = columnText(statement, sqlite3_column_count(statement) - 1)
+                results.append((documentSummary(from: statement), section))
             }
             return results
         }

@@ -324,10 +324,23 @@ let libraryTools: [Tool] = [
             // in the project; clamping to zero keeps this tool's own "maximum" honest.
             let limit = max(0, arguments["limit"] as? Int ?? 500)
             let documents = try reader.documents(inProject: project.id, limit: limit)
-            let rows = documents.map(describeDocument)
-            let text = documents.isEmpty
-                ? "\(project.name) has no documents."
-                : documents.map { $0.path ?? "(no known path) \($0.id)" }.joined(separator: "\n")
+            // The section a document is filed under is most of what a reading list says,
+            // so it travels with each row and heads each run in the text.
+            let rows = documents.map { document, section -> [String: Any] in
+                var row = describeDocument(document)
+                if let section { row["section"] = section }
+                return row
+            }
+            var text = ""
+            var heading: String??
+            for (document, section) in documents {
+                if heading == nil || heading! != section {
+                    heading = section
+                    text += (text.isEmpty ? "" : "\n") + (section ?? "Filed under nothing") + "\n"
+                }
+                text += "  " + (document.path ?? "(no known path) \(document.id)") + "\n"
+            }
+            if documents.isEmpty { text = "\(project.name) has no documents." }
             return ToolOutput(text: text,
                                structured: ["project": ["id": Int(project.id), "name": project.name],
                                             "count": rows.count, "documents": rows])

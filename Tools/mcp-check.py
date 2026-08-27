@@ -134,6 +134,11 @@ for lookup_id in ("42", "43"):  # by name, then by id -- must agree
         f"id {lookup_id}: list_project_documents carries the member's tags",
         docs[0].get("tags") == ["ethics"] if docs else False,
     )
+    # The section is most of what a reading list says, so it has to reach the client.
+    check(
+        f"id {lookup_id}: list_project_documents says what a document is filed under",
+        docs[0].get("section") == "background" if docs else False,
+    )
 
 search_hit = result("44").get("structuredContent", {})
 check(
