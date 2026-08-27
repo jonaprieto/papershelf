@@ -50,9 +50,12 @@ public struct NameToken: Sendable, Equatable {
         public var id: String { rawValue }
     }
 
-    /// A token-specific shortening. Each case means something for one or two kinds and
-    /// is a harmless no-op everywhere else: nothing here ever fails on an inapplicable
-    /// combination, it just leaves the value alone.
+    /// A token-specific shortening. Each case is meaningful for one or two kinds, and
+    /// runs the same way regardless of kind: nothing here checks which token it was
+    /// asked to shorten. It is harmless on a value with nothing for it to act on (no
+    /// dash to strip, no space to split), but it will just as readily reshape a title,
+    /// journal, or folder value that happens to contain one, since the transform itself
+    /// does not know it was meant for a different kind of token.
     public enum Abbreviation: String, Sendable, CaseIterable, Identifiable, Equatable {
         /// No shortening.
         case none
@@ -394,8 +397,8 @@ private func apply(_ token: NameToken, to raw: String) -> String {
 }
 
 /// Windows' reserved device names, so a render that would otherwise land on e.g.
-/// `con.pdf` — a perfectly legal name on macOS/APFS, but broken on a filesystem or an
-/// archive that treats it as a reserved device even case-insensitively — never comes
+/// `con.pdf` (a perfectly legal name on macOS/APFS, but broken on a filesystem or an
+/// archive that treats it as a reserved device even case-insensitively) never comes
 /// out of `render` unmodified.
 private let reservedStems: Set<String> = [
     "con", "prn", "aux", "nul",
@@ -426,7 +429,7 @@ private func clip(_ text: String, to limit: Int) -> String {
 // MARK: - Collision handling
 
 /// `render`, tried again with an increasing counter until the result is not one of
-/// `existingNames` — data the caller already has, never a filesystem probe; this file
+/// `existingNames`: data the caller already has, never a filesystem probe; this file
 /// makes no such calls (see `availableURL` in Hammer.swift for that job on real disk).
 ///
 /// If `pattern` carries no `.counter` token to absorb the bump, a Hammer-style `-2`,

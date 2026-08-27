@@ -255,6 +255,15 @@ final class PatternsTests: XCTestCase {
         XCTAssertEqual(render(pattern, for: item("console.pdf")), "console.pdf")
     }
 
+    func testReservedDeviceNameCheckIsCaseInsensitiveOnItsOwn() {
+        // No `.lower` casing here: the previous test above only ever fed the reserved
+        // check an already-lowercased value, so it could not tell a case-sensitive
+        // comparison apart from the real, case-insensitive one. This uses the stem
+        // verbatim so the check itself, not the token's own casing option, is on trial.
+        let pattern = NamePattern(elements: [.token(NameToken(.originalStem))])
+        XCTAssertEqual(render(pattern, for: item("CON.pdf")), "CON-file.pdf")
+    }
+
     // MARK: - Failure mode: collision with an existing file
 
     func testAvailableNameIncrementsAnExplicitCounterToken() {
@@ -263,6 +272,22 @@ final class PatternsTests: XCTestCase {
         let taken: Set<String> = ["Frankenstein.pdf", "Frankenstein-2.pdf"]
         XCTAssertEqual(availableName(for: pattern, item: item("x.pdf"), guess: guess, existingNames: taken),
                        "Frankenstein-3.pdf")
+    }
+
+    func testAvailableNameRendersTheCounterTokenInPlaceRatherThanAppendingASuffix() {
+        // The test above places `[counter]` right where a Hammer-style `-2`/`-3` suffix
+        // would also land, so it cannot tell "the counter token was rendered" apart from
+        // "the counter token was ignored and a generic suffix was appended instead": both
+        // produce the byte-identical "Frankenstein-3.pdf". This pattern puts the counter
+        // token somewhere a bolted-on suffix never would, so the two code paths diverge.
+        let pattern = NamePattern(elements: [
+            .literal("v"), .token(NameToken(.counter)), .literal("-"), .token(NameToken(.title)),
+        ])
+        let guess = BookGuess(title: "Frankenstein", author: nil, year: nil)
+        let taken: Set<String> = ["vFrankenstein.pdf"]
+        XCTAssertEqual(availableName(for: pattern, item: item("x.pdf"), guess: guess, existingNames: taken),
+                       "v2-Frankenstein.pdf",
+                       "the counter token itself resolves to 2, not a '-2' suffix bolted onto the base name")
     }
 
     func testAvailableNameAppendsASuffixWhenThereIsNoCounterToken() {
