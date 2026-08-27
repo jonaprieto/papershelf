@@ -1,42 +1,74 @@
 import Foundation
+import Security
 import PDFHammerCore
 
 // MARK: - Key storage
 
-/// The API key is kept in a file of its own under Application Support, readable only by
-/// this user.
+/// The API key lives in the Keychain, where the system already protects credentials.
 ///
-/// The Keychain would be the better home, but every rebuild of an ad-hoc signed app is a
-/// different signature and the Keychain asks for permission again each time, which makes
-/// development miserable. A 0600 file is not a plist that other tools sync or index, and
-/// the environment variable is still the recommended route.
+/// It spent a while in a 0600 file under Application Support instead, because an ad-hoc
+/// signature changes on every rebuild and the Keychain asks for permission again each
+/// time. That was a development convenience, not a better home: a file is readable by
+/// anything running as this user, and the Keychain is not. A key left behind by that
+/// arrangement is moved in the first time it is read, rather than being stranded.
 enum KeyStore {
-    private static var directory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PDF Hammer", isDirectory: true)
-    }
-
-    private static func file(_ account: String) -> URL {
-        directory.appendingPathComponent("\(account).key")
-    }
+    private static let service = "com.jonaprieto.pdfhammer"
 
     static func set(_ value: String, account: String) {
         remove(account: account)
         guard !value.isEmpty else { return }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? Data(value.utf8).write(to: file(account), options: [.atomic, .completeFileProtection])
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: file(account).path)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        ]
+        SecItemAdd(query as CFDictionary, nil)
     }
 
     static func get(account: String) -> String? {
-        guard let data = try? Data(contentsOf: file(account)),
-              let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
-        return text
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+           let data = result as? Data, let text = String(data: data, encoding: .utf8),
+           !text.isEmpty {
+            return text
+        }
+        return adoptFileKey(account: account)
     }
 
     static func remove(account: String) {
-        try? FileManager.default.removeItem(at: file(account))
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+        try? FileManager.default.removeItem(at: legacyFile(account))
+    }
+
+    private static func legacyFile(_ account: String) -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PDF Hammer", isDirectory: true)
+            .appendingPathComponent("\(account).key")
+    }
+
+    /// Moves a key saved while the file store was in use into the Keychain, once, and
+    /// takes the file away afterwards so the credential is in one place only.
+    private static func adoptFileKey(account: String) -> String? {
+        let file = legacyFile(account)
+        guard let data = try? Data(contentsOf: file),
+              let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
+        set(text, account: account)
+        try? FileManager.default.removeItem(at: file)
+        return text
     }
 }
 

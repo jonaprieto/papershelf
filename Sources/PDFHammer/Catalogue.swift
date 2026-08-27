@@ -1316,6 +1316,7 @@ struct StatusPill: View {
         case .decrypted: return "lock.open.fill"
         case .renamed: return "textformat"
         case .locked: return "lock.fill"
+        case .encrypted: return "lock.rotation"
         case .trashed: return "trash.fill"
         case .moved: return "arrow.right.doc.on.clipboard"
         case .failed: return "exclamationmark.triangle.fill"
@@ -1329,6 +1330,7 @@ struct StatusPill: View {
         case .decrypted: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
         case .renamed:   return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+        case .encrypted: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
         case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
         case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))

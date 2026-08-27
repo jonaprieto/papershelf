@@ -9,6 +9,9 @@ struct ContentView: View {
     // warns while the list is empty, and what you type is kept in UserDefaults.
     @AppStorage("passwords") private var passwordsText = ""
     @AppStorage("moveOriginals") private var moveOriginals = true
+    @AppStorage("encryptOutput") private var encryptOutput = false
+    /// Kept in memory only. A password written into a preferences plist is not a password.
+    @State private var encryptPassword = ""
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
@@ -243,6 +246,7 @@ struct ContentView: View {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
+                encryption: EncryptionSettings(enabled: encryptOutput, password: encryptPassword),
                 useFolderNames: useFolderNames,
                 useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
     }
@@ -858,6 +862,31 @@ struct ContentView: View {
                      text: "Applying will replace the originals. Nothing is kept and there is no undo.")
             }
         }
+
+            Section {
+                Toggle("Lock the output with a password", isOn: $encryptOutput)
+                    .tip("Write every file out locked with your password")
+                if encryptOutput {
+                    LabeledContent("Password") {
+                        SecureField("", text: $encryptPassword, prompt: Text("required"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+            } header: {
+                Text("Encryption")
+            } footer: {
+                Text(encryptOutput && encryptPassword.isEmpty
+                     ? "Without a password nothing is encrypted."
+                     : "Held in memory only, never written to preferences, so it has to be "
+                       + "given again next launch. A file no password opened is passed "
+                       + "through as it is rather than being sealed with one it never had.")
+                    .font(.caption)
+                    .foregroundStyle(encryptOutput && encryptPassword.isEmpty
+                                     ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                     : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Section {
                 Toggle("Keep the originals", isOn: $moveOriginals)

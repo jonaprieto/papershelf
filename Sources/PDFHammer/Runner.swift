@@ -673,6 +673,8 @@ final class Runner: ObservableObject {
         case .trashed: return .trashed
         case .failed: return .failed
         case .locked: return .renamed
+        // Both rewrite the file, and the log has one word for that.
+        case .encrypted: return .decrypted
         }
     }
 

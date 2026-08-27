@@ -67,10 +67,10 @@ struct SettingsView: View {
             } header: {
                 Text("OpenAI")
             } footer: {
-                Text("The key is kept in a file only you can read, under Application Support. A "
-                     + "Finder-launched app inherits launchd's environment rather than a "
-                     + "shell's, so when the variable is not visible the login shell is asked "
-                     + "once, in memory only. The environment variable is the safer route.")
+                Text("The key is kept in your Keychain, never in preferences, which are a plain "
+                     + "file anything running as you can read. A Finder-launched app inherits "
+                     + "launchd's environment rather than a shell's, so when the variable is "
+                     + "not visible the login shell is asked once, in memory only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -299,7 +299,7 @@ struct SettingsView: View {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         KeyStore.set(trimmed, account: "openai")
         StoredKey.shared.update(trimmed)
-        status = .ok("Key saved")
+        status = .ok("Key saved to the Keychain")
     }
 
     private func test() {

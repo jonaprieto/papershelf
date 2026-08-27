@@ -32,6 +32,7 @@ extension Status {
         case .decrypted: return "Was encrypted; a password matched and it will be written out unlocked"
         case .renamed: return "Not encrypted; copied through unchanged"
         case .locked: return "Encrypted and no password matched; renamed but still locked"
+        case .encrypted: return "Will be written out locked with your password"
         case .trashed: return "Marked for the Trash"
         case .moved: return "Moving to the folder you chose when you apply"
         case .failed: return "Something went wrong; the note says what"
