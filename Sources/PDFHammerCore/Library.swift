@@ -1,0 +1,761 @@
+import Foundation
+import SQLite3
+
+/// The one durable store for everything that outlives a single scan: which documents the
+/// user has seen, the paths those documents have lived at, tags, reading projects, notes,
+/// and extracted text for search. Everything else in this app (`RunCache`, `Item`) is a
+/// preview of the present; this is the record of it.
+///
+/// IDENTITY: a document's `id` is a freshly generated UUID string, stored once and never
+/// recomputed. It is deliberately NOT the content hash. This app decrypts PDFs and writes
+/// highlights straight into the file (`Annotations.swift`), so a document's bytes change
+/// under ordinary use; keying identity on a hash would mean every highlight silently
+/// orphans that document's own tags and notes. The hash, the byte count, the page count and
+/// the known paths are all LOCATORS recorded on the row, updated freely as they change; the
+/// row itself, and everything hung off its `id`, does not move. `indexDocument` proves this
+/// by resolving identity through the path (via `locations`) first: a known path always maps
+/// back to the same row, so re-indexing a changed file updates that row's locators in place
+/// rather than creating a second one. A path that genuinely refers to a *different* document
+/// under the same name (rare, but the length-floor problem `contentKey` already has to dodge
+/// applies here too) is out of scope for this store to guess at; nothing here invents a
+/// hash-matching heuristic to merge or split rows, on purpose, because a wrong guess in that
+/// direction is exactly the silent-data-loss failure this design exists to avoid. When a
+/// future caller *knows* a path now names a document already known under a different path
+/// (the app's own decrypt-and-rename, for instance, knows both ends of that move), it says so
+/// explicitly with `recordLocation`, rather than this store inferring it.
+///
+/// SEARCH: `fullTextSearch` mirrors the one thing in `Search.swift`'s `Query` grammar it can
+/// answer, the `text:` field, which is itself already a literal run of words rather than a
+/// bag of independent terms (see `matches(_:_:)`, the `"text"` case, a substring scan). It
+/// does not reimplement `Query`'s other fields (`name`, `folder`, `size`, `pages`, `status`,
+/// `year`): those describe filesystem and PDF metadata carried on `Item`, not on anything
+/// this store persists, so a caller wanting both narrows with `Query`'s own `matches(_:_:)`
+/// over `Item` and this store's `fullTextSearch` over extracted text, rather than one
+/// function trying to be both.
+public actor Library {
+
+    // MARK: - Connection
+
+    /// The one place this file's connection is ever touched. The system SQLite reports
+    /// `sqlite3_threadsafe() == 2` ("multi-thread"), not 3 ("serialized"): distinct
+    /// connections may run on distinct threads at once, but a single connection must never
+    /// be entered by two threads at the same instant. Wrapping the connection in an actor,
+    /// and never storing or handing it out anywhere but here, makes that the only outcome
+    /// the compiler will produce: every call funnels through this actor's serial executor,
+    /// and nothing in this file ever passes `db` to a `DispatchQueue`, `Task.detached`, or
+    /// anything else that would let it run outside actor isolation. Cross-process safety (a
+    /// GUI connection and a separate MCP server connection, both open at once) is a
+    /// different mechanism, WAL, verified separately; this actor only has to answer for
+    /// what happens inside one process.
+    private var db: OpaquePointer?
+
+    public init(url: URL) throws {
+        var handle: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+        let result = sqlite3_open_v2(url.path, &handle, flags, nil)
+        guard result == SQLITE_OK, let handle else {
+            let message = handle.flatMap { sqlite3_errmsg($0) }.map(String.init(cString:)) ?? "sqlite code \(result)"
+            if let handle { sqlite3_close(handle) }
+            throw LibraryError.openFailed(message)
+        }
+        // A second process (or, in a test, a second connection) WILL write to this file
+        // while this one holds it open; five seconds of automatic retry inside SQLite beats
+        // an immediate SQLITE_BUSY thrown back at every caller.
+        sqlite3_busy_timeout(handle, 5000)
+        // Pragmas and migration run here, against the local `handle`, rather than through
+        // this actor's own isolated methods: before `self.db` is assigned below, `self`
+        // is not yet a constructed actor for anything to be isolated against, and nothing
+        // else can be holding a reference to it yet either way.
+        do {
+            try prepareConnection(handle)
+        } catch {
+            sqlite3_close_v2(handle)
+            throw error
+        }
+        self.db = handle
+    }
+
+    deinit {
+        // No other reference to this actor can exist by the time deinit runs, so touching
+        // `db` here without `await` is exactly as safe as anywhere else in this file.
+        if let db { sqlite3_close_v2(db) }
+    }
+
+    // MARK: - Schema
+
+    /// One entry per schema version, applied in order inside its own transaction, each
+    /// followed by bumping `PRAGMA user_version` to match. Adding the spend ledger or the
+    /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
+    /// rest of this type does not change shape to make room for it.
+    fileprivate static let migrations: [String] = [schemaV1]
+
+    fileprivate static let schemaV1 = """
+        CREATE TABLE documents (
+            id             TEXT PRIMARY KEY,
+            first_seen_at  TEXT NOT NULL,
+            last_seen_at   TEXT NOT NULL,
+            content_hash   TEXT,
+            byte_count     INTEGER,
+            page_count     INTEGER,
+            title          TEXT,
+            author         TEXT,
+            document_info  TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE locations (
+            path           TEXT PRIMARY KEY,
+            document_id    TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            first_seen_at  TEXT NOT NULL,
+            last_seen_at   TEXT NOT NULL
+        );
+        CREATE INDEX locations_by_document ON locations(document_id);
+
+        CREATE TABLE tags (
+            id   INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        );
+
+        CREATE TABLE document_tags (
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (document_id, tag_id)
+        );
+
+        CREATE TABLE projects (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE project_members (
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            added_at    TEXT NOT NULL,
+            PRIMARY KEY (project_id, document_id)
+        );
+
+        CREATE TABLE notes (
+            id          INTEGER PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            body        TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+
+        CREATE TABLE extracted_text (
+            document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+            markdown     TEXT NOT NULL,
+            extracted_at TEXT NOT NULL
+        );
+
+        CREATE VIRTUAL TABLE extracted_text_fts USING fts5(
+            markdown, content='extracted_text', content_rowid='rowid'
+        );
+
+        CREATE TRIGGER extracted_text_ai AFTER INSERT ON extracted_text BEGIN
+            INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+        END;
+        CREATE TRIGGER extracted_text_ad AFTER DELETE ON extracted_text BEGIN
+            INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+        END;
+        CREATE TRIGGER extracted_text_au AFTER UPDATE ON extracted_text BEGIN
+            INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+            INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+        END;
+        """
+
+    /// FTS5's external-content triggers only fire on row-level writes; a migration that
+    /// loads rows in bulk, bypassing them, would desync the index silently. Nothing in this
+    /// file does that today, but this is the escape hatch if one ever needs to.
+    public func rebuildSearchIndex() throws {
+        try execute("INSERT INTO extracted_text_fts(extracted_text_fts) VALUES('rebuild');")
+    }
+
+    // MARK: - Documents
+
+    /// Indexes one file, called repeatedly by a filesystem watcher as it re-walks the
+    /// library: identity is resolved by path, so this is idempotent both when nothing
+    /// changed (a plain touch of `last_seen_at`) and when the file's bytes changed under
+    /// the same path (the row's locators are updated in place, its tags/notes/projects
+    /// untouched, and no second row is created).
+    @discardableResult
+    public func indexDocument(
+        path: String,
+        contentHash: String?,
+        byteCount: Int? = nil,
+        pageCount: Int? = nil,
+        title: String? = nil,
+        author: String? = nil,
+        documentInfo: [String: String] = [:],
+        seenAt: Date = Date()
+    ) throws -> DocumentRecord {
+        let info = try Library.encodeDocumentInfo(documentInfo)
+        let seenAtText = Library.isoString(seenAt)
+        return try transaction {
+            let id: String
+            if let existingID = try documentID(atPath: path) {
+                id = existingID
+                try run("""
+                    UPDATE documents
+                    SET content_hash = ?, byte_count = ?, page_count = ?, title = ?, author = ?,
+                        document_info = ?, last_seen_at = ?
+                    WHERE id = ?;
+                    """) { statement in
+                    bindText(statement, 1, contentHash)
+                    bindInt(statement, 2, byteCount)
+                    bindInt(statement, 3, pageCount)
+                    bindText(statement, 4, title)
+                    bindText(statement, 5, author)
+                    bindText(statement, 6, info)
+                    bindText(statement, 7, seenAtText)
+                    bindText(statement, 8, id)
+                }
+            } else {
+                id = UUID().uuidString
+                try run("""
+                    INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count,
+                                          page_count, title, author, document_info)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """) { statement in
+                    bindText(statement, 1, id)
+                    bindText(statement, 2, seenAtText)
+                    bindText(statement, 3, seenAtText)
+                    bindText(statement, 4, contentHash)
+                    bindInt(statement, 5, byteCount)
+                    bindInt(statement, 6, pageCount)
+                    bindText(statement, 7, title)
+                    bindText(statement, 8, author)
+                    bindText(statement, 9, info)
+                }
+            }
+            try touchLocation(path: path, documentID: id, seenAt: seenAtText)
+            guard let record = try document(id: id) else {
+                throw LibraryError.invariantViolated("document \(id) vanished inside its own indexing transaction")
+            }
+            return record
+        }
+    }
+
+    /// Associates an additional path with a document that already exists, without touching
+    /// its locators. This is the explicit primitive for "this path now names that document":
+    /// a caller with real knowledge of a rename or a decrypt-in-place (the app's own
+    /// `process(job:options:)`, eventually) calls this instead of `indexDocument` inventing
+    /// the connection from a hash match, which is a guess this store deliberately does not
+    /// make on its own.
+    public func recordLocation(_ path: String, forDocument documentID: String, seenAt: Date = Date()) throws {
+        try touchLocation(path: path, documentID: documentID, seenAt: Library.isoString(seenAt))
+    }
+
+    private func touchLocation(path: String, documentID: String, seenAt: String) throws {
+        try run("""
+            INSERT INTO locations(path, document_id, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET document_id = excluded.document_id, last_seen_at = excluded.last_seen_at;
+            """) { statement in
+            bindText(statement, 1, path)
+            bindText(statement, 2, documentID)
+            bindText(statement, 3, seenAt)
+            bindText(statement, 4, seenAt)
+        }
+    }
+
+    private func documentID(atPath path: String) throws -> String? {
+        try withStatement("SELECT document_id FROM locations WHERE path = ?;", bind: { statement in
+            bindText(statement, 1, path)
+        }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return columnText(statement, 0)
+        }
+    }
+
+    public func document(id: String) throws -> DocumentRecord? {
+        try withStatement("""
+            SELECT id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info
+            FROM documents WHERE id = ?;
+            """, bind: { statement in
+            bindText(statement, 1, id)
+        }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return Library.documentRecord(from: statement)
+        }
+    }
+
+    public func document(atPath path: String) throws -> DocumentRecord? {
+        guard let id = try documentID(atPath: path) else { return nil }
+        return try document(id: id)
+    }
+
+    public func locations(forDocument documentID: String) throws -> [LocationRecord] {
+        try withStatement("""
+            SELECT path, document_id, first_seen_at, last_seen_at FROM locations
+            WHERE document_id = ? ORDER BY first_seen_at;
+            """, bind: { statement in
+            bindText(statement, 1, documentID)
+        }) { statement in
+            var results: [LocationRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(LocationRecord(
+                    path: columnText(statement, 0) ?? "",
+                    documentID: columnText(statement, 1) ?? documentID,
+                    firstSeenAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast,
+                    lastSeenAt: columnText(statement, 3).flatMap(Library.isoDate) ?? .distantPast
+                ))
+            }
+            return results
+        }
+    }
+
+    private static func documentRecord(from statement: OpaquePointer) -> DocumentRecord {
+        DocumentRecord(
+            id: columnText(statement, 0) ?? "",
+            firstSeenAt: columnText(statement, 1).flatMap(isoDate) ?? .distantPast,
+            lastSeenAt: columnText(statement, 2).flatMap(isoDate) ?? .distantPast,
+            contentHash: columnText(statement, 3),
+            byteCount: columnInt(statement, 4),
+            pageCount: columnInt(statement, 5),
+            title: columnText(statement, 6),
+            author: columnText(statement, 7),
+            documentInfo: columnText(statement, 8).flatMap(decodeDocumentInfo) ?? [:]
+        )
+    }
+
+    private static func encodeDocumentInfo(_ info: [String: String]) throws -> String {
+        let data = try JSONEncoder().encode(info)
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    private static func decodeDocumentInfo(_ text: String) -> [String: String]? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String: String].self, from: data)
+    }
+
+    // MARK: - Tags
+
+    public func addTag(_ name: String, toDocument documentID: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw LibraryError.invalidTagName }
+        try transaction {
+            try run("INSERT INTO tags(name) VALUES (?) ON CONFLICT(name) DO NOTHING;") { statement in
+                bindText(statement, 1, trimmed)
+            }
+            try run("""
+                INSERT INTO document_tags(document_id, tag_id)
+                SELECT ?, id FROM tags WHERE name = ?
+                ON CONFLICT(document_id, tag_id) DO NOTHING;
+                """) { statement in
+                bindText(statement, 1, documentID)
+                bindText(statement, 2, trimmed)
+            }
+        }
+    }
+
+    /// Removes the association, not the tag itself: an unused tag with zero documents left
+    /// costs nothing to keep, and keeping it means it is still there to pick again later.
+    public func removeTag(_ name: String, fromDocument documentID: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try run("""
+            DELETE FROM document_tags
+            WHERE document_id = ? AND tag_id = (SELECT id FROM tags WHERE name = ?);
+            """) { statement in
+            bindText(statement, 1, documentID)
+            bindText(statement, 2, trimmed)
+        }
+    }
+
+    public func tags(forDocument documentID: String) throws -> [Tag] {
+        try withStatement("""
+            SELECT t.id, t.name FROM tags t
+            JOIN document_tags dt ON dt.tag_id = t.id
+            WHERE dt.document_id = ?
+            ORDER BY t.name;
+            """, bind: { statement in
+            bindText(statement, 1, documentID)
+        }) { statement in
+            var results: [Tag] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Tag(id: sqlite3_column_int64(statement, 0), name: columnText(statement, 1) ?? ""))
+            }
+            return results
+        }
+    }
+
+    // MARK: - Projects
+
+    @discardableResult
+    public func createProject(name: String, createdAt: Date = Date()) throws -> Project {
+        try run("INSERT INTO projects(name, created_at) VALUES (?, ?);") { statement in
+            bindText(statement, 1, name)
+            bindText(statement, 2, Library.isoString(createdAt))
+        }
+        return Project(id: sqlite3_last_insert_rowid(db), name: name, createdAt: createdAt)
+    }
+
+    public func projects() throws -> [Project] {
+        try withStatement("SELECT id, name, created_at FROM projects ORDER BY created_at;") { statement in
+            var results: [Project] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Project(
+                    id: sqlite3_column_int64(statement, 0),
+                    name: columnText(statement, 1) ?? "",
+                    createdAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast
+                ))
+            }
+            return results
+        }
+    }
+
+    public func addMember(_ documentID: String, toProject projectID: Int64, addedAt: Date = Date()) throws {
+        try run("""
+            INSERT INTO project_members(project_id, document_id, added_at) VALUES (?, ?, ?)
+            ON CONFLICT(project_id, document_id) DO NOTHING;
+            """) { statement in
+            sqlite3_bind_int64(statement, 1, projectID)
+            bindText(statement, 2, documentID)
+            bindText(statement, 3, Library.isoString(addedAt))
+        }
+    }
+
+    public func removeMember(_ documentID: String, fromProject projectID: Int64) throws {
+        try run("DELETE FROM project_members WHERE project_id = ? AND document_id = ?;") { statement in
+            sqlite3_bind_int64(statement, 1, projectID)
+            bindText(statement, 2, documentID)
+        }
+    }
+
+    public func members(ofProject projectID: Int64) throws -> [DocumentRecord] {
+        try withStatement("""
+            SELECT d.id, d.first_seen_at, d.last_seen_at, d.content_hash, d.byte_count, d.page_count,
+                   d.title, d.author, d.document_info
+            FROM documents d
+            JOIN project_members m ON m.document_id = d.id
+            WHERE m.project_id = ?
+            ORDER BY m.added_at;
+            """, bind: { statement in
+            sqlite3_bind_int64(statement, 1, projectID)
+        }) { statement in
+            var results: [DocumentRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Library.documentRecord(from: statement))
+            }
+            return results
+        }
+    }
+
+    // MARK: - Notes
+
+    @discardableResult
+    public func addNote(_ body: String, toDocument documentID: String, at date: Date = Date()) throws -> Note {
+        let timestamp = Library.isoString(date)
+        try run("INSERT INTO notes(document_id, body, created_at, updated_at) VALUES (?, ?, ?, ?);") { statement in
+            bindText(statement, 1, documentID)
+            bindText(statement, 2, body)
+            bindText(statement, 3, timestamp)
+            bindText(statement, 4, timestamp)
+        }
+        return Note(id: sqlite3_last_insert_rowid(db), documentID: documentID, body: body,
+                    createdAt: date, updatedAt: date)
+    }
+
+    public func notes(forDocument documentID: String) throws -> [Note] {
+        try withStatement("""
+            SELECT id, document_id, body, created_at, updated_at FROM notes
+            WHERE document_id = ? ORDER BY created_at;
+            """, bind: { statement in
+            bindText(statement, 1, documentID)
+        }) { statement in
+            var results: [Note] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Note(
+                    id: sqlite3_column_int64(statement, 0),
+                    documentID: columnText(statement, 1) ?? documentID,
+                    body: columnText(statement, 2) ?? "",
+                    createdAt: columnText(statement, 3).flatMap(Library.isoDate) ?? .distantPast,
+                    updatedAt: columnText(statement, 4).flatMap(Library.isoDate) ?? .distantPast
+                ))
+            }
+            return results
+        }
+    }
+
+    public func removeNote(_ id: Int64) throws {
+        try run("DELETE FROM notes WHERE id = ?;") { statement in
+            sqlite3_bind_int64(statement, 1, id)
+        }
+    }
+
+    // MARK: - Extracted text and search
+
+    public func setExtractedText(_ markdown: String, forDocument documentID: String, extractedAt: Date = Date()) throws {
+        try run("""
+            INSERT INTO extracted_text(document_id, markdown, extracted_at) VALUES (?, ?, ?)
+            ON CONFLICT(document_id) DO UPDATE SET markdown = excluded.markdown, extracted_at = excluded.extracted_at;
+            """) { statement in
+            bindText(statement, 1, documentID)
+            bindText(statement, 2, markdown)
+            bindText(statement, 3, Library.isoString(extractedAt))
+        }
+    }
+
+    public func extractedText(forDocument documentID: String) throws -> ExtractedText? {
+        try withStatement("SELECT document_id, markdown, extracted_at FROM extracted_text WHERE document_id = ?;",
+                          bind: { statement in bindText(statement, 1, documentID) }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return ExtractedText(
+                documentID: columnText(statement, 0) ?? documentID,
+                markdown: columnText(statement, 1) ?? "",
+                extractedAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast
+            )
+        }
+    }
+
+    public func fullTextSearch(_ text: String, limit: Int = 50) throws -> [DocumentRecord] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        // Wrapped as one FTS5 phrase rather than passed through raw. FTS5's MATCH syntax
+        // gives special meaning to `-`, `:`, `"` and bareword operators, and a search box is
+        // not the place to make someone escape SQL; a phrase (adjacent tokens, in order) is
+        // also the FTS5 primitive closest to what Search.swift's own `text:"..."` term
+        // already means, see the type-level comment above.
+        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return try withStatement("""
+            SELECT d.id, d.first_seen_at, d.last_seen_at, d.content_hash, d.byte_count, d.page_count,
+                   d.title, d.author, d.document_info
+            FROM extracted_text_fts
+            JOIN extracted_text e ON e.rowid = extracted_text_fts.rowid
+            JOIN documents d ON d.id = e.document_id
+            WHERE extracted_text_fts MATCH ?
+            ORDER BY bm25(extracted_text_fts)
+            LIMIT ?;
+            """, bind: { statement in
+            bindText(statement, 1, phrase)
+            sqlite3_bind_int64(statement, 2, Int64(limit))
+        }) { statement in
+            var results: [DocumentRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Library.documentRecord(from: statement))
+            }
+            return results
+        }
+    }
+
+    // MARK: - SQLite plumbing
+
+    private func execute(_ sql: String) throws {
+        guard let db else {
+            throw LibraryError.invariantViolated("execute(_:) called with no open connection")
+        }
+        try performExecute(db, sql)
+    }
+
+    /// Every write in this file goes through this so a real failure rolls the whole
+    /// operation back instead of leaving, say, a document row with no location, or a tag
+    /// insert with no document link.
+    private func transaction<T>(_ body: () throws -> T) throws -> T {
+        try execute("BEGIN IMMEDIATE;")
+        do {
+            let result = try body()
+            try execute("COMMIT;")
+            return result
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    /// Prepares `sql`, lets `bind` attach parameters, and finalizes the statement no matter
+    /// how `body` returns or throws, so a thrown error never leaks a live `sqlite3_stmt*`.
+    private func withStatement<T>(
+        _ sql: String,
+        bind: (OpaquePointer) throws -> Void = { _ in },
+        body: (OpaquePointer) throws -> T
+    ) throws -> T {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            let message = String(cString: sqlite3_errmsg(db))
+            throw LibraryError.sqlite(code: sqlite3_errcode(db), message: message)
+        }
+        defer { sqlite3_finalize(statement) }
+        try bind(statement)
+        return try body(statement)
+    }
+
+    /// For a statement whose result nobody reads: an INSERT/UPDATE/DELETE stepped to
+    /// completion.
+    private func run(_ sql: String, bind: (OpaquePointer) throws -> Void = { _ in }) throws {
+        try withStatement(sql, bind: bind) { statement in
+            let result = sqlite3_step(statement)
+            guard result == SQLITE_DONE else {
+                let message = String(cString: sqlite3_errmsg(db))
+                throw LibraryError.sqlite(code: result, message: message)
+            }
+        }
+    }
+
+    private static func isoString(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    private static func isoDate(_ text: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = precise.date(from: text) { return date }
+        // Whole-second fallback, in case a value predates fractional seconds being added.
+        return ISO8601DateFormatter().date(from: text)
+    }
+}
+
+// MARK: - Connection setup (free functions, called only from `Library.init` before `self.db`
+// is assigned, and by `execute(_:)` afterwards; see the comment in `init`)
+
+private func performExecute(_ db: OpaquePointer, _ sql: String) throws {
+    var errorPointer: UnsafeMutablePointer<CChar>?
+    let result = sqlite3_exec(db, sql, nil, nil, &errorPointer)
+    if result != SQLITE_OK {
+        let message = errorPointer.map { String(cString: $0) } ?? "sqlite code \(result)"
+        sqlite3_free(errorPointer)
+        throw LibraryError.sqlite(code: result, message: message)
+    }
+}
+
+private func performSchemaVersion(_ db: OpaquePointer) throws -> Int {
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &statement, nil) == SQLITE_OK, let statement else {
+        throw LibraryError.sqlite(code: sqlite3_errcode(db), message: String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int64(statement, 0))
+}
+
+private func prepareConnection(_ db: OpaquePointer) throws {
+    try performExecute(db, "PRAGMA foreign_keys = ON;")
+    try performExecute(db, "PRAGMA journal_mode = WAL;")
+    let current = try performSchemaVersion(db)
+    guard current < Library.migrations.count else { return }
+    for version in current..<Library.migrations.count {
+        try performExecute(db, "BEGIN IMMEDIATE;")
+        do {
+            try performExecute(db, Library.migrations[version])
+            try performExecute(db, "PRAGMA user_version = \(version + 1);")
+            try performExecute(db, "COMMIT;")
+        } catch {
+            try? performExecute(db, "ROLLBACK;")
+            throw error
+        }
+    }
+}
+
+// MARK: - Binding and column helpers (free functions: they never touch `db` itself, so they
+// carry no actor isolation and impose none on their callers)
+
+/// `SQLITE_TRANSIENT` is the cast macro `((sqlite3_destructor_type)-1)`; the Clang importer
+/// does not bridge `#define` cast macros, so every text bind that does not own a buffer
+/// guaranteed to outlive `sqlite3_step` needs this spelled out by hand, telling SQLite to
+/// copy the bytes immediately rather than assume they will still be there.
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+private func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String?) {
+    guard let value else {
+        sqlite3_bind_null(statement, index)
+        return
+    }
+    sqlite3_bind_text(statement, index, value, -1, SQLITE_TRANSIENT)
+}
+
+private func bindInt(_ statement: OpaquePointer, _ index: Int32, _ value: Int?) {
+    guard let value else {
+        sqlite3_bind_null(statement, index)
+        return
+    }
+    sqlite3_bind_int64(statement, index, Int64(value))
+}
+
+private func columnText(_ statement: OpaquePointer, _ index: Int32) -> String? {
+    guard let cString = sqlite3_column_text(statement, index) else { return nil }
+    return String(cString: cString)
+}
+
+private func columnInt(_ statement: OpaquePointer, _ index: Int32) -> Int? {
+    sqlite3_column_type(statement, index) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(statement, index))
+}
+
+// MARK: - Errors
+
+public enum LibraryError: Error, CustomStringConvertible, Sendable {
+    case openFailed(String)
+    case sqlite(code: Int32, message: String)
+    case invalidTagName
+    /// Something this file's own logic guarantees can't happen, happened. A bug here, not
+    /// a way for a caller to have used the API wrong.
+    case invariantViolated(String)
+
+    public var description: String {
+        switch self {
+        case .openFailed(let message): return "could not open the library database: \(message)"
+        case .sqlite(let code, let message): return "sqlite error \(code): \(message)"
+        case .invalidTagName: return "tag names cannot be empty"
+        case .invariantViolated(let message): return message
+        }
+    }
+}
+
+// MARK: - Records
+
+public struct DocumentRecord: Sendable, Equatable, Identifiable {
+    public let id: String
+    public var firstSeenAt: Date
+    public var lastSeenAt: Date
+    /// The document's current sha-256, a locator, not the identity: see the type-level
+    /// comment on `Library`.
+    public var contentHash: String?
+    public var byteCount: Int?
+    public var pageCount: Int?
+    public var title: String?
+    public var author: String?
+    public var documentInfo: [String: String]
+}
+
+public struct LocationRecord: Sendable, Equatable {
+    public let path: String
+    public var documentID: String
+    public var firstSeenAt: Date
+    public var lastSeenAt: Date
+}
+
+public struct Tag: Sendable, Equatable, Hashable, Identifiable {
+    public let id: Int64
+    public var name: String
+}
+
+public struct Project: Sendable, Equatable, Identifiable {
+    public let id: Int64
+    public var name: String
+    public var createdAt: Date
+}
+
+public struct Note: Sendable, Equatable, Identifiable {
+    public let id: Int64
+    public var documentID: String
+    public var body: String
+    public var createdAt: Date
+    public var updatedAt: Date
+}
+
+public struct ExtractedText: Sendable, Equatable {
+    public var documentID: String
+    public var markdown: String
+    public var extractedAt: Date
+}
+
+/// Mirrors `runCacheURL` (`Cache.swift`) exactly, down to the same folder: the run cache is
+/// a disposable preview, this file is the durable record they sit beside each other. Takes
+/// an explicit override so tests never touch the real one.
+public func libraryDatabaseURL(named name: String = "library.sqlite") -> URL? {
+    guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        return nil
+    }
+    let folder = base.appendingPathComponent("PDF Hammer", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    return folder.appendingPathComponent(name)
+}
