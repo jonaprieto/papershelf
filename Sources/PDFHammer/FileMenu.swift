@@ -17,6 +17,7 @@ struct FileContextMenu: View {
     let moveTo: () -> Void
     let trash: () -> Void
     let skip: () -> Void
+    let convert: () -> Void
 
     var body: some View {
         Button("Open") { NSWorkspace.shared.open(item.currentURL) }
@@ -39,6 +40,10 @@ struct FileContextMenu: View {
         Button("Copy Name") { copy(item.sourceName) }
         Button("Copy Path") { copy(item.currentURL.path) }
         Button("Copy Suggested Name") { copy(item.destinationName) }
+
+        Divider()
+
+        Button("Convert to Markdown…") { convert() }
 
         Divider()
 

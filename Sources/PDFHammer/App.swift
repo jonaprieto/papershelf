@@ -1294,7 +1294,7 @@ struct ContentView: View {
             Text(applyWarnings.joined(separator: "\n\n"))
         }
         .fileExporter(isPresented: $savingLog,
-                      document: BibDocument(text: logText(runner.log)),
+                      document: TextDocument(text: logText(runner.log)),
                       contentType: .plainText,
                       defaultFilename: "pdf-hammer-log.txt") { _ in }
         .fileImporter(
@@ -2103,6 +2103,8 @@ private struct ResultsPane: View {
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
     @State private var showingShortcuts = false
+    @StateObject private var converting = Converting()
+    @State private var showingMarkdown = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
@@ -2251,6 +2253,11 @@ private struct ResultsPane: View {
     private func withDialogs<V: View>(_ view: V) -> some View {
         view
             .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
+            .sheet(isPresented: $showingMarkdown) {
+                if let item = selectedItem {
+                    MarkdownSheet(item: item, passwords: passwords, converting: converting)
+                }
+            }
             .fileImporter(isPresented: $choosingMoveTarget,
                       allowedContentTypes: [.folder],
                       allowsMultipleSelection: false) { outcome in
@@ -2456,7 +2463,12 @@ private struct ResultsPane: View {
                 choosingMoveTarget = true
             },
             trash: { runner.markForDeletion(item) },
-            skip: { runner.skip(item) }
+            skip: { runner.skip(item) },
+            convert: {
+                selected = item.key
+                converting.clear()
+                showingMarkdown = true
+            }
         )
     }
 
@@ -3612,7 +3624,8 @@ private struct NodeView: View {
     @Binding var expanded: Set<String>
     @ObservedObject var runner: Runner
     var menu: (Item) -> FileContextMenu = { item in
-        FileContextMenu(item: item, confirm: {}, identify: {}, moveTo: {}, trash: {}, skip: {})
+        FileContextMenu(item: item, confirm: {}, identify: {}, moveTo: {}, trash: {},
+                        skip: {}, convert: {})
     }
     /// Nil means no filter. A folder with nothing visible under it disappears too.
     var visible: Set<String>?
@@ -4063,7 +4076,7 @@ private struct BibFileView: View {
             blocks = built
         }
         .fileExporter(isPresented: $saving,
-                      document: BibDocument(text: text),
+                      document: TextDocument(text: text),
                       contentType: .plainText,
                       defaultFilename: "library.bib") { _ in }
     }
@@ -4147,7 +4160,7 @@ private func highlighted(_ text: String) -> AttributedString {
     return out
 }
 
-private struct BibDocument: FileDocument {
+struct TextDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.plainText] }
     var text: String
 
