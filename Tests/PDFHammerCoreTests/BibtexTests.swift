@@ -431,3 +431,122 @@ extension BibtexTests {
         XCTAssertEqual(names, ["year", "title", "author", "file"])
     }
 }
+
+extension BibtexTests {
+
+    // MARK: - Real lookups
+
+    private func normalized(_ source: MetadataSource, title: String? = "Fetched Title",
+                            authors: [String] = ["Ada Lovelace"], year: String? = "2001",
+                            doi: String? = "10.1/x", arxivID: String? = nil,
+                            primaryClass: String? = nil, container: String? = nil,
+                            type: BibType = .article) -> NormalizedMetadata {
+        NormalizedMetadata(source: source, title: title, authors: authors, year: year, doi: doi,
+                           arxivID: arxivID, primaryClass: primaryClass, container: container, type: type)
+    }
+
+    func testANewlyBuiltEntryTracksWhereItsFieldsCameFrom() {
+        let known = ["/tmp/shelf/1979-godel-escher-bach.pdf":
+                        BookGuess(title: "GEB", author: "Hofstadter", year: "1979")]
+        let entry = bibEntries(for: [item("1979-godel-escher-bach.pdf")], known: known)[0]
+        XCTAssertEqual(entry.fieldSources["title"], .ai, "the guess supplied the title")
+        XCTAssertEqual(entry.fieldSources["author"], .ai)
+        XCTAssertEqual(entry.fieldSources["year"], .ai)
+
+        let parsedOnly = bibEntries(for: [item("1979-godel-escher-bach.pdf")])[0]
+        XCTAssertEqual(parsedOnly.fieldSources["title"], .parsed, "no guess, so the filename gets credit")
+        XCTAssertEqual(parsedOnly.fieldSources["year"], .parsed)
+        XCTAssertNil(parsedOnly.fieldSources["author"], "a filename never supplies an author")
+    }
+
+    func testFetchedMetadataFillsInWhatALookupFound() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "guessed title", file: "/tmp/a.pdf",
+                             type: .article)
+        let filled = applyFetchedMetadata(normalized(.crossref, container: "Journal of Tests"), to: entry)
+
+        XCTAssertEqual(filled.title, "Fetched Title")
+        XCTAssertEqual(filled.author, "Ada Lovelace")
+        XCTAssertEqual(filled.year, "2001")
+        XCTAssertEqual(filled.doi, "10.1/x")
+        XCTAssertEqual(filled.journal, "Journal of Tests")
+        XCTAssertEqual(filled.fieldSources["title"], .fetched(.crossref))
+        XCTAssertEqual(filled.fieldSources["doi"], .fetched(.crossref))
+    }
+
+    func testAContainerGoesToBooktitleForAConferencePaper() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "t", file: "/tmp/a.pdf", type: .inproceedings)
+        let filled = applyFetchedMetadata(normalized(.crossref, container: "Proc. of Tests"), to: entry)
+        XCTAssertEqual(filled.booktitle, "Proc. of Tests")
+        XCTAssertNil(filled.journal)
+    }
+
+    func testArxivFieldsArriveAsATrio() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "t", file: "/tmp/a.pdf")
+        let filled = applyFetchedMetadata(
+            normalized(.arxiv, arxivID: "1706.03762", primaryClass: "cs.CL"), to: entry)
+        XCTAssertEqual(filled.eprint, "1706.03762")
+        XCTAssertEqual(filled.eprinttype, "arxiv")
+        XCTAssertEqual(filled.eprintclass, "cs.CL")
+        XCTAssertEqual(filled.fieldSources["eprint"], .fetched(.arxiv))
+    }
+
+    func testKeepingAFieldSurvivesAFetch() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "kept title", author: "Kept Author",
+                             file: "/tmp/a.pdf")
+        let filled = applyFetchedMetadata(normalized(.doi), to: entry, keeping: ["title"])
+        XCTAssertEqual(filled.title, "kept title", "the person asked to keep this one")
+        XCTAssertNil(filled.fieldSources["title"], "an untouched field gets no new source stamp")
+        XCTAssertEqual(filled.author, "Ada Lovelace", "everything not kept still gets overwritten")
+    }
+
+    func testMiscNeverDowngradesAnAlreadyKnownType() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "t", file: "/tmp/a.pdf", type: .book)
+        let filled = applyFetchedMetadata(normalized(.crossref, type: .misc), to: entry)
+        XCTAssertEqual(filled.type, .book, ".misc is mergeMetadata's own fallback, not a real answer")
+    }
+
+    func testChangedFieldsListsOnlyWhatActuallyDiffers() {
+        let before = BibEntry(itemKey: "k", key: "k", title: "T", author: "A", file: "/tmp/a.pdf")
+        var after = before
+        after.year = "2020"
+        after.doi = "10.1/x"
+        XCTAssertEqual(changedBibFields(before, after), ["year", "doi"])
+        XCTAssertEqual(changedBibFields(before, before), [], "nothing changed, nothing listed")
+    }
+
+    func testValidationCommentNamesTheRealGap() {
+        let entry = BibEntry(itemKey: "k", key: "hofstadter:1979:geb", title: "T", author: "A",
+                             year: "2020", file: "/tmp/a.pdf", type: .article)
+        let comment = bibtexValidationComment(for: entry, standard: .classic)
+        XCTAssertEqual(comment, "% hofstadter:1979:geb is missing journal required by Classic BibTeX")
+
+        let complete = BibEntry(itemKey: "k", key: "k", title: "T", author: "A", year: "2020",
+                                journal: "J", file: "/tmp/a.pdf", type: .article)
+        XCTAssertNil(bibtexValidationComment(for: complete, standard: .classic))
+    }
+
+    func testOnlineAcceptsAnEprintInPlaceOfADoiOrUrl() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", author: "A", year: "2020",
+                             file: "/tmp/a.pdf", type: .online, eprint: "1706.03762")
+        XCTAssertEqual(entry.gaps(for: .biblatex), [])
+    }
+
+    func testNewFieldsRenderInTheBlock() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", file: "/tmp/a.pdf",
+                             volume: "12", number: "3", isbn: "9780134685991",
+                             eprint: "1706.03762", eprinttype: "arxiv", eprintclass: "cs.CL")
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 0, align: false))
+        XCTAssertTrue(block.contains("volume = {12},"))
+        XCTAssertTrue(block.contains("number = {3},"))
+        XCTAssertTrue(block.contains("isbn = {9780134685991},"))
+        XCTAssertTrue(block.contains("eprint = {1706.03762},"))
+        XCTAssertTrue(block.contains("eprinttype = {arxiv},"))
+        XCTAssertTrue(block.contains("eprintclass = {cs.CL},"))
+    }
+
+    func testISBNExtractionAcceptsCommonPunctuation() {
+        XCTAssertEqual(extractISBN(from: "ISBN-13: 978-0-13-468599-1"), "9780134685991")
+        XCTAssertEqual(extractISBN(from: "isbn 0-13-468599-0"), "0134685990")
+        XCTAssertNil(extractISBN(from: "no identifier on this page at all"))
+    }
+}

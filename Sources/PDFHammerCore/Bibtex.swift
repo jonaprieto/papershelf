@@ -102,9 +102,22 @@ extension BibType {
             // No @online in classic BibTeX; nearest analogue is @misc.
             return [["title"]]
         case (.online, .biblatex):
-            return [["author", "editor"], ["title"], ["doi", "url"], ["year"]]
+            return [["author", "editor"], ["title"], ["doi", "eprint", "url"], ["year"]]
         }
     }
+}
+
+/// Where a field's current value came from. A registry fact and a model's guess look
+/// identical on the page once they are sitting in the same string; this is what lets the
+/// UI say which is which, and what lets `bibEntries`/`applyFetchedMetadata` decide whether
+/// a stronger source is allowed to overwrite a weaker one.
+public enum FieldSource: Sendable, Equatable {
+    /// Read straight off the filename.
+    case parsed
+    /// Guessed by the AI identify flow from the opening pages.
+    case ai
+    /// Fetched from a real bibliographic registry.
+    case fetched(MetadataSource)
 }
 
 /// One bibliography record. Title/author/year come off a PDF's name or an AI guess; the
@@ -126,16 +139,32 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
     public var institution: String?
     public var school: String?
     public var pages: String?
+    public var volume: String?
+    public var number: String?
+    /// Book-only, and only ever set by Open Library.
+    public var isbn: String?
     public var doi: String?
+    /// The bare arXiv id (biblatex's `eprint`); `eprinttype`/`eprintclass` are the
+    /// companion fields biblatex's manual documents for it (§3.14.7).
+    public var eprint: String?
+    public var eprinttype: String?
+    public var eprintclass: String?
     public var url: String?
     public var file: String
     public var type: BibType = .book
+    /// Which source last set each field that is currently non-empty, by field name. Not
+    /// every field is tracked (only the ones a lookup or a guess can actually touch); an
+    /// absent key just means nobody has told this struct how the value got there.
+    public var fieldSources: [String: FieldSource] = [:]
 
     public init(itemKey: String, key: String, title: String, author: String? = nil,
                 editor: String? = nil, year: String? = nil, month: String? = nil,
                 journal: String? = nil, booktitle: String? = nil, publisher: String? = nil,
                 institution: String? = nil, school: String? = nil, pages: String? = nil,
-                doi: String? = nil, url: String? = nil, file: String, type: BibType = .book) {
+                doi: String? = nil, url: String? = nil, file: String, type: BibType = .book,
+                volume: String? = nil, number: String? = nil, isbn: String? = nil,
+                eprint: String? = nil, eprinttype: String? = nil, eprintclass: String? = nil,
+                fieldSources: [String: FieldSource] = [:]) {
         self.itemKey = itemKey
         self.key = key
         self.title = title
@@ -153,6 +182,13 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
         self.url = url
         self.file = file
         self.type = type
+        self.volume = volume
+        self.number = number
+        self.isbn = isbn
+        self.eprint = eprint
+        self.eprinttype = eprinttype
+        self.eprintclass = eprintclass
+        self.fieldSources = fieldSources
     }
 
     public var id: String { itemKey }
@@ -184,7 +220,11 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
         case "publisher": value = publisher
         case "institution": value = institution
         case "school": value = school
+        case "volume": value = volume
+        case "number": value = number
+        case "isbn": value = isbn
         case "doi": value = doi
+        case "eprint": value = eprint
         case "url": value = url
         default: value = nil
         }
@@ -486,8 +526,16 @@ public func bibEntries(for items: [Item],
         used[key] = count + 1
         if count > 0 { key += String(UnicodeScalar(UInt8(97 + min(count - 1, 25)))) }
 
+        // The model, when it has an opinion, outranks a bare filename parse -- but a real
+        // registry lookup outranks both (see applyFetchedMetadata), which is why this is
+        // recorded rather than assumed.
+        var sources: [String: FieldSource] = [:]
+        if !title.isEmpty { sources["title"] = guess?.title != nil ? .ai : .parsed }
+        if guess?.author != nil { sources["author"] = .ai }
+        if year != nil { sources["year"] = guess?.year != nil ? .ai : .parsed }
+
         return BibEntry(itemKey: item.key, key: key, title: title, author: guess?.author,
-                        year: year, file: item.destination.path, type: type)
+                        year: year, file: item.destination.path, type: type, fieldSources: sources)
     }
 }
 
@@ -672,13 +720,19 @@ public func bibtexBlock(_ entry: BibEntry, style: BibStyle = .standard) -> Strin
     if let month = entry.month { candidates.append(("month", month)) }
     if let journal = entry.journal { candidates.append(("journal", maybeLower(journal))) }
     if let booktitle = entry.booktitle { candidates.append(("booktitle", maybeLower(booktitle))) }
-    if let publisher = entry.publisher { candidates.append(("publisher", maybeLower(publisher))) }
-    if let institution = entry.institution { candidates.append(("institution", maybeLower(institution))) }
-    if let school = entry.school { candidates.append(("school", maybeLower(school))) }
+    if let volume = entry.volume { candidates.append(("volume", volume)) }
+    if let number = entry.number { candidates.append(("number", number)) }
     if let pages = entry.pages {
         candidates.append(("pages", style.normalizePageRanges ? bibtexPageRange(pages) : pages))
     }
+    if let publisher = entry.publisher { candidates.append(("publisher", maybeLower(publisher))) }
+    if let institution = entry.institution { candidates.append(("institution", maybeLower(institution))) }
+    if let school = entry.school { candidates.append(("school", maybeLower(school))) }
+    if let isbn = entry.isbn { candidates.append(("isbn", isbn)) }
     if let doi = entry.doi { candidates.append(("doi", doi)) }
+    if let eprint = entry.eprint { candidates.append(("eprint", eprint)) }
+    if let eprinttype = entry.eprinttype { candidates.append(("eprinttype", eprinttype)) }
+    if let eprintclass = entry.eprintclass { candidates.append(("eprintclass", eprintclass)) }
     if let url = entry.url { candidates.append(("url", url)) }
     candidates.append(("file", entry.file))
 
@@ -749,6 +803,107 @@ public func bibtexDocument(_ entries: [BibEntry],
     guard !ordered.isEmpty else { return "" }
     let separator = style.blankLines ? "\n\n" : "\n"
     return ordered.map { bibtexBlock($0, style: style) }.joined(separator: separator) + "\n"
+}
+
+// MARK: - Real lookups
+
+/// Overlays a registry's answer onto an entry, field by field, so a fetch never has to
+/// choose between "trust the whole record" and "trust none of it". `kept` names fields the
+/// person already looked at and asked to keep as they were; every other field the record
+/// has an answer for is overwritten and stamped `.fetched(record.source)`, since a DOI is a
+/// fact this app did not have before and a fuzzy Crossref title search would not have found
+/// this file at all if the title were not already close.
+public func applyFetchedMetadata(_ metadata: NormalizedMetadata, to entry: BibEntry,
+                                 keeping kept: Set<String> = []) -> BibEntry {
+    var out = entry
+    func apply(_ field: String, _ value: String?, _ assign: (inout BibEntry, String) -> Void) {
+        guard let value, !value.isEmpty, !kept.contains(field) else { return }
+        assign(&out, value)
+        out.fieldSources[field] = .fetched(metadata.source)
+    }
+
+    apply("title", metadata.title) { $0.title = $1 }
+    apply("author", metadata.authors.isEmpty ? nil : metadata.authors.joined(separator: " and ")) { $0.author = $1 }
+    apply("year", metadata.year) { $0.year = $1 }
+    apply("doi", metadata.doi) { $0.doi = $1 }
+    apply("volume", metadata.volume) { $0.volume = $1 }
+    apply("number", metadata.number) { $0.number = $1 }
+    apply("pages", metadata.pages) { $0.pages = $1 }
+    apply("publisher", metadata.publisher) { $0.publisher = $1 }
+    apply("isbn", metadata.isbn) { $0.isbn = $1 }
+
+    if let container = metadata.container {
+        let usesBooktitle = [BibType.inproceedings, .incollection, .inbook].contains(entry.type)
+        apply(usesBooktitle ? "booktitle" : "journal", container) { entry, value in
+            if usesBooktitle { entry.booktitle = value } else { entry.journal = value }
+        }
+    }
+
+    // eprint/eprinttype/eprintclass travel together (biblatex.pdf 3.14.7): there is no
+    // sense writing "arxiv" as the type of an id that is not there, or a class for a paper
+    // this app never actually resolved to an arXiv id.
+    if let arxivID = metadata.arxivID, !kept.contains("eprint") {
+        out.eprint = arxivID
+        out.eprinttype = "arxiv"
+        out.eprintclass = metadata.primaryClass
+        out.fieldSources["eprint"] = .fetched(metadata.source)
+    }
+
+    // .misc is mergeMetadata's own "nothing told me what this is" fallback, not a real
+    // answer, so it is never allowed to downgrade a type this app already had an opinion
+    // about (usually .book, chosen before any lookup ran).
+    if metadata.type != .misc, !kept.contains("type") {
+        out.type = metadata.type
+    }
+    return out
+}
+
+/// Which of BibEntry's own fields differ between two versions of "the same" entry, in
+/// display order. Lets a caller say what a lookup actually changed instead of asking
+/// someone to diff two blocks of text by eye.
+public func changedBibFields(_ before: BibEntry, _ after: BibEntry) -> [String] {
+    var out: [String] = []
+    func check(_ name: String, _ a: String?, _ b: String?) { if a != b { out.append(name) } }
+    check("title", before.title.isEmpty ? nil : before.title, after.title.isEmpty ? nil : after.title)
+    check("author", before.author, after.author)
+    check("editor", before.editor, after.editor)
+    check("year", before.year, after.year)
+    check("journal", before.journal, after.journal)
+    check("booktitle", before.booktitle, after.booktitle)
+    check("volume", before.volume, after.volume)
+    check("number", before.number, after.number)
+    check("pages", before.pages, after.pages)
+    check("publisher", before.publisher, after.publisher)
+    check("isbn", before.isbn, after.isbn)
+    check("doi", before.doi, after.doi)
+    check("eprint", before.eprint, after.eprint)
+    check("url", before.url, after.url)
+    if before.type != after.type { out.append("type") }
+    return out
+}
+
+/// A `%`-comment naming exactly which fields `standard` still requires, meant to sit right
+/// above a rendered block so a file that includes an incomplete entry anyway says so in
+/// plain sight rather than leaving a person to find out from a LaTeX error later. Nil once
+/// the entry validates.
+public func bibtexValidationComment(for entry: BibEntry, standard: BibStandard) -> String? {
+    let gaps = entry.gaps(for: standard)
+    guard !gaps.isEmpty else { return nil }
+    return "% \(entry.key) is missing " + gaps.joined(separator: ", ") + " required by \(standard.label)"
+}
+
+/// The first ISBN-10 or ISBN-13 shaped run of digits on a page, however it is punctuated
+/// ("978-0-13-468599-1", "0 13 468599 0"), for handing to Open Library. Syntactic only, like
+/// `extractDOI`/`extractArxivID`: a caller that needs to know looks it up.
+private let isbnRegex = try! NSRegularExpression(
+    pattern: #"(?:97[89][- ]?)?(?:\d[- ]?){9}[\dXx]"#)
+
+public func extractISBN(from text: String) -> String? {
+    let ns = text as NSString
+    guard let match = isbnRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+    else { return nil }
+    let digits = ns.substring(with: match.range).filter { $0.isNumber || $0 == "X" || $0 == "x" }
+    return digits.count == 10 || digits.count == 13 ? digits : nil
 }
 
 // MARK: - Highlighting
