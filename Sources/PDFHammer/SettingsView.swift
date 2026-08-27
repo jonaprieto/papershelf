@@ -26,6 +26,9 @@ struct SettingsView: View {
     @State private var entries: [SpendRecord] = []
     @State private var entriesLoadFailed = false
 
+    @State private var pluginStatus = ChatGPTPlugin.status()
+    @State private var pluginMessage: Status = .idle
+
     private enum Status: Equatable {
         case idle, ok(String), failed(String)
     }
@@ -131,6 +134,22 @@ struct SettingsView: View {
                 spendSummary
             } header: {
                 Text("AI spend")
+            }
+
+            Section {
+                chatGPTPluginRow
+            } header: {
+                Text("ChatGPT plugin")
+            } footer: {
+                Text("Writes ~/.agents/plugins/pdf-hammer and lists it in "
+                     + "~/.agents/plugins/marketplace.json, merging with whatever plugins are "
+                     + "already listed there rather than replacing them. Nothing is published, "
+                     + "reviewed, or leaves this machine: the ChatGPT app only reads these "
+                     + "files locally. It has to be restarted afterwards to notice; this does "
+                     + "not restart it for you.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -293,6 +312,73 @@ struct SettingsView: View {
             // report real, possibly nonzero spend as zero merely because it could not
             // be read back.
             entriesLoadFailed = true
+        }
+    }
+
+    // MARK: - ChatGPT plugin
+
+    @ViewBuilder
+    private var chatGPTPluginRow: some View {
+        if pluginStatus.installed {
+            Label("Installed at \(pluginStatus.destination.path)", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+        } else {
+            Text("Not installed").foregroundStyle(.secondary)
+        }
+
+        // Missing a server only blocks (re)install, which needs one to point the plugin
+        // at. Removal does not: it must stay reachable even when the plugin was installed
+        // from a build (or a copy of PDF Hammer.app) that is no longer around, otherwise
+        // there would be no way out of Settings short of deleting files by hand.
+        let serverFound = ChatGPTPlugin.serverExecutableURL() != nil
+        if !serverFound {
+            Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if serverFound || pluginStatus.installed {
+            HStack {
+                if serverFound {
+                    Button(pluginStatus.installed ? "Reinstall" : "Install", action: installPlugin)
+                }
+                if pluginStatus.installed {
+                    Button("Remove", action: removePlugin)
+                }
+            }
+        }
+
+        switch pluginMessage {
+        case .idle: EmptyView()
+        case .ok(let message):
+            Label(message, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .fixedSize(horizontal: false, vertical: true)
+        case .failed(let message):
+            Text(message)
+                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func installPlugin() {
+        do {
+            let destination = try ChatGPTPlugin.install()
+            pluginStatus = ChatGPTPlugin.status()
+            pluginMessage = .ok("Installed. Restart ChatGPT to see it at \(destination.path).")
+        } catch {
+            pluginMessage = .failed(error.localizedDescription)
+        }
+    }
+
+    private func removePlugin() {
+        do {
+            try ChatGPTPlugin.uninstall()
+            pluginStatus = ChatGPTPlugin.status()
+            pluginMessage = .ok("Removed.")
+        } catch {
+            pluginMessage = .failed(error.localizedDescription)
         }
     }
 
