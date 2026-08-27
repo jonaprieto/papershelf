@@ -665,7 +665,7 @@ struct ResultsPane: View {
     /// width only ever changes because someone dragged it, and it is remembered.
     private var split: some View {
         GeometryReader { geometry in
-            let maximum = max(360, geometry.size.width - 360)
+            let maximum = inspectorMaximum(available: geometry.size.width, notesShown: notesShown)
             let width = min(max(inspectorWidth, 360), maximum)
             HStack(spacing: 0) {
                 // Reading gives the whole window to the page.
@@ -1024,6 +1024,21 @@ struct ResultsPane: View {
         .contentShape(Rectangle())
         .onTapGesture { if !hasSources { chooseFiles() } }
     }
+}
+
+/// How wide the inspector may be given the room `split` actually has, so the browser
+/// (and, when it is open, the notes rail, a further fixed-width sibling of that same
+/// row) always keep their own floor.
+///
+/// Reserving only the browser's floor and handing everything else to the inspector let
+/// the rail, and the divider ahead of it, get squeezed past the window edge, taking the
+/// browser down with it: the inspector would happily claim room the notes rail also
+/// needed. A free function rather than a method, so the arithmetic can be checked on its
+/// own without standing up the view that uses it.
+func inspectorMaximum(available: CGFloat, notesShown: Bool) -> CGFloat {
+    let dividerBeforeInspector: CGFloat = 1
+    let notesReserved: CGFloat = notesShown ? 240 + 1 : 0  // the rail plus its own divider
+    return max(360, available - 360 - dividerBeforeInspector - notesReserved)
 }
 
 // MARK: - Review inspector

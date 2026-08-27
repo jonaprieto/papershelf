@@ -236,14 +236,19 @@ struct ContentView: View {
                     runner.applyNow(item, as: name, options: options(dryRun: false))
                 }
             )
-                .frame(minWidth: 700)
+                // Browser and inspector floor at 360 each with a 1pt divider between
+                // them (721); the notes rail, when open, adds its own fixed 240 plus a
+                // second divider (962). This has to grow with it, or `inspectorMaximum`
+                // clamps the inspector down to a width the window cannot actually
+                // spare and the rail overflows anyway.
+                .frame(minWidth: chrome.notesShown ? 962 : 721)
                 .navigationTitle("PDF Hammer")
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
         }
         .navigationSplitViewStyle(.balanced)
-        // Sidebar, browser, inspector and, when it is open, the notes rail.
-        .frame(minWidth: chrome.notesShown ? 1180 : 1000, minHeight: 560)
+        // Sidebar (min 290) plus the detail pane's own floor above.
+        .frame(minWidth: chrome.notesShown ? 1252 : 1011, minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
