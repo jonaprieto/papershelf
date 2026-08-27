@@ -9,14 +9,17 @@ set -euo pipefail
 
 PLUGIN_SOURCE="$(cd "$(dirname "$0")/.." && pwd)/Plugin/pdf-hammer"
 AGENTS="$HOME/.agents/plugins"
-DESTINATION="$AGENTS/pdf-hammer"
+# A marketplace entry's relative path is read from the home directory, not from beside the
+# marketplace file, so `./plugins/pdf-hammer` in the listing means exactly this.
+DESTINATION="$HOME/plugins/pdf-hammer"
+LEGACY_DESTINATION="$AGENTS/pdf-hammer"
 MARKETPLACE="$AGENTS/marketplace.json"
 SERVER="/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
 
 [[ -x "$SERVER" ]] || { echo "PDF Hammer is not installed in /Applications. Run ./build.sh --install first." >&2; exit 1; }
 
-mkdir -p "$AGENTS"
-rm -rf "$DESTINATION"
+mkdir -p "$AGENTS" "$(dirname "$DESTINATION")"
+rm -rf "$DESTINATION" "$LEGACY_DESTINATION"
 cp -R "$PLUGIN_SOURCE" "$DESTINATION"
 
 # The marketplace may already list other plugins, so it is merged rather than replaced.
@@ -44,8 +47,8 @@ if path.exists():
 market.setdefault("plugins", [])
 entry = {
     "name": "pdf-hammer",
-    "source": {"source": "local", "path": "./pdf-hammer"},
-    "policy": {"installation": "AVAILABLE"},
+    "source": {"source": "local", "path": "./plugins/pdf-hammer"},
+    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
     "category": "Education & Research",
 }
 market["plugins"] = [p for p in market["plugins"] if p.get("name") != "pdf-hammer"]

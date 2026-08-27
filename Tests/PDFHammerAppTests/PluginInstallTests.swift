@@ -10,7 +10,7 @@ final class PluginInstallTests: XCTestCase {
     private func scratchPaths() -> ChatGPTPlugin.Paths {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pdfhammer-plugin-tests-\(UUID().uuidString)", isDirectory: true)
-        return ChatGPTPlugin.Paths(agentsDirectory: root)
+        return ChatGPTPlugin.Paths(home: root)
     }
 
     /// A real, always-executable file to stand in for the server: `install` only needs a
@@ -74,7 +74,7 @@ final class PluginInstallTests: XCTestCase {
 
     func testInstallPreservesOtherPluginsAlreadyListed() throws {
         let paths = scratchPaths()
-        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.marketplace.deletingLastPathComponent(), withIntermediateDirectories: true)
         let existing: [String: Any] = [
             "name": "local",
             "interface": ["displayName": "Local plugins"],
@@ -93,7 +93,7 @@ final class PluginInstallTests: XCTestCase {
 
     func testInstallUpdatesAnExistingListingInsteadOfDuplicatingIt() throws {
         let paths = scratchPaths()
-        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.marketplace.deletingLastPathComponent(), withIntermediateDirectories: true)
         let existing: [String: Any] = [
             "name": "local",
             "plugins": [
@@ -114,7 +114,7 @@ final class PluginInstallTests: XCTestCase {
 
     func testInstallLeavesUnreadableJSONUntouched() throws {
         let paths = scratchPaths()
-        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.marketplace.deletingLastPathComponent(), withIntermediateDirectories: true)
         let garbage = Data("{ not json at all".utf8)
         try garbage.write(to: paths.marketplace)
 
@@ -157,6 +157,39 @@ final class PluginInstallTests: XCTestCase {
         let servers = try XCTUnwrap(server["mcpServers"] as? [String: Any])
         let pdfHammer = try XCTUnwrap(servers["pdf-hammer"] as? [String: Any])
         XCTAssertEqual(pdfHammer["command"] as? String, fakeServer.path)
+    }
+
+    /// The entry's `source.path` is read from the home directory, not from beside the
+    /// marketplace file. Pointing it at `./pdf-hammer` sent the app to `~/pdf-hammer` and
+    /// `codex plugin add` failed with "plugin source path is not a directory".
+    func testTheListedPathIsWhereThePluginActuallyLands() throws {
+        let paths = scratchPaths()
+        try ChatGPTPlugin.install(paths: paths, serverURL: fakeServer)
+
+        let market = try readJSON(paths.marketplace)
+        let entry = try XCTUnwrap((market["plugins"] as? [[String: Any]])?.first)
+        let source = try XCTUnwrap(entry["source"] as? [String: Any])
+        let listed = try XCTUnwrap(source["path"] as? String)
+        XCTAssertEqual(listed, "./plugins/pdf-hammer")
+
+        let resolved = paths.home.appendingPathComponent(String(listed.dropFirst(2)), isDirectory: true)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: resolved.appendingPathComponent(".codex-plugin/plugin.json").path),
+            "the path in the listing has to lead to the manifest that was written")
+    }
+
+    /// An install from before the path was right left a folder beside the marketplace that
+    /// nothing reading the entry would look for.
+    func testInstallClearsOutAPluginLeftAtTheOldPath() throws {
+        let paths = scratchPaths()
+        try FileManager.default.createDirectory(at: paths.legacyDestination,
+                                                withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: paths.legacyDestination.appendingPathComponent("plugin.json"))
+
+        try ChatGPTPlugin.install(paths: paths, serverURL: fakeServer)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.legacyDestination.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.destination.path))
     }
 
     // MARK: - What the listing shows
@@ -218,8 +251,8 @@ final class PluginInstallTests: XCTestCase {
     /// The copy lands where the manifest says it does, since the two are written apart.
     func testTheLogoLandsWhereTheManifestPointsAtIt() throws {
         let paths = scratchPaths()
-        let source = paths.agentsDirectory.appendingPathComponent("source-logo.png")
-        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        let source = paths.marketplace.deletingLastPathComponent().appendingPathComponent("source-logo.png")
+        try FileManager.default.createDirectory(at: paths.marketplace.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("not really a png".utf8).write(to: source)
 
         XCTAssertTrue(ChatGPTPlugin.copyLogo(into: paths.destination, source: source))
@@ -259,7 +292,7 @@ final class PluginInstallTests: XCTestCase {
 
     func testUninstallRemovesTheFolderAndTheListingButNotOtherPlugins() throws {
         let paths = scratchPaths()
-        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.marketplace.deletingLastPathComponent(), withIntermediateDirectories: true)
         let existing: [String: Any] = [
             "name": "local",
             "plugins": [["name": "some-other-plugin", "source": ["source": "local", "path": "./x"]]],

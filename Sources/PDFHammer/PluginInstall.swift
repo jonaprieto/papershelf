@@ -18,19 +18,27 @@ enum ChatGPTPlugin {
     /// tests can point the whole thing at a scratch directory and never touch a real
     /// `~/.agents`.
     struct Paths {
-        var agentsDirectory: URL
+        /// What a marketplace entry's relative `source.path` is read against. The file sits
+        /// at `~/.agents/plugins/marketplace.json`, but its paths resolve from the home
+        /// directory, which is why `./plugins/pdf-hammer` means `~/plugins/pdf-hammer` and
+        /// not a folder beside the marketplace.
+        var home: URL
         var destination: URL
         var marketplace: URL
+        /// Where installs before this landed, beside the marketplace, where nothing reading
+        /// the entry would look for them. Cleared out on the next install.
+        var legacyDestination: URL
 
-        init(agentsDirectory: URL) {
-            self.agentsDirectory = agentsDirectory
-            self.destination = agentsDirectory.appendingPathComponent("pdf-hammer", isDirectory: true)
-            self.marketplace = agentsDirectory.appendingPathComponent("marketplace.json")
+        init(home: URL) {
+            self.home = home
+            self.destination = home.appendingPathComponent("plugins/pdf-hammer", isDirectory: true)
+            self.marketplace = home.appendingPathComponent(".agents/plugins/marketplace.json")
+            self.legacyDestination = home
+                .appendingPathComponent(".agents/plugins/pdf-hammer", isDirectory: true)
         }
 
         static func standard() -> Paths {
-            Paths(agentsDirectory: FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".agents/plugins", isDirectory: true))
+            Paths(home: FileManager.default.homeDirectoryForCurrentUser)
         }
     }
 
@@ -103,7 +111,13 @@ enum ChatGPTPlugin {
         let marketplaceData = try mergedMarketplace(at: paths.marketplace, adding: pluginEntry())
 
         let fm = FileManager.default
-        try fm.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try fm.createDirectory(at: paths.marketplace.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        try fm.createDirectory(at: paths.destination.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        // An install from before the path was right left a copy beside the marketplace.
+        // Leaving it there means two plugin folders and one of them unreachable.
+        try? fm.removeItem(at: paths.legacyDestination)
         // A previous install may have left a different set of files behind; starting clean
         // matches what the shell script does with `rm -rf` before its own copy.
         try? fm.removeItem(at: paths.destination)
@@ -131,6 +145,7 @@ enum ChatGPTPlugin {
             try data.write(to: paths.marketplace, options: .atomic)
         }
         try? fm.removeItem(at: paths.destination)
+        try? fm.removeItem(at: paths.legacyDestination)
     }
 
     // MARK: - Marketplace merge
@@ -169,9 +184,12 @@ enum ChatGPTPlugin {
     }
 
     private static func pluginEntry() -> [String: Any] {
+        // `./plugins/pdf-hammer`, read from the home directory: the same convention every
+        // other entry in a personal marketplace uses. `./pdf-hammer` sent the app looking
+        // in `~/pdf-hammer`, which is nowhere, and adding the plugin failed outright.
         ["name": "pdf-hammer",
-         "source": ["source": "local", "path": "./pdf-hammer"],
-         "policy": ["installation": "AVAILABLE"],
+         "source": ["source": "local", "path": "./plugins/pdf-hammer"],
+         "policy": ["installation": "AVAILABLE", "authentication": "ON_INSTALL"],
          "category": "Education & Research"]
     }
 
