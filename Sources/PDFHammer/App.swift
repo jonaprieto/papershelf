@@ -1024,8 +1024,7 @@ struct ContentView: View {
     @State private var choosingBackupFolder = false
     @State private var savingLog = false
     @State private var watcher: FolderWatcher?
-    /// Bumped when a colour is renamed, so the fields redraw.
-    @State private var meaningsRevision = 0
+    @StateObject private var palette = Palette()
     @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
     @AppStorage("useMetadataDate") private var useMetadataDate = true
@@ -1239,6 +1238,7 @@ struct ContentView: View {
                 passwords: passwords,
                 reading: chrome.reading,
                 watching: watchSources && !selection.isEmpty,
+                palette: palette,
                 rules: rules,
                 chooseFiles: { importing = true },
                 preview: preview,
@@ -1742,21 +1742,51 @@ struct ContentView: View {
     @ViewBuilder
     private var readingPanel: some View {
         Section {
-            ForEach(HighlightColour.allCases) { colour in
+            ForEach(palette.styles) { style in
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(colour.swatch)
-                        .frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1))
-                    TextField("", text: meaningBinding(colour), prompt: Text(colour.defaultMeaning))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
+                    ColorPicker("", selection: Binding(
+                        get: { style.swatch },
+                        set: { palette.setColour($0, on: style) }
+                    ))
+                    .labelsHidden()
+                    .tip("Pick this highlighter's colour")
+
+                    TextField("", text: Binding(
+                        get: { style.meaning },
+                        set: { palette.setMeaning($0, on: style) }
+                    ), prompt: Text("What it means"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        palette.remove(style)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .disabled(palette.styles.count < 2)
+                    .tip(palette.styles.count < 2
+                         ? "The last colour stays; without one there is no highlighter"
+                         : "Remove this colour")
                 }
             }
+
+            HStack {
+                Button { palette.add() } label: {
+                    Label("Add a colour", systemImage: "plus.circle")
+                }
+                .buttonStyle(.link)
+                .tip("Another highlighter, with its own meaning")
+                Spacer()
+                Button("Reset") { palette.resetToDefaults() }
+                    .buttonStyle(.link)
+                    .tip("Back to the five it started with")
+            }
         } header: {
-            Text("What each colour means")
+            Text("Highlighters")
         } footer: {
-            Text("Shown on the swatch when highlighting and beside every mark, so the "
+            Text("Shown beside the bar as you highlight and next to every mark, so the "
                  + "convention is legible where it is used rather than remembered.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1765,24 +1795,8 @@ struct ContentView: View {
 
         Section("Mode") {
             Toggle("Reading mode", isOn: $chrome.reading)
-                .help("Hides the list, the header and the deciding controls (⌘⇧R)")
+                .tip("Hide the list, the header and the deciding controls", key: "⌘⇧R")
         }
-    }
-
-    /// Meanings live in preferences rather than in the palette, so they can be renamed.
-    private func meaningBinding(_ colour: HighlightColour) -> Binding<String> {
-        Binding(
-            get: { UserDefaults.standard.string(forKey: colour.meaningKey) ?? "" },
-            set: { new in
-                let trimmed = new.trimmingCharacters(in: .whitespaces)
-                if trimmed.isEmpty {
-                    UserDefaults.standard.removeObject(forKey: colour.meaningKey)
-                } else {
-                    UserDefaults.standard.set(trimmed, forKey: colour.meaningKey)
-                }
-                meaningsRevision &+= 1
-            }
-        )
     }
 
     @ViewBuilder
@@ -2063,6 +2077,7 @@ private struct ResultsPane: View {
     let passwords: [String]
     let reading: Bool
     let watching: Bool
+    @ObservedObject var palette: Palette
     let rules: NameRules
     let chooseFiles: () -> Void
     let preview: () -> Void
@@ -2770,7 +2785,8 @@ private struct ResultsPane: View {
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
-                reading: reading
+                reading: reading,
+                palette: palette
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(
@@ -3046,13 +3062,26 @@ private struct ReviewInspector: View {
     let reading: Bool
 
     @StateObject private var annotator = Annotator()
+    @ObservedObject var palette: Palette
     @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
     @AppStorage("inspectorCollapsed") private var collapsed = false
     @AppStorage("notesShown") private var notesShown = false
     @State private var addingNote = false
     @State private var noteText = ""
     @State private var clearingMarks = false
-    @AppStorage("lastHighlightColour") private var lastColour: HighlightColour = .yellow
+    @AppStorage("lastHighlightColour") private var lastColourID = ""
+    @State private var hovered: UUID?
+    @State private var hoveringNote = false
+
+    private var lastStyle: HighlightStyle? {
+        palette.styles.first { $0.id.uuidString == lastColourID } ?? palette.styles.first
+    }
+
+    private var hoveredMeaning: String? {
+        guard let hovered, let style = palette.styles.first(where: { $0.id == hovered })
+        else { return nil }
+        return style.meaning.isEmpty ? "Unnamed highlighter" : style.meaning
+    }
 
     /// While reading, the deciding controls stay out of the way.
     private var showBottom: Bool { !collapsed && !reading }
@@ -3085,7 +3114,7 @@ private struct ReviewInspector: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.quaternary.opacity(0.35))
                     .overlay(alignment: .topTrailing) { lockedOverlay }
-                    .overlay(alignment: .bottom) { selectionBar }
+                    .overlay(alignment: .topLeading) { floatingSelectionBar }
 
                 Divider()
                 panelHeader
@@ -3190,40 +3219,83 @@ private struct ReviewInspector: View {
         .background(.bar)
     }
 
+    /// The marking bar, placed against the selection rather than parked at an edge.
+    ///
+    /// It sits above the selected lines where there is room and below them otherwise, and
+    /// is kept inside the pane so it cannot end up half off the side.
     @ViewBuilder
-    private var selectionBar: some View {
+    private var floatingSelectionBar: some View {
         if annotator.hasSelection {
-            HStack(spacing: 8) {
-                ForEach(HighlightColour.allCases) { colour in
-                    Button {
-                        annotator.highlightSelection(colour: colour)
-                        lastColour = colour
-                        notesShown = true
-                    } label: {
-                        Circle()
-                            .fill(colour.swatch)
-                            .frame(width: 20, height: 20)
-                            .overlay(Circle().strokeBorder(.primary.opacity(
-                                colour == lastColour ? 0.55 : 0.15), lineWidth: 1.5))
-                    }
-                    .buttonStyle(.plain)
-                    // The convention is only useful if it is legible where it is used.
-                    .help(colour.meaning)
-                }
+            GeometryReader { geometry in
+                let bar = CGSize(width: 250, height: 40)
+                let box = annotator.selectionRect ?? CGRect(
+                    x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
+                let above = box.minY - bar.height - 8
+                let y = above > 8 ? above : min(box.maxY + 8, geometry.size.height - bar.height - 8)
+                let x = min(max(box.midX - bar.width / 2, 8), max(8, geometry.size.width - bar.width - 8))
 
-                Divider().frame(height: 18)
-
-                Button {
-                    notesShown = true
-                    addingNote = true
-                } label: {
-                    Label("Add note", systemImage: "text.bubble")
-                }
+                selectionBar
+                    .frame(width: bar.width, height: bar.height)
+                    .offset(x: x, y: y)
+                    .animation(.easeOut(duration: 0.12), value: box)
             }
-            .padding(8)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
-            .padding(12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(.opacity)
+        }
+    }
+
+    private var selectionBar: some View {
+        HStack(spacing: 7) {
+            ForEach(palette.styles) { style in
+                Button {
+                    annotator.highlightSelection(colour: style.nsColor)
+                    lastColourID = style.id.uuidString
+                    notesShown = true
+                } label: {
+                    Circle()
+                        .fill(style.swatch)
+                        .frame(width: 19, height: 19)
+                        .overlay(Circle().strokeBorder(.primary.opacity(
+                            style.id == (hovered ?? lastStyle?.id) ? 0.6 : 0.15), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                // Named in the bar itself rather than left to the system tooltip, which
+                // waits a second or two: too slow for a palette whose whole point is
+                // knowing what a colour stands for.
+                .onHover { hovered = $0 ? style.id : nil }
+            }
+
+            Divider().frame(height: 16)
+
+            Button {
+                notesShown = true
+                addingNote = true
+            } label: {
+                Image(systemName: "text.bubble")
+            }
+            .buttonStyle(.plain)
+            .onHover { hoveringNote = $0 }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(alignment: .top) { meaningLabel }
+        .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
+    }
+
+    /// What the colour under the pointer means, shown immediately above the bar.
+    @ViewBuilder
+    private var meaningLabel: some View {
+        if let text = hoveredMeaning ?? (hoveringNote ? "Highlight and attach a note" : nil) {
+            Text(text)
+                .font(.caption)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                .offset(y: -24)
+                .transition(.opacity)
         }
     }
 
@@ -3269,7 +3341,9 @@ private struct ReviewInspector: View {
                                 .lineLimit(2...5)
                             HStack {
                                 Button("Save") {
-                                    annotator.highlightSelection(colour: lastColour, note: noteText)
+                                    annotator.highlightSelection(
+                                        colour: (lastStyle ?? Palette.defaults[0]).nsColor,
+                                        note: noteText)
                                     noteText = ""
                                     addingNote = false
                                 }
@@ -3295,7 +3369,9 @@ private struct ReviewInspector: View {
                             jump: { annotator.jump(to: mark) },
                             remove: { annotator.remove(mark) },
                             save: { annotator.setNote($0, on: mark) },
-                            recolour: { annotator.setColour($0, on: mark) }
+                            recolour: { annotator.setColour($0, on: mark) },
+                            styles: palette.styles,
+                            meaning: palette.meaning(for: mark.colour)
                         )
                     }
 
@@ -4401,7 +4477,9 @@ private struct MarkRow: View {
     let jump: () -> Void
     let remove: () -> Void
     let save: (String) -> Void
-    let recolour: (HighlightColour) -> Void
+    let recolour: (NSColor) -> Void
+    let styles: [HighlightStyle]
+    let meaning: String
 
     @State private var editing = false
     @State private var text = ""
@@ -4410,15 +4488,15 @@ private struct MarkRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
                 Menu {
-                    ForEach(HighlightColour.allCases) { colour in
-                        Button { recolour(colour) } label: {
-                            Label(colour.meaning, systemImage: colour == mark.colour
-                                  ? "largecircle.fill.circle" : "circle.fill")
+                    ForEach(styles) { style in
+                        Button { recolour(style.nsColor) } label: {
+                            Label(style.meaning.isEmpty ? "Unnamed" : style.meaning,
+                                  systemImage: "circle.fill")
                         }
                     }
                 } label: {
                     Circle()
-                        .fill(mark.colour.swatch)
+                        .fill(Color(nsColor: mark.colour ?? .systemYellow))
                         .frame(width: 12, height: 12)
                         .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1))
                 }
@@ -4426,7 +4504,7 @@ private struct MarkRow: View {
                 .menuIndicator(.hidden)
                 .frame(width: 14)
                 .padding(.top, 3)
-                .help(mark.colour.meaning)
+                .tip(meaning)
 
                 VStack(alignment: .leading, spacing: 2) {
                     if !mark.quoted.isEmpty {

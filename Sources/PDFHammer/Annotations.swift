@@ -14,6 +14,9 @@ import PDFHammerCore
 final class Annotator: ObservableObject {
     @Published private(set) var marks: [Mark] = []
     @Published private(set) var hasSelection = false
+    /// Where the selection sits, in the preview's own coordinates, so the bar can be put
+    /// next to it rather than parked at the bottom of the page.
+    @Published private(set) var selectionRect: CGRect?
     @Published private(set) var lastError: String?
     /// The mark being looked at, so the rail can show it and the page can point at it.
     @Published var selectedMark: UUID?
@@ -25,7 +28,8 @@ final class Annotator: ObservableObject {
         /// What the mark sits on, read off the page.
         let quoted: String
         let note: String
-        let colour: HighlightColour
+        /// What it was painted with, read back off the annotation.
+        let colour: NSColor
         let annotation: PDFAnnotation
     }
 
@@ -39,7 +43,26 @@ final class Annotator: ObservableObject {
     }
 
     func selectionChanged() {
-        hasSelection = !(view?.currentSelection?.string?.isEmpty ?? true)
+        guard let view, let selection = view.currentSelection,
+              !(selection.string?.isEmpty ?? true), let page = selection.pages.first else {
+            hasSelection = false
+            selectionRect = nil
+            return
+        }
+        hasSelection = true
+
+        // Union of the lines on the first page the selection touches.
+        let lines = selection.selectionsByLine()
+            .filter { $0.pages.contains(page) }
+            .map { view.convert($0.bounds(for: page), from: page) }
+        guard let first = lines.first else {
+            selectionRect = nil
+            return
+        }
+        let box = lines.dropFirst().reduce(first) { $0.union($1) }
+        // AppKit measures from the bottom, SwiftUI from the top.
+        selectionRect = CGRect(x: box.minX, y: view.bounds.height - box.maxY,
+                               width: box.width, height: box.height)
     }
 
     func refresh() {
@@ -53,7 +76,7 @@ final class Annotator: ObservableObject {
                 let quoted = quotedText(of: annotation, on: page)
                 found.append(Mark(page: index + 1, kind: type, quoted: quoted,
                                   note: annotation.contents ?? "",
-                                  colour: HighlightColour.matching(annotation.color),
+                                  colour: annotation.color,
                                   annotation: annotation))
             }
         }
@@ -92,7 +115,7 @@ final class Annotator: ObservableObject {
     /// A selection crossing a page break still yields one mark per page, because an
     /// annotation belongs to a page and cannot span two.
     @discardableResult
-    func highlightSelection(colour: HighlightColour = .yellow, note: String = "") -> Int {
+    func highlightSelection(colour: NSColor, note: String = "") -> Int {
         guard let view, let selection = view.currentSelection else { return 0 }
         var made = 0
 
@@ -105,7 +128,7 @@ final class Annotator: ObservableObject {
 
             let union = lines.dropFirst().reduce(lines[0]) { $0.union($1) }
             let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
-            mark.color = colour.nsColor
+            mark.color = colour
             if !note.isEmpty { mark.contents = note }
             // Quads are given in the annotation's own coordinate space.
             mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
@@ -134,8 +157,8 @@ final class Annotator: ObservableObject {
     }
 
     /// Repaints an existing mark.
-    func setColour(_ colour: HighlightColour, on mark: Mark) {
-        mark.annotation.color = colour.nsColor
+    func setColour(_ colour: NSColor, on mark: Mark) {
+        mark.annotation.color = colour
         save()
         view?.layoutDocumentView()
         refresh()
