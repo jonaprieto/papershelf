@@ -2460,6 +2460,11 @@ private struct ResultsPane: View {
         )
     }
 
+    private func copyText(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     private func revealInFinder() {
         guard let item = selectedItem else { return }
         NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
@@ -2734,6 +2739,8 @@ private struct ResultsPane: View {
                     NotesRail(annotator: annotator, palette: palette,
                               addingNote: $addingNote, noteText: $noteText,
                               lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
+                              title: selectedItem?.destinationName ?? "Notes",
+                              source: selectedItem?.currentURL.path ?? "",
                               close: { withAnimation(.easeOut(duration: 0.15)) { notesShown = false } })
                         .frame(width: 240)
                 }
@@ -2912,6 +2919,22 @@ private struct ResultsPane: View {
                             .controlSize(.small)
                             .tip("One billed request per file still waiting")
                     }
+                    Menu {
+                        Button("Catalogue as Markdown") {
+                            copyText(markdownCatalogue(runner.results, known: runner.guesses))
+                        }
+                        Button("Bibliography as Markdown") {
+                            runner.ensureBib()
+                            copyText(markdownBibliography(runner.bib))
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 20)
+                    .tip("Copy the list or the bibliography as Markdown")
+
                     Button("Confirm all remaining") {
                         runner.confirmAllPending()
                         ensureSelection()
@@ -4537,6 +4560,8 @@ struct NotesRail: View {
     @Binding var addingNote: Bool
     @Binding var noteText: String
     let lastColour: NSColor
+    let title: String
+    let source: String
     let close: () -> Void
 
     var body: some View {
@@ -4548,6 +4573,17 @@ struct NotesRail: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 if !annotator.marks.isEmpty {
+                    Menu {
+                        Button("Copy as Markdown") { copyNotes() }
+                        Button("Save as Markdown…") { exporting = true }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 18)
+                    .tip("Export these notes")
+
                     Button(role: .destructive) { clearing = true } label: {
                         Image(systemName: "trash")
                     }
@@ -4629,6 +4665,25 @@ struct NotesRail: View {
 
 
     @State private var clearing = false
+    @State private var exporting = false
+
+    /// Reading notes as Markdown: the quotations, what was written about them, and where
+    /// they are, which is the shape those notes take anywhere else they are pasted.
+    private var notesMarkdown: String {
+        markdownNotes(
+            title: (title as NSString).deletingPathExtension,
+            source: source,
+            marks: annotator.marks.map {
+                MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
+                           meaning: palette.meaning(for: $0.colour))
+            }
+        )
+    }
+
+    private func copyNotes() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(notesMarkdown, forType: .string)
+    }
 }
 
 // MARK: - Metadata

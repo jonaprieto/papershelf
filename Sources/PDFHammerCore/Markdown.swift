@@ -1,0 +1,123 @@
+import Foundation
+
+/// One highlight or note, flattened for export.
+public struct MarkExport: Sendable, Equatable {
+    public let page: Int
+    public let quoted: String
+    public let note: String
+    /// What the colour it was made with stands for, if the palette names it.
+    public let meaning: String
+
+    public init(page: Int, quoted: String, note: String, meaning: String) {
+        self.page = page
+        self.quoted = quoted
+        self.note = note
+        self.meaning = meaning
+    }
+}
+
+/// Escapes only what would otherwise be read as structure.
+///
+/// Not every special character: a quotation full of backslashes is harder to read than
+/// one where an asterisk happened to render as emphasis. What matters is that a line
+/// cannot turn itself into a heading, a list item, a quote or a table cell.
+public func markdownEscape(_ text: String, inTable: Bool = false) -> String {
+    var out = text.replacingOccurrences(of: "\\", with: "\\\\")
+    if inTable {
+        out = out.replacingOccurrences(of: "|", with: "\\|")
+        out = out.replacingOccurrences(of: "\n", with: " ")
+    }
+    // Only at the start of a line, where these mean something.
+    let leading = ["#", ">", "-", "+", "*"]
+    if let first = out.first.map(String.init), leading.contains(first) {
+        out = "\\" + out
+    }
+    return out
+}
+
+/// A document's marks as reading notes: what was highlighted, what was written about it,
+/// and where to find it again.
+public func markdownNotes(title: String, source: String, marks: [MarkExport],
+                          date: Date = Date()) -> String {
+    var out = "# \(markdownEscape(title))\n\n"
+    out += "`\(source)`\n\n"
+    if marks.isEmpty {
+        out += "_No highlights or notes._\n"
+        return out
+    }
+
+    let stamp = DateFormatter()
+    stamp.locale = Locale(identifier: "en_US_POSIX")
+    stamp.dateFormat = "yyyy-MM-dd"
+    out += "\(marks.count) mark\(marks.count == 1 ? "" : "s"), exported \(stamp.string(from: date))\n\n"
+
+    var page = -1
+    for mark in marks.sorted(by: { $0.page < $1.page }) {
+        if mark.page != page {
+            page = mark.page
+            out += "## Page \(page)\n\n"
+        }
+        if !mark.quoted.isEmpty {
+            // A quotation is a quotation, so it goes in a blockquote.
+            out += "> \(markdownEscape(mark.quoted))\n\n"
+        }
+        if !mark.note.isEmpty {
+            out += "\(markdownEscape(mark.note))\n\n"
+        }
+        if !mark.meaning.isEmpty && mark.meaning != "Highlight" {
+            out += "*\(markdownEscape(mark.meaning))*\n\n"
+        }
+    }
+    return out
+}
+
+/// The collection as a table: what each file will be called, and what is known about it.
+public func markdownCatalogue(_ items: [Item], known: [String: BookGuess] = [:],
+                              date: Date = Date()) -> String {
+    let stamp = DateFormatter()
+    stamp.locale = Locale(identifier: "en_US_POSIX")
+    stamp.dateFormat = "yyyy-MM-dd"
+
+    var out = "# Catalogue\n\n"
+    out += "\(items.count) file\(items.count == 1 ? "" : "s"), exported \(stamp.string(from: date))\n\n"
+    guard !items.isEmpty else { return out }
+
+    out += "| Name | Author | Year | Pages | Size | Folder |\n"
+    out += "|---|---|---|---|---|---|\n"
+    for item in items {
+        let guess = known[item.key]
+        let entry = bibEntries(for: [item], known: known).first
+        let size = item.byteCount.map {
+            ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
+        } ?? ""
+        let folder = (item.relativePath as NSString).deletingLastPathComponent
+        let cells = [
+            markdownEscape(item.destinationName, inTable: true),
+            markdownEscape(guess?.author ?? "", inTable: true),
+            markdownEscape(entry?.year ?? "", inTable: true),
+            item.pageCount.map(String.init) ?? "",
+            size,
+            markdownEscape(folder, inTable: true),
+        ]
+        out += "| " + cells.joined(separator: " | ") + " |\n"
+    }
+    return out
+}
+
+/// The bibliography as prose rather than BibTeX, for a document rather than a reference
+/// manager.
+public func markdownBibliography(_ entries: [BibEntry], date: Date = Date()) -> String {
+    var out = "# Bibliography\n\n"
+    guard !entries.isEmpty else {
+        out += "_Nothing to list._\n"
+        return out
+    }
+    for entry in entries.sorted(by: { $0.key < $1.key }) {
+        var line = "- "
+        if let author = entry.author { line += "\(markdownEscape(author)). " }
+        line += "**\(markdownEscape(entry.title))**"
+        if let year = entry.year { line += " (\(year))" }
+        out += line + "\n"
+    }
+    return out
+}
