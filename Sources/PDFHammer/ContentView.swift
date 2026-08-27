@@ -78,6 +78,10 @@ struct ContentView: View {
     @State private var importing = false
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
+    @State private var tagCounts: [TagCount] = []
+    @State private var renamingTag = false
+    @State private var tagBeingRenamed: TagCount?
+    @State private var renamedTagText = ""
     /// Rebuilt from the results whenever they change, so the Explorer draws a folder
     /// hierarchy without walking the disk again.
     @State private var explorerTree: [ExplorerNode] = []
@@ -477,6 +481,7 @@ struct ContentView: View {
                 runningPanel
             case .ai: aiPanel
             case .bibtex: bibtexPanel
+            case .tags: tagsPanel
             case .library: libraryPanel
             case .reading: readingPanel
             case .log: logPanel
@@ -517,6 +522,88 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .frame(width: railWidth)
         .background(.quaternary.opacity(0.25))
+    }
+
+    // MARK: Tags
+
+    @ViewBuilder
+    private var tagsPanel: some View {
+        Section {
+            if Library.shared == nil {
+                Text("The library is unavailable").foregroundStyle(.secondary)
+            } else if tagCounts.isEmpty {
+                Text("No tags yet").foregroundStyle(.secondary)
+            } else {
+                ForEach(tagCounts) { tag in
+                    tagRow(tag)
+                }
+            }
+        } header: {
+            Text("Tags")
+        } footer: {
+            Text("Biggest shelf first. Click a tag to load the catalogue with its "
+                 + "documents; right-click to rename or delete it everywhere.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task { await reloadTagCounts() }
+        .alert("Rename Tag", isPresented: $renamingTag, presenting: tagBeingRenamed) { tag in
+            TextField("Name", text: $renamedTagText)
+            Button("Rename") { Task { await performRenameTag(tag) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { tag in
+            Text("Renaming \"\(tag.name)\" changes it everywhere it is used.")
+        }
+    }
+
+    private func tagRow(_ tag: TagCount) -> some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .showTagInCatalogue, object: nil, userInfo: ["tag": tag.name])
+        } label: {
+            HStack {
+                Label(tag.name, systemImage: "tag")
+                Spacer()
+                Text("\(tag.documents)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .buttonStyle(.plain)
+        .tip("Show the \(tag.documents) document\(tag.documents == 1 ? "" : "s") carrying this tag")
+        .contextMenu {
+            Button("Rename…") {
+                tagBeingRenamed = tag
+                renamedTagText = tag.name
+                renamingTag = true
+            }
+            Button("Delete", role: .destructive) {
+                Task { await performDeleteTag(tag) }
+            }
+        }
+    }
+
+    private func reloadTagCounts() async {
+        guard let library = Library.shared else {
+            tagCounts = []
+            return
+        }
+        tagCounts = (try? await library.tagCounts()) ?? []
+    }
+
+    private func performRenameTag(_ tag: TagCount) async {
+        guard let library = Library.shared else { return }
+        let name = renamedTagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != tag.name else { return }
+        try? await library.renameTag(tag.name, to: name)
+        await reloadTagCounts()
+    }
+
+    private func performDeleteTag(_ tag: TagCount) async {
+        guard let library = Library.shared else { return }
+        try? await library.deleteTag(tag.name)
+        await reloadTagCounts()
     }
 
     // MARK: Explorer
@@ -1605,7 +1692,7 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, passwords, naming, files, ai, bibtex, library, reading, log, appearance
+    case sources, explorer, passwords, naming, files, ai, bibtex, tags, library, reading, log, appearance
 
     var id: String { rawValue }
 
@@ -1618,6 +1705,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "tray.full"
         case .ai: return "sparkles"
         case .bibtex: return "text.quote"
+        case .tags: return "tag"
         case .library: return "books.vertical"
         case .reading: return "highlighter"
         case .log: return "list.bullet.rectangle"
@@ -1634,6 +1722,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .ai: return "AI"
         case .bibtex: return "BibTeX"
+        case .tags: return "Tags"
         case .library: return "Library"
         case .reading: return "Reading"
         case .log: return "Activity"

@@ -141,4 +141,22 @@ extension SearchTests {
             }
         }
     }
+
+    // MARK: - The search the Tags panel writes
+
+    /// The sidebar's Tags panel scopes the catalogue by writing a search rather than
+    /// carrying a second notion of scope, so what it writes has to parse back to exactly
+    /// that tag.
+    func testTagSearchRoundTripsAMultiWordTag() {
+        let query = Query(Query.tagSearch("to read"))
+        XCTAssertEqual(query.terms.count, 1)
+        XCTAssertEqual(query.terms.first?.field, "tag")
+        XCTAssertEqual(query.terms.first?.value, "to read")
+    }
+
+    func testTagSearchRoundTripsAPlainTag() {
+        let query = Query(Query.tagSearch("reading"))
+        XCTAssertEqual(query.terms.first?.field, "tag")
+        XCTAssertEqual(query.terms.first?.value, "reading")
+    }
 }

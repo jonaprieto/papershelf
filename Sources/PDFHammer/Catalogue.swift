@@ -158,6 +158,16 @@ struct ResultsPane: View {
         mode = .catalogue
     }
 
+    /// Shows only what carries one tag, by writing the search the search box already
+    /// understands rather than adding a second, parallel notion of scope. Any folder scope
+    /// is dropped: a tag spans the shelf, and leaving a folder filter on top of it would
+    /// silently show a fraction of the tag.
+    private func showTag(_ name: String) {
+        folderScope = nil
+        query = Query.tagSearch(name)
+        mode = .catalogue
+    }
+
     private var aiClient: AIClient {
         AIClient(baseURL: aiBaseURL, model: aiModel,
                  apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
@@ -252,6 +262,10 @@ struct ResultsPane: View {
             .onReceive(NotificationCenter.default.publisher(for: .openFolderInCatalogue)) { note in
             guard let path = note.userInfo?["path"] as? String else { return }
             openFolder(URL(fileURLWithPath: path))
+        }
+            .onReceive(NotificationCenter.default.publisher(for: .showTagInCatalogue)) { note in
+            guard let name = note.userInfo?["tag"] as? String else { return }
+            showTag(name)
         }
     }
 
@@ -1277,6 +1291,8 @@ extension Notification.Name {
     /// catalogue simply ends up showing zero files, same as any other search with no
     /// matches.
     static let openFolderInCatalogue = Notification.Name("PDFHammer.openFolderInCatalogue")
+    /// Posted with the tag's name in `userInfo["tag"]` by the sidebar's Tags panel.
+    static let showTagInCatalogue = Notification.Name("PDFHammer.showTagInCatalogue")
 }
 
 // MARK: - Review inspector

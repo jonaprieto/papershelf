@@ -30,6 +30,12 @@ public struct Query: Sendable, Equatable {
         terms = Query.split(text).compactMap(Query.term(from:))
     }
 
+    /// The search text that shows one tag's documents. Always quoted: a tag is free text
+    /// and "to read" unquoted would parse as a tag search for "to" plus a bare word.
+    public static func tagSearch(_ name: String) -> String {
+        "tag:\"\(name)\""
+    }
+
     /// Splits on spaces while keeping quoted runs together.
     static func split(_ text: String) -> [String] {
         var pieces: [String] = []
