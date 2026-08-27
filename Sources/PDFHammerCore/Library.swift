@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import os
 
 /// The one durable store for everything that outlives a single scan: which documents the
 /// user has seen, the paths those documents have lived at, tags, reading projects, notes,
@@ -81,13 +82,37 @@ public actor Library {
         if let db { sqlite3_close_v2(db) }
     }
 
+    /// Opened at most once per process, at the standard location (`libraryDatabaseURL`).
+    /// `nil` means the rest of the app runs exactly as it did before this file existed: tags,
+    /// notes, projects, and rename-safe identity are simply unavailable for this run, while
+    /// reading, renaming, and converting PDFs, none of which depend on this actor, keep
+    /// working exactly as before. The failure is logged once, here, by construction, rather
+    /// than surfaced every time some feature would otherwise have gone through the library.
+    public static let shared: Library? = {
+        guard let url = libraryDatabaseURL() else {
+            Library.logUnavailable("no Application Support directory available")
+            return nil
+        }
+        do {
+            return try Library(url: url)
+        } catch {
+            Library.logUnavailable("\(error)")
+            return nil
+        }
+    }()
+
+    private static func logUnavailable(_ reason: String) {
+        Logger(subsystem: "com.jonaprieto.pdfhammer", category: "library")
+            .error("library unavailable, continuing without it: \(reason, privacy: .public)")
+    }
+
     // MARK: - Schema
 
     /// One entry per schema version, applied in order inside its own transaction, each
     /// followed by bumping `PRAGMA user_version` to match. Adding the spend ledger or the
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
-    fileprivate static let migrations: [String] = [schemaV1]
+    fileprivate static let migrations: [String] = [schemaV1, schemaV2]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -164,6 +189,40 @@ public actor Library {
         END;
         """
 
+    /// Schema room for two pieces of work that need a table each and cannot touch this file:
+    /// an AI-spend ledger and a set of dismissed duplicate pairs. No accessors for either are
+    /// added here on purpose, whichever feature reads and writes them adds its own
+    /// `extension Library` in its own file, the same way this file's own methods below are
+    /// the only ones allowed to touch `documents`/`locations`/`tags`/etc.
+    fileprivate static let schemaV2 = """
+        -- One row per model call. `cost` is stored as TEXT, an exact decimal string, so
+        -- money is never subject to floating-point error; `currency` keeps a call priced in
+        -- a non-USD rate from being silently summed as if it were dollars.
+        CREATE TABLE spend_ledger (
+            id               INTEGER PRIMARY KEY,
+            at               TEXT NOT NULL,
+            model            TEXT NOT NULL,
+            endpoint         TEXT NOT NULL,
+            feature          TEXT NOT NULL,
+            input_tokens     INTEGER NOT NULL,
+            output_tokens    INTEGER NOT NULL,
+            cached_tokens    INTEGER NOT NULL,
+            reasoning_tokens INTEGER NOT NULL,
+            cost             TEXT NOT NULL,
+            currency         TEXT NOT NULL,
+            succeeded        INTEGER NOT NULL
+        );
+
+        -- document_id_a/document_id_b are written in canonical order (a < b as strings) by
+        -- whoever inserts a row, so the same pair is never recorded twice under swapped ids.
+        CREATE TABLE dismissed_duplicates (
+            document_id_a TEXT NOT NULL,
+            document_id_b TEXT NOT NULL,
+            dismissed_at  TEXT NOT NULL,
+            PRIMARY KEY (document_id_a, document_id_b)
+        );
+        """
+
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
     /// loads rows in bulk, bypassing them, would desync the index silently. Nothing in this
     /// file does that today, but this is the escape hatch if one ever needs to.
@@ -172,6 +231,35 @@ public actor Library {
     }
 
     // MARK: - Documents
+
+    /// One file's worth of what a scan can tell the library: everything `indexDocument`
+    /// itself accepts, bundled so a whole batch can go through `indexDocuments` in a single
+    /// transaction instead of paying for one call, and one transaction, per file.
+    public struct IndexInput: Sendable {
+        public var path: String
+        public var contentHash: String?
+        public var byteCount: Int?
+        public var pageCount: Int?
+        public var title: String?
+        public var author: String?
+        public var documentInfo: [String: String]
+        public var seenAt: Date
+
+        public init(
+            path: String, contentHash: String? = nil, byteCount: Int? = nil, pageCount: Int? = nil,
+            title: String? = nil, author: String? = nil, documentInfo: [String: String] = [:],
+            seenAt: Date = Date()
+        ) {
+            self.path = path
+            self.contentHash = contentHash
+            self.byteCount = byteCount
+            self.pageCount = pageCount
+            self.title = title
+            self.author = author
+            self.documentInfo = documentInfo
+            self.seenAt = seenAt
+        }
+    }
 
     /// Indexes one file, called repeatedly by a filesystem watcher as it re-walks the
     /// library: identity is resolved by path, so this is idempotent both when nothing
@@ -189,59 +277,82 @@ public actor Library {
         documentInfo: [String: String] = [:],
         seenAt: Date = Date()
     ) throws -> DocumentRecord {
-        let info = try Library.encodeDocumentInfo(documentInfo)
-        let seenAtText = Library.isoString(seenAt)
-        return try transaction {
-            let id: String
-            if let existingID = try documentID(atPath: path) {
-                id = existingID
-                try run("""
-                    UPDATE documents
-                    SET content_hash = ?, byte_count = ?, page_count = ?, title = ?, author = ?,
-                        document_info = ?, last_seen_at = ?
-                    WHERE id = ?;
-                    """) { statement in
-                    bindText(statement, 1, contentHash)
-                    bindInt(statement, 2, byteCount)
-                    bindInt(statement, 3, pageCount)
-                    bindText(statement, 4, title)
-                    bindText(statement, 5, author)
-                    bindText(statement, 6, info)
-                    bindText(statement, 7, seenAtText)
-                    bindText(statement, 8, id)
-                }
-            } else {
-                id = UUID().uuidString
-                try run("""
-                    INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count,
-                                          page_count, title, author, document_info)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """) { statement in
-                    bindText(statement, 1, id)
-                    bindText(statement, 2, seenAtText)
-                    bindText(statement, 3, seenAtText)
-                    bindText(statement, 4, contentHash)
-                    bindInt(statement, 5, byteCount)
-                    bindInt(statement, 6, pageCount)
-                    bindText(statement, 7, title)
-                    bindText(statement, 8, author)
-                    bindText(statement, 9, info)
-                }
-            }
-            try touchLocation(path: path, documentID: id, seenAt: seenAtText)
-            guard let record = try document(id: id) else {
-                throw LibraryError.invariantViolated("document \(id) vanished inside its own indexing transaction")
-            }
-            return record
+        try transaction {
+            try indexOne(IndexInput(path: path, contentHash: contentHash, byteCount: byteCount,
+                                    pageCount: pageCount, title: title, author: author,
+                                    documentInfo: documentInfo, seenAt: seenAt))
         }
+    }
+
+    /// The batched form of `indexDocument`: every file in `files` is indexed inside one
+    /// transaction, so a watcher re-walking a folder of ten thousand files commits once, not
+    /// ten thousand times, which is the difference between a tick that finishes and one that
+    /// stalls behind disk I/O. `indexDocument` itself is written in terms of this (a batch of
+    /// one), so the two can never drift apart.
+    ///
+    /// Never deletes: a path that used to resolve to a document and is absent from `files`
+    /// is left exactly as it is. A file this scan did not find might be on a drive that is
+    /// not mounted right now, not one that has stopped existing; only `recordLocation` (an
+    /// explicit "this path is now that document") or a future, separately-decided cleanup
+    /// pass ever removes or re-points a row.
+    @discardableResult
+    public func indexDocuments(_ files: [IndexInput]) throws -> [DocumentRecord] {
+        guard !files.isEmpty else { return [] }
+        return try transaction { try files.map(indexOne) }
+    }
+
+    private func indexOne(_ file: IndexInput) throws -> DocumentRecord {
+        let info = try Library.encodeDocumentInfo(file.documentInfo)
+        let seenAtText = Library.isoString(file.seenAt)
+        let id: String
+        if let existingID = try documentID(atPath: file.path) {
+            id = existingID
+            try run("""
+                UPDATE documents
+                SET content_hash = ?, byte_count = ?, page_count = ?, title = ?, author = ?,
+                    document_info = ?, last_seen_at = ?
+                WHERE id = ?;
+                """) { statement in
+                bindText(statement, 1, file.contentHash)
+                bindInt(statement, 2, file.byteCount)
+                bindInt(statement, 3, file.pageCount)
+                bindText(statement, 4, file.title)
+                bindText(statement, 5, file.author)
+                bindText(statement, 6, info)
+                bindText(statement, 7, seenAtText)
+                bindText(statement, 8, id)
+            }
+        } else {
+            id = UUID().uuidString
+            try run("""
+                INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count,
+                                      page_count, title, author, document_info)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """) { statement in
+                bindText(statement, 1, id)
+                bindText(statement, 2, seenAtText)
+                bindText(statement, 3, seenAtText)
+                bindText(statement, 4, file.contentHash)
+                bindInt(statement, 5, file.byteCount)
+                bindInt(statement, 6, file.pageCount)
+                bindText(statement, 7, file.title)
+                bindText(statement, 8, file.author)
+                bindText(statement, 9, info)
+            }
+        }
+        try touchLocation(path: file.path, documentID: id, seenAt: seenAtText)
+        guard let record = try document(id: id) else {
+            throw LibraryError.invariantViolated("document \(id) vanished inside its own indexing transaction")
+        }
+        return record
     }
 
     /// Associates an additional path with a document that already exists, without touching
     /// its locators. This is the explicit primitive for "this path now names that document":
     /// a caller with real knowledge of a rename or a decrypt-in-place (the app's own
-    /// `process(job:options:)`, eventually) calls this instead of `indexDocument` inventing
-    /// the connection from a hash match, which is a guess this store deliberately does not
-    /// make on its own.
+    /// `process(job:options:)`, by way of `Runner.syncLibrary`) calls this instead of
+    /// `indexDocument` inventing the connection from a hash match, which is a guess this
+    /// store deliberately does not make on its own.
     public func recordLocation(_ path: String, forDocument documentID: String, seenAt: Date = Date()) throws {
         try touchLocation(path: path, documentID: documentID, seenAt: Library.isoString(seenAt))
     }
@@ -603,6 +714,21 @@ public actor Library {
         // Whole-second fallback, in case a value predates fractional seconds being added.
         return ISO8601DateFormatter().date(from: text)
     }
+
+    #if DEBUG
+    /// Test-only introspection, compiled out of release builds: confirms the shape of a
+    /// table without adding a real accessor for it. `spend_ledger` and `dismissed_duplicates`
+    /// stay schema-only in this file on purpose, see the comment on `schemaV2`.
+    func columnNames(ofTable table: String) throws -> [String] {
+        try withStatement("PRAGMA table_info(\(table));") { statement in
+            var names: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let name = columnText(statement, 1) { names.append(name) }
+            }
+            return names
+        }
+    }
+    #endif
 }
 
 // MARK: - Connection setup (free functions, called only from `Library.init` before `self.db`

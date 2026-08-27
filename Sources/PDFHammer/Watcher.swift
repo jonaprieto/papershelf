@@ -6,6 +6,11 @@ import CoreServices
 /// FSEvents rather than a poll: a shelf of tens of thousands of files cannot be restatted
 /// on a timer, and the kernel already knows. Events are coalesced, because copying a
 /// folder in produces a burst of them and the useful moment is when the burst stops.
+///
+/// This coalescing is also why `Library.indexDocuments` (`Library.swift`) is safe to call from
+/// whatever `onChange` triggers: one settled tick here is meant to become one rescan and
+/// one batched write to the library, not one write per file changed, the same way a
+/// thousand-file folder is one transaction rather than a thousand.
 final class FolderWatcher {
     private var stream: FSEventStreamRef?
     private var pending: DispatchWorkItem?

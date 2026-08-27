@@ -535,6 +535,17 @@ public struct Item: Identifiable, Sendable, Codable {
     /// `source` is where it started and stays fixed, because `key` is derived from it and
     /// identity has to survive the operation. Anything that reads or shows the file has
     /// to use this instead, or it will be looking at a path that no longer exists.
+    ///
+    /// `key` and `currentURL` are also the pair the library needs to keep a moved
+    /// document's tags, notes and project membership: `key` is the path it already knows
+    /// the file under, `currentURL` is where it went. `process()` deliberately does not
+    /// call the library itself, even though it is the function that performs the move.
+    /// Library is an actor, and `process()` is a pure synchronous function that a real run
+    /// calls in a tight serial loop and a preview calls across `concurrentPerform`; making
+    /// it async would either serialise every file behind the library's queue or force
+    /// every caller to restructure around something that has nothing to do with reading a
+    /// PDF. The app layer holds both `key` and `currentURL` once `process()` returns, so it
+    /// is the one that records the move (see `Runner.syncLibrary`).
     public var currentURL: URL { carriedOut ? destination : source }
 
     /// Path of the source relative to the selected root, used to build the results tree.

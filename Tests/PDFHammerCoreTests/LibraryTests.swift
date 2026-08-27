@@ -141,6 +141,123 @@ final class LibraryTests: XCTestCase {
         }
     }
 
+    /// The fatal objection this task closes: the app's own decrypt-and-rename changes a
+    /// file's path, so a plain path-based rescan would see an unknown path and start a new
+    /// document row, silently orphaning every tag on the old one. `recordLocation` is the
+    /// fix, this is the proof: the same document, found under its new path, with its tag
+    /// intact, and gone from the old path.
+    func testARenameThroughRecordLocationKeepsTheTag() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let oldPath = "/shelf/bank/Extracto.pdf"
+        let newPath = "/shelf/bank/2024-06-extracto.pdf"
+        let original = try await library.indexDocument(path: oldPath, contentHash: "hash-1", byteCount: 10, pageCount: 1, title: nil, author: nil)
+        try await library.addTag("bank", toDocument: original.id)
+
+        try await library.recordLocation(newPath, forDocument: original.id)
+
+        let atNewPath = try await library.document(atPath: newPath)
+        XCTAssertEqual(atNewPath?.id, original.id, "the rename must keep the same document identity")
+        let survivingTags = try await library.tags(forDocument: original.id).map(\.name)
+        XCTAssertEqual(survivingTags, ["bank"], "the tag must survive the rename")
+    }
+
+    /// Mutation check for the test above, and the bug `recordLocation` exists to prevent:
+    /// a rescan that only knows the new path, with no `recordLocation` call to say it is
+    /// the same file, indexes it as a second document and leaves the tag behind on the
+    /// first one, unreachable from the path anyone would actually look it up by.
+    func testWithoutRecordLocationARenameWouldOrphanTheTag() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let oldPath = "/shelf/bank/Extracto.pdf"
+        let newPath = "/shelf/bank/2024-06-extracto.pdf"
+        let original = try await library.indexDocument(path: oldPath, contentHash: "hash-1", byteCount: 10, pageCount: 1, title: nil, author: nil)
+        try await library.addTag("bank", toDocument: original.id)
+
+        // A naive rescan of just the new path, as if the app never told the library a
+        // move happened.
+        let second = try await library.indexDocument(path: newPath, contentHash: "hash-1", byteCount: 10, pageCount: 1, title: nil, author: nil)
+
+        XCTAssertNotEqual(second.id, original.id, "without recordLocation this really is a second document")
+        let orphanedTags = try await library.tags(forDocument: second.id).map(\.name)
+        XCTAssertEqual(orphanedTags, [], "and the tag is left behind on the document nobody can find any more")
+    }
+
+    // MARK: - Batched indexing
+
+    /// `indexDocuments` exists so a filesystem watcher re-walking a folder of many files
+    /// can commit once instead of once per file. This proves the batch actually behaves
+    /// like the sum of calling `indexDocument` for each file: new paths become documents,
+    /// an already-known path updates in place, and the whole thing succeeds as one unit.
+    func testIndexDocumentsBatchesMultipleFilesIntoOneCall() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let existing = try await library.indexDocument(path: "/shelf/known.pdf", contentHash: "old", byteCount: 1, pageCount: 1, title: nil, author: nil)
+
+        let records = try await library.indexDocuments([
+            .init(path: "/shelf/known.pdf", contentHash: "new", byteCount: 2, pageCount: 1),
+            .init(path: "/shelf/fresh-a.pdf", contentHash: "a", byteCount: 3, pageCount: 1),
+            .init(path: "/shelf/fresh-b.pdf", contentHash: "b", byteCount: 4, pageCount: 1),
+        ])
+
+        XCTAssertEqual(records.count, 3)
+        XCTAssertEqual(records[0].id, existing.id, "an already-known path must update, not duplicate")
+        XCTAssertEqual(records[0].contentHash, "new")
+        XCTAssertEqual(try rawCount("documents", in: url), 3)
+    }
+
+    /// The whole point of batching: indexing the same new path twice within one call must
+    /// see its own earlier write, updating rather than tripping the `locations` primary key
+    /// or the `documents` row twice. If this failed, `indexDocuments` would not actually be
+    /// safe to call with a real, possibly-messy batch from a scan.
+    func testABatchSeesItsOwnEarlierInsertsRatherThanConflicting() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let records = try await library.indexDocuments([
+            .init(path: "/shelf/twice.pdf", contentHash: "first"),
+            .init(path: "/shelf/twice.pdf", contentHash: "second"),
+        ])
+
+        XCTAssertEqual(records[0].id, records[1].id)
+        XCTAssertEqual(try rawCount("documents", in: url), 1)
+        let final = try await library.document(atPath: "/shelf/twice.pdf")
+        XCTAssertEqual(final?.contentHash, "second", "the later entry in the same batch must win")
+    }
+
+    /// `indexDocuments` never deletes: a path missing from one batch might be on a drive
+    /// that is not mounted right now, not a document that stopped existing.
+    func testIndexDocumentsNeverRemovesAPathAbsentFromTheBatch() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        try await library.indexDocuments([.init(path: "/shelf/stays.pdf"), .init(path: "/shelf/unmounted-drive.pdf")])
+        let vanished = try await library.document(atPath: "/shelf/unmounted-drive.pdf")
+        XCTAssertNotNil(vanished)
+
+        // A later watcher tick only finds one of the two files.
+        try await library.indexDocuments([.init(path: "/shelf/stays.pdf")])
+
+        let stillThere = try await library.document(atPath: "/shelf/unmounted-drive.pdf")
+        XCTAssertEqual(stillThere?.id, vanished?.id, "a file absent from one scan must not be removed from the library")
+    }
+
+    func testIndexDocumentsWithNothingIsHarmless() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let result = try await library.indexDocuments([])
+        XCTAssertEqual(result, [])
+    }
+
     // MARK: - Tags
 
     func testAddAndRemoveTags() async throws {
@@ -368,5 +485,42 @@ final class LibraryTests: XCTestCase {
             }
             try await group.waitForAll()
         }
+    }
+
+    // MARK: - Opening the library
+
+    func testAnUnwritableLocationThrowsInsteadOfCrashing() {
+        // A plain file where a directory needs to go: creating the parent necessarily
+        // fails, which is the shape "cannot be opened" actually takes in practice.
+        let blocker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("library-blocker-\(UUID().uuidString)")
+        try? Data("not a directory".utf8).write(to: blocker)
+        defer { try? FileManager.default.removeItem(at: blocker) }
+
+        XCTAssertThrowsError(try Library(url: blocker.appendingPathComponent("library.sqlite")))
+    }
+
+    // MARK: - Schema room for other work
+
+    func testTheSpendLedgerTableHasTheAgreedColumns() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let columns = try await library.columnNames(ofTable: "spend_ledger")
+        XCTAssertEqual(columns, [
+            "id", "at", "model", "endpoint", "feature",
+            "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens",
+            "cost", "currency", "succeeded",
+        ])
+    }
+
+    func testTheDismissedDuplicatesTableHasTheAgreedColumns() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let columns = try await library.columnNames(ofTable: "dismissed_duplicates")
+        XCTAssertEqual(columns, ["document_id_a", "document_id_b", "dismissed_at"])
     }
 }

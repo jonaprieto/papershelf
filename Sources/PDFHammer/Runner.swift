@@ -267,6 +267,9 @@ final class Runner: ObservableObject {
         replace(item.key, with: done)
         set(.applied, for: item.key)
         note(kind(for: done.status), for: item, detail: "-> \(done.destinationName)")
+        // Applying one file on its own never reaches `finish`, and it moves the file just
+        // as a whole run does, so the library has to hear about this one too.
+        Task { await self.syncLibrary(with: [done]) }
     }
 
     /// Updates one row in place. The tree holds keys, so it needs no rebuilding.
@@ -777,6 +780,12 @@ final class Runner: ObservableObject {
         done = out.count
         current = ""
         phase = .idle
+
+        // Every path that produces results ends here: a preview, a real run, and the
+        // watcher absorbing what changed on disk. One call covers all three, and it is the
+        // call that keeps a renamed document's tags, notes and project membership attached
+        // to it rather than orphaned at a path that no longer exists.
+        Task { await self.syncLibrary(with: out) }
     }
 }
 
