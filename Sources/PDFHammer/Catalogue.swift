@@ -32,6 +32,9 @@ struct ResultsPane: View {
     @AppStorage("sortOrder") private var sortOrder: ItemSort = .folder
     @AppStorage("bibStandard") private var bibStandard: BibStandard = .biblatex
     @ObservedObject private var kept: KeptBibtex = .shared
+    /// The inspector's width when the current divider drag began. Nil when nothing is
+    /// being dragged.
+    @State private var dragAnchor: CGFloat?
     @AppStorage("sortDescending") private var sortDescending = false
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
@@ -717,8 +720,17 @@ struct ResultsPane: View {
                     .gesture(
                         DragGesture(coordinateSpace: .global)
                             .onChanged { value in
-                                inspectorWidth = min(max(width - value.translation.width, minimum), maximum)
+                                // A drag's translation is measured from where it started,
+                                // so it has to be added to the width it started at. Adding
+                                // it to the live width fed each frame's result back into
+                                // the next one, which is why the divider accelerated away
+                                // and landed at widths nobody asked for.
+                                let anchor = dragAnchor ?? width
+                                if dragAnchor == nil { dragAnchor = anchor }
+                                inspectorWidth = min(max(anchor - value.translation.width,
+                                                         minimum), maximum)
                             }
+                            .onEnded { _ in dragAnchor = nil }
                     )
             }
     }

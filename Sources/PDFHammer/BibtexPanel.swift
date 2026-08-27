@@ -18,13 +18,31 @@ extension ReviewInspector {
                 // every keystroke, since citationDraft is state this view reads.
                 warning
 
-                TextEditor(text: $citationDraft)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 120, maxHeight: 220)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                // Sized to the entry rather than given a fixed height with its own
+                // scroller. The pane it sits in already scrolls, and a scroll view inside
+                // a scroll view clipped the last lines of a normal entry: the closing
+                // brace and the DOI were simply not there.
+                //
+                // The height comes from a copy of the same text laid out with the same
+                // font and insets, so it accounts for wrapping, which counting lines
+                // would not.
+                ZStack(alignment: .topLeading) {
+                    Text(citationDraft.isEmpty ? " " : citationDraft)
+                        .font(entryFont)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .hidden()
+                    TextEditor(text: $citationDraft)
+                        .font(entryFont)
+                        .scrollContentBackground(.hidden)
+                        .scrollDisabled(true)
+                        .padding(.horizontal, 1)
+                        .padding(.vertical, 3)
+                }
+                .padding(4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
 
                 HStack(spacing: 8) {
                     Button("Copy") {
@@ -86,6 +104,8 @@ extension ReviewInspector {
         .task(id: item.key) { await loadCitation() }
     }
 
+    private var entryFont: Font { .system(.caption, design: .monospaced) }
+
     /// What is wrong with the entry as it currently reads, if anything.
     @ViewBuilder private var warning: some View {
         if citationDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -96,6 +116,7 @@ extension ReviewInspector {
                      text: "\(parseBibtexEntry(citationDraft)?.rawType ?? "this entry") wants "
                            + gaps.joined(separator: ", ") + ". \(bibStandard.label) will complain.",
                      size: .caption)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         } else {
             Note(icon: "exclamationmark.triangle.fill", tint: .orange,

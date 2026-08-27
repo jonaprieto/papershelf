@@ -317,3 +317,39 @@ final class SpendLedgerTests: XCTestCase {
         XCTAssertEqual(session.count, 1, "a session total is this: everything since the app started")
     }
 }
+
+extension SpendTests {
+
+    /// The user picked gpt-5.5-pro and was told the price was unknown, because the table
+    /// only knew the models that existed when it was written.
+    func testTheCurrentModelsHaveAPrice() {
+        let table = PriceTable()
+        for model in ["gpt-5.5", "gpt-5.5-pro", "gpt-5.1", "gpt-5-pro", "gpt-5", "gpt-5-mini"] {
+            XCTAssertNotNil(table.price(model: model, endpoint: "https://api.openai.com/v1"),
+                            "no price for \(model)")
+        }
+        XCTAssertEqual(table.price(model: "gpt-5.5-pro",
+                                   endpoint: "https://api.openai.com/v1")?.outputPerMillion,
+                       Decimal(string: "180.00"))
+    }
+
+    /// A dated id is the same model, and the longest name wins so the pro variant is not
+    /// priced as the cheaper one it shares a prefix with.
+    func testADatedModelIdIsPricedAsItsBaseModel() {
+        let table = PriceTable()
+        let endpoint = "https://api.openai.com/v1"
+        XCTAssertEqual(table.price(model: "gpt-5.1-2026-03-11", endpoint: endpoint)?.inputPerMillion,
+                       table.price(model: "gpt-5.1", endpoint: endpoint)?.inputPerMillion)
+        XCTAssertEqual(table.price(model: "gpt-5.5-pro-2026-05-01", endpoint: endpoint)?.outputPerMillion,
+                       Decimal(string: "180.00"),
+                       "the pro variant must not be priced as plain gpt-5.5")
+    }
+
+    /// A name this table has never heard of stays unknown rather than borrowing a price.
+    func testAnUnrelatedModelIsStillUnknown() {
+        let table = PriceTable()
+        XCTAssertNil(table.price(model: "llama-3-70b", endpoint: "https://api.openai.com/v1"))
+        XCTAssertNil(table.price(model: "gpt-5", endpoint: "http://localhost:1234/v1"),
+                     "someone else's endpoint does not bill at OpenAI's rates")
+    }
+}

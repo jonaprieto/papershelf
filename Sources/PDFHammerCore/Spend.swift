@@ -76,6 +76,16 @@ public struct PriceTable: Sendable {
                                     outputPerMillion: 1.60, currency: "USD", recordedAt: seededVerifiedAt),
         "gpt-4.1-nano": ModelPrice(inputPerMillion: 0.10, cachedInputPerMillion: 0.025,
                                     outputPerMillion: 0.40, currency: "USD", recordedAt: seededVerifiedAt),
+        // The 5.5 pair are priced for the short-context tier, which is what a request from
+        // this app is: it sends a filename and a few pages, never 272K tokens.
+        "gpt-5.5": ModelPrice(inputPerMillion: 5.00, cachedInputPerMillion: 0.50,
+                               outputPerMillion: 30.00, currency: "USD", recordedAt: seededVerifiedAt),
+        "gpt-5.5-pro": ModelPrice(inputPerMillion: 30.00, cachedInputPerMillion: nil,
+                                   outputPerMillion: 180.00, currency: "USD", recordedAt: seededVerifiedAt),
+        "gpt-5.1": ModelPrice(inputPerMillion: 1.25, cachedInputPerMillion: 0.125,
+                               outputPerMillion: 10.00, currency: "USD", recordedAt: seededVerifiedAt),
+        "gpt-5-pro": ModelPrice(inputPerMillion: 15.00, cachedInputPerMillion: nil,
+                                 outputPerMillion: 120.00, currency: "USD", recordedAt: seededVerifiedAt),
         "gpt-5": ModelPrice(inputPerMillion: 1.25, cachedInputPerMillion: 0.125,
                              outputPerMillion: 10.00, currency: "USD", recordedAt: seededVerifiedAt),
         "gpt-5-mini": ModelPrice(inputPerMillion: 0.25, cachedInputPerMillion: 0.025,
@@ -99,7 +109,15 @@ public struct PriceTable: Sendable {
 
     public func price(model: String, endpoint: String) -> ModelPrice? {
         if let custom = custom[Self.customKey(endpoint: endpoint, model: model)] { return custom }
-        return isOpenAIEndpoint(endpoint) ? Self.seeded[model] : nil
+        guard isOpenAIEndpoint(endpoint) else { return nil }
+        if let exact = Self.seeded[model] { return exact }
+        // Model ids carry a dated suffix ("gpt-5.1-2026-03-11") and a table of bare names
+        // would call every one of them unknown. The longest matching name wins, so
+        // "gpt-5.5-pro-..." is priced as the pro model rather than as "gpt-5.5".
+        return Self.seeded
+            .filter { model.hasPrefix($0.key + "-") }
+            .max { $0.key.count < $1.key.count }?
+            .value
     }
 
     private func isOpenAIEndpoint(_ endpoint: String) -> Bool {
