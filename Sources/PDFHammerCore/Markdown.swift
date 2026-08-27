@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 /// One highlight or note, flattened for export.
 public struct MarkExport: Sendable, Equatable {
@@ -120,4 +121,75 @@ public func markdownBibliography(_ entries: [BibEntry], date: Date = Date()) -> 
         out += line + "\n"
     }
     return out
+}
+
+// MARK: - Reading the marks in a document
+
+/// A highlight or note already in a PDF, read from the file rather than from the app's
+/// own state, so a separate process (the MCP server) can see what the reader marked.
+public struct PDFMark: Sendable, Equatable {
+    public var page: Int
+    public var kind: String
+    public var quoted: String
+    public var note: String
+
+    public init(page: Int, kind: String, quoted: String, note: String) {
+        self.page = page
+        self.kind = kind
+        self.quoted = quoted
+        self.note = note
+    }
+}
+
+/// The text a mark covers.
+///
+/// Read per quadrilateral where there are quads: a mark spanning two lines has a bounding
+/// box that also covers the end of the line between them, so the box alone picks up words
+/// that were never highlighted.
+public func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String {
+    let quads = annotation.quadrilateralPoints ?? []
+    var boxes: [CGRect] = []
+    if quads.count >= 4 {
+        for start in stride(from: 0, to: quads.count - 3, by: 4) {
+            let points = (0..<4).map { quads[start + $0].pointValue }
+            let xs = points.map(\.x), ys = points.map(\.y)
+            boxes.append(CGRect(x: xs.min()! + annotation.bounds.minX,
+                                y: ys.min()! + annotation.bounds.minY,
+                                width: xs.max()! - xs.min()!,
+                                height: ys.max()! - ys.min()!))
+        }
+    } else {
+        boxes = [annotation.bounds]
+    }
+    let pieces = boxes.compactMap { page.selection(for: $0)?.string }
+    return pieces.joined(separator: " ")
+        .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+}
+
+/// Every highlight, underline, strikeout and note in a document, in reading order.
+public func pdfMarks(in url: URL, passwords: [String] = []) -> [PDFMark] {
+    guard let document = PDFDocument(url: url) else { return [] }
+    if document.isLocked {
+        for password in passwords where document.unlock(withPassword: password) { break }
+    }
+    let wanted: Set<String> = [PDFAnnotationSubtype.highlight.rawValue,
+                               PDFAnnotationSubtype.underline.rawValue,
+                               PDFAnnotationSubtype.strikeOut.rawValue,
+                               PDFAnnotationSubtype.text.rawValue]
+
+    var found: [PDFMark] = []
+    for index in 0..<document.pageCount {
+        guard let page = document.page(at: index) else { continue }
+        for annotation in page.annotations {
+            guard let type = annotation.type, wanted.contains("/" + type) || wanted.contains(type)
+            else { continue }
+            let quoted = annotation.type == "Text" ? "" : quotedText(of: annotation, on: page)
+            let note = annotation.contents ?? ""
+            guard !quoted.isEmpty || !note.isEmpty else { continue }
+            // Pages are 1-based everywhere this app shows one.
+            found.append(PDFMark(page: index + 1, kind: type.lowercased(),
+                                 quoted: quoted, note: note))
+        }
+    }
+    return found
 }

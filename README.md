@@ -309,6 +309,29 @@ travels with it, so a book keeps its table of contents.
 The password is held in memory only and never written to preferences, so it has to be
 given again each launch.
 
+## ChatGPT
+
+The ChatGPT desktop app reads plugins from a personal marketplace on this machine, and a
+plugin may declare an MCP server spoken to over stdio. PDF Hammer already ships one, so it
+can be installed as a local plugin: nothing is published, nothing is reviewed, and nothing
+leaves the machine.
+
+```
+Tools/install-chatgpt-plugin.sh
+```
+
+Then restart ChatGPT and add PDF Hammer from its plugin list. It can search the library,
+read a document or a single page, list what you highlighted, and build a bibliography.
+
+Note that this is the desktop app's own plugin system. ChatGPT on the web connects to MCP
+servers over HTTPS only, so a local server is not reachable from there without exposing it.
+
+Separately, every highlight in the notes rail offers **Open in ChatGPT**, which starts a
+conversation with the passage already in the composer, and **Copy for ChatGPT**, for a
+conversation you already have open. The app registers only a `codex://` scheme and can
+address a new thread but not an existing one, which is why copying is offered as well.
+Neither sends anything on its own: the text lands in the composer and you decide.
+
 ## Preview, review, apply
 
 Nothing on disk moves until you have looked at every file. **Preview** is read-only

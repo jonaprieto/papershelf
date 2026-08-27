@@ -1,0 +1,8 @@
+{
+  "mcp_servers": {
+    "pdf-hammer": {
+      "command": "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp",
+      "args": []
+    }
+  }
+}

@@ -121,26 +121,10 @@ final class Annotator: ObservableObject {
         marks = found
     }
 
-    /// The text a mark covers. Read per quad where there are quads: the bounding box of
-    /// a mark spanning two lines also covers the start of the line between them.
+    /// The text a mark covers, from PDFHammerCore, which is also what the MCP server
+    /// reads so that both see the same thing.
     private func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String {
-        let quads = annotation.quadrilateralPoints ?? []
-        var boxes: [CGRect] = []
-        if quads.count >= 4 {
-            for start in stride(from: 0, to: quads.count - 3, by: 4) {
-                let points = (0..<4).map { quads[start + $0].pointValue }
-                let xs = points.map(\.x), ys = points.map(\.y)
-                boxes.append(CGRect(x: xs.min()! + annotation.bounds.minX,
-                                    y: ys.min()! + annotation.bounds.minY,
-                                    width: xs.max()! - xs.min()!,
-                                    height: ys.max()! - ys.min()!))
-            }
-        } else {
-            boxes = [annotation.bounds]
-        }
-        let pieces = boxes.compactMap { page.selection(for: $0)?.string }
-        return pieces.joined(separator: " ")
-            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        PDFHammerCore.quotedText(of: annotation, on: page)
     }
 
     /// Highlights whatever is selected.

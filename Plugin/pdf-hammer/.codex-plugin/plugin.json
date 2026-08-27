@@ -1,0 +1,8 @@
+{
+  "name": "pdf-hammer",
+  "version": "1.1.0",
+  "description": "Read your PDF library: search it, read a document as Markdown, and see what you highlighted.",
+  "author": { "name": "PDF Hammer" },
+  "keywords": ["pdf", "research", "bibliography", "highlights"],
+  "mcpServers": "./.mcp.json"
+}

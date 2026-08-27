@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import PDFHammerCore
 
 /// A scan is what everything else is built on, so it is done once per call and kept for
@@ -172,6 +173,82 @@ let libraryTools: [Tool] = [
             let entries = bibEntries(for: items, type: type)
             return ToolOutput(text: bibtexDocument(entries),
                               structured: ["entries": entries.count])
+        }
+    ),
+
+    Tool(
+        name: "list_highlights",
+        title: "Read what the reader marked",
+        description: "Every highlight, underline, strikeout and sticky note in a PDF, with "
+            + "the text each one covers, the note attached to it, and its page. This is "
+            + "what the person reading the document chose to mark, so it is the best "
+            + "starting point for discussing the document with them.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "path": ["type": "string", "description": "Absolute path to a PDF"],
+                "password": ["type": "string"],
+            ],
+            "required": ["path"],
+        ],
+        run: { arguments in
+            let path = try requireString(arguments, "path")
+            guard FileManager.default.fileExists(atPath: path) else {
+                throw ToolFailure("no such file: \(path)")
+            }
+            let passwords = (arguments["password"] as? String).map { [$0] } ?? []
+            let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: passwords)
+            guard !marks.isEmpty else {
+                return ToolOutput(text: "Nothing is marked in that document.", structured: nil)
+            }
+            let rows = marks.map { mark -> [String: Any] in
+                var row: [String: Any] = ["page": mark.page, "kind": mark.kind]
+                if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
+                if !mark.note.isEmpty { row["note"] = mark.note }
+                return row
+            }
+            let text = marks.map { mark in
+                var line = "p.\(mark.page) [\(mark.kind)]"
+                if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
+                if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
+                return line
+            }.joined(separator: "\n")
+            return ToolOutput(text: text, structured: ["count": rows.count, "marks": rows])
+        }
+    ),
+
+    Tool(
+        name: "read_page",
+        title: "Read one page",
+        description: "The text of a single page, for reading around a highlight rather "
+            + "than pulling in the whole document.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "path": ["type": "string"],
+                "page": ["type": "integer", "description": "1-based, as the app shows it"],
+                "password": ["type": "string"],
+            ],
+            "required": ["path", "page"],
+        ],
+        run: { arguments in
+            let path = try requireString(arguments, "path")
+            guard let page = arguments["page"] as? Int, page > 0 else {
+                throw ToolFailure("'page' is required and starts at 1")
+            }
+            guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else {
+                throw ToolFailure("cannot read that PDF: \(path)")
+            }
+            if document.isLocked, let password = arguments["password"] as? String {
+                _ = document.unlock(withPassword: password)
+            }
+            guard page <= document.pageCount else {
+                throw ToolFailure("that document has \(document.pageCount) pages")
+            }
+            guard let text = document.page(at: page - 1)?.string, !text.isEmpty else {
+                throw ToolFailure("page \(page) has no text layer to read")
+            }
+            return ToolOutput(text: text, structured: ["page": page])
         }
     ),
 

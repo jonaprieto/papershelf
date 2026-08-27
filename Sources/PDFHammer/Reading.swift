@@ -14,12 +14,19 @@ struct MarkRow: View {
     let recolour: (NSColor) -> Void
     let styles: [HighlightStyle]
     let meaning: String
+    /// Named in the handoff so an answer is about the right document.
+    var documentTitle: String = ""
 
     @State private var editing = false
     @State private var text = ""
 
     /// The colour it was actually painted with, whatever palette that came from.
     private var colour: Color { Color(nsColor: mark.colour ?? .systemYellow) }
+
+    private var handoffPrompt: String {
+        ChatGPTHandoff.prompt(quoted: mark.quoted, note: mark.note, page: mark.page,
+                              title: documentTitle)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -68,6 +75,24 @@ struct MarkRow: View {
                     .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
+
+                if ChatGPTHandoff.isInstalled, !mark.quoted.isEmpty || !mark.note.isEmpty {
+                    Menu {
+                        Button("Open in ChatGPT") {
+                            ChatGPTHandoff.open(handoffPrompt)
+                        }
+                        Button("Copy for ChatGPT") {
+                            ChatGPTHandoff.copy(handoffPrompt)
+                        }
+                    } label: {
+                        Image(systemName: "bubble.left.and.text.bubble.right")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .tip("Send this passage to ChatGPT. Open starts a new conversation; "
+                         + "copy is for one you already have going.")
+                }
                 Button {
                     text = mark.note
                     editing.toggle()
@@ -204,7 +229,8 @@ struct NotesRail: View {
                             save: { annotator.setNote($0, on: mark) },
                             recolour: { annotator.setColour($0, on: mark) },
                             styles: palette.styles,
-                            meaning: palette.meaning(for: mark.colour)
+                            meaning: palette.meaning(for: mark.colour),
+                            documentTitle: title
                         )
                     }
 
