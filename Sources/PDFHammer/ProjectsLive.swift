@@ -18,6 +18,10 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
                         title: record.title ?? "untitled",
                         markdown: markdown)
     }
+    func member(_ record: DocumentRecord, section: String?, markdown: String = "") -> ProjectMember {
+        ProjectMember(document: document(record, markdown: markdown),
+                     author: record.author, pageCount: record.pageCount, section: section)
+    }
 
     return ProjectsEnvironment(
         listProjects: {
@@ -26,23 +30,22 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             for project in projects {
                 let members = try await library.members(ofProject: project.id)
                 summaries.append(ProjectSummary(id: project.id, name: project.name,
-                                                documentCount: members.count, tagFilter: nil))
+                                                documentCount: members.count))
             }
             return summaries
         },
         createProject: { name in
             let project = try await library.createProject(name: name)
-            return ProjectSummary(id: project.id, name: project.name, documentCount: 0,
-                                  tagFilter: nil)
+            return ProjectSummary(id: project.id, name: project.name, documentCount: 0)
         },
         deleteProject: { id in try await library.deleteProject(id: id) },
         members: { id in
-            var out: [ProjectDocument] = []
-            for record in try await library.members(ofProject: id) {
+            var out: [ProjectMember] = []
+            for (record, section) in try await library.sectionedMembers(ofProject: id) {
                 // The text is what a question is answered from, so it travels with the
                 // document. A document with none contributes nothing but its title.
                 let text = try await library.extractedText(forDocument: record.id)?.markdown ?? ""
-                out.append(document(record, markdown: text))
+                out.append(member(record, section: section, markdown: text))
             }
             return out
         },
@@ -50,10 +53,11 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             let already = Set(try await library.members(ofProject: id).map(\.id))
             return try await library.documents()
                 .filter { !already.contains($0.id) }
-                .map { document($0) }
+                .map { member($0, section: nil) }
         },
-        addMember: { id, documentID in
-            try await library.addMember(documentID, toProject: id)
+        sections: { id in try await library.sections(ofProject: id) },
+        setSection: { id, documentID, section in
+            try await library.setSection(section, forDocument: documentID, inProject: id)
         },
         removeMember: { id, documentID in
             try await library.removeMember(documentID, fromProject: id)

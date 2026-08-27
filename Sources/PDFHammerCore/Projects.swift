@@ -14,7 +14,7 @@ import Foundation
 /// identify and cite it, plus its extracted text. A caller builds this from a
 /// `Library.DocumentRecord` after resolving a project's membership; nothing here reads a
 /// database.
-public struct ProjectDocument: Sendable, Equatable {
+public struct ProjectDocument: Sendable, Equatable, Hashable {
     public let contentHash: String
     public let title: String
     /// Whole-document extracted text, tagged one page at a time as

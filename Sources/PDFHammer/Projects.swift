@@ -11,24 +11,82 @@ struct ProjectSummary: Identifiable, Hashable {
     let id: Int64
     var name: String
     var documentCount: Int
-    var tagFilter: String?
+}
+
+/// A document as this feature shows it: enough to recognise without opening it (title,
+/// author, page count), the identity and extracted text `chunk`/`selectExcerpts` need once
+/// it is part of a project's conversation, and, for a document already filed here, which
+/// section it is under. A document offered to add and a document already added but filed
+/// under nothing both carry `section == nil`; the two lists that hand these out
+/// (`members` and `availableDocuments`) are what tell them apart, not this type.
+struct ProjectMember: Identifiable, Hashable {
+    let document: ProjectDocument
+    var author: String?
+    var pageCount: Int?
+    var section: String?
+
+    var id: String { document.contentHash }
+}
+
+/// One section's worth of a project's members, as `groupMembers` produces it and the
+/// detail view renders it, one `Section` per group.
+struct MemberGroup: Identifiable {
+    let section: String?
+    let members: [ProjectMember]
+    var id: String { section ?? "" }
+}
+
+/// Groups members by section for the detail list: every named section that actually has a
+/// member in it, in the order `knownSections` reports them (the library's own order,
+/// already alphabetical), then the unfiled ones last, since "filed under nothing" is where
+/// a project's inbox naturally sits. A member whose section is not among `knownSections` —
+/// stale data, or a caller that only updated one of the two — still gets its own group,
+/// appended after the known ones, rather than silently vanishing from the list.
+func groupMembers(_ members: [ProjectMember], knownSections: [String]) -> [MemberGroup] {
+    let present = Set(members.compactMap(\.section))
+    let extra = present.subtracting(knownSections)
+        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    var groups = (knownSections.filter(present.contains) + extra).map { section in
+        MemberGroup(section: section, members: members.filter { $0.section == section })
+    }
+    let unfiled = members.filter { $0.section == nil }
+    if !unfiled.isEmpty { groups.append(MemberGroup(section: nil, members: unfiled)) }
+    return groups
+}
+
+/// What a row shows below the title to tell two documents apart at a glance: the author,
+/// then how long it is, skipping whichever piece the library does not have.
+func recognitionDetail(author: String?, pageCount: Int?) -> String? {
+    var parts: [String] = []
+    if let author, !author.isEmpty { parts.append(author) }
+    if let pageCount { parts.append("\(pageCount) page\(pageCount == 1 ? "" : "s")") }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
 }
 
 // MARK: - Environment
 //
 /// Everything the projects UI needs from storage and from the model, injected as plain
 /// functions rather than a concrete type, the same shape AI.swift's `AIClient` and the
-/// rest of this app's network calls already take. `Library` is the intended source of
-/// every closure below once it lands; a preview hands in whatever it needs instead of
-/// standing up a database.
+/// rest of this app's network calls already take. `ProjectsLive.swift` fills this in
+/// against the real `Library`; a test hands in whatever it needs instead of standing up a
+/// database.
 struct ProjectsEnvironment {
     var listProjects: () async throws -> [ProjectSummary]
     var createProject: (_ name: String) async throws -> ProjectSummary
     var deleteProject: (_ id: Int64) async throws -> Void
-    var members: (_ id: Int64) async throws -> [ProjectDocument]
-    /// The rest of the library, so a project can offer something to add.
-    var availableDocuments: (_ id: Int64) async throws -> [ProjectDocument]
-    var addMember: (_ id: Int64, _ contentHash: String) async throws -> Void
+    /// A project's documents, each with the section (if any) it is filed under.
+    var members: (_ id: Int64) async throws -> [ProjectMember]
+    /// The rest of the library, so a project can offer something to add. Never carries a
+    /// section: nothing returned here is filed anywhere yet.
+    var availableDocuments: (_ id: Int64) async throws -> [ProjectMember]
+    /// The section names already in use in this project, so adding or moving a document
+    /// offers them rather than making someone retype one they already invented.
+    var sections: (_ id: Int64) async throws -> [String]
+    /// Files a document under a section, adding it to the project first if it is not a
+    /// member yet. `nil` means filed under nothing — a real, common state, not "not added"
+    /// — matching `Library.setSection`. This is the one path both adding documents and
+    /// moving one already in the project go through.
+    var setSection: (_ id: Int64, _ contentHash: String, _ section: String?) async throws -> Void
     var removeMember: (_ id: Int64, _ contentHash: String) async throws -> Void
     var tags: (_ contentHash: String) async throws -> [String]
     var addTag: (_ contentHash: String, _ name: String) async throws -> Void
@@ -173,14 +231,15 @@ private struct NewProjectSheet: View {
     }
 }
 
-// MARK: - Project detail: members and tags
+// MARK: - Project detail: sections, members and tags
 
 @MainActor
 final class ProjectDetailModel: ObservableObject {
     let project: ProjectSummary
-    @Published private(set) var members: [ProjectDocument] = []
+    @Published private(set) var members: [ProjectMember] = []
     @Published private(set) var tagsByDocument: [String: [String]] = [:]
-    @Published private(set) var available: [ProjectDocument] = []
+    @Published private(set) var available: [ProjectMember] = []
+    @Published private(set) var knownSections: [String] = []
     @Published private(set) var isLoading = false
     @Published var error: String?
 
@@ -191,15 +250,19 @@ final class ProjectDetailModel: ObservableObject {
         self.env = env
     }
 
+    /// Members grouped by section for the detail list. See `groupMembers`.
+    var groupedMembers: [MemberGroup] { groupMembers(members, knownSections: knownSections) }
+
     func load() async {
         isLoading = true
         defer { isLoading = false }
         do {
             let documents = try await env.members(project.id)
             members = documents
+            knownSections = try await env.sections(project.id)
             var tags: [String: [String]] = [:]
-            for document in documents {
-                tags[document.contentHash] = try await env.tags(document.contentHash)
+            for member in documents {
+                tags[member.document.contentHash] = try await env.tags(member.document.contentHash)
             }
             tagsByDocument = tags
         } catch {
@@ -215,44 +278,63 @@ final class ProjectDetailModel: ObservableObject {
         }
     }
 
-    func add(_ document: ProjectDocument) async {
+    /// Files every document in `hashes` under `section` (`nil` files it under nothing) and
+    /// reloads. A fresh `load()` is simpler, and no less correct, than patching extracted
+    /// text into each new member by hand, and it is the only path here that can introduce
+    /// a section nobody has filed anything under yet.
+    func addBatch(_ hashes: Set<String>, section: String?) async {
+        guard !hashes.isEmpty else { return }
         do {
-            try await env.addMember(project.id, document.contentHash)
-            members.append(document)
-            available.removeAll { $0.contentHash == document.contentHash }
-            // Tags are keyed by contentHash in the library, not by project, so a
-            // document can arrive with tags it already had elsewhere; fetch them now
-            // rather than showing it bare until the next full reload.
-            tagsByDocument[document.contentHash] = try await env.tags(document.contentHash)
+            for hash in hashes {
+                try await env.setSection(project.id, hash, section)
+            }
+            available.removeAll { hashes.contains($0.document.contentHash) }
+            await load()
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    func remove(_ document: ProjectDocument) async {
+    func remove(_ member: ProjectMember) async {
         do {
-            try await env.removeMember(project.id, document.contentHash)
-            members.removeAll { $0.contentHash == document.contentHash }
+            try await env.removeMember(project.id, member.document.contentHash)
+            members.removeAll { $0.id == member.id }
+            knownSections = try await env.sections(project.id)
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    func addTag(_ name: String, to document: ProjectDocument) async {
+    /// Refiles a document already in the project. `section` nil files it under nothing;
+    /// it does not remove it. Only `section` changes locally — the document's own text and
+    /// metadata did not, so there is nothing here worth a full reload for.
+    func move(_ member: ProjectMember, to section: String?) async {
+        do {
+            try await env.setSection(project.id, member.document.contentHash, section)
+            if let index = members.firstIndex(where: { $0.id == member.id }) {
+                members[index].section = section
+            }
+            knownSections = try await env.sections(project.id)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func addTag(_ name: String, to member: ProjectMember) async {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !(tagsByDocument[document.contentHash] ?? []).contains(trimmed) else { return }
+        guard !trimmed.isEmpty, !(tagsByDocument[member.document.contentHash] ?? []).contains(trimmed) else { return }
         do {
-            try await env.addTag(document.contentHash, trimmed)
-            tagsByDocument[document.contentHash, default: []].append(trimmed)
+            try await env.addTag(member.document.contentHash, trimmed)
+            tagsByDocument[member.document.contentHash, default: []].append(trimmed)
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    func removeTag(_ name: String, from document: ProjectDocument) async {
+    func removeTag(_ name: String, from member: ProjectMember) async {
         do {
-            try await env.removeTag(document.contentHash, name)
-            tagsByDocument[document.contentHash]?.removeAll { $0 == name }
+            try await env.removeTag(member.document.contentHash, name)
+            tagsByDocument[member.document.contentHash]?.removeAll { $0 == name }
         } catch {
             self.error = error.localizedDescription
         }
@@ -261,8 +343,10 @@ final class ProjectDetailModel: ObservableObject {
 
 struct ProjectDetailView: View {
     @StateObject private var model: ProjectDetailModel
-    @State private var showingAddDocument = false
+    @State private var showingAddDocuments = false
     @State private var tagDrafts: [String: String] = [:]
+    @State private var sectionPromptTarget: ProjectMember?
+    @State private var newSectionName = ""
     private let env: ProjectsEnvironment
 
     init(project: ProjectSummary, env: ProjectsEnvironment) {
@@ -272,19 +356,24 @@ struct ProjectDetailView: View {
 
     var body: some View {
         List {
-            Section("Documents") {
-                if model.members.isEmpty {
+            if model.members.isEmpty {
+                Section("Documents") {
                     Text("No documents yet.").foregroundStyle(.secondary)
                 }
-                ForEach(model.members, id: \.contentHash) { document in
-                    documentRow(document)
+            } else {
+                ForEach(model.groupedMembers) { group in
+                    Section(sectionTitle(group)) {
+                        ForEach(group.members) { member in
+                            memberRow(member)
+                        }
+                    }
                 }
             }
         }
         .navigationTitle(model.project.name)
         .toolbar {
             NavigationLink {
-                ProjectConversationView(project: model.project, documents: model.members, env: env)
+                ProjectConversationView(project: model.project, documents: model.members.map(\.document), env: env)
             } label: {
                 Label("Ask", systemImage: "bubble.left.and.bubble.right")
             }
@@ -292,17 +381,16 @@ struct ProjectDetailView: View {
             .disabled(model.members.isEmpty)
 
             Button {
-                showingAddDocument = true
+                showingAddDocuments = true
                 Task { await model.loadAvailable() }
             } label: {
-                Label("Add Document", systemImage: "doc.badge.plus")
+                Label("Add Documents", systemImage: "doc.badge.plus")
             }
-            .tip("Add a document from your library to this project")
+            .tip("Add documents from your library, several at once, filed under a section")
         }
-        .sheet(isPresented: $showingAddDocument) {
-            AddDocumentSheet(candidates: model.available) { document in
-                Task { await model.add(document) }
-                showingAddDocument = false
+        .sheet(isPresented: $showingAddDocuments) {
+            AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
+                Task { await model.addBatch(hashes, section: section) }
             }
         }
         .task { await model.load() }
@@ -311,16 +399,59 @@ struct ProjectDetailView: View {
         } message: {
             Text(model.error ?? "")
         }
+        .alert("New Section", isPresented: sectionPromptShown) {
+            TextField("Section name", text: $newSectionName)
+            Button("Cancel", role: .cancel) { cancelSectionPrompt() }
+            Button("Move") { confirmSectionPrompt() }
+                .disabled(newSectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("File \"\(sectionPromptTarget?.document.title ?? "")\" under a new section.")
+        }
+    }
+
+    private func sectionTitle(_ group: MemberGroup) -> String {
+        "\(group.section ?? "No Section") (\(group.members.count))"
     }
 
     @ViewBuilder
-    private func documentRow(_ document: ProjectDocument) -> some View {
+    private func memberRow(_ member: ProjectMember) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(document.title)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(member.document.title)
+                    if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
+                Button {
+                    env.openAtPage(member.document.contentHash, 1)
+                } label: {
+                    Image(systemName: "arrow.up.forward.square")
+                }
+                .buttonStyle(.borderless)
+                .tip("Open this document")
+
+                Menu {
+                    ForEach(model.knownSections.filter { $0 != member.section }, id: \.self) { section in
+                        Button(section) { Task { await model.move(member, to: section) } }
+                    }
+                    if member.section != nil {
+                        Button("No Section") { Task { await model.move(member, to: nil) } }
+                    }
+                    Divider()
+                    Button("New Section…") { sectionPromptTarget = member }
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .tip("Move to a different section")
+
                 Button(role: .destructive) {
-                    Task { await model.remove(document) }
+                    Task { await model.remove(member) }
                 } label: {
                     Image(systemName: "minus.circle")
                 }
@@ -328,16 +459,33 @@ struct ProjectDetailView: View {
                 .tip("Remove from this project, not from the library")
             }
             TagRow(
-                tags: model.tagsByDocument[document.contentHash] ?? [],
+                tags: model.tagsByDocument[member.document.contentHash] ?? [],
                 draft: Binding(
-                    get: { tagDrafts[document.contentHash] ?? "" },
-                    set: { tagDrafts[document.contentHash] = $0 }),
+                    get: { tagDrafts[member.document.contentHash] ?? "" },
+                    set: { tagDrafts[member.document.contentHash] = $0 }),
                 onAdd: { name in
-                    Task { await model.addTag(name, to: document) }
-                    tagDrafts[document.contentHash] = ""
+                    Task { await model.addTag(name, to: member) }
+                    tagDrafts[member.document.contentHash] = ""
                 },
-                onRemove: { name in Task { await model.removeTag(name, from: document) } })
+                onRemove: { name in Task { await model.removeTag(name, from: member) } })
         }
+    }
+
+    private var sectionPromptShown: Binding<Bool> {
+        Binding(get: { sectionPromptTarget != nil }, set: { if !$0 { cancelSectionPrompt() } })
+    }
+
+    private func cancelSectionPrompt() {
+        sectionPromptTarget = nil
+        newSectionName = ""
+    }
+
+    private func confirmSectionPrompt() {
+        let trimmed = newSectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let target = sectionPromptTarget, !trimmed.isEmpty {
+            Task { await model.move(target, to: trimmed) }
+        }
+        cancelSectionPrompt()
     }
 }
 
@@ -367,20 +515,30 @@ private struct TagRow: View {
     }
 }
 
-private struct AddDocumentSheet: View {
-    let candidates: [ProjectDocument]
-    let onAdd: (ProjectDocument) -> Void
+/// Choosing what to add, several documents at once, into one section chosen up front.
+/// Reachable only from inside a project: adding from the catalogue itself, while a file is
+/// still where it actually is, belongs to whichever screen owns that context menu, not
+/// here.
+private struct AddDocumentsSheet: View {
+    let candidates: [ProjectMember]
+    let knownSections: [String]
+    let onAdd: (_ hashes: Set<String>, _ section: String?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    @State private var selected: Set<String> = []
+    @State private var section = ""
 
-    private var filtered: [ProjectDocument] {
+    private var filtered: [ProjectMember] {
         guard !query.isEmpty else { return candidates }
-        return candidates.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        return candidates.filter {
+            $0.document.title.localizedCaseInsensitiveContains(query)
+                || ($0.author?.localizedCaseInsensitiveContains(query) ?? false)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Add a Document").font(.headline)
+            Text("Add Documents").font(.headline)
             TextField("Search your library", text: $query)
                 .textFieldStyle(.roundedBorder)
             if filtered.isEmpty {
@@ -389,17 +547,66 @@ private struct AddDocumentSheet: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             } else {
-                List(filtered, id: \.contentHash) { document in
-                    Button(document.title) {
-                        onAdd(document)
-                        dismiss()
+                List(filtered) { member in
+                    Button {
+                        toggle(member)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: selected.contains(member.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selected.contains(member.id) ? Color.accentColor : Color.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(member.document.title)
+                                if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
+                                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
                 .listStyle(.plain)
             }
+            if !knownSections.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(knownSections, id: \.self) { name in
+                            Button(name) { section = name }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
+                    }
+                }
+            }
+            TextField("Section (optional)", text: $section)
+                .textFieldStyle(.roundedBorder)
+                .tip("Leave blank to file these under nothing")
+            HStack {
+                if !selected.isEmpty {
+                    Text("\(selected.count) selected").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button(addButtonTitle) {
+                    let trimmed = section.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onAdd(selected, trimmed.isEmpty ? nil : trimmed)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selected.isEmpty)
+            }
         }
         .padding()
-        .frame(width: 400, height: 320)
+        .frame(width: 440, height: 440)
+    }
+
+    private var addButtonTitle: String {
+        selected.isEmpty ? "Add" : "Add \(selected.count) Document\(selected.count == 1 ? "" : "s")"
+    }
+
+    private func toggle(_ member: ProjectMember) {
+        if selected.contains(member.id) { selected.remove(member.id) } else { selected.insert(member.id) }
     }
 }
 
@@ -643,8 +850,8 @@ private struct CitationKey: Hashable, Comparable {
 // MARK: - Shared
 
 /// `Binding(get:set:)` inline in a modifier chain pushes some of these bodies past what
-/// the type-checker will work through in reasonable time (App.swift has the same fix, for
-/// the same reason, at its own `aiErrorShown`).
+/// the type-checker will work through in reasonable time (Catalogue.swift has the same
+/// fix, for the same reason, at its own `aiErrorShown`).
 @MainActor
 private func errorShown(for store: ProjectsStore) -> Binding<Bool> {
     Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })
