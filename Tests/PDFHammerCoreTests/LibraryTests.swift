@@ -623,6 +623,19 @@ final class LibraryBibtexTests: XCTestCase {
                 document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                 first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL
             );
+            -- A real version 2 database has all of version 1's tables, and later
+            -- migrations alter them. A fixture holding only the two tables this test
+            -- reads is not a version 2 database, it is a fiction that migrates
+            -- differently, which is how this test caught itself.
+            CREATE TABLE projects (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE project_members (
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, document_id)
+            );
             PRAGMA user_version = 2;
             """
         XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
@@ -636,4 +649,108 @@ final class LibraryBibtexTests: XCTestCase {
         XCTAssertEqual(kept.count, 1)
     }
 
+}
+
+/// Tags as an organising tool, and the sections that make a reading project a reading
+/// list rather than a folder with extra steps.
+final class LibraryTagsAndSectionsTests: XCTestCase {
+
+    private func library() throws -> (Library, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tags-\(UUID().uuidString).sqlite")
+        return (try Library(url: url), url)
+    }
+
+    private func document(_ library: Library, _ name: String) async throws -> String {
+        try await library.indexDocument(path: "/tmp/\(name).pdf", contentHash: nil,
+                                        title: name).id
+    }
+
+    func testTagsAreCountedByHowMuchTheyAreUsed() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let a = try await document(library, "a")
+        let b = try await document(library, "b")
+
+        try await library.addTag("crdt", toDocument: a)
+        try await library.addTag("crdt", toDocument: b)
+        try await library.addTag("to-read", toDocument: a)
+
+        let counts = try await library.tagCounts()
+        XCTAssertEqual(counts.map(\.name), ["crdt", "to-read"], "most used first")
+        XCTAssertEqual(counts.first?.documents, 2)
+    }
+
+    func testClickingATagFindsItsDocuments() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let a = try await document(library, "a")
+        _ = try await document(library, "b")
+        try await library.addTag("crdt", toDocument: a)
+
+        let found = try await library.documents(taggedWith: "CRDT")
+        XCTAssertEqual(found.map(\.id), [a], "tags are matched whatever case they are typed in")
+    }
+
+    /// A typo otherwise splits a shelf in two, and merging is what fixes it.
+    func testRenamingATagOntoAnExistingOneMergesThem() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let a = try await document(library, "a")
+        let b = try await document(library, "b")
+        try await library.addTag("crdt", toDocument: a)
+        try await library.addTag("crdts", toDocument: b)
+
+        try await library.renameTag("crdts", to: "crdt")
+
+        let counts = try await library.tagCounts()
+        XCTAssertEqual(counts.map(\.name), ["crdt"])
+        XCTAssertEqual(counts.first?.documents, 2)
+    }
+
+    func testDeletingATagTakesItOffEveryDocument() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let a = try await document(library, "a")
+        try await library.addTag("crdt", toDocument: a)
+
+        try await library.deleteTag("crdt")
+        let remaining = try await library.tags(forDocument: a)
+        let counts = try await library.tagCounts()
+        XCTAssertTrue(remaining.isEmpty)
+        XCTAssertTrue(counts.isEmpty)
+    }
+
+    func testADocumentCanBeFiledUnderASectionOfAProject() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let project = try await library.createProject(name: "Consistency")
+        let a = try await document(library, "a")
+        let b = try await document(library, "b")
+
+        try await library.setSection("background", forDocument: a, inProject: project.id)
+        // Filed under nothing is a real state: adding must not be a two-step decision.
+        try await library.setSection(nil, forDocument: b, inProject: project.id)
+
+        let members = try await library.sectionedMembers(ofProject: project.id)
+        XCTAssertEqual(members.count, 2)
+        XCTAssertEqual(members.first(where: { $0.0.id == a })?.1, "background")
+        XCTAssertNil(members.first(where: { $0.0.id == b })?.1)
+        let sections = try await library.sections(ofProject: project.id)
+        XCTAssertEqual(sections, ["background"])
+    }
+
+    func testRefilingADocumentMovesItRatherThanAddingItTwice() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let project = try await library.createProject(name: "P")
+        let a = try await document(library, "a")
+
+        try await library.setSection("background", forDocument: a, inProject: project.id)
+        try await library.setSection("read next", forDocument: a, inProject: project.id)
+
+        let members = try await library.sectionedMembers(ofProject: project.id)
+        XCTAssertEqual(members.count, 1)
+        XCTAssertEqual(members.first?.1, "read next")
+    }
 }

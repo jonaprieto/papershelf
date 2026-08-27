@@ -118,7 +118,7 @@ public actor Library {
     /// followed by bumping `PRAGMA user_version` to match. Adding the spend ledger or the
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
-    fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3]
+    fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -242,6 +242,16 @@ public actor Library {
             origin      TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
+        """
+
+    /// A section within a reading project.
+    ///
+    /// A project of forty papers in one flat list is a folder with extra steps. A section
+    /// is what makes it a reading list: "background", "to read", "cited by chapter 3".
+    /// Null means the document is in the project but not filed under anything yet, which
+    /// has to stay possible or adding one would become a two-step decision.
+    fileprivate static let schemaV4 = """
+        ALTER TABLE project_members ADD COLUMN section TEXT;
         """
 
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
@@ -901,7 +911,17 @@ public struct ExtractedText: Sendable, Equatable {
 /// Mirrors `runCacheURL` (`Cache.swift`) exactly, down to the same folder: the run cache is
 /// a disposable preview, this file is the durable record they sit beside each other. Takes
 /// an explicit override so tests never touch the real one.
+/// Where the store lives.
+///
+/// PDFHAMMER_LIBRARY_PATH moves it, which is what keeps a test suite and the MCP server's
+/// own checks off the real one. Without it a test that merely constructs something holding
+/// `Library.shared` opens, and migrates, the library a person actually keeps their books
+/// in, which is not a thing a test may do.
 public func libraryDatabaseURL(named name: String = "library.sqlite") -> URL? {
+    if let overridden = ProcessInfo.processInfo.environment["PDFHAMMER_LIBRARY_PATH"],
+       !overridden.isEmpty {
+        return URL(fileURLWithPath: overridden)
+    }
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
         return nil
     }
@@ -1051,4 +1071,175 @@ public struct StoredBibtex: Sendable, Equatable {
     /// model produced it.
     public var origin: String
     public var updatedAt: Date
+}
+
+// MARK: - Tags, and what a reading project is made of
+
+extension Library {
+
+    /// Every tag with how many documents carry it, most used first.
+    ///
+    /// The count is what makes a tag list worth looking at: a wall of equal-looking words
+    /// says nothing about which of them organise the shelf.
+    public func tagCounts() throws -> [TagCount] {
+        try withStatement("""
+            SELECT t.id, t.name, COUNT(dt.document_id)
+            FROM tags t
+            LEFT JOIN document_tags dt ON dt.tag_id = t.id
+            GROUP BY t.id, t.name
+            ORDER BY COUNT(dt.document_id) DESC, t.name COLLATE NOCASE ASC;
+            """) { statement in
+            var out: [TagCount] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                out.append(TagCount(id: sqlite3_column_int64(statement, 0),
+                                    name: columnText(statement, 1) ?? "",
+                                    documents: Int(sqlite3_column_int64(statement, 2))))
+            }
+            return out
+        }
+    }
+
+    /// The documents carrying a tag, for a list built by clicking one.
+    public func documents(taggedWith name: String) throws -> [DocumentRecord] {
+        try withStatement("""
+            SELECT d.* FROM documents d
+            JOIN document_tags dt ON dt.document_id = d.id
+            JOIN tags t ON t.id = dt.tag_id
+            WHERE t.name = ? COLLATE NOCASE
+            ORDER BY d.last_seen_at DESC;
+            """, bind: { statement in bindText(statement, 1, name) }) { statement in
+            var out: [DocumentRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                out.append(Library.documentRecord(from: statement))
+            }
+            return out
+        }
+    }
+
+    /// Tags by document, for showing them against a list without a query per row.
+    public func tagsByDocument() throws -> [String: [String]] {
+        try withStatement("""
+            SELECT dt.document_id, t.name FROM document_tags dt
+            JOIN tags t ON t.id = dt.tag_id
+            ORDER BY t.name COLLATE NOCASE;
+            """) { statement in
+            var out: [String: [String]] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = columnText(statement, 0), let name = columnText(statement, 1)
+                else { continue }
+                out[id, default: []].append(name)
+            }
+            return out
+        }
+    }
+
+    /// Renaming a tag everywhere it is used, since a typo otherwise splits a shelf in two.
+    public func renameTag(_ name: String, to replacement: String) throws {
+        let cleaned = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { throw LibraryError.invalidTagName }
+        try transaction {
+            // The new name may already exist, in which case the two become one rather than
+            // colliding on the unique index.
+            if let existing = try tagID(named: cleaned), let old = try tagID(named: name),
+               existing != old {
+                try run("""
+                    UPDATE OR IGNORE document_tags SET tag_id = ? WHERE tag_id = ?;
+                    """) { statement in
+                    sqlite3_bind_int64(statement, 1, existing)
+                    sqlite3_bind_int64(statement, 2, old)
+                }
+                try run("DELETE FROM document_tags WHERE tag_id = ?;") { statement in
+                    sqlite3_bind_int64(statement, 1, old)
+                }
+                try run("DELETE FROM tags WHERE id = ?;") { statement in
+                    sqlite3_bind_int64(statement, 1, old)
+                }
+            } else {
+                try run("UPDATE tags SET name = ? WHERE name = ? COLLATE NOCASE;") { statement in
+                    bindText(statement, 1, cleaned)
+                    bindText(statement, 2, name)
+                }
+            }
+        }
+    }
+
+    /// Removes a tag from every document and from the list.
+    public func deleteTag(_ name: String) throws {
+        try transaction {
+            guard let id = try tagID(named: name) else { return }
+            try run("DELETE FROM document_tags WHERE tag_id = ?;") { statement in
+                sqlite3_bind_int64(statement, 1, id)
+            }
+            try run("DELETE FROM tags WHERE id = ?;") { statement in
+                sqlite3_bind_int64(statement, 1, id)
+            }
+        }
+    }
+
+    private func tagID(named name: String) throws -> Int64? {
+        try withStatement("SELECT id FROM tags WHERE name = ? COLLATE NOCASE;",
+                          bind: { statement in bindText(statement, 1, name) }) { statement in
+            sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : nil
+        }
+    }
+
+    // MARK: Project sections
+
+    /// Files a document under a section of a project, adding it if it is not a member yet.
+    /// A nil section means it is in the project but filed under nothing.
+    public func setSection(_ section: String?, forDocument documentID: String,
+                           inProject projectID: Int64, addedAt: Date = Date()) throws {
+        let cleaned = section?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try run("""
+            INSERT INTO project_members (project_id, document_id, added_at, section)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(project_id, document_id) DO UPDATE SET section = excluded.section;
+            """) { statement in
+            sqlite3_bind_int64(statement, 1, projectID)
+            bindText(statement, 2, documentID)
+            bindText(statement, 3, Library.isoString(addedAt))
+            bindText(statement, 4, (cleaned?.isEmpty ?? true) ? nil : cleaned)
+        }
+    }
+
+    /// A project's documents with the section each is filed under.
+    public func sectionedMembers(ofProject projectID: Int64) throws -> [(DocumentRecord, String?)] {
+        try withStatement("""
+            SELECT d.*, m.section FROM documents d
+            JOIN project_members m ON m.document_id = d.id
+            WHERE m.project_id = ?
+            ORDER BY m.section IS NULL, m.section COLLATE NOCASE, m.added_at;
+            """, bind: { statement in sqlite3_bind_int64(statement, 1, projectID) }) { statement in
+            var out: [(DocumentRecord, String?)] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                // The section is the column after documents' own, which documentRecord
+                // reads by index from the start.
+                let section = columnText(statement, sqlite3_column_count(statement) - 1)
+                out.append((Library.documentRecord(from: statement), section))
+            }
+            return out
+        }
+    }
+
+    /// The sections in use in a project, for offering them rather than making people
+    /// retype one they already invented.
+    public func sections(ofProject projectID: Int64) throws -> [String] {
+        try withStatement("""
+            SELECT DISTINCT section FROM project_members
+            WHERE project_id = ? AND section IS NOT NULL
+            ORDER BY section COLLATE NOCASE;
+            """, bind: { statement in sqlite3_bind_int64(statement, 1, projectID) }) { statement in
+            var out: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let name = columnText(statement, 0) { out.append(name) }
+            }
+            return out
+        }
+    }
+}
+
+public struct TagCount: Sendable, Equatable, Identifiable {
+    public var id: Int64
+    public var name: String
+    public var documents: Int
 }

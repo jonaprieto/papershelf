@@ -11,6 +11,15 @@ import PDFHammerCore
 /// still passed.
 final class AIClientTests: XCTestCase {
 
+    /// Constructing a client reaches for `Library.shared`, which opens the store at the
+    /// standard path. Left alone, running these tests would open and migrate the library a
+    /// person keeps their books in, so the suite is pointed at a scratch file instead.
+    override class func setUp() {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pdfhammer-tests-\(UUID().uuidString).sqlite")
+        setenv("PDFHAMMER_LIBRARY_PATH", scratch.path, 1)
+    }
+
     func testAClientRecordsSpendWithoutBeingAskedTo() {
         let client = AIClient(baseURL: "https://api.openai.com/v1", model: "gpt-5", apiKey: "k")
         XCTAssertNotNil(client.spendRecorder,
