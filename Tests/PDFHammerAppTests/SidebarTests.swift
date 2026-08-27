@@ -27,7 +27,7 @@ final class SidebarTests: XCTestCase {
     func testRailTabsAreAllStillThere() {
         let expected: [SidebarTab] = [
             .sources, .explorer, .passwords, .naming, .files,
-            .ai, .bibtex, .tags, .library, .reading, .log, .appearance,
+            .ai, .bibtex, .tags, .library, .reading, .log, .settings,
         ]
         XCTAssertEqual(SidebarTab.allCases, expected)
     }
@@ -37,6 +37,9 @@ final class SidebarTests: XCTestCase {
         XCTAssertEqual(Set(icons).count, icons.count, "two tabs share an icon")
         XCTAssertEqual(SidebarTab.explorer.icon, "list.bullet.indent")
         XCTAssertEqual(SidebarTab.tags.icon, "tag")
+        // The settings are a tab now, not a window: the gear has to be in the rail, since
+        // nothing else opens them.
+        XCTAssertEqual(SidebarTab.settings.icon, "gearshape")
     }
 
     // MARK: - Rail width under a squeeze

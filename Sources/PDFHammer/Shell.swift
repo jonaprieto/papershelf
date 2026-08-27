@@ -33,9 +33,16 @@ struct PDFHammerApp: App {
         Window("PDF Hammer", id: "main") {
             ContentView(chrome: chrome)
         }
-        Settings { SettingsView() }
         .commands {
             CommandGroup(replacing: .newItem) {}
+            // No Settings scene to open any more: ⌘, selects the settings tab in the
+            // sidebar, which is where the settings now live.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NotificationCenter.default.post(name: .showSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
                     .keyboardShortcut("z", modifiers: .command)
@@ -207,6 +214,12 @@ extension Color {
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
         })
     }
+}
+
+extension Notification.Name {
+    /// Posted by ⌘, and by anything else offering a way into the settings, which are a tab
+    /// in the sidebar rather than a window of their own.
+    static let showSettings = Notification.Name("PDFHammer.showSettings")
 }
 
 func srgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor {

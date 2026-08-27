@@ -398,6 +398,9 @@ struct ContentView: View {
             add(urls)
             return true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { _ in
+            selectTab(.settings)
+        }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
         .onAppear {
             seedNamePatternIfNeeded()
@@ -489,7 +492,7 @@ struct ContentView: View {
             case .library: libraryPanel
             case .reading: readingPanel
             case .log: logPanel
-            case .appearance: appearancePanel
+            case .settings: settingsPanel
             }
         }
         .formStyle(.grouped)
@@ -514,14 +517,6 @@ struct ContentView: View {
                 RailButton(tab: tab, isSelected: sidebarTab == tab) { selectTab(tab) }
             }
             Spacer()
-            SettingsLink {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15))
-                    .frame(width: 34, height: 32)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .tip("API key, model and endpoint", key: "⌘,")
         }
         .padding(.vertical, 8)
         .frame(width: railWidth)
@@ -1246,7 +1241,9 @@ struct ContentView: View {
                 Toggle("Ask on each new file", isOn: $autoIdentify)
                     .disabled(!aiReady)
                     .help("One request per file as you reach it, billed like any other")
-                SettingsLink {
+                Button {
+                    selectTab(.settings)
+                } label: {
                     Label("Open settings", systemImage: "gearshape")
                 }
                 .buttonStyle(.link)
@@ -1464,8 +1461,11 @@ struct ContentView: View {
         }
     }
 
+    /// Appearance and the settings that used to live in a window of their own, in one
+    /// tab: both are set once and then forgotten, and neither was worth a second place to
+    /// look. See `SettingsPanel` for why the window went.
     @ViewBuilder
-    private var appearancePanel: some View {
+    private var settingsPanel: some View {
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
@@ -1473,6 +1473,7 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+            SettingsPanel()
     }
 
 
@@ -1481,8 +1482,10 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            SettingsLink { Label("Settings", systemImage: "gearshape") }
-                .help("API key, model and endpoint")
+            Button { selectTab(.settings) } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .tip("API key, model, prices and the ChatGPT plugin", key: "⌘,")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -1729,7 +1732,7 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, passwords, naming, files, ai, bibtex, tags, library, reading, log, appearance
+    case sources, explorer, passwords, naming, files, ai, bibtex, tags, library, reading, log, settings
 
     var id: String { rawValue }
 
@@ -1746,7 +1749,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .library: return "books.vertical"
         case .reading: return "highlighter"
         case .log: return "list.bullet.rectangle"
-        case .appearance: return "paintbrush"
+        case .settings: return "gearshape"
         }
     }
 
@@ -1763,7 +1766,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .library: return "Library"
         case .reading: return "Reading"
         case .log: return "Activity"
-        case .appearance: return "Appearance"
+        case .settings: return "Settings"
         }
     }
 }

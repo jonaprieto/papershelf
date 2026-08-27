@@ -1,9 +1,14 @@
 import SwiftUI
 import PDFHammerCore
 
-/// Settings live in their own window (⌘,) rather than the sidebar, because they are set
-/// once and then forgotten, unlike the naming rules next to the results.
-struct SettingsView: View {
+/// The settings, as bare `Section`s for the sidebar's own `Form`.
+///
+/// They used to be a window of their own. That window sized itself to the whole form at
+/// once (`fixedSize` vertically, on six sections including a spend ledger), so on anything
+/// short of a large display the bottom of it was simply off the screen with no way to
+/// scroll to it. In the sidebar they sit in the same scrolling panel as every other tab,
+/// and there is one place to look for a setting rather than two.
+struct SettingsPanel: View {
     @AppStorage("aiModel") private var model = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
@@ -36,7 +41,9 @@ struct SettingsView: View {
     private var environmentKey: String? { AIClient.environmentKey() }
 
     var body: some View {
-        Form {
+        // Bare Sections, like every other tab: the sidebar owns the Form, and nesting a
+        // second one inside it boxes and indents this tab differently from its siblings.
+        Group {
             Section {
                 Toggle("Use OPENAI_API_KEY from the environment", isOn: $useEnvironment)
                 if useEnvironment {
@@ -152,9 +159,6 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
         .onAppear { key = StoredKey.shared.value ?? "" }
         .task { await loadEntries() }
     }
