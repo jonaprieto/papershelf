@@ -1,8 +1,27 @@
 {
   "name": "pdf-hammer",
-  "version": "1.1.0",
-  "description": "Read your PDF library: search it, read a document as Markdown, and see what you highlighted.",
+  "version": "1.2.0",
+  "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
   "author": { "name": "PDF Hammer" },
-  "keywords": ["pdf", "research", "bibliography", "highlights"],
-  "mcpServers": "./.mcp.json"
+  "homepage": "https://github.com/jonaprieto/pdf-hammer",
+  "repository": "https://github.com/jonaprieto/pdf-hammer",
+  "keywords": ["pdf", "research", "papers", "books", "bibliography", "highlights", "bibtex", "library"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "PDF Hammer",
+    "shortDescription": "Search and cite your own PDFs",
+    "longDescription": "PDF Hammer keeps a local index of the papers and books on your Mac. This plugin lets ChatGPT read it: search by title, author or full text, open a document or a single page as Markdown, list what you highlighted and the notes you left, pull a BibTeX entry, find duplicate copies of the same work, and browse your tags and reading projects. Everything runs against the app's own MCP server on your machine, so the files never leave it and nothing is uploaded. Requires PDF Hammer to be installed.",
+    "developerName": "PDF Hammer",
+    "category": "Education & Research",
+    "capabilities": ["Read", "Research", "Local processing"],
+    "websiteURL": "https://github.com/jonaprieto/pdf-hammer",
+    "brandColor": "#586CE8",
+    "defaultPrompt": [
+      "What did I highlight in the Milner paper?",
+      "Find the papers I have on session types",
+      "Give me a BibTeX entry for this book"
+    ],
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
 }

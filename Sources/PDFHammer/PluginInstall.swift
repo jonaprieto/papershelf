@@ -109,7 +109,12 @@ enum ChatGPTPlugin {
         try? fm.removeItem(at: paths.destination)
         let codexPluginDir = paths.destination.appendingPathComponent(".codex-plugin", isDirectory: true)
         try fm.createDirectory(at: codexPluginDir, withIntermediateDirectories: true)
-        try pluginManifestData().write(to: codexPluginDir.appendingPathComponent("plugin.json"))
+        // The listing shows the icon the manifest points at, and a manifest pointing at a
+        // file that is not there is worse than one with no icon: copy first, and only claim
+        // the asset if the copy actually landed. A command-line debug build has no bundle to
+        // copy it from, which is why this is allowed to come up empty.
+        let logo = copyLogo(into: paths.destination)
+        try pluginManifestData(hasLogo: logo).write(to: codexPluginDir.appendingPathComponent("plugin.json"))
         try serverManifestData(command: serverURL.path).write(to: paths.destination.appendingPathComponent(".mcp.json"))
         try marketplaceData.write(to: paths.marketplace, options: .atomic)
 
@@ -167,26 +172,98 @@ enum ChatGPTPlugin {
         ["name": "pdf-hammer",
          "source": ["source": "local", "path": "./pdf-hammer"],
          "policy": ["installation": "AVAILABLE"],
-         "category": "Productivity"]
+         "category": "Education & Research"]
+    }
+
+    /// Copies the icon out of the app bundle and into the plugin's own `assets/`, since the
+    /// listing can only show a file that lives inside the plugin. Returns whether it is
+    /// there to be pointed at.
+    static func copyLogo(into destination: URL,
+                         source: URL? = Bundle.main.url(forResource: "PluginLogo", withExtension: "png")) -> Bool {
+        guard let source else { return false }
+        let assets = destination.appendingPathComponent("assets", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: source, to: assets.appendingPathComponent("logo.png"))
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - The plugin's own files, matching Plugin/pdf-hammer/
 
-    private static func pluginManifestData() throws -> Data {
-        try serialize([
+    /// What the marketplace listing is built from. `interface` is the half that shows: a
+    /// listing with no `displayName` and no `shortDescription` renders as a bare folder
+    /// name with an empty line under it, next to entries that say what they do.
+    static func pluginManifestData(hasLogo: Bool, installedAt: Date = Date()) throws -> Data {
+        var interface: [String: Any] = [
+            "displayName": "PDF Hammer",
+            "shortDescription": "Search and cite your own PDFs",
+            "longDescription":
+                "PDF Hammer keeps a local index of the papers and books on your Mac. This "
+                + "plugin lets ChatGPT read it: search by title, author or full text, open a "
+                + "document or a single page as Markdown, list what you highlighted and the "
+                + "notes you left, pull a BibTeX entry, find duplicate copies of the same "
+                + "work, and browse your tags and reading projects. Everything runs against "
+                + "the app's own MCP server on your machine, so the files never leave it and "
+                + "nothing is uploaded. Requires PDF Hammer to be installed.",
+            "developerName": "PDF Hammer",
+            "category": "Education & Research",
+            "capabilities": ["Read", "Research", "Local processing"],
+            "websiteURL": "https://github.com/jonaprieto/pdf-hammer",
+            "brandColor": "#586CE8",
+            "defaultPrompt": [
+                "What did I highlight in the Milner paper?",
+                "Find the papers I have on session types",
+                "Give me a BibTeX entry for this book",
+            ],
+        ]
+        if hasLogo {
+            interface["composerIcon"] = "./assets/logo.png"
+            interface["logo"] = "./assets/logo.png"
+        }
+        return try serialize([
             "name": "pdf-hammer",
-            "version": "1.1.0",
-            "description": "Read your PDF library: search it, read a document as Markdown, "
-                          + "and see what you highlighted.",
+            "version": cachebustedVersion(installedAt: installedAt),
+            "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
             "author": ["name": "PDF Hammer"],
-            "keywords": ["pdf", "research", "bibliography", "highlights"],
+            "homepage": "https://github.com/jonaprieto/pdf-hammer",
+            "repository": "https://github.com/jonaprieto/pdf-hammer",
+            "keywords": ["pdf", "research", "papers", "books", "bibliography",
+                         "highlights", "bibtex", "library"],
             "mcpServers": "./.mcp.json",
+            "interface": interface,
         ])
     }
 
-    private static func serverManifestData(command: String) throws -> Data {
+    /// The version, with the moment of the install as semver build metadata.
+    ///
+    /// A local plugin is read once and cached by version. Reinstalling the same "1.2.0" over
+    /// itself leaves the old name, description and icon on screen, which is exactly the loop
+    /// this is meant to close: every install is a version the app has not seen before.
+    /// Build metadata is ignored when versions are compared, so this is a cache key and not
+    /// a version bump.
+    static func cachebustedVersion(installedAt: Date, appVersion: String = releaseVersion) -> String {
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.timeZone = TimeZone(identifier: "UTC")
+        stamp.dateFormat = "yyyyMMddHHmmss"
+        return "\(appVersion)+codex.\(stamp.string(from: installedAt))"
+    }
+
+    /// The app's own version, so the plugin cannot claim a different one than the build it
+    /// points at. A command-line build has no Info.plist to read it from.
+    static var releaseVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+    }
+
+    /// `mcpServers`, not `mcp_servers`: the plugin schema names it in camel case, and a
+    /// `.mcp.json` carrying the other spelling has no servers in it as far as validation is
+    /// concerned.
+    static func serverManifestData(command: String) throws -> Data {
         try serialize([
-            "mcp_servers": [
+            "mcpServers": [
                 "pdf-hammer": ["command": command, "args": [] as [String]],
             ],
         ])

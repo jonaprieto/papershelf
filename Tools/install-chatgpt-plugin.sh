@@ -20,8 +20,17 @@ rm -rf "$DESTINATION"
 cp -R "$PLUGIN_SOURCE" "$DESTINATION"
 
 # The marketplace may already list other plugins, so it is merged rather than replaced.
-python3 - "$MARKETPLACE" <<'PY'
-import json, pathlib, sys
+# The copied manifest is also stamped with the moment of the install: a local plugin is
+# cached by version, so reinstalling the same 1.2.0 over itself would leave the old name,
+# description and icon on screen.
+python3 - "$MARKETPLACE" "$DESTINATION" <<'PY'
+import datetime, json, pathlib, sys
+
+manifest_path = pathlib.Path(sys.argv[2]) / ".codex-plugin" / "plugin.json"
+manifest = json.loads(manifest_path.read_text())
+stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+manifest["version"] = manifest["version"].split("+")[0] + f"+codex.{stamp}"
+manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 path = pathlib.Path(sys.argv[1])
 market = {"name": "local", "interface": {"displayName": "Local plugins"}, "plugins": []}
@@ -37,7 +46,7 @@ entry = {
     "name": "pdf-hammer",
     "source": {"source": "local", "path": "./pdf-hammer"},
     "policy": {"installation": "AVAILABLE"},
-    "category": "Productivity",
+    "category": "Education & Research",
 }
 market["plugins"] = [p for p in market["plugins"] if p.get("name") != "pdf-hammer"]
 market["plugins"].append(entry)

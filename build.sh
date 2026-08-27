@@ -21,6 +21,9 @@ cp "$BIN" "$APP/Contents/MacOS/PDFHammer"
 cp "$BINDIR/PDFHammerMCP" "$APP/Contents/MacOS/pdf-hammer-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# The plugin listing in the ChatGPT app shows this, copied into the plugin folder at
+# install time. It has to travel inside the bundle: a built .app has no source checkout.
+cp Resources/PluginLogo.png "$APP/Contents/Resources/PluginLogo.png"
 
 # Ad-hoc signature: enough for a locally built app, no Developer ID needed.
 codesign --force --sign - "$APP/Contents/MacOS/pdf-hammer-mcp"

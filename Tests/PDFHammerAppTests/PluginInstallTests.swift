@@ -108,7 +108,8 @@ final class PluginInstallTests: XCTestCase {
         XCTAssertEqual(names(market), ["pdf-hammer"], "must update in place, not add a second entry")
         let plugins = try XCTUnwrap(market["plugins"] as? [[String: Any]])
         let entry = try XCTUnwrap(plugins.first)
-        XCTAssertEqual(entry["category"] as? String, "Productivity", "the stale entry must be replaced, not kept")
+        XCTAssertEqual(entry["category"] as? String, "Education & Research",
+                       "the stale entry must be replaced, not kept")
     }
 
     func testInstallLeavesUnreadableJSONUntouched() throws {
@@ -149,10 +150,84 @@ final class PluginInstallTests: XCTestCase {
         XCTAssertEqual(manifest["name"] as? String, "pdf-hammer")
         XCTAssertEqual(manifest["mcpServers"] as? String, "./.mcp.json")
 
+        // camelCase, the spelling the plugin schema accepts. Under `mcp_servers` the file
+        // parses but declares no servers at all, and the plugin installs with nothing behind
+        // it.
         let server = try readJSON(paths.destination.appendingPathComponent(".mcp.json"))
-        let servers = try XCTUnwrap(server["mcp_servers"] as? [String: Any])
+        let servers = try XCTUnwrap(server["mcpServers"] as? [String: Any])
         let pdfHammer = try XCTUnwrap(servers["pdf-hammer"] as? [String: Any])
         XCTAssertEqual(pdfHammer["command"] as? String, fakeServer.path)
+    }
+
+    // MARK: - What the listing shows
+
+    /// The row in the marketplace is drawn from `interface`. Without these it renders as a
+    /// bare folder name with an empty line under it.
+    func testTheManifestCarriesEverythingTheListingNeeds() throws {
+        let paths = scratchPaths()
+        try ChatGPTPlugin.install(paths: paths, serverURL: fakeServer)
+
+        let manifest = try readJSON(paths.destination.appendingPathComponent(".codex-plugin/plugin.json"))
+        let interface = try XCTUnwrap(manifest["interface"] as? [String: Any])
+        for field in ["displayName", "shortDescription", "longDescription",
+                      "developerName", "category"] {
+            let value = interface[field] as? String
+            XCTAssertFalse(value?.isEmpty ?? true, "interface.\(field) is what the listing reads")
+        }
+        XCTAssertEqual(interface["displayName"] as? String, "PDF Hammer",
+                       "the row should say the app's name, not the folder's")
+        XCTAssertFalse((interface["capabilities"] as? [String] ?? []).isEmpty)
+        let prompts = try XCTUnwrap(interface["defaultPrompt"] as? [String])
+        XCTAssertLessThanOrEqual(prompts.count, 3, "anything past the third is dropped")
+        XCTAssertTrue(prompts.allSatisfy { $0.count <= 128 }, "a longer prompt is truncated")
+    }
+
+    /// A local plugin is cached by version, so reinstalling the same "1.2.0" over itself
+    /// would leave the old name and description on screen. The install time rides along as
+    /// build metadata, which semver ignores when comparing but the cache does not.
+    func testEachInstallIsAVersionTheAppHasNotSeen() throws {
+        let first = ChatGPTPlugin.cachebustedVersion(
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000), appVersion: "1.2.0")
+        let second = ChatGPTPlugin.cachebustedVersion(
+            installedAt: Date(timeIntervalSince1970: 1_700_000_060), appVersion: "1.2.0")
+
+        XCTAssertEqual(first, "1.2.0+codex.20231114221320")
+        XCTAssertNotEqual(first, second)
+        // The plugin claims the version of the build it points at, rather than one written
+        // down twice and left to drift.
+        XCTAssertEqual(ChatGPTPlugin.cachebustedVersion(
+            installedAt: Date(timeIntervalSince1970: 1_700_000_000), appVersion: "9.9.9"),
+            "9.9.9+codex.20231114221320")
+    }
+
+    /// An icon is claimed only when one was actually copied in. A manifest pointing at a
+    /// missing file fails validation outright, which is worse than having no icon.
+    func testNoLogoIsClaimedWhenThereIsNoneToCopy() throws {
+        let manifest = try JSONSerialization.jsonObject(
+            with: ChatGPTPlugin.pluginManifestData(hasLogo: false)) as? [String: Any]
+        let interface = try XCTUnwrap(manifest?["interface"] as? [String: Any])
+        XCTAssertNil(interface["logo"])
+        XCTAssertNil(interface["composerIcon"])
+
+        let withLogo = try JSONSerialization.jsonObject(
+            with: ChatGPTPlugin.pluginManifestData(hasLogo: true)) as? [String: Any]
+        let claimed = try XCTUnwrap(withLogo?["interface"] as? [String: Any])
+        XCTAssertEqual(claimed["logo"] as? String, "./assets/logo.png")
+    }
+
+    /// The copy lands where the manifest says it does, since the two are written apart.
+    func testTheLogoLandsWhereTheManifestPointsAtIt() throws {
+        let paths = scratchPaths()
+        let source = paths.agentsDirectory.appendingPathComponent("source-logo.png")
+        try FileManager.default.createDirectory(at: paths.agentsDirectory, withIntermediateDirectories: true)
+        try Data("not really a png".utf8).write(to: source)
+
+        XCTAssertTrue(ChatGPTPlugin.copyLogo(into: paths.destination, source: source))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: paths.destination.appendingPathComponent("assets/logo.png").path))
+
+        XCTAssertFalse(ChatGPTPlugin.copyLogo(into: paths.destination, source: nil),
+                       "a build with no bundled icon installs without one")
     }
 
     func testReinstallReplacesRatherThanAccumulatesFiles() throws {
