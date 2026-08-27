@@ -585,8 +585,10 @@ public extension OpenLibraryBook {
 ///
 /// Open Library never competes with the three paper sources for a paper's own fields, and
 /// its own fields never lose to them: an ISBN is present only when the work is an actual
-/// book, at which point Open Library is the sole source of `isbn`, `publisher` is asked from
-/// Open Library first, and the merged `type` becomes `.book` outright rather than whatever
+/// book, at which point Open Library is the sole source of `isbn` and, since it is the one
+/// source that actually describes the book rather than some other record a fuzzy Crossref
+/// search happened to return, of `title` too; `publisher` is asked from Open Library first,
+/// and the merged `type` becomes `.book` outright rather than whatever
 /// bibType(forCrossrefType:) would otherwise have produced.
 public func mergeMetadata(_ records: [NormalizedMetadata]) -> NormalizedMetadata {
     func firstValue<T>(_ order: [MetadataSource], _ field: (NormalizedMetadata) -> T?) -> T? {
@@ -616,7 +618,8 @@ public func mergeMetadata(_ records: [NormalizedMetadata]) -> NormalizedMetadata
 
     return NormalizedMetadata(
         source: isBook ? .openLibrary : primarySource(),
-        title: firstValue(titleOrder) { $0.title },
+        title: isBook ? (openLibrary?.title ?? firstValue(titleOrder) { $0.title })
+                      : firstValue(titleOrder) { $0.title },
         authors: firstValue(authorOrder) { $0.authors.isEmpty ? nil : $0.authors } ?? [],
         year: firstValue(yearOrder) { $0.year },
         doi: firstValue(paperOrder) { $0.doi },

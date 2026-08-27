@@ -393,6 +393,13 @@ final class MetadataTests: XCTestCase {
         XCTAssertNil(none)
     }
 
+    func testSearchArxivSucceedsOnAStub() async throws {
+        let entries = try await searchArxiv(title: "Attention Is All You Need",
+                                            fetch: stubFetch(body: Data(arxivFeedNoExtras.utf8)))
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.id, "1706.03762")
+    }
+
     func testSearchArxivThrowsHTTPOnFailureStatus() async {
         do {
             _ = try await searchArxiv(title: "x", fetch: stubFetch(status: 429, body: Data()))
@@ -565,8 +572,8 @@ final class MetadataTests: XCTestCase {
                       "falls all the way back to Open Library when nothing else supplied a name")
     }
 
-    /// An ISBN means an actual book: Open Library becomes the sole source of isbn and the
-    /// preferred source of publisher, the merged type is forced to .book outright, and
+    /// An ISBN means an actual book: Open Library becomes the sole source of isbn, title and
+    /// the preferred source of publisher, the merged type is forced to .book outright, and
     /// paper-only fields (container/volume/number/pages) are dropped even if some other
     /// source happened to carry a value for them.
     func testMergeWithAnISBNProducesABookRecordThatWinsOverPaperFields() {
@@ -578,6 +585,8 @@ final class MetadataTests: XCTestCase {
                                           publisher: "Wrong Publisher Inc.", type: .inbook)
         let merged = mergeMetadata([crossref, openLibrary])
         XCTAssertEqual(merged.source, .openLibrary)
+        XCTAssertEqual(merged.title, "Concrete Mathematics",
+                      "Open Library's own title wins, not a fuzzy Crossref search hit for some other edition")
         XCTAssertEqual(merged.type, .book)
         XCTAssertEqual(merged.isbn, "0201558025")
         XCTAssertEqual(merged.publisher, "Addison-Wesley", "Open Library's publisher wins for a book")
