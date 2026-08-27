@@ -445,6 +445,22 @@ extension BibtexTests {
                            arxivID: arxivID, primaryClass: primaryClass, container: container, type: type)
     }
 
+    func testFileTracksWhereTheDocumentActuallyIsNotAPendingRename() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        var pending = Item(root: root, source: root.appendingPathComponent("old-name.pdf"),
+                          destination: root.appendingPathComponent("1979-new-name.pdf"),
+                          status: .renamed)
+        let notYetApplied = bibEntries(for: [pending])[0]
+        XCTAssertEqual(notYetApplied.file, "/tmp/shelf/old-name.pdf",
+                       "the rename is only proposed; a real lookup has to open the file where it "
+                       + "actually still is, not the name it would get after Apply")
+
+        pending.carriedOut = true
+        let applied = bibEntries(for: [pending])[0]
+        XCTAssertEqual(applied.file, "/tmp/shelf/1979-new-name.pdf",
+                       "once carried out, the file really has moved to its destination")
+    }
+
     func testANewlyBuiltEntryTracksWhereItsFieldsCameFrom() {
         let known = ["/tmp/shelf/1979-godel-escher-bach.pdf":
                         BookGuess(title: "GEB", author: "Hofstadter", year: "1979")]

@@ -534,8 +534,14 @@ public func bibEntries(for items: [Item],
         if guess?.author != nil { sources["author"] = .ai }
         if year != nil { sources["year"] = guess?.year != nil ? .ai : .parsed }
 
+        // currentURL, not destination: a rename this app has only proposed, not carried
+        // out, still lives at its old path (Item.currentURL's own doc comment says as
+        // much -- "anything that reads ... the file has to use this instead, or it will
+        // be looking at a path that no longer exists"). A real lookup opens this path to
+        // read the PDF's text, so it has to point at wherever the file actually is right
+        // now, not at a destination that may not exist on disk yet.
         return BibEntry(itemKey: item.key, key: key, title: title, author: guess?.author,
-                        year: year, file: item.destination.path, type: type, fieldSources: sources)
+                        year: year, file: item.currentURL.path, type: type, fieldSources: sources)
     }
 }
 

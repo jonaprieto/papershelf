@@ -96,6 +96,11 @@ final class BibLookupStore: ObservableObject {
     /// title/author/year -- the fields it can plausibly read off a page, never a journal or
     /// a DOI it would otherwise have to invent.
     func lookUp(itemKey: String, url: URL, entry: BibEntry, passwords: [String], aiClient: AIClient) async {
+        // A rapid double-click on the row's button fires this twice before SwiftUI has
+        // swapped the button for a spinner; without this guard both calls would run their
+        // own registry chain and, worst case, both fall through to a second, separately
+        // billed AI call for the same document.
+        guard status[itemKey] != .loading else { return }
         status[itemKey] = .loading
         defer { if status[itemKey] == .loading { status[itemKey] = .notFound } }
 
@@ -141,8 +146,9 @@ final class BibLookupStore: ObservableObject {
     /// between requests: arXiv's own etiquette asks for three seconds between calls, and a
     /// burst of simultaneous requests to any of these registries risks getting this app's
     /// shared User-Agent throttled for everyone using it, not just this run. `url` maps an
-    /// entry to where its file actually is, since BibEntry only carries the destination
-    /// path a rename may not have been carried out to yet.
+    /// entry to where its file actually is; `bibEntries` already resolves `BibEntry.file`
+    /// through `Item.currentURL`, so this is a plain read of that field, not a second
+    /// lookup of its own.
     func lookUpBatch(_ entries: [BibEntry], url: @escaping (BibEntry) -> URL,
                       passwords: [String], aiClient: AIClient) {
         batchTask?.cancel()
@@ -449,7 +455,9 @@ struct BibFileView: View {
             }
         } message: {
             Text("One request per document, to doi.org, Crossref, arXiv or Open Library, "
-                 + "a couple of seconds apart. Cancel any time.")
+                 + "a couple of seconds apart. For anything none of those know, the opening "
+                 + "pages go to your configured AI model instead, at its usual per-call cost. "
+                 + "Cancel any time.")
         }
     }
 
