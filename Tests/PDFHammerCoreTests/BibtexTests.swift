@@ -156,14 +156,14 @@ extension BibtexTests {
     }
 
     func testValuesWrapAtTheLineWidth() {
-        let block = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 80))
+        let block = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 80, omit: []))
         for line in block.components(separatedBy: "\n") {
             XCTAssertLessThanOrEqual(line.count, 80, "line over budget: \(line)")
         }
         XCTAssertTrue(block.contains("\n"), "the long title should have wrapped")
 
         // Off means one line per field, however long.
-        let unwrapped = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 0))
+        let unwrapped = bibtexBlock(longEntry(), style: BibStyle(lineWidth: 0, omit: []))
         XCTAssertEqual(unwrapped.components(separatedBy: "\n").count, 6)
     }
 
@@ -171,20 +171,20 @@ extension BibtexTests {
     func testAWordLongerThanTheBudgetIsLeftWhole() {
         let path = "/Users/someone/Library/CloudStorage/Provider-account/shelf/a-very-long-file-name.pdf"
         let entry = BibEntry(itemKey: path, key: "k", title: "T", author: nil, year: nil, file: path)
-        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 40))
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 40, omit: []))
         XCTAssertTrue(block.contains(path), "the path must survive intact")
     }
 
     func testStyleOptions() {
         let entry = longEntry()
 
-        let quoted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, delimiter: .quotes))
+        let quoted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, delimiter: .quotes, omit: []))
         XCTAssertTrue(quoted.contains("= \"Hofstadter\","))
 
-        let noComma = bibtexBlock(entry, style: BibStyle(lineWidth: 0, trailingComma: false))
+        let noComma = bibtexBlock(entry, style: BibStyle(lineWidth: 0, trailingComma: false, omit: []))
         XCTAssertTrue(noComma.contains("{/tmp/a.pdf}\n}"), "last field should have no comma")
 
-        let sorted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, sortFields: true))
+        let sorted = bibtexBlock(entry, style: BibStyle(lineWidth: 0, sortFields: true, omit: []))
         let names = sorted.components(separatedBy: "\n").dropFirst().dropLast()
             .map { $0.trimmingCharacters(in: .whitespaces).components(separatedBy: " ")[0] }
         XCTAssertEqual(names, ["author", "file", "title", "year"])
@@ -250,9 +250,163 @@ extension BibtexTests {
         XCTAssertEqual(BibType.report.keyword, "techreport")
     }
 
-    func testTheFileFieldCanBeLeftOut() {
+    func testTheFileFieldIsOmittedByDefault() {
+        // A source PDF's local path has no business in a bibliography meant for a
+        // paper, so the default field filter leaves it out; asking for it back works.
         let entry = bibEntries(for: [bare("1979-x.pdf")])[0]
-        XCTAssertTrue(bibtexBlock(entry).contains("file"))
-        XCTAssertFalse(bibtexBlock(entry, style: BibStyle(omit: ["file"])).contains("file"))
+        XCTAssertFalse(bibtexBlock(entry).contains("file"))
+        XCTAssertTrue(bibtexBlock(entry, style: BibStyle(omit: [])).contains("file"))
+    }
+}
+
+extension BibtexTests {
+
+    // MARK: - Required-field validation
+
+    /// Only what a filename plus an AI guess can ever supply: title, author, year.
+    private func minimalEntry(_ type: BibType) -> BibEntry {
+        BibEntry(itemKey: "k", key: "k", title: "T", author: "A", year: "2020",
+                 file: "/tmp/a.pdf", type: type)
+    }
+
+    /// Every field this app can hold a value for, so every requirement group in every
+    /// standard has something to point at.
+    private func fullEntry(_ type: BibType) -> BibEntry {
+        BibEntry(itemKey: "k", key: "k", title: "T", author: "A", editor: "E", year: "2020",
+                 month: "jan", journal: "J", booktitle: "B", publisher: "P", institution: "I",
+                 school: "S", pages: "1--2", doi: "10.1/x", url: "https://example.com",
+                 file: "/tmp/a.pdf", type: type)
+    }
+
+    func testAFullyPopulatedEntryValidatesUnderBothStandards() {
+        for type in BibType.allCases {
+            for standard in BibStandard.allCases {
+                XCTAssertTrue(fullEntry(type).isValid(for: standard),
+                              "\(type) should validate under \(standard.label) once every field is set")
+            }
+        }
+    }
+
+    func testRequiredFieldValidationPerEntryType() {
+        // Classic BibTeX and biblatex disagree about what several of these types need,
+        // which is exactly what makes checking against both worthwhile.
+        XCTAssertEqual(minimalEntry(.book).gaps(for: .classic), ["publisher"])
+        XCTAssertEqual(minimalEntry(.book).gaps(for: .biblatex), [])
+
+        XCTAssertEqual(minimalEntry(.article).gaps(for: .classic), ["journal"])
+        XCTAssertEqual(minimalEntry(.article).gaps(for: .biblatex), ["journal"])
+
+        XCTAssertEqual(minimalEntry(.inproceedings).gaps(for: .classic), ["booktitle"])
+        XCTAssertEqual(minimalEntry(.inproceedings).gaps(for: .biblatex), ["booktitle"])
+
+        XCTAssertEqual(minimalEntry(.incollection).gaps(for: .classic), ["booktitle", "publisher"])
+        XCTAssertEqual(minimalEntry(.incollection).gaps(for: .biblatex), ["editor", "booktitle"])
+
+        XCTAssertEqual(minimalEntry(.report).gaps(for: .classic), ["institution"])
+        XCTAssertEqual(minimalEntry(.report).gaps(for: .biblatex), ["institution"])
+
+        XCTAssertEqual(minimalEntry(.thesis).gaps(for: .classic), ["school"])
+        XCTAssertEqual(minimalEntry(.thesis).gaps(for: .biblatex), ["institution"])
+
+        XCTAssertEqual(minimalEntry(.misc).gaps(for: .classic), [])
+        XCTAssertEqual(minimalEntry(.misc).gaps(for: .biblatex), [])
+
+        XCTAssertEqual(minimalEntry(.online).gaps(for: .classic), [])
+        XCTAssertEqual(minimalEntry(.online).gaps(for: .biblatex), ["doi"])
+
+        XCTAssertFalse(minimalEntry(.book).isValid(for: .classic))
+        XCTAssertTrue(minimalEntry(.misc).isValid(for: .classic))
+    }
+}
+
+extension BibtexTests {
+
+    // MARK: - Correctness
+
+    func testTitleCapitalsSurviveARoundTrip() throws {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "Gödel, Escher, Bach", file: "/tmp/a.pdf")
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 0, protectCapitals: true))
+
+        // Every capitalized word but the first is individually brace-protected...
+        XCTAssertTrue(block.contains("{Escher,}"))
+        XCTAssertTrue(block.contains("{Bach}"))
+        XCTAssertFalse(block.contains("{Gödel,}"), "the first word needs no protection")
+
+        // ...and stripping those protective braces reproduces the title exactly.
+        let value = try XCTUnwrap(bibtexTokens(block).first { $0.kind == .value }?.text)
+        let stripped = value.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "")
+        XCTAssertEqual(stripped, entry.title)
+    }
+
+    func testAuthorListsCanonicalize() {
+        XCTAssertEqual(canonicalAuthorList("Ludwig van Beethoven"), "van Beethoven, Ludwig")
+        XCTAssertEqual(canonicalAuthorList("Jean de la Fontaine and Donald Knuth"),
+                       "de la Fontaine, Jean and Knuth, Donald")
+        XCTAssertEqual(canonicalAuthorList("Beethoven, Ludwig"), "Beethoven, Ludwig")
+        XCTAssertEqual(canonicalAuthorList("Gates, Jr, Henry Louis"), "Gates, Jr, Henry Louis")
+
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", author: "Ludwig van Beethoven",
+                             file: "/tmp/a.pdf")
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 0, canonicalizeAuthors: true))
+        XCTAssertTrue(block.contains("{van Beethoven, Ludwig}"))
+    }
+
+    func testPageRangesUseTheDoubleDash() {
+        XCTAssertEqual(bibtexPageRange("7-33"), "7--33")
+        XCTAssertEqual(bibtexPageRange("7--33"), "7--33")
+        XCTAssertEqual(bibtexPageRange("7,41,73-97"), "7,41,73--97")
+        XCTAssertEqual(bibtexPageRange("43+"), "43+")
+
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", pages: "7-33", file: "/tmp/a.pdf")
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 0, normalizePageRanges: true))
+        XCTAssertTrue(block.contains("pages = {7--33},"))
+    }
+
+    func testMonthsCanBeWrittenAsMacros() {
+        XCTAssertEqual(bibtexMonthMacro("July"), "jul")
+        XCTAssertEqual(bibtexMonthMacro("7"), "jul")
+        XCTAssertEqual(bibtexMonthMacro("07"), "jul")
+        XCTAssertEqual(bibtexMonthMacro("jul"), "jul")
+        XCTAssertNil(bibtexMonthMacro("not a month"))
+
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", month: "July", file: "/tmp/a.pdf")
+        let asGiven = bibtexBlock(entry, style: BibStyle(lineWidth: 0))
+        XCTAssertTrue(asGiven.contains("month = {July},"))
+
+        let macro = bibtexBlock(entry, style: BibStyle(lineWidth: 0, monthStyle: .macro))
+        XCTAssertTrue(macro.contains("month = jul,"), "a macro needs no braces")
+    }
+
+    func testUnicodeCanBeEscapedOrPreserved() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "Café François", file: "/tmp/a.pdf")
+
+        let preserved = bibtexBlock(entry, style: BibStyle(lineWidth: 0))
+        XCTAssertTrue(preserved.contains("Café François"))
+
+        let escaped = bibtexBlock(entry, style: BibStyle(lineWidth: 0, unicodeHandling: .escape))
+        XCTAssertTrue(escaped.contains("Caf\\'{e} Fran\\c{c}ois"))
+    }
+
+    func testNumericFieldsAreWrittenBare() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", year: "1979", file: "/tmp/a.pdf")
+        XCTAssertTrue(bibtexBlock(entry, style: BibStyle(lineWidth: 0)).contains("= {1979},"))
+        let numeric = bibtexBlock(entry, style: BibStyle(lineWidth: 0, numericFields: true))
+        XCTAssertTrue(numeric.contains("= 1979,"))
+        XCTAssertFalse(numeric.contains("{1979}"), "a numeric field should carry no braces")
+    }
+
+    func testEmptyFieldsAreDroppedByDefault() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", author: "", file: "/tmp/a.pdf")
+        XCTAssertFalse(bibtexBlock(entry).contains("author"))
+        XCTAssertTrue(bibtexBlock(entry, style: BibStyle(dropEmptyFields: false)).contains("author"))
+    }
+
+    func testFieldOrderPromotesNamedFieldsFirst() {
+        let entry = BibEntry(itemKey: "k", key: "k", title: "T", author: "A", year: "2020",
+                             file: "/tmp/a.pdf")
+        let block = bibtexBlock(entry, style: BibStyle(lineWidth: 0, omit: [], fieldOrder: ["year", "title"]))
+        let names = block.components(separatedBy: "\n").dropFirst().dropLast()
+            .map { $0.trimmingCharacters(in: .whitespaces).components(separatedBy: " ")[0] }
+        XCTAssertEqual(names, ["year", "title", "author", "file"])
     }
 }
