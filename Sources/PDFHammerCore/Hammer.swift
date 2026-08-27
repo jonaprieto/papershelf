@@ -1296,20 +1296,39 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     // No backup: the original is consumed. Write the replacement to a temporary file
     // first so a failure part-way through never leaves the folder without the document.
     let destination = availableURL(directory.appendingPathComponent(newName), ignoring: source)
+    var scratch: URL?
     do {
         if status == .decrypted {
             let temp = directory.appendingPathComponent(".pdfhammer-\(UUID().uuidString).pdf")
+            scratch = temp
             guard let clean = decryptedCopy(of: doc), clean.write(to: temp) else {
                 try? fm.removeItem(at: temp)
                 return item(source, .failed, "could not write the copy; original left untouched")
             }
-            try fm.removeItem(at: source)
-            try fm.moveItem(at: temp, to: destination)
+            // The original is never deleted before its replacement exists. Removing it
+            // first meant that a move failing for any reason left the only copy of the
+            // document in a hidden temporary file the error message did not even name.
+            if sameFile(destination, source) {
+                _ = try fm.replaceItemAt(source, withItemAt: temp)
+            } else {
+                try fm.moveItem(at: temp, to: destination)
+                do {
+                    try fm.removeItem(at: source)
+                } catch {
+                    var done = item(destination, status,
+                                    "written, but the original could not be removed")
+                    done.carriedOut = true
+                    return done
+                }
+            }
         } else if destination.standardizedFileURL != source.standardizedFileURL {
             try fm.moveItem(at: source, to: destination)
         }
     } catch {
-        return item(destination, .failed, error.localizedDescription)
+        // Whatever failed, the original is still where it was, and the half-written copy
+        // does not get to linger as a hidden file nobody knows to look for.
+        if let scratch { try? fm.removeItem(at: scratch) }
+        return item(source, .failed, "\(error.localizedDescription); the original is untouched")
     }
     var done = item(destination, status)
     done.carriedOut = true

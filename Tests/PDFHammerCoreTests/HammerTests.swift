@@ -1401,3 +1401,70 @@ extension HammerTests {
         XCTAssertEqual(annotations[0].quadrilateralPoints?.count, 8, "four points per line")
     }
 }
+
+extension HammerTests {
+
+    // MARK: - The original outlives every failure
+
+    /// Decrypting in place used to delete the original and only then move the replacement
+    /// into position. Any failure in between left the document in a hidden temporary file
+    /// that the error message did not name and nothing cleaned up.
+    func testDecryptingInPlaceLeavesNoTemporaryFileBehind() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("2024-06-locked.pdf"), password: "one")
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["one"], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .decrypted)
+
+        let left = try fm.contentsOfDirectory(atPath: root.path)
+        XCTAssertEqual(left, ["2024-06-locked.pdf"], "the folder holds the document and nothing else")
+        let doc = try XCTUnwrap(loadPDF(root.appendingPathComponent("2024-06-locked.pdf")))
+        XCTAssertFalse(doc.isEncrypted)
+        XCTAssertEqual(doc.pageCount, 1)
+    }
+
+    /// Renaming while decrypting: the new file exists before the old one is removed.
+    func testDecryptingUnderANewNameKeepsExactlyOneCopy() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("Sealed 2024-06.pdf"), password: "one")
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["one"], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .decrypted)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), ["2024-06-sealed.pdf"])
+    }
+
+    /// A folder that cannot be written to must cost the user nothing.
+    func testAFailedRewriteLeavesTheOriginalWhereItWas() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        defer {
+            try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try? fm.removeItem(at: root)
+        }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try makePDF(at: root.appendingPathComponent("2024-06-locked.pdf"), password: "one")
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: root.path)
+
+        let results = process(jobs: collectJobs(roots: [root], recursive: true),
+                              options: Options(passwords: ["one"], recursive: true, dryRun: false,
+                                               backup: BackupSettings(enabled: false)))
+        XCTAssertEqual(results.first?.status, .failed)
+        XCTAssertTrue(results.first?.message.contains("untouched") ?? false,
+                      "got: \(results.first?.message ?? "")")
+
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), ["2024-06-locked.pdf"])
+        let doc = try XCTUnwrap(loadPDF(root.appendingPathComponent("2024-06-locked.pdf")))
+        XCTAssertTrue(doc.unlock(withPassword: "one"))
+    }
+}
