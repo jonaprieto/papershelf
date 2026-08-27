@@ -798,7 +798,12 @@ struct ResultsPane: View {
             let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
             let maximum = SplitLayout.inspectorMaximum(
                 available: geometry.size.width, notesShown: notesShown, contentsShown: contentsOpen)
-            let width = min(max(inspectorWidth, minimum), maximum)
+            // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
+            // when the window is narrower than the floor, and the pane is then drawn at a
+            // width the window cannot show.
+            let width = SplitLayout.inspectorWidth(
+                preferred: inspectorWidth, available: geometry.size.width,
+                notesShown: notesShown, contentsShown: contentsOpen)
             HStack(spacing: 0) {
                 // Reading gives the whole window to the page.
                 if !reading {

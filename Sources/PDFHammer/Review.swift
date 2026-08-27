@@ -94,12 +94,17 @@ struct ReviewInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+                // The rail's width is read off the room this inspector actually got, so on
+                // a window too narrow for both it is the chapter list that narrows and not
+                // the page that is squeezed to nothing, or worse, pushed off the edge.
+                GeometryReader { inspector in
                 HStack(spacing: 0) {
                     if contentsShown && !annotator.contents.isEmpty {
                         ContentsRail(annotator: annotator,
                                      close: { withAnimation(.easeOut(duration: 0.15)) {
                                          contentsShown = false } })
-                            .frame(width: 196)
+                            .frame(width: SplitLayout.contentsRailWidth(
+                                inspectorWidth: inspector.size.width))
                         Divider()
                     }
                     PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
@@ -107,6 +112,7 @@ struct ReviewInspector: View {
                     .background(.quaternary.opacity(0.35))
                     .overlay(alignment: .topTrailing) { lockedOverlay }
                     .overlay(alignment: .topLeading) { floatingSelectionBar }
+                }
                 }
 
                 Divider()
@@ -137,8 +143,21 @@ struct ReviewInspector: View {
     }
 
     private var panelHeader: some View {
+        // Two versions, widest first: on a narrow inspector, one with the status pill in it
+        // does not fit, and an HStack that does not fit does not tidy itself up -- it
+        // overlaps its own controls and runs them past the edge. Dropping the pill is the
+        // cheapest thing to lose, since the row it describes says the same thing.
+        ViewThatFits(in: .horizontal) {
+            header(showingStatus: true)
+            header(showingStatus: false)
+        }
+    }
+
+    private func header(showingStatus: Bool) -> some View {
         HStack(spacing: 8) {
-            StatusPill(status: item.status, count: nil)
+            if showingStatus {
+                StatusPill(status: item.status, count: nil)
+            }
 
             if !reading {
                 Picker("", selection: $panel) {

@@ -64,11 +64,78 @@ final class LayoutTests: XCTestCase {
     // MARK: minWidth matches what the panes actually add up to
 
     func testMinWidthMatchesTheEstablishedConstantsWithNeitherRailOpen() {
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: false, contentsShown: false), 721)
+        XCTAssertEqual(SplitLayout.minWidth(notesShown: false), 721)
     }
 
     func testMinWidthMatchesTheEstablishedConstantsWithNotesRailOpen() {
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: true, contentsShown: false), 962)
+        XCTAssertEqual(SplitLayout.minWidth(notesShown: true), 962)
+    }
+
+    // MARK: The window's floor does not move when the contents rail opens
+
+    /// Opening a table of contents used to raise the window's own minimum by nearly 200
+    /// points. A window that could grow jumped; a window that could not, one tiled or on a
+    /// small display, was asked for room it did not have and drew the inspector past its
+    /// own edge. The rail comes out of the inspector's existing share now.
+    func testOpeningTheContentsRailDoesNotMoveTheWindowsFloor() {
+        XCTAssertEqual(SplitLayout.minWidth(notesShown: false), 721)
+        XCTAssertEqual(SplitLayout.minWidth(notesShown: true), 962)
+    }
+
+    // MARK: inspectorWidth never asks for room that is not there
+
+    func testInspectorNeverExceedsTheRoomThereIs() {
+        for available in stride(from: 300.0, through: 1600.0, by: 37.0) {
+            for notes in [false, true] {
+                for contents in [false, true] {
+                    let width = SplitLayout.inspectorWidth(
+                        preferred: 460, available: available,
+                        notesShown: notes, contentsShown: contents)
+                    let used = width + SplitLayout.dividerBeforeInspector
+                        + (notes ? SplitLayout.notesReserved : 0)
+                    XCTAssertLessThanOrEqual(used, available,
+                        "available=\(available) notes=\(notes) contents=\(contents)")
+                    XCTAssertGreaterThanOrEqual(width, 0)
+                }
+            }
+        }
+    }
+
+    /// The exact case that rendered badly: a window at the floor it is allowed to have,
+    /// with the contents rail open. The old clamp returned the inspector's floor of 557,
+    /// which with the divider is more than the 721 window minus the browser's own 360.
+    func testAWindowAtItsFloorWithTheContentsRailOpenStillFits() {
+        let available = SplitLayout.minWidth(notesShown: false)
+        let old = max(SplitLayout.inspectorMinimum(contentsShown: true), 0)
+        XCTAssertGreaterThan(old + SplitLayout.dividerBeforeInspector + SplitLayout.contentFloor,
+                             available, "if this stops overflowing, the reproduction is stale")
+
+        let width = SplitLayout.inspectorWidth(
+            preferred: 460, available: available, notesShown: false, contentsShown: true)
+        XCTAssertLessThanOrEqual(width + SplitLayout.dividerBeforeInspector, available)
+    }
+
+    /// A wide window is unaffected: the inspector keeps the width it was dragged to.
+    func testADraggedWidthSurvivesOnAWindowWithRoom() {
+        XCTAssertEqual(SplitLayout.inspectorWidth(
+            preferred: 620, available: 1600, notesShown: false, contentsShown: false), 620)
+    }
+
+    // MARK: The rail narrows before the page does
+
+    func testTheContentsRailKeepsItsIdealWidthWhenThereIsRoom() {
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: 600),
+                       SplitLayout.contentsReserved - SplitLayout.dividerBeforeInspector)
+    }
+
+    func testTheContentsRailNarrowsRatherThanSqueezingThePageAway() {
+        let width = SplitLayout.contentsRailWidth(inspectorWidth: 300)
+        XCTAssertEqual(width, 300 - SplitLayout.previewFloorBesideContents)
+        XCTAssertGreaterThan(width, 0, "a rail with no width is not a table of contents")
+    }
+
+    func testTheContentsRailDisappearsRatherThanGoingNegative() {
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: 80), 0)
     }
 
     /// At the window's own stated minimum, `inspectorMaximum` must never be asked to
@@ -78,7 +145,7 @@ final class LayoutTests: XCTestCase {
     func testMaximumNeverFallsBelowMinimumAtTheWindowsOwnFloor() {
         for notes in [false, true] {
             for contents in [false, true] {
-                let available = SplitLayout.minWidth(notesShown: notes, contentsShown: contents)
+                let available = SplitLayout.minWidth(notesShown: notes)
                 let maximum = SplitLayout.inspectorMaximum(
                     available: available, notesShown: notes, contentsShown: contents)
                 let minimum = SplitLayout.inspectorMinimum(contentsShown: contents)

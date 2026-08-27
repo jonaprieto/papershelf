@@ -384,7 +384,7 @@ struct ContentView: View {
                 // actually add up to. Grows with the notes rail and, since it is nested
                 // inside the inspector, the contents rail.
                 .frame(minWidth: SplitLayout.minWidth(
-                    notesShown: chrome.notesShown, contentsShown: chrome.contentsShown))
+                    notesShown: chrome.notesShown))
                 .navigationTitle("PDF Hammer")
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
@@ -393,7 +393,7 @@ struct ContentView: View {
         }
         // The rail, the panel's own floor (matching the min above), plus the detail pane's.
         .frame(minWidth: railWidth + 244 + SplitLayout.minWidth(
-            notesShown: chrome.notesShown, contentsShown: chrome.contentsShown), minHeight: 560)
+            notesShown: chrome.notesShown), minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true

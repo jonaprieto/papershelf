@@ -49,13 +49,51 @@ public enum SplitLayout {
     }
 
     /// What the window has to be at least this wide for: the browser's floor, the divider
-    /// ahead of the inspector, the inspector's own floor (which grows when the contents
-    /// rail is open), and the notes rail when it is open. The window's own `.frame(minWidth:)`
-    /// is derived from this so it can no longer drift out of step with what the panes
-    /// inside it actually add up to.
-    public static func minWidth(notesShown: Bool, contentsShown: Bool) -> CGFloat {
-        contentFloor + dividerBeforeInspector
-            + inspectorMinimum(contentsShown: contentsShown)
+    /// ahead of the inspector, the inspector's own floor, and the notes rail when it is
+    /// open. The window's own `.frame(minWidth:)` is derived from this so it can no longer
+    /// drift out of step with what the panes inside it actually add up to.
+    ///
+    /// Deliberately not counting the contents rail. It used to, and opening a table of
+    /// contents then raised the window's minimum by nearly 200 points: a window that could
+    /// grow jumped, and a window that could not -- one tiled or filling a small display --
+    /// was asked for a width it had no way to give, so the inspector's right-hand side and
+    /// the notes rail beyond it were simply cut off. The rail now comes out of the room the
+    /// inspector already has (see `inspectorWidth` and `contentsRailWidth`), which is a
+    /// narrower page rather than a broken window.
+    public static func minWidth(notesShown: Bool) -> CGFloat {
+        contentFloor + dividerBeforeInspector + contentFloor
             + (notesShown ? notesReserved : 0)
+    }
+
+    /// A page still worth looking at beside an open contents rail. Less than the browser's
+    /// floor on purpose: this is the case where the window is already short of room, and a
+    /// page squeezed to this is better than a pane hanging off the edge of the window.
+    public static let previewFloorBesideContents: CGFloat = 140
+
+    /// The rail's drawn width inside an inspector this wide.
+    ///
+    /// The rail gives way before the page does: a list of chapter titles still reads at
+    /// 130 points, whereas a page squeezed to the same is not a page any more.
+    public static func contentsRailWidth(inspectorWidth: CGFloat) -> CGFloat {
+        let ideal = contentsReserved - dividerBeforeInspector
+        return max(0, min(ideal, inspectorWidth - previewFloorBesideContents))
+    }
+
+    /// The width the inspector actually gets: what was asked for, held between its own
+    /// floor and whatever leaves the browser its floor, and never more than the room that
+    /// exists.
+    ///
+    /// The last clause is the one that matters. Clamping to `max(minimum, ...)` alone
+    /// returns a floor the window may not be able to honour, and SwiftUI then lays the
+    /// pane out at that width regardless, pushing whatever sits beyond it off the edge.
+    /// When there is not room for both floors the two panes share what there is instead,
+    /// which keeps every pane on screen and legible even when it is smaller than anyone
+    /// would like.
+    public static func inspectorWidth(preferred: CGFloat, available: CGFloat,
+                                      notesShown: Bool, contentsShown: Bool) -> CGFloat {
+        let room = max(0, available - dividerBeforeInspector - (notesShown ? notesReserved : 0))
+        let floor = inspectorMinimum(contentsShown: contentsShown)
+        guard room >= floor + contentFloor else { return (room / 2).rounded() }
+        return min(max(preferred, floor), room - contentFloor)
     }
 }
