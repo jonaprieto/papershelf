@@ -50,6 +50,14 @@ struct ResultsPane: View {
     @StateObject private var annotator = Annotator()
     @State private var addingNote = false
     @State private var noteText = ""
+    @StateObject private var tagIndex = CatalogueTags()
+    /// The file a "New Tag…" prompt was opened for. Non-nil drives the sheet.
+    @State private var taggingItem: Item?
+    @State private var newTagName = ""
+    /// Set by right-clicking a folder here, or by the file explorer publishing
+    /// `.openFolderInCatalogue`: narrows what the catalogue shows to files under one
+    /// folder, on top of whatever the search box is doing.
+    @State private var folderScope: URL?
 
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
@@ -92,10 +100,62 @@ struct ResultsPane: View {
         runner.results.first { $0.key == selected }
     }
 
-    /// What the views show: everything, or only what the query matched.
-    private var shown: [Item] {
-        guard let keys = runner.matchingKeys else { return runner.results }
-        return runner.results.filter { keys.contains($0.key) }
+    /// The keys the search should show: Runner's own answer for the fields it
+    /// understands (name, folder, status, size, pages, year, text), narrowed further by
+    /// any `tag:` terms and by `folderScope`, neither of which Runner knows anything
+    /// about. Nil means nothing is filtering at all, the same meaning `runner.matchingKeys`
+    /// already carries on its own.
+    private var visibleKeys: Set<String>? {
+        var current: [Item]?
+        if let keys = runner.matchingKeys {
+            current = runner.results.filter { keys.contains($0.key) }
+        }
+        let tagTerms = Query(query).terms.filter { $0.field == "tag" }
+        if !tagTerms.isEmpty {
+            let base = current ?? runner.results
+            let tagQuery = PreparedQuery(Query(queryText(for: tagTerms)))
+            current = base.filter { matches(Searchable(item: $0, tags: tagIndex.tags(for: $0)), tagQuery) }
+        }
+        if let folderScope {
+            let base = current ?? runner.results
+            current = base.filter { isUnder(folderScope, $0) }
+        }
+        return current.map { Set($0.map(\.key)) }
+    }
+
+    /// Rebuilds a query string from a subset of already-parsed terms, quoting a value
+    /// back up if it had to have been quoted to produce it. Used both to isolate the
+    /// `tag:` terms for `visibleKeys` and to strip them back out before anything is
+    /// handed to Runner (see `strippingTagTerms`).
+    private func queryText(for terms: [Query.Term]) -> String {
+        terms.map { term in
+            let value = term.value.contains(" ") ? "\"\(term.value)\"" : term.value
+            guard let field = term.field else { return value }
+            let symbol = term.comparison == .greater ? ">" : term.comparison == .less ? "<" : ":"
+            return "\(field)\(symbol)\(value)"
+        }.joined(separator: " ")
+    }
+
+    /// What Runner's own search should be asked, with any `tag:` terms removed: Runner
+    /// has no idea what a document's tags are, and asking its matcher to judge a field it
+    /// cannot see would fail every file rather than the handful the catalogue itself can
+    /// tell were never tagged (see the "tag" case in `Search.swift`'s `matches`).
+    private func strippingTagTerms(_ text: String) -> String {
+        queryText(for: Query(text).terms.filter { $0.field != "tag" })
+    }
+
+    private func isUnder(_ folder: URL, _ item: Item) -> Bool {
+        let folderPath = folder.resolvingSymlinksInPath().path
+        let itemPath = item.currentURL.resolvingSymlinksInPath().path
+        return itemPath == folderPath || itemPath.hasPrefix(folderPath + "/")
+    }
+
+    /// Scopes the catalogue to one folder's files, switching to the view that shows them
+    /// as a shelf. The one function both the local right-click and the notification from
+    /// the file explorer (`.openFolderInCatalogue`) call, so the two stay in step.
+    private func openFolder(_ url: URL) {
+        folderScope = url
+        mode = .catalogue
     }
 
     private var aiClient: AIClient {
@@ -185,6 +245,14 @@ struct ResultsPane: View {
             runner.sortResults(by: sortOrder, descending: sortDescending)
         }
             .onDisappear(perform: removeKeyMonitor)
+        // Reruns whenever the result set changes size, resolving any items the tag
+        // index has not seen yet. Already-resolved items are skipped inside `refresh`,
+        // so this costs nothing extra when nothing new has arrived.
+            .task(id: runner.results.count) { await tagIndex.refresh(items: runner.results) }
+            .onReceive(NotificationCenter.default.publisher(for: .openFolderInCatalogue)) { note in
+            guard let path = note.userInfo?["path"] as? String else { return }
+            openFolder(URL(fileURLWithPath: path))
+        }
     }
 
     private func withDialogs<V: View>(_ view: V) -> some View {
@@ -193,6 +261,12 @@ struct ResultsPane: View {
             .sheet(isPresented: $showingMarkdown) {
                 if let item = selectedItem {
                     MarkdownSheet(item: item, passwords: passwords, converting: converting)
+                }
+            }
+            .sheet(item: $taggingItem) { item in
+                NewTagSheet(name: $newTagName) { name in
+                    Task { await tagIndex.add(name, to: item) }
+                    taggingItem = nil
                 }
             }
             .fileImporter(isPresented: $choosingMoveTarget,
@@ -405,6 +479,15 @@ struct ResultsPane: View {
                 selected = item.key
                 converting.clear()
                 showingMarkdown = true
+            },
+            tags: tagIndex.tags(for: item),
+            availableTags: tagIndex.everyTag,
+            tagsAvailable: tagIndex.isAvailable,
+            onAddTag: { name in Task { await tagIndex.add(name, to: item) } },
+            onRemoveTag: { name in Task { await tagIndex.remove(name, from: item) } },
+            onNewTag: {
+                newTagName = ""
+                taggingItem = item
             }
         )
     }
@@ -645,10 +728,12 @@ struct ResultsPane: View {
 
     private func catalogueGrid(columns: Int) -> some View {
         let layout = Array(repeating: GridItem(.flexible(), spacing: 18), count: columns)
+        let keys = visibleKeys
+        let shown = keys.map { visible in runner.results.filter { visible.contains($0.key) } } ?? runner.results
         return ScrollViewReader { scroll in
             ScrollView {
                 LazyVGrid(columns: layout, alignment: .leading, spacing: 18) {
-                    ForEach(runner.results) { item in
+                    ForEach(shown) { item in
                         CoverCard(
                             item: item,
                             decision: runner.decision(for: item),
@@ -740,7 +825,8 @@ struct ResultsPane: View {
             List(selection: $selected) {
                 ForEach(runner.tree) { node in
                     NodeView(node: node, expanded: $expanded, runner: runner,
-                             menu: fileMenu, visible: runner.matchingKeys)
+                             menu: fileMenu, tags: tagIndex.tags, openFolder: openFolder,
+                             visible: visibleKeys)
                 }
             }
             .listStyle(.inset)
@@ -823,6 +909,15 @@ struct ResultsPane: View {
             ScrollView(.horizontal) {
               HStack(spacing: 10) {
                 searchField
+                if let folderScope {
+                    Button {
+                        self.folderScope = nil
+                    } label: {
+                        Label(folderScope.lastPathComponent, systemImage: "folder.fill")
+                    }
+                    .controlSize(.small)
+                    .tip("Showing only this folder's files. Click to show everything again.")
+                }
                 Picker("View", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
@@ -849,7 +944,7 @@ struct ResultsPane: View {
                     ProgressView(value: Double(runner.reviewed),
                                  total: Double(max(runner.results.count, 1)))
                         .frame(width: 140)
-                    if let keys = runner.matchingKeys {
+                    if let keys = visibleKeys {
                         Text("\(keys.count) of \(runner.results.count) shown")
                             .font(.callout)
                             .monospacedDigit()
@@ -933,12 +1028,12 @@ struct ResultsPane: View {
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
-                .onSubmit { runner.search(query, passwords: passwords) }
+                .onSubmit { runner.search(strippingTagTerms(query), passwords: passwords) }
                 .onChange(of: query) { _, new in
                     // Metadata is instant; a text query waits for Return so a shelf is
                     // not read from end to end on every keystroke.
                     if new.isEmpty || !Query(new).needsText {
-                        runner.search(new, passwords: passwords)
+                        runner.search(strippingTagTerms(new), passwords: passwords)
                     }
                 }
             if runner.searching { ProgressView().controlSize(.small) }
@@ -1054,6 +1149,136 @@ struct ResultsPane: View {
     }
 }
 
+// MARK: - Tags
+
+/// Bridges the catalogue's items to the library's tags.
+///
+/// A file's identity in the library is its document id, not its path, so showing a tag
+/// on a row means resolving each item to a document first. `tagsByDocument()` already
+/// gives every tag in one query; the id lookups below are the only per-item cost, and
+/// they are done once per item, kept here, rather than once per row per repaint.
+@MainActor
+final class CatalogueTags: ObservableObject {
+    private let library: Library?
+    /// Document id -> tag names.
+    @Published private(set) var byDocument: [String: [String]] = [:]
+    /// Item key -> document id, resolved lazily as items are seen. A file the library has
+    /// never heard of (just noticed, or seen while the store could not open) has no entry
+    /// here, which is the true state: it cannot be tagged until it does.
+    @Published private(set) var documentID: [String: String] = [:]
+    /// Every tag name in use anywhere, offered when adding one so nobody has to retype or
+    /// misspell a tag that already exists.
+    @Published private(set) var everyTag: [String] = []
+
+    init(library: Library? = Library.shared) {
+        self.library = library
+    }
+
+    /// False only when the store itself could not be opened. A file simply not indexed
+    /// yet is a different, recoverable state (see `add`), not this one.
+    var isAvailable: Bool { library != nil }
+
+    func tags(for item: Item) -> [String] {
+        documentID[item.key].flatMap { byDocument[$0] } ?? []
+    }
+
+    /// Loads the tag table and resolves any items not yet mapped to a document. Safe to
+    /// call again after every change to the result set: already-resolved items are
+    /// skipped, so this only ever does work for what is new.
+    func refresh(items: [Item]) async {
+        guard let library else { return }
+        if let all = try? await library.tagsByDocument() { byDocument = all }
+        if let counts = try? await library.tagCounts() { everyTag = counts.map(\.name) }
+        for item in items where documentID[item.key] == nil {
+            let path = item.currentURL.resolvingSymlinksInPath().path
+            if let id = try? await library.document(atPath: path)?.id {
+                documentID[item.key] = id
+            }
+        }
+    }
+
+    /// Adds a tag, indexing the file first if the library has not seen it yet: a file a
+    /// run only just noticed is not a document until something says so, and making that
+    /// wait for the next full sync (`Runner.syncLibrary`, run after preview or apply)
+    /// would turn "add a tag" into "add a tag, eventually." Everything indexed here is
+    /// exactly what that sync would have written anyway, just sooner.
+    @discardableResult
+    func add(_ name: String, to item: Item) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let library, !trimmed.isEmpty else { return false }
+        let id: String
+        if let existing = documentID[item.key] {
+            id = existing
+        } else {
+            let path = item.currentURL.resolvingSymlinksInPath().path
+            guard let record = try? await library.indexDocument(
+                path: path, contentHash: nil, byteCount: item.byteCount, pageCount: item.pageCount,
+                title: item.documentInfo["Title"], author: item.documentInfo["Author"],
+                documentInfo: item.documentInfo)
+            else { return false }
+            id = record.id
+            documentID[item.key] = id
+        }
+        guard (try? await library.addTag(trimmed, toDocument: id)) != nil else { return false }
+        if !(byDocument[id]?.contains(trimmed) ?? false) {
+            byDocument[id, default: []].append(trimmed)
+            byDocument[id]?.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        }
+        if !everyTag.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            everyTag.append(trimmed)
+            everyTag.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        }
+        return true
+    }
+
+    func remove(_ name: String, from item: Item) async {
+        guard let library, let id = documentID[item.key] else { return }
+        try? await library.removeTag(name, fromDocument: id)
+        byDocument[id]?.removeAll { $0 == name }
+    }
+}
+
+/// A brand new tag's name, typed once. Mirrors `Projects.swift`'s `NewProjectSheet`: a
+/// context menu cannot host a text field reliably, so naming something new is always a
+/// small sheet like this one, never the menu itself.
+private struct NewTagSheet: View {
+    @Binding var name: String
+    let onAdd: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New Tag").font(.headline)
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { onAdd(name) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Add") { onAdd(name) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 280)
+    }
+}
+
+extension Notification.Name {
+    /// Posted by anything that wants the catalogue scoped to one folder on disk. The file
+    /// explorer `ContentView.swift` is growing publishes this when a folder is chosen
+    /// there; `Catalogue.swift`'s own right-click on a folder handles itself locally but
+    /// answers to the same notification, so either side can drive the other.
+    ///
+    /// `userInfo["path"]` is the folder's absolute filesystem path as a `String` (not a
+    /// `URL`, which does not cross `NotificationCenter`'s `Sendable` boundary without
+    /// extra ceremony). A path outside anything currently loaded is not an error: the
+    /// catalogue simply ends up showing zero files, same as any other search with no
+    /// matches.
+    static let openFolderInCatalogue = Notification.Name("PDFHammer.openFolderInCatalogue")
+}
+
 // MARK: - Review inspector
 
 struct NodeView: View {
@@ -1064,8 +1289,19 @@ struct NodeView: View {
         FileContextMenu(item: item, confirm: {}, identify: {}, moveTo: {}, trash: {},
                         skip: {}, convert: {})
     }
+    /// The library's tags for one item, kept outside this view so a tag edit does not
+    /// have to rebuild the whole tree, only repaint the rows that read it.
+    var tags: (Item) -> [String] = { _ in [] }
+    /// Answers a folder's own right-click. Passed down rather than posted as a
+    /// notification, since the caller (`ResultsPane`) already owns the state a scope
+    /// change has to land in.
+    var openFolder: (URL) -> Void = { _ in }
     /// Nil means no filter. A folder with nothing visible under it disappears too.
     var visible: Set<String>?
+    /// This node's own path in `folder:` terms, i.e. relative to whatever root it came
+    /// from: empty at the top level, since a root's own name is never part of an item's
+    /// `relativePath` (see `Item.relativePath` in `Hammer.swift`).
+    var relativeFolder: String = ""
 
     private var isHidden: Bool {
         guard let visible else { return false }
@@ -1083,7 +1319,7 @@ struct NodeView: View {
             EmptyView()
         } else if let key = node.itemKey, let item = runner.item(key) {
             ResultRow(item: item, decision: runner.decision(for: item),
-                      duplicate: runner.duplicateKind[item.key])
+                      duplicate: runner.duplicateKind[item.key], tags: tags(item))
                 .tag(key)
                 .id(key)
                 .contextMenu { menu(item) }
@@ -1093,7 +1329,8 @@ struct NodeView: View {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
                     NodeView(node: child, expanded: $expanded, runner: runner,
-                             menu: menu, visible: visible)
+                             menu: menu, tags: tags, openFolder: openFolder, visible: visible,
+                             relativeFolder: relativeFolder.isEmpty ? child.name : "\(relativeFolder)/\(child.name)")
                 }
             } label: {
                 Label {
@@ -1108,7 +1345,25 @@ struct NodeView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { expansion.wrappedValue.toggle() }
             }
+            .contextMenu {
+                Button("Open in Catalogue") {
+                    if let item = firstDescendantItem(of: node) {
+                        openFolder(item.root.appendingPathComponent(relativeFolder))
+                    }
+                }
+            }
         }
+    }
+
+    /// One file under this folder, used to recover the folder's own absolute path: a
+    /// `Node` only ever stores names, and every folder here has at least one file under
+    /// it (see `buildTree`), so there is always one to ask.
+    private func firstDescendantItem(of node: Node) -> Item? {
+        if let key = node.itemKey { return runner.item(key) }
+        for child in node.children ?? [] {
+            if let found = firstDescendantItem(of: child) { return found }
+        }
+        return nil
     }
 
     private var expansion: Binding<Bool> {
@@ -1130,6 +1385,7 @@ struct ResultRow: View {
     let item: Item
     let decision: Decision?
     var duplicate: DuplicateGroup.Kind?
+    var tags: [String] = []
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1171,6 +1427,9 @@ struct ResultRow: View {
                         .font(.caption)
                         .foregroundStyle(item.status == .failed ? .red : .orange)
                 }
+                if !tags.isEmpty {
+                    tagChips
+                }
             }
             Spacer(minLength: 0)
             if let duplicate {
@@ -1201,6 +1460,21 @@ struct ResultRow: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
+        }
+    }
+
+    /// What this file is tagged, read from the tag index rather than a query of its own
+    /// (see `CatalogueTags`), so a row full of files costs one lookup each, not one
+    /// round trip to the library each.
+    private var tagChips: some View {
+        HStack(spacing: 4) {
+            ForEach(tags, id: \.self) { tag in
+                Text(tag)
+                    .font(.caption2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(.secondary.opacity(0.15)))
+            }
         }
     }
 

@@ -11,6 +11,7 @@ import Foundation
 ///     folder:bank size>10mb    in a folder called bank, over ten megabytes
 ///     pages>100 status:locked  long, and no password opened it
 ///     text:"quick brown"       those words appear in the opening pages
+///     tag:reading              carries a tag starting with "reading"
 public struct Query: Sendable, Equatable {
     public enum Comparison: String, Sendable { case equals, greater, less }
 
@@ -48,7 +49,7 @@ public struct Query: Sendable, Equatable {
     }
 
     private static let fields: Set<String> = [
-        "name", "was", "folder", "text", "status", "size", "pages", "year",
+        "name", "was", "folder", "text", "status", "size", "pages", "year", "tag",
     ]
 
     static func term(from piece: String) -> Term? {
@@ -118,8 +119,12 @@ public struct Searchable: Sendable {
     let pages: Int
     /// Nil until the document's text has been read, which only happens for a text query.
     let text: [UInt8]?
+    /// From the library, not the file itself, so it defaults to empty: a caller that has
+    /// not resolved this item to a document and asked what it is tagged with cannot say
+    /// yes to a `tag:` term, and must not be made to guess.
+    let tags: [String]
 
-    public init(item: Item, text: String? = nil) {
+    public init(item: Item, text: String? = nil, tags: [String] = []) {
         name = normalised(item.destinationName)
         original = normalised(item.sourceName)
         folder = normalised((item.relativePath as NSString).deletingLastPathComponent)
@@ -128,6 +133,7 @@ public struct Searchable: Sendable {
         size = item.byteCount ?? 0
         pages = item.pageCount ?? 0
         self.text = text.map(normalised)
+        self.tags = tags
     }
 }
 
@@ -157,6 +163,9 @@ public func matches(_ subject: Searchable, _ query: PreparedQuery) -> Bool {
         case "folder": return contains(subject.folder, needle)
         case "status": return subject.status.hasPrefix(term.value.lowercased())
         case "year": return subject.year.hasPrefix(term.value)
+        // Empty (unresolved) tags fail rather than pass, the same convention "text"
+        // already uses: a file nothing has checked cannot be said to carry the tag.
+        case "tag": return subject.tags.contains { $0.lowercased().hasPrefix(term.value.lowercased()) }
         // A text term with no text read yet cannot be satisfied, so the file drops out
         // rather than being let through on a technicality.
         case "text": return subject.text.map { contains($0, needle) } ?? false

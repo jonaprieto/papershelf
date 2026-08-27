@@ -4,7 +4,8 @@ import XCTest
 final class SearchTests: XCTestCase {
 
     private func subject(name: String, folder: String = "bank", status: String = "renamed",
-                         size: Int = 1_000, pages: Int = 10, text: String? = nil) -> Searchable {
+                         size: Int = 1_000, pages: Int = 10, text: String? = nil,
+                         tags: [String] = []) -> Searchable {
         let root = URL(fileURLWithPath: "/tmp/shelf")
         let source = root.appendingPathComponent(folder).appendingPathComponent("ORIGINAL " + name)
         var item = Item(root: root, source: source,
@@ -12,7 +13,7 @@ final class SearchTests: XCTestCase {
                         status: Status(rawValue: status) ?? .renamed)
         item.byteCount = size
         item.pageCount = pages
-        return Searchable(item: item, text: text)
+        return Searchable(item: item, text: text, tags: tags)
     }
 
     func testBareWordsMatchEitherName() {
@@ -37,6 +38,24 @@ final class SearchTests: XCTestCase {
         XCTAssertTrue(matches(file, Query("status:lock")), "a prefix is enough")
         XCTAssertTrue(matches(file, Query("year:2024")))
         XCTAssertFalse(matches(file, Query("year:1999")))
+    }
+
+    func testTagFieldIsRecognisedByTheParser() {
+        let query = Query("tag:reading status:locked")
+        XCTAssertEqual(query.terms.count, 2)
+        XCTAssertEqual(query.terms[0].field, "tag")
+        XCTAssertEqual(query.terms[0].value, "reading")
+    }
+
+    /// Mirrors `testTextTermsNeedTextToHaveBeenRead`: a tag nobody resolved is not a match
+    /// nobody can rule out, it is simply not there yet.
+    func testTagsMatchByPrefixAndFailWhenUnresolved() {
+        let tagged = subject(name: "a.pdf", tags: ["Reading", "Bank"])
+        let untagged = subject(name: "b.pdf")
+        XCTAssertTrue(matches(tagged, Query("tag:reading")), "case-insensitive")
+        XCTAssertTrue(matches(tagged, Query("tag:read")), "a prefix is enough")
+        XCTAssertFalse(matches(tagged, Query("tag:invoice")))
+        XCTAssertFalse(matches(untagged, Query("tag:reading")), "no tags means no match, not a pass")
     }
 
     func testComparisons() {
