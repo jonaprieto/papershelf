@@ -24,5 +24,12 @@ let package = Package(
             dependencies: ["PDFHammerCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The app target had no tests at all, which is how a spend recorder that defaulted
+        // to nil went unnoticed while every call in the app recorded nothing.
+        .testTarget(
+            name: "PDFHammerAppTests",
+            dependencies: ["PDFHammer", "PDFHammerCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
