@@ -506,6 +506,22 @@ struct ResultsPane: View {
         )
     }
 
+    /// The one description of what tagging this file means, handed to every surface that
+    /// offers it, so the menu, the card and the Details panel cannot drift apart.
+    private func tagActions(for item: Item) -> TagActions {
+        TagActions(
+            tags: tagIndex.tags(for: item),
+            available: tagIndex.everyTag,
+            isAvailable: tagIndex.isAvailable,
+            add: { name in Task { await tagIndex.add(name, to: item) } },
+            remove: { name in Task { await tagIndex.remove(name, from: item) } },
+            new: {
+                newTagName = ""
+                taggingItem = item
+            }
+        )
+    }
+
     private func copyText(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -754,7 +770,8 @@ struct ResultsPane: View {
                             duplicate: runner.duplicateKind[item.key],
                             passwords: passwords,
                             covers: covers,
-                            isSelected: selected == item.key
+                            isSelected: selected == item.key,
+                            tags: tagIndex.tags(for: item)
                         )
                         .id(item.key)
                         .onTapGesture { selected = item.key }
@@ -886,6 +903,7 @@ struct ResultsPane: View {
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
                 reading: reading,
+                tags: tagActions(for: item),
                 annotator: annotator,
                 palette: palette
             )
@@ -1530,6 +1548,9 @@ struct CoverCard: View {
     let passwords: [String]
     @ObservedObject var covers: Covers
     let isSelected: Bool
+    /// What this file is tagged with. Shown on the card so a shelf can be read by tag at a
+    /// glance rather than one right-click at a time.
+    var tags: [String] = []
 
     private var name: String {
         if case .confirmed(let confirmed) = decision { return confirmed }
@@ -1565,6 +1586,19 @@ struct CoverCard: View {
                 .truncationMode(.middle)
                 .foregroundStyle(decision == .deleted ? .secondary : .primary)
                 .strikethrough(decision == .deleted)
+
+            if !tags.isEmpty {
+                FlowRow(spacing: 4) {
+                    ForEach(tags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.caption2)
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.quaternary.opacity(0.55), in: Capsule())
+                    }
+                }
+            }
         }
         .padding(7)
         .background(

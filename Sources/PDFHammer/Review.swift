@@ -31,6 +31,9 @@ struct ReviewInspector: View {
     let excerpt: String?
     let reading: Bool
 
+    /// This file's tags, so the Details panel can show and change them.
+    var tags: TagActions = .none
+
     @ObservedObject var annotator: Annotator
     @ObservedObject var palette: Palette
     @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
@@ -115,7 +118,7 @@ struct ReviewInspector: View {
                         VStack(alignment: .leading, spacing: 10) {
                             switch panel {
                             case .rename: renamePanel
-                            case .details: MetadataPanel(item: item, excerpt: excerpt)
+                            case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags)
                             case .bibtex: bibtexPanel
                             }
                         }
@@ -600,6 +603,9 @@ enum InspectorPanel: String, CaseIterable, Identifiable {
 struct MetadataPanel: View {
     let item: Item
     let excerpt: String?
+    /// Tagging where the file is actually being looked at. It was reachable only by
+    /// right-clicking a row, which is not somewhere anyone looks for it.
+    var tags: TagActions = .none
 
     private var facts: [(String, String)] {
         var rows: [(String, String)] = []
@@ -625,6 +631,8 @@ struct MetadataPanel: View {
             Text(physical)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+
+            TagStrip(actions: tags)
 
             if !facts.isEmpty {
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
