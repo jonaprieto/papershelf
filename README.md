@@ -210,6 +210,34 @@ after. Matching is a byte scan over normalised UTF-8 rather than `String.contain
 is grapheme-cluster aware and roughly fifty times slower. Both sides are canonically
 composed first, so an accent written as one code point still matches one written as two.
 
+## Talking to it from an editor
+
+PDF Hammer ships an MCP server, so Claude Code, Codex and anything else that speaks the
+Model Context Protocol can search your library, read a document as Markdown, build a
+bibliography and find duplicates. It is a separate binary inside the app bundle at
+`/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp`, and it holds no state: the
+protocol has no sessions, so every call names the folder it works on.
+
+Claude Code:
+
+```
+claude mcp add pdf-hammer -- "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
+```
+
+Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.pdf-hammer]
+command = "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
+```
+
+The tools are `list_documents`, `search_documents`, `read_document`, `bibliography` and
+`find_duplicates`. Paths are absolute paths on this machine.
+
+The server answers revision `2026-07-28`, which is stateless and asks for `server/discover`,
+and it also answers the older `initialize` handshake, because that is what installed clients
+still open with. `Tools/mcp-check.sh` drives it over stdio and checks both.
+
 ## Preview, review, apply
 
 Nothing on disk moves until you have looked at every file. **Preview** is read-only

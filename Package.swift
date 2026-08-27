@@ -14,6 +14,11 @@ let package = Package(
             dependencies: ["PDFHammerCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .executableTarget(
+            name: "PDFHammerMCP",
+            dependencies: ["PDFHammerCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(
             name: "PDFHammerCoreTests",
             dependencies: ["PDFHammerCore"],

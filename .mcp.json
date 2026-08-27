@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pdf-hammer": {
+      "type": "stdio",
+      "command": "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

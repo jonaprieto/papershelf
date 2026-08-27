@@ -8,17 +8,22 @@ APP_NAME="PDF Hammer"
 APP="dist/${APP_NAME}.app"
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/PDFHammer"
+BINDIR="$(swift build -c release --show-bin-path)"
+BIN="$BINDIR/PDFHammer"
 
 if [[ ! -f Resources/AppIcon.icns ]]; then Tools/make-icon.sh; fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PDFHammer"
+# The MCP server ships inside the bundle so an editor's config can point at one stable
+# path that survives every rebuild.
+cp "$BINDIR/PDFHammerMCP" "$APP/Contents/MacOS/pdf-hammer-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc signature: enough for a locally built app, no Developer ID needed.
+codesign --force --sign - "$APP/Contents/MacOS/pdf-hammer-mcp"
 codesign --force --sign - "$APP"
 codesign --verify --strict "$APP"
 echo "Built $APP"
