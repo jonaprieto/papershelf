@@ -1049,3 +1049,122 @@ public func extractBibtexEntry(from reply: String) -> String? {
     // A bare "@" with nothing after it is not an entry.
     return entry.count > 3 ? entry : nil
 }
+
+// MARK: - Reading an entry back out of its text
+
+/// A parsed entry, which is what an entry that has been edited or fetched actually is.
+///
+/// The app used to describe an entry by the `BibEntry` it generated, which stops being
+/// true the moment anyone edits the text or keeps a fetched one: an `@article` with four
+/// authors was still being told it was a `book` that wanted an author. Anything that
+/// judges an entry now judges the text in front of it.
+public struct ParsedBibEntry: Sendable, Equatable {
+    /// Nil when the `@name` is not one this app knows, which is not an error: a file full
+    /// of `@mastersthesis` is still a bibliography.
+    public var type: BibType?
+    public var rawType: String
+    public var key: String
+    /// Field names lowercased, since BibTeX does not care about their case.
+    public var fields: [String: String]
+
+    public func value(_ name: String) -> String? {
+        let value = fields[name.lowercased()]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    }
+}
+
+/// Nil when there is no entry in the text at all.
+public func parseBibtexEntry(_ text: String) -> ParsedBibEntry? {
+    guard let at = text.firstIndex(of: "@") else { return nil }
+    var index = text.index(after: at)
+
+    var rawType = ""
+    while index < text.endIndex, text[index].isLetter {
+        rawType.append(text[index])
+        index = text.index(after: index)
+    }
+    guard !rawType.isEmpty else { return nil }
+
+    // The body opens with a brace or a parenthesis; both are legal BibTeX.
+    while index < text.endIndex, text[index].isWhitespace { index = text.index(after: index) }
+    guard index < text.endIndex, text[index] == "{" || text[index] == "(" else { return nil }
+    let closing: Character = text[index] == "{" ? "}" : ")"
+    index = text.index(after: index)
+
+    var key = ""
+    while index < text.endIndex, text[index] != "," , text[index] != closing {
+        key.append(text[index])
+        index = text.index(after: index)
+    }
+    key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    if index < text.endIndex, text[index] == "," { index = text.index(after: index) }
+
+    var fields: [String: String] = [:]
+    while index < text.endIndex {
+        while index < text.endIndex, text[index].isWhitespace || text[index] == "," {
+            index = text.index(after: index)
+        }
+        guard index < text.endIndex, text[index] != closing else { break }
+
+        var name = ""
+        while index < text.endIndex, text[index] != "=", text[index] != closing,
+              !text[index].isWhitespace {
+            name.append(text[index])
+            index = text.index(after: index)
+        }
+        while index < text.endIndex, text[index].isWhitespace { index = text.index(after: index) }
+        guard index < text.endIndex, text[index] == "=" else { break }
+        index = text.index(after: index)
+        while index < text.endIndex, text[index].isWhitespace { index = text.index(after: index) }
+        guard index < text.endIndex else { break }
+
+        var value = ""
+        if text[index] == "{" {
+            // Braces nest, so the value ends at the one that closes the one it opened
+            // with, not at the first close brace: `{The {NASA} Report}` is one value.
+            var depth = 0
+            repeat {
+                if text[index] == "{" { depth += 1 } else if text[index] == "}" { depth -= 1 }
+                if depth > 0 && !(depth == 1 && text[index] == "{" && value.isEmpty) {
+                    value.append(text[index])
+                }
+                index = text.index(after: index)
+            } while index < text.endIndex && depth > 0
+            if value.hasPrefix("{") { value.removeFirst() }
+        } else if text[index] == "\"" {
+            index = text.index(after: index)
+            while index < text.endIndex, text[index] != "\"" {
+                value.append(text[index])
+                index = text.index(after: index)
+            }
+            if index < text.endIndex { index = text.index(after: index) }
+        } else {
+            // A bare value: a number, or a month macro like `oct`.
+            while index < text.endIndex, text[index] != ",", text[index] != closing,
+                  !text[index].isNewline {
+                value.append(text[index])
+                index = text.index(after: index)
+            }
+        }
+
+        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !cleaned.isEmpty {
+            fields[cleaned] = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    return ParsedBibEntry(type: BibType(rawValue: rawType.lowercased()), rawType: rawType,
+                          key: key, fields: fields)
+}
+
+/// Which required fields the text in front of you is missing, for the standard in use.
+///
+/// Nil when the text does not parse as an entry at all, which the caller should say
+/// differently from "this entry is fine".
+public func bibtexGaps(in text: String, standard: BibStandard) -> [String]? {
+    guard let parsed = parseBibtexEntry(text) else { return nil }
+    guard let type = parsed.type else { return [] }
+    return type.requiredFieldGroups(for: standard).compactMap { group in
+        group.contains { parsed.value($0) != nil } ? nil : group[0]
+    }
+}

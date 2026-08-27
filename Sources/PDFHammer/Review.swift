@@ -36,6 +36,10 @@ struct ReviewInspector: View {
     @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
+    /// The same preference the bibliography tab uses, so one entry is never judged by a
+    /// different standard from the file it will end up in.
+    @AppStorage("bibStandard") var bibStandard: BibStandard = .biblatex
+
     @State var citationDraft = ""
     @State var citationStored = false
     @State var citationImproving = false

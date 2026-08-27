@@ -223,12 +223,16 @@ struct BibRow: View {
     var passwords: [String] = []
 
     @ObservedObject private var lookup: BibLookupStore = .shared
+    @ObservedObject private var kept: KeptBibtex = .shared
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @AppStorage("bibStandard") private var standard: BibStandard = .biblatex
 
     private var merged: BibEntry { lookup.apply(to: entry) }
+    private var keptText: String? { kept.text(for: entry) }
+    private var keptEntry: ParsedBibEntry? { keptText.flatMap(parseBibtexEntry) }
+    private var gaps: [String] { bibGaps(entry, kept: kept, standard: standard) }
     private var status: BibLookupStatus { lookup.status[entry.itemKey] ?? .idle }
     private var changed: [String] { changedBibFields(entry, merged) }
 
@@ -238,8 +242,8 @@ struct BibRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: merged.isComplete ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(merged.isComplete ? bibGoodColor : bibWarnColor)
+            Image(systemName: gaps.isEmpty ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .foregroundStyle(gaps.isEmpty ? bibGoodColor : bibWarnColor)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -247,18 +251,23 @@ struct BibRow: View {
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(merged.title.isEmpty ? "no title" : merged.title)
+                Text(keptEntry?.value("title") ?? (merged.title.isEmpty ? "no title" : merged.title))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    if let author = merged.author {
-                        Text(author).foregroundStyle(.secondary)
+                    if let author = keptEntry?.value("author") ?? merged.author {
+                        Text(author).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    if let year = merged.year {
+                    if let year = keptEntry?.value("year") ?? merged.year {
                         Text(year).foregroundStyle(.secondary).monospacedDigit()
                     }
-                    let gaps = merged.gaps(for: standard)
+                    if keptText != nil {
+                        Text("kept")
+                            .foregroundStyle(bibGoodColor)
+                            .help("This entry was kept with the document, so it is used "
+                                  + "instead of one generated from the filename")
+                    }
                     if !gaps.isEmpty {
                         Text("missing " + gaps.joined(separator: ", ")).foregroundStyle(bibWarnColor)
                     }
@@ -346,11 +355,14 @@ struct BibFileView: View {
     @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @ObservedObject private var lookup: BibLookupStore = .shared
+    @ObservedObject private var kept: KeptBibtex = .shared
     @State private var blocks: [String] = []
     @State private var edited: String?
     @State private var copied = false
     @State private var saving = false
     @State private var confirmingLookup = false
+    @State private var confirmingImprove = false
+    @ObservedObject private var batch: BibtexBatch = .shared
 
     private var aiClient: AIClient {
         AIClient(baseURL: aiBaseURL, model: aiModel, apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
@@ -364,11 +376,27 @@ struct BibFileView: View {
     /// its own or both together.
     private var shown: [BibEntry] {
         var out = merged
-        if completeOnly { out = out.filter(\.isComplete) }
-        if validOnly { out = out.filter { $0.isValid(for: standard) } }
+        if completeOnly { out = out.filter { kept.text(for: $0) != nil || $0.isComplete } }
+        // A kept entry is judged by its own text, so an entry corrected by hand is not
+        // filtered out by a check against the guess it replaced.
+        if validOnly { out = out.filter { bibGaps($0, kept: kept, standard: standard).isEmpty } }
         return out
     }
-    private var invalidCount: Int { merged.filter { !$0.isValid(for: standard) }.count }
+    private var invalidCount: Int {
+        merged.filter { !bibGaps($0, kept: kept, standard: standard).isEmpty }.count
+    }
+    /// What the model would be asked about: every entry the standard is not satisfied by.
+    /// An entry that already validates is not worth paying for.
+    private var improvableEntries: [BibEntry] {
+        merged.filter { !bibGaps($0, kept: kept, standard: standard).isEmpty }
+    }
+
+    /// The text a batch run should start from: what was kept if anything was, otherwise
+    /// what the app would render.
+    private func currentText(for entry: BibEntry) -> String {
+        kept.text(for: entry) ?? bibtexBlock(entry, style: style)
+    }
+
     /// What a batch run would actually fetch: everything not already resolved by an
     /// earlier lookup or guess.
     private var pendingLookupCount: Int {
@@ -391,6 +419,9 @@ struct BibFileView: View {
             "\(style.dropAllCaps)", style.omit.sorted().joined(separator: ","),
             standard.rawValue, "\(lookup.metadata.count)", "\(lookup.guesses.count)",
             "\(lookup.reverted.values.reduce(0) { $0 + $1.count })",
+            // Keeping or improving an entry has to rebuild the file, or the change the
+            // user just made is not in what they copy.
+            "\(kept.byPath.count)", "\(kept.byPath.values.reduce(0) { $0 + $1.count })",
         ].joined(separator: "|")
     }
 
@@ -424,13 +455,27 @@ struct BibFileView: View {
         // Rebuilt only when the inputs actually move, off the main thread. `shown` is read
         // here, on the main actor, since it touches @Published lookup state; everything
         // after that is pure and safe to hand to a detached task.
+        .task { await kept.refresh() }
         .task(id: signature) {
             let snapshot = shown
             let currentOrder = order
             let currentStyle = style
             let currentStandard = standard
+            // The kept text is read here, on the main actor, since it is published state.
+            let keptText = Dictionary(uniqueKeysWithValues: snapshot.compactMap { entry in
+                kept.text(for: entry).map { (entry.itemKey, $0) }
+            })
             let built = await Task.detached(priority: .userInitiated) {
                 bibtexOrdered(snapshot, order: currentOrder).map { entry -> String in
+                    // A kept entry is written out as it was kept. Rendering it from the
+                    // generated fields would throw away everything a lookup or a person
+                    // added to it, which is the whole reason it was kept.
+                    if let text = keptText[entry.itemKey] {
+                        let gaps = bibtexGaps(in: text, standard: currentStandard) ?? []
+                        guard !gaps.isEmpty else { return text }
+                        return "% \(entry.key) is missing " + gaps.joined(separator: ", ")
+                            + " required by \(currentStandard.label)\n" + text
+                    }
                     let block = bibtexBlock(entry, style: currentStyle)
                     guard let warning = bibtexValidationComment(for: entry, standard: currentStandard)
                     else { return block }
@@ -458,6 +503,20 @@ struct BibFileView: View {
                  + "a couple of seconds apart. For anything none of those know, the opening "
                  + "pages go to your configured AI model instead, at its usual per-call cost. "
                  + "Cancel any time.")
+        }
+        .alert("Improve \(improvableEntries.count) entries with AI?",
+               isPresented: $confirmingImprove) {
+            Button("Cancel", role: .cancel) {}
+            Button("Improve") {
+                batch.run(improvableEntries, client: aiClient, passwords: passwords,
+                          library: Library.shared, kept: kept, standard: standard,
+                          text: currentText)
+            }
+        } message: {
+            Text("One billed request per entry, sending the entry and the first pages of "
+                 + "the document to \(aiBaseURL). Each answer is kept with its document as "
+                 + "it arrives, so stopping partway keeps what it already did. A model can "
+                 + "be confidently wrong: check the entries afterwards.")
         }
     }
 
@@ -507,6 +566,7 @@ struct BibFileView: View {
             }
 
             lookupControl
+            improveControl
 
             Spacer()
 
@@ -543,6 +603,30 @@ struct BibFileView: View {
                 .tip("Fetch a real record for each entry from doi.org, Crossref, arXiv or Open Library")
         }
     }
+
+    @ViewBuilder private var improveControl: some View {
+        if let running = batch.progress {
+            HStack(spacing: 6) {
+                ProgressView(value: Double(running.done), total: Double(max(running.total, 1)))
+                    .frame(width: 80)
+                Text("\(running.done)/\(running.total)").font(.caption).monospacedDigit()
+                Button("Stop") { batch.cancel() }.controlSize(.small)
+            }
+        } else {
+            Button("Improve \(improvableEntries.count) with AI") { confirmingImprove = true }
+                .controlSize(.small)
+                .disabled(improvableEntries.isEmpty || !aiReady)
+                .tip(aiReady
+                     ? "Ask the model to correct every entry that does not yet validate. "
+                       + "One billed request each, kept as they arrive."
+                     : "Needs an API key, in Settings")
+            if let summary = batch.lastSummary {
+                Text(summary).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
 }
 
 /// Colours one block for reading. The tokens rebuild their input exactly, so what is
@@ -584,4 +668,55 @@ struct TextDocument: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
     }
+}
+
+// MARK: - Entries the user decided on
+
+/// The kept entries, shared by everything that shows a citation.
+///
+/// A generated entry is a guess read off a filename; a kept one is what somebody decided,
+/// possibly after fetching it from a registry or correcting it by hand. Wherever both
+/// exist, the kept one is the truth, and the bibliography was showing the guess: thirty
+/// entries reported as missing an author while the entry kept beside the document had
+/// four of them.
+@MainActor
+final class KeptBibtex: ObservableObject {
+    static let shared = KeptBibtex()
+
+    @Published private(set) var byPath: [String: String] = [:]
+
+    func refresh() async {
+        guard let library = Library.shared else { return }
+        byPath = (try? await library.storedBibtexByPath()) ?? [:]
+    }
+
+    /// A document is known at more than one path once it has been renamed: `itemKey` is
+    /// where the file started and `file` is where it is going, so both are tried, each
+    /// also with symlinks resolved, since the store records resolved paths and an entry
+    /// may not be holding one.
+    func text(for entry: BibEntry) -> String? {
+        for path in [entry.itemKey, entry.file] {
+            if let found = byPath[path] { return found }
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            if let found = byPath[resolved] { return found }
+        }
+        return nil
+    }
+
+    /// After storing, so every other view showing this entry catches up without a reload.
+    func remember(_ entry: String, at paths: [String]) {
+        for path in paths { byPath[path] = entry }
+    }
+
+    func forget(_ paths: [String]) {
+        for path in paths { byPath[path] = nil }
+    }
+}
+
+/// What an entry is missing, judged from the kept text when there is one.
+@MainActor
+func bibGaps(_ entry: BibEntry, kept: KeptBibtex, standard: BibStandard) -> [String] {
+    guard let text = kept.text(for: entry) else { return entry.gaps(for: standard) }
+    // Text that does not parse is not silently called valid.
+    return bibtexGaps(in: text, standard: standard) ?? ["a readable entry"]
 }

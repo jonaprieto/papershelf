@@ -11,14 +11,12 @@ extension ReviewInspector {
 
     @ViewBuilder var bibtexPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let entry = runner.bibByItem[item.key] {
-                let missing = entry.missing
-                if !missing.isEmpty {
-                    Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                         text: "\(entry.type.rawValue) wants " + missing.joined(separator: ", ")
-                               + ". LaTeX will complain.",
-                         size: .caption)
-                }
+            if runner.bibByItem[item.key] != nil {
+                // Judged from the text on the screen, not from the entry the app would
+                // have generated: the moment anyone edits it or keeps a fetched one, the
+                // generated entry stops describing what is actually there. Recomputed on
+                // every keystroke, since citationDraft is state this view reads.
+                warning
 
                 TextEditor(text: $citationDraft)
                     .font(.system(.caption, design: .monospaced))
@@ -83,6 +81,23 @@ extension ReviewInspector {
             }
         }
         .task(id: item.key) { await loadCitation() }
+    }
+
+    /// What is wrong with the entry as it currently reads, if anything.
+    @ViewBuilder private var warning: some View {
+        if citationDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            EmptyView()
+        } else if let gaps = bibtexGaps(in: citationDraft, standard: bibStandard) {
+            if !gaps.isEmpty {
+                Note(icon: "exclamationmark.triangle.fill", tint: .orange,
+                     text: "\(parseBibtexEntry(citationDraft)?.rawType ?? "this entry") wants "
+                           + gaps.joined(separator: ", ") + ". \(bibStandard.label) will complain.",
+                     size: .caption)
+            }
+        } else {
+            Note(icon: "exclamationmark.triangle.fill", tint: .orange,
+                 text: "This does not parse as a BibTeX entry.", size: .caption)
+        }
     }
 
     /// Sends the entry and the document's opening text, and takes back a corrected one.
@@ -165,6 +180,9 @@ extension ReviewInspector {
                 try await library.storeBibtex(entry, forDocument: documentID, origin: origin)
                 citationStored = true
                 citationNote = "Kept with the document."
+                // So the bibliography tab shows it at once rather than after a reload.
+                let places = (try? await library.locations(forDocument: documentID))?.map(\.path) ?? []
+                KeptBibtex.shared.remember(entry, at: places + [path, item.key])
                 runner.note(.edited, subject: item.relativePath, detail: "citation kept")
             } catch {
                 citationNote = "Could not keep it: \(error.localizedDescription)"

@@ -617,3 +617,85 @@ extension BibtexTests {
         XCTAssertFalse(prompt.contains("Opening text"))
     }
 }
+
+extension BibtexTests {
+
+    private var realEntry: String {
+        """
+        @article{2017:verifying,
+          title = {Verifying Strong Eventual Consistency in Distributed Systems},
+          author = {Gomes, Victor B. F. and Kleppmann, Martin and Mulligan, Dominic P.},
+          year = {2017},
+          journal = {Proc. ACM Program. Lang.},
+          number = {OOPSLA},
+          pages = {109},
+          month = {October},
+          doi = {10.1145/3133933}
+        }
+        """
+    }
+
+    func testAnEntryIsReadBackOutOfItsText() {
+        let parsed = parseBibtexEntry(realEntry)
+        XCTAssertEqual(parsed?.type, .article)
+        XCTAssertEqual(parsed?.key, "2017:verifying")
+        XCTAssertEqual(parsed?.value("year"), "2017")
+        XCTAssertEqual(parsed?.value("doi"), "10.1145/3133933")
+        XCTAssertEqual(parsed?.value("journal"), "Proc. ACM Program. Lang.")
+        XCTAssertTrue(parsed?.value("author")?.hasPrefix("Gomes, Victor") ?? false)
+    }
+
+    /// The bug in the screenshot: an @article with four authors was being told it was a
+    /// book that wanted an author, because the warning described the generated entry
+    /// rather than the text on the screen.
+    func testAnEntryIsJudgedByItsOwnTypeAndFields() {
+        XCTAssertEqual(bibtexGaps(in: realEntry, standard: .biblatex), [])
+        XCTAssertEqual(bibtexGaps(in: realEntry, standard: .classic), [])
+
+        let thin = "@book{k, title = {A Title}, year = {2020}}"
+        XCTAssertEqual(bibtexGaps(in: thin, standard: .biblatex), ["author"])
+    }
+
+    func testNestedBracesAndQuotedValuesSurviveParsing() {
+        let entry = """
+            @book{k,
+              title = {The {NASA} Report, Volume {II}},
+              publisher = "Cambridge University Press",
+              year = 2020
+            }
+            """
+        let parsed = parseBibtexEntry(entry)
+        XCTAssertEqual(parsed?.value("title"), "The {NASA} Report, Volume {II}",
+                       "a comma inside braces does not end the value")
+        XCTAssertEqual(parsed?.value("publisher"), "Cambridge University Press")
+        XCTAssertEqual(parsed?.value("year"), "2020", "a bare value needs no braces")
+    }
+
+    func testFieldNamesAreCaseInsensitive() {
+        let parsed = parseBibtexEntry("@Book{k, TITLE = {A}, Author = {B, C}}")
+        XCTAssertEqual(parsed?.type, .book)
+        XCTAssertEqual(parsed?.value("title"), "A")
+        XCTAssertEqual(parsed?.value("author"), "B, C")
+    }
+
+    /// An entry type this app has no case for is still an entry, not an error.
+    func testAnUnknownTypeParsesAndIsNotReportedAsIncomplete() {
+        let parsed = parseBibtexEntry("@mastersthesis{k, title = {A}}")
+        XCTAssertNil(parsed?.type)
+        XCTAssertEqual(parsed?.rawType, "mastersthesis")
+        XCTAssertEqual(bibtexGaps(in: "@mastersthesis{k, title = {A}}", standard: .biblatex), [])
+    }
+
+    func testTextWithNoEntryHasNoGapsToReport() {
+        XCTAssertNil(parseBibtexEntry("just some words"))
+        XCTAssertNil(bibtexGaps(in: "just some words", standard: .biblatex),
+                     "nil means it does not parse, which is not the same as valid")
+    }
+
+    /// Parentheses are legal BibTeX delimiters and a pasted entry may use them.
+    func testParenthesisDelimitedEntriesParse() {
+        let parsed = parseBibtexEntry("@book(k, title = {A}, author = {B})")
+        XCTAssertEqual(parsed?.key, "k")
+        XCTAssertEqual(parsed?.value("author"), "B")
+    }
+}

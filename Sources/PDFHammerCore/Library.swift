@@ -1006,6 +1006,27 @@ extension Library {
         }
     }
 
+    /// Kept entries by every path their document is known at.
+    ///
+    /// A document has more than one path once it has been renamed, and the caller matching
+    /// these against what is on screen may hold either the old one or the new one, so both
+    /// answer.
+    public func storedBibtexByPath() throws -> [String: String] {
+        try withStatement("""
+            SELECT l.path, b.entry
+            FROM bibtex_entries b
+            JOIN locations l ON l.document_id = b.document_id;
+            """) { statement in
+            var out: [String: String] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let path = columnText(statement, 0), let entry = columnText(statement, 1) {
+                    out[path] = entry
+                }
+            }
+            return out
+        }
+    }
+
     /// Everything kept, for an export that should prefer a decided entry over a guess.
     public func storedBibtex() throws -> [StoredBibtex] {
         try withStatement("SELECT document_id, entry, origin, updated_at FROM bibtex_entries;") {

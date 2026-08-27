@@ -30,6 +30,8 @@ struct ResultsPane: View {
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @AppStorage("autoIdentify") private var autoIdentify = false
     @AppStorage("sortOrder") private var sortOrder: ItemSort = .folder
+    @AppStorage("bibStandard") private var bibStandard: BibStandard = .biblatex
+    @ObservedObject private var kept: KeptBibtex = .shared
     @AppStorage("sortDescending") private var sortDescending = false
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
@@ -588,7 +590,11 @@ struct ResultsPane: View {
     private var bibBar: some View {
       ScrollView(.horizontal) {
         HStack(spacing: 10) {
-            let incomplete = runner.bib.filter { !$0.isComplete }.count
+            // Counted the way the bibliography itself counts: an entry kept with its
+            // document is judged by its own text, not by the guess it replaced.
+            let incomplete = runner.bib.filter {
+                !bibGaps($0, kept: kept, standard: bibStandard).isEmpty
+            }.count
             Text("\(runner.bib.count) entries").font(.callout).foregroundStyle(.secondary)
             if incomplete > 0 {
                 Label("\(incomplete) incomplete", systemImage: "exclamationmark.triangle.fill")
