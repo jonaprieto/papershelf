@@ -24,9 +24,9 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 10 against
+# first run (one of its 8 lines is a notification), 5 against the missing library, 11 against
 # the scratch one.
-check("no reply to a notification", len(seen) == 7 + 5 + 10)
+check("no reply to a notification", len(seen) == 7 + 5 + 11)
 
 d = result("d")
 check(
@@ -164,6 +164,13 @@ check(
 check(
     "search_project scopes to the named project, not the whole library",
     result("49").get("structuredContent", {}).get("matched") == 0,
+)
+
+# SQLite treats a negative LIMIT as "no limit", not zero or an error; a client that computes
+# a bad limit should get nothing back, not the whole project.
+check(
+    "a negative limit is clamped, not treated as unlimited",
+    result("50").get("structuredContent", {}).get("count") == 0,
 )
 
 sys.exit(1 if check.failed else 0)

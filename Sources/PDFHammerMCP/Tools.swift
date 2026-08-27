@@ -242,7 +242,10 @@ let libraryTools: [Tool] = [
             let identifier = try requireString(arguments, "project")
             let reader = try openLibraryOrFail()
             let project = try resolveProject(identifier, in: reader)
-            let limit = arguments["limit"] as? Int ?? 500
+            // A negative LIMIT means "unlimited" to SQLite, not "none" or an error, which
+            // would silently turn a client's bad input into a full dump of every document
+            // in the project; clamping to zero keeps this tool's own "maximum" honest.
+            let limit = max(0, arguments["limit"] as? Int ?? 500)
             let documents = try reader.documents(inProject: project.id, limit: limit)
             let rows = documents.map(describeDocument)
             let text = documents.isEmpty
@@ -276,7 +279,9 @@ let libraryTools: [Tool] = [
             }
             let reader = try openLibraryOrFail()
             let project = try resolveProject(identifier, in: reader)
-            let limit = arguments["limit"] as? Int ?? 50
+            // See the identical clamp in list_project_documents: SQLite treats a negative
+            // LIMIT as unlimited, not zero or an error.
+            let limit = max(0, arguments["limit"] as? Int ?? 50)
             let documents = try reader.search(inProject: project.id, query: query, limit: limit)
             let rows = documents.map(describeDocument)
             let text = documents.isEmpty
@@ -321,7 +326,9 @@ let libraryTools: [Tool] = [
         run: { arguments in
             let tag = try requireString(arguments, "tag")
             let reader = try openLibraryOrFail()
-            let limit = arguments["limit"] as? Int ?? 200
+            // See the identical clamp in list_project_documents: SQLite treats a negative
+            // LIMIT as unlimited, not zero or an error.
+            let limit = max(0, arguments["limit"] as? Int ?? 200)
             let documents = try reader.documents(taggedWith: tag, limit: limit)
             let rows = documents.map(describeDocument)
             let text = documents.isEmpty
