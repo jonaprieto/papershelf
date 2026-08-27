@@ -335,10 +335,20 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 290, ideal: 310, max: 400)
-        } detail: {
+        // The rail sits outside the split view on purpose: it is how every part of the app
+        // is reached, and a NavigationSplitView on macOS collapses its own sidebar column,
+        // and everything in it, once the window is too narrow for both columns. With the
+        // rail inside that column the collapse took every way to reach another tab down
+        // with the panel, and nothing short of widening the window brought it back. Beside
+        // the split view instead, the panel still hides on a narrow window, as a sidebar
+        // should, while the rail stays put.
+        HStack(spacing: 0) {
+            rail
+            Divider()
+            NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
+                sidebarPanel
+                    .navigationSplitViewColumnWidth(min: 244, ideal: 264, max: 354)
+            } detail: {
             ResultsPane(
                 runner: runner,
                 covers: covers,
@@ -367,10 +377,11 @@ struct ContentView: View {
                 .navigationTitle("PDF Hammer")
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
+            }
+            .navigationSplitViewStyle(.balanced)
         }
-        .navigationSplitViewStyle(.balanced)
-        // The sidebar's own floor (matching the min above) plus the detail pane's.
-        .frame(minWidth: 290 + SplitLayout.minWidth(
+        // The rail, the panel's own floor (matching the min above), plus the detail pane's.
+        .frame(minWidth: railWidth + 244 + SplitLayout.minWidth(
             notesShown: chrome.notesShown, contentsShown: chrome.contentsShown), minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
@@ -446,39 +457,48 @@ struct ContentView: View {
 
     // MARK: Sidebar
 
-    /// An icon rail with one panel behind it, the way an editor does it. Everything used
-    /// to be one long scroll of nine sections; this shows one job at a time.
-    private var sidebar: some View {
-        HStack(spacing: 0) {
-            rail
-            Divider()
-            Form {
-                switch sidebarTab {
-                case .sources: sourcesPanel
-                case .passwords: passwordsPanel
-                case .naming:
-                    namingPanel
-                    datesPanel
-                case .files:
-                    originalsPanel
-                    runningPanel
-                case .ai: aiPanel
-                case .bibtex: bibtexPanel
-                case .library: libraryPanel
-                case .reading: readingPanel
-                case .log: logPanel
-                case .appearance: appearancePanel
-                }
+    /// The panel behind the rail. Everything used to be one long scroll of nine sections;
+    /// this shows one job at a time. The rail that switches between them is a sibling of
+    /// this in `body`, not a parent of it.
+    private var sidebarPanel: some View {
+        Form {
+            switch sidebarTab {
+            case .sources: sourcesPanel
+            case .passwords: passwordsPanel
+            case .naming:
+                namingPanel
+                datesPanel
+            case .files:
+                originalsPanel
+                runningPanel
+            case .ai: aiPanel
+            case .bibtex: bibtexPanel
+            case .library: libraryPanel
+            case .reading: readingPanel
+            case .log: logPanel
+            case .appearance: appearancePanel
             }
-            .formStyle(.grouped)
-            .frame(maxWidth: .infinity)
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Picking a tab is also a request to see it: a narrow window may have hidden the panel
+    /// behind the automatic sidebar toggle, and clicking a tab while it is hidden should
+    /// not look like nothing happened.
+    private func selectTab(_ tab: SidebarTab) {
+        sidebarTab = tab
+        if chrome.columnVisibility == .detailOnly {
+            withAnimation(.easeOut(duration: 0.18)) { chrome.columnVisibility = .all }
         }
     }
 
-    private var rail: some View {
+    // Not private: SidebarTests renders this on its own, squeezed, to check that it holds
+    // its width rather than being compressed away.
+    var rail: some View {
         VStack(spacing: 2) {
             ForEach(SidebarTab.allCases) { tab in
-                RailButton(tab: tab, isSelected: sidebarTab == tab) { sidebarTab = tab }
+                RailButton(tab: tab, isSelected: sidebarTab == tab) { selectTab(tab) }
             }
             Spacer()
             SettingsLink {
@@ -491,7 +511,7 @@ struct ContentView: View {
             .tip("API key, model and endpoint", key: "⌘,")
         }
         .padding(.vertical, 8)
-        .frame(width: 46)
+        .frame(width: railWidth)
         .background(.quaternary.opacity(0.25))
     }
 
@@ -1557,6 +1577,10 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         }
     }
 }
+
+/// The rail's width, shared by the rail itself and the window's minimum, so the two cannot
+/// drift apart. Fixed rather than flexible: it holds while the panel beside it collapses.
+let railWidth: CGFloat = 46
 
 struct RailButton: View {
     let tab: SidebarTab
