@@ -841,7 +841,6 @@ final class Runner: ObservableObject {
         case .decrypted: return .decrypted
         case .renamed: return .renamed
         case .moved: return .moved
-        case .encrypted: return .decrypted
         case .trashed: return .trashed
         case .failed: return .failed
         case .locked: return .renamed
@@ -1023,9 +1022,7 @@ struct ContentView: View {
     @AppStorage("moveOriginals") private var moveOriginals = true
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
-    @AppStorage("encryptOutput") private var encryptOutput = false
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
-    @State private var encryptPassword = ""
     @State private var choosingBackupFolder = false
     @State private var savingLog = false
     @State private var watcher: FolderWatcher?
@@ -1147,7 +1144,6 @@ struct ContentView: View {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
-                encryption: EncryptionSettings(enabled: encryptOutput, password: encryptPassword),
                 useFolderNames: useFolderNames,
                 useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
     }
@@ -1160,7 +1156,6 @@ struct ContentView: View {
             selection.map(\.path).joined(separator: "|"),
             passwords.joined(separator: "|"),
             "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
-            "\(encryptOutput)", encryptPassword.isEmpty ? "" : "set",
         ].joined(separator: "\u{1}")
     }
 
@@ -1542,29 +1537,6 @@ struct ContentView: View {
                      text: "Applying will replace the originals. Nothing is kept and there is no undo.")
             }
         }
-
-            Section {
-                Toggle("Lock the output with a password", isOn: $encryptOutput)
-                    .tip("Write every file out locked with your password")
-                if encryptOutput {
-                    LabeledContent("Password") {
-                        SecureField("", text: $encryptPassword, prompt: Text("required"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-            } header: {
-                Text("Encryption")
-            } footer: {
-                Text(encryptOutput && encryptPassword.isEmpty
-                     ? "Without a password nothing is encrypted."
-                     : "Kept in memory only, never written to preferences. Set it again next launch.")
-                    .font(.caption)
-                    .foregroundStyle(encryptOutput && encryptPassword.isEmpty
-                                     ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
-                                     : .secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
             Section {
                 Toggle("Keep the originals", isOn: $moveOriginals)
@@ -3904,7 +3876,6 @@ private struct StatusPill: View {
         case .renamed: return "textformat"
         case .locked: return "lock.fill"
         case .trashed: return "trash.fill"
-        case .encrypted: return "lock.fill"
         case .moved: return "arrow.right.doc.on.clipboard"
         case .failed: return "exclamationmark.triangle.fill"
         }
@@ -3919,7 +3890,6 @@ private struct StatusPill: View {
         case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
         case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
         case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-        case .encrypted: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
         case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
         }
     }

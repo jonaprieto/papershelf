@@ -175,8 +175,9 @@ suggestion like any other: it still has to be confirmed, and you can type over i
 confirmation that names the count, since you are billed per request.
 
 Settings (the gear, or ⌘,) holds the key, model and endpoint. Any OpenAI-compatible
-endpoint works. The key is kept in your Keychain rather than in preferences, which are a
-plain file any process running as you can read. `OPENAI_API_KEY` is used as a fallback. A
+endpoint works. The key is kept in a file only you can read under Application Support, rather than in
+preferences, which any process running as you can read. `OPENAI_API_KEY` is preferred and
+is used as a fallback when no key is saved. A
 Finder-launched app inherits launchd's environment rather than a shell's, so when the
 variable is not visible the login shell is asked for it once, in memory only.
 
@@ -208,16 +209,6 @@ concurrent and cached: about 6 s for 10,000 files the first time, and **42 ms** 
 after. Matching is a byte scan over normalised UTF-8 rather than `String.contains`, which
 is grapheme-cluster aware and roughly fifty times slower. Both sides are canonically
 composed first, so an accent written as one code point still matches one written as two.
-
-## Encryption
-
-**Lock the output with a password** writes every file out encrypted with a password of
-your choosing, which is the inverse of the rest of the app. A file that no password opened
-is passed through as it is rather than being sealed with a new one, since that would
-strand it behind a password it never had.
-
-The password is held in memory only and never written to preferences, so it has to be
-given again each launch.
 
 ## Preview, review, apply
 

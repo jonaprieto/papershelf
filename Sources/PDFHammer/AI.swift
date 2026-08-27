@@ -1,49 +1,42 @@
 import Foundation
-import Security
 import PDFHammerCore
 
 // MARK: - Key storage
 
-/// The API key lives in the Keychain, not in preferences. A preferences plist is a plain
-/// file any process running as you can read; a key is a credential and belongs where the
-/// system already protects credentials.
-enum Keychain {
-    private static let service = "com.jonaprieto.pdfhammer"
+/// The API key is kept in a file of its own under Application Support, readable only by
+/// this user.
+///
+/// The Keychain would be the better home, but every rebuild of an ad-hoc signed app is a
+/// different signature and the Keychain asks for permission again each time, which makes
+/// development miserable. A 0600 file is not a plist that other tools sync or index, and
+/// the environment variable is still the recommended route.
+enum KeyStore {
+    private static var directory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PDF Hammer", isDirectory: true)
+    }
+
+    private static func file(_ account: String) -> URL {
+        directory.appendingPathComponent("\(account).key")
+    }
 
     static func set(_ value: String, account: String) {
         remove(account: account)
         guard !value.isEmpty else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: Data(value.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
-        ]
-        SecItemAdd(query as CFDictionary, nil)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data(value.utf8).write(to: file(account), options: [.atomic, .completeFileProtection])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                               ofItemAtPath: file(account).path)
     }
 
     static func get(account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let data = try? Data(contentsOf: file(account)),
+              let text = String(data: data, encoding: .utf8), !text.isEmpty else { return nil }
+        return text
     }
 
     static func remove(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
+        try? FileManager.default.removeItem(at: file(account))
     }
 }
 

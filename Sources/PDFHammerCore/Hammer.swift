@@ -496,7 +496,6 @@ public enum Status: String, Sendable, CaseIterable, Codable {
     case decrypted   // was encrypted, password found, written out unencrypted
     case renamed     // not encrypted, passed through untouched
     case locked      // encrypted, no password matched, passed through still encrypted
-    case encrypted   // written out locked with a password of your choosing
     case trashed     // marked for deletion during review, moved to the Trash
     case moved       // sent to a folder you chose, under its new name
     case failed
@@ -549,30 +548,11 @@ public struct Item: Identifiable, Sendable, Codable {
     }
 }
 
-/// Locking output back up again, which is the inverse of what the rest of this does.
-public struct EncryptionSettings: Sendable, Equatable {
-    public var enabled: Bool
-    /// Used as both the user and the owner password. PDFKit will not encrypt without an
-    /// owner password, and two separate ones is a distinction nobody here needs.
-    public var password: String
-
-    public init(enabled: Bool = false, password: String = "") {
-        self.enabled = enabled
-        self.password = password
-    }
-
-    /// Only worth acting on when there is actually something to lock with.
-    public var isUsable: Bool { enabled && !password.isEmpty }
-
-    public static let none = EncryptionSettings()
-}
-
 public struct Options: Sendable {
     public var passwords: [String]
     public var recursive: Bool
     public var dryRun: Bool
     public var backup: BackupSettings
-    public var encryption: EncryptionSettings
     /// Move each original aside. Off means the file is replaced in place.
     public var moveOriginals: Bool { backup.enabled }
     /// All three only apply when the filename itself carries no date, and are consulted
@@ -587,7 +567,6 @@ public struct Options: Sendable {
         recursive: Bool,
         dryRun: Bool,
         backup: BackupSettings = .standard,
-        encryption: EncryptionSettings = .none,
         useFolderNames: Bool = true,
         useMetadataDate: Bool = false,
         useFileDate: Bool = false,
@@ -597,7 +576,6 @@ public struct Options: Sendable {
         self.recursive = recursive
         self.dryRun = dryRun
         self.backup = backup
-        self.encryption = encryption
         self.useFolderNames = useFolderNames
         self.useMetadataDate = useMetadataDate
         self.useFileDate = useFileDate
@@ -1042,15 +1020,6 @@ private func backupURL(for job: Job, _ backup: BackupSettings) -> URL {
         .appendingPathComponent(tail)
 }
 
-/// PDFKit refuses to encrypt without an owner password, so the one password is used for
-/// both roles.
-private func writeOptions(_ encryption: EncryptionSettings) -> [PDFDocumentWriteOption: Any] {
-    guard encryption.isUsable else { return [:] }
-    return [
-        .ownerPasswordOption: encryption.password,
-        .userPasswordOption: encryption.password,
-    ]
-}
 
 /// PDFKit's `write(to:)` carries the source document's encryption dictionary over even
 /// after a successful unlock, so a genuinely decrypted file has to be rebuilt page by
@@ -1253,9 +1222,7 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
             break
         }
     }
-    var status: Status = !wasEncrypted ? .renamed : (unlocked ? .decrypted : .locked)
-    // A file that will be locked again is not being decrypted, whatever it started as.
-    if options.encryption.isUsable && (unlocked || !wasEncrypted) { status = .encrypted }
+    let status: Status = !wasEncrypted ? .renamed : (unlocked ? .decrypted : .locked)
 
     // Document attributes are unreadable while the PDF is still locked.
     let metadataDate = unlocked
@@ -1308,15 +1275,7 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
         // The source name is free now that the original has moved to the backup tree.
         let destination = availableURL(directory.appendingPathComponent(newName))
         do {
-            if status == .encrypted {
-                guard let clean = decryptedCopy(of: doc),
-                      clean.write(to: destination, withOptions: writeOptions(options.encryption))
-                else {
-                    try fm.copyItem(at: backup, to: destination)
-                    return item(destination, .failed,
-                                "could not write encrypted copy; original restored under new name")
-                }
-            } else if status == .decrypted {
+            if status == .decrypted {
                 guard let clean = decryptedCopy(of: doc), clean.write(to: destination) else {
                     try fm.copyItem(at: backup, to: destination)
                     return item(destination, .failed,
@@ -1338,10 +1297,9 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     // first so a failure part-way through never leaves the folder without the document.
     let destination = availableURL(directory.appendingPathComponent(newName), ignoring: source)
     do {
-        if status == .decrypted || status == .encrypted {
+        if status == .decrypted {
             let temp = directory.appendingPathComponent(".pdfhammer-\(UUID().uuidString).pdf")
-            let options = status == .encrypted ? writeOptions(options.encryption) : [:]
-            guard let clean = decryptedCopy(of: doc), clean.write(to: temp, withOptions: options) else {
+            guard let clean = decryptedCopy(of: doc), clean.write(to: temp) else {
                 try? fm.removeItem(at: temp)
                 return item(source, .failed, "could not write the copy; original left untouched")
             }

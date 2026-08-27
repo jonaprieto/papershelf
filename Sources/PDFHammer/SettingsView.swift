@@ -44,7 +44,7 @@ struct SettingsView: View {
                 HStack {
                     Button("Save key", action: saveKey).disabled(key.isEmpty)
                     Button("Remove") {
-                        Keychain.remove(account: "openai")
+                        KeyStore.remove(account: "openai")
                         StoredKey.shared.update(nil)
                         key = ""
                         status = .ok("Key removed")
@@ -54,9 +54,10 @@ struct SettingsView: View {
             } header: {
                 Text("OpenAI")
             } footer: {
-                Text("The key is kept in your Keychain, never in preferences. A Finder-launched "
-                     + "app inherits launchd's environment rather than a shell's, so when the "
-                     + "variable is not visible the login shell is asked once, in memory only.")
+                Text("The key is kept in a file only you can read, under Application Support. A "
+                     + "Finder-launched app inherits launchd's environment rather than a "
+                     + "shell's, so when the variable is not visible the login shell is asked "
+                     + "once, in memory only. The environment variable is the safer route.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -108,9 +109,9 @@ struct SettingsView: View {
 
     private func saveKey() {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        Keychain.set(trimmed, account: "openai")
+        KeyStore.set(trimmed, account: "openai")
         StoredKey.shared.update(trimmed)
-        status = .ok("Key saved to the Keychain")
+        status = .ok("Key saved")
     }
 
     private func test() {
@@ -156,12 +157,12 @@ final class StoredKey: @unchecked Sendable {
         defer { lock.unlock() }
         if !loaded {
             loaded = true
-            cached = Keychain.get(account: "openai")
+            cached = KeyStore.get(account: "openai")
         }
         return cached
     }
 
-    /// Called after writing, so the next read does not go back to the Keychain.
+    /// Called after writing, so the next read does not go back to the KeyStore.
     func update(_ key: String?) {
         lock.lock()
         defer { lock.unlock() }
