@@ -30,6 +30,13 @@ struct ContentView: View {
     @AppStorage("ruleMaxLength") private var ruleMaxLength = 0
     @AppStorage("ruleDatePosition") private var ruleDatePosition: NameRules.DatePosition = .prefix
     @AppStorage("ruleDateFormat") private var ruleDateFormat: NameRules.DateFormat = .dashed
+    /// The arrangeable pattern's own two fields. `elements` round-trips through the
+    /// bracket text (NamePattern.text/init(parsing:)); maxTotalLength has no spelling in
+    /// that grammar, so it needs a key of its own.
+    @AppStorage("namePattern") private var namePatternText = ""
+    @AppStorage("namePatternMaxLength") private var namePatternMaxLength = 0
+    @State private var draggingElementIndex: Int?
+    @State private var editingElementIndex: Int?
 
     @AppStorage("sources") private var storedSources = ""
     @AppStorage("autoPreview") private var autoPreview = true
@@ -124,6 +131,109 @@ struct ContentView: View {
                   asciiOnly: ruleAsciiOnly, dropLeadingArticles: ruleDropArticles,
                   maxLength: ruleMaxLength, datePosition: ruleDatePosition,
                   dateFormat: ruleDateFormat)
+    }
+
+    private var namePattern: NamePattern {
+        NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
+    }
+
+    /// Every chip and text-field edit goes through here, so the two stay in sync: both
+    /// read and write the same pair of AppStorage values.
+    private func updateNamePattern(_ transform: (inout NamePattern) -> Void) {
+        var updated = namePattern
+        transform(&updated)
+        namePatternText = updated.text
+        namePatternMaxLength = updated.maxTotalLength
+    }
+
+    private func updateNameToken(at index: Int, _ transform: (inout NameToken) -> Void) {
+        updateNamePattern { pattern in
+            guard pattern.elements.indices.contains(index),
+                  case .token(var token) = pattern.elements[index] else { return }
+            transform(&token)
+            pattern.elements[index] = .token(token)
+        }
+    }
+
+    /// Runs once: a user who already had toggles set gets an arranged pattern that
+    /// reproduces them, rather than landing on today's plain default and looking like
+    /// their settings were dropped. After this the pattern is its own preference and the
+    /// toggles it replaces (date position, date format, max length) are read here only.
+    private func seedNamePatternIfNeeded() {
+        guard UserDefaults.standard.string(forKey: "namePattern") == nil else { return }
+        var date = NameToken(.date)
+        if ruleDateFormat == .compact { date.abbreviation = .compact }
+        var title = NameToken(.title)
+        title.maxLength = ruleMaxLength
+        let joiner = ruleSeparator == .underscore ? "_" : "-"
+        let elements: [NameElement] = ruleDatePosition == .prefix
+            ? [.token(date), .literal(joiner), .token(title)]
+            : [.token(title), .literal(joiner), .token(date)]
+        namePatternText = NamePattern(elements: elements).text
+    }
+
+    /// The document a chip's own preview value is drawn from: whichever file is open for
+    /// review, else the first result, so the row means something before anything is
+    /// selected.
+    private var namePatternReferenceItem: Item? {
+        reviewing.flatMap(runner.item) ?? runner.results.first
+    }
+
+    private var namePatternReferencePreview: NamePreview? {
+        guard let item = namePatternReferenceItem else { return nil }
+        // Qualified: this type's own `preview()` (the toolbar action) would otherwise
+        // shadow PDFHammerCore's free function of the same name.
+        return PDFHammerCore.preview(namePattern, for: item, guess: runner.guesses[item.key], under: item.root)
+    }
+
+    /// Matched by position among token elements, not by kind: two tokens of the same
+    /// kind can carry different options and must not be shown each other's value.
+    private func namePatternChipPreview(atElementIndex index: Int) -> NameTokenPreview? {
+        let tokenIndex = namePattern.elements[..<index].reduce(into: 0) { count, element in
+            if case .token = element { count += 1 }
+        }
+        let tokens = namePatternReferencePreview?.tokens ?? []
+        return tokens.indices.contains(tokenIndex) ? tokens[tokenIndex] : nil
+    }
+
+    private func namingLabel(for kind: NameToken.Kind) -> String {
+        switch kind {
+        case .date: return "Date"
+        case .year: return "Year"
+        case .title: return "Title"
+        case .author: return "Author"
+        case .publisher: return "Publisher"
+        case .journal: return "Journal"
+        case .folder: return "Folder"
+        case .originalStem: return "Original name"
+        case .counter: return "Counter"
+        }
+    }
+
+    private func namingLabel(for casing: NameToken.Casing) -> String {
+        switch casing {
+        case .unchanged: return "As is"
+        case .lower: return "lowercase"
+        case .upper: return "UPPERCASE"
+        case .titleCase: return "Title Case"
+        }
+    }
+
+    private func namingLabel(for abbreviation: NameToken.Abbreviation) -> String {
+        switch abbreviation {
+        case .none: return "Full"
+        case .compact: return "Compact"
+        case .surname: return "Surname only"
+        case .initials: return "Initials"
+        }
+    }
+
+    /// Casing is a no-op on a token that is already digits.
+    private func showsCasing(_ kind: NameToken.Kind) -> Bool {
+        switch kind {
+        case .date, .year, .counter: return false
+        default: return true
+        }
     }
 
     /// Exercises every rule at once, so the footer shows what each switch actually does.
@@ -256,6 +366,7 @@ struct ContentView: View {
         }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
         .onAppear {
+            seedNamePatternIfNeeded()
             chrome.undo = { runner.undo() }
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
@@ -450,6 +561,35 @@ struct ContentView: View {
     @ViewBuilder
     private var namingPanel: some View {
             Section {
+                HStack(spacing: 6) {
+                    ForEach(NamePattern.presets) { preset in
+                        Button(preset.name) {
+                            updateNamePattern { $0 = preset.pattern }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(preset.summary)
+                    }
+                }
+                .padding(.vertical, 2)
+
+                namingChipRow
+                    .tip("Drag a field to reorder it, click one to adjust it")
+
+                LabeledContent("Pattern") {
+                    TextField("", text: $namePatternText, prompt: Text("[date]-[title]"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.callout, design: .monospaced))
+                }
+                .tip("Chips and this text describe the same pattern; edit whichever is easier")
+            } header: {
+                Text("Naming pattern")
+            } footer: {
+                namingPreviewFooter
+            }
+
+            Section {
                 Picker("Case", selection: $ruleCasing) {
                     ForEach(NameRules.Casing.allCases) { Text($0.label).tag($0) }
                 }
@@ -466,26 +606,8 @@ struct ContentView: View {
                     .tip("Non-ASCII becomes a separator, so words stay apart")
                 Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
                     .help("So a shelf sorts by what the book is called rather than by its article")
-                Picker("Date goes", selection: $ruleDatePosition) {
-                    ForEach(NameRules.DatePosition.allCases) { Text($0.label).tag($0) }
-                }
-                .help("Whether the date leads the name or trails it")
-                Picker("Date looks like", selection: $ruleDateFormat) {
-                    ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
-                }
-                LabeledContent("Max length") {
-                    HStack(spacing: 6) {
-                        Slider(value: Binding(get: { Double(ruleMaxLength) },
-                                              set: { ruleMaxLength = Int($0) }),
-                               in: 0...120, step: 5)
-                        Text(ruleMaxLength == 0 ? "off" : "\(ruleMaxLength)")
-                            .monospacedDigit()
-                            .frame(width: 26, alignment: .trailing)
-                    }
-                }
-                .tip("Trims the name on a word boundary; the date is never cut")
             } header: {
-                Text("Name rules")
+                Text("Text cleanup")
             } footer: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(Self.sampleName)
@@ -501,6 +623,172 @@ struct ContentView: View {
                 .truncationMode(.middle)
                 .padding(.top, 2)
             }
+    }
+
+    private var namingChipRow: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(Array(namePattern.elements.enumerated()), id: \.offset) { index, element in
+                chipView(for: element, at: index)
+                    .onDrag {
+                        draggingElementIndex = index
+                        return NSItemProvider(object: String(index) as NSString)
+                    }
+                    .onDrop(of: [.text], delegate: ChipDropDelegate(
+                        index: index,
+                        draggingIndex: $draggingElementIndex,
+                        reorder: { from, to in
+                            updateNamePattern { pattern in
+                                guard pattern.elements.indices.contains(from),
+                                      pattern.elements.indices.contains(to) else { return }
+                                let moved = pattern.elements.remove(at: from)
+                                pattern.elements.insert(moved, at: to)
+                            }
+                        }
+                    ))
+            }
+            addTokenMenu
+        }
+    }
+
+    @ViewBuilder
+    private func chipView(for element: NameElement, at index: Int) -> some View {
+        switch element {
+        case .token(let token):
+            tokenChip(token, at: index)
+        case .literal(let text):
+            literalChip(text, at: index)
+        }
+    }
+
+    private func tokenChip(_ token: NameToken, at index: Int) -> some View {
+        let preview = namePatternChipPreview(atElementIndex: index)
+        return HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(namingLabel(for: token.kind))
+                    .font(.caption2.weight(.semibold))
+                if let preview, !preview.isEmpty {
+                    Text(preview.value)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 90, alignment: .leading)
+                } else {
+                    Text("empty")
+                        .font(.caption2.italic())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Button {
+                updateNamePattern { $0.elements.remove(at: index) }
+            } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+            .accessibilityLabel("Remove \(namingLabel(for: token.kind))")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.tertiary.opacity(0.35)))
+        .contentShape(Rectangle())
+        .onTapGesture { editingElementIndex = index }
+        .popover(isPresented: Binding(
+            get: { editingElementIndex == index },
+            set: { if !$0 { editingElementIndex = nil } }
+        )) {
+            tokenOptions(token, at: index)
+        }
+    }
+
+    private func literalChip(_ text: String, at index: Int) -> some View {
+        HStack(spacing: 3) {
+            Text(text.isEmpty ? "·" : text)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Button {
+                updateNamePattern { $0.elements.remove(at: index) }
+            } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 9))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+            .accessibilityLabel("Remove separator")
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func tokenOptions(_ token: NameToken, at index: Int) -> some View {
+        let maxLengthLabel = token.maxLength == 0 ? "Max length: off" : "Max length: \(token.maxLength)"
+        Form {
+            if showsCasing(token.kind) {
+                Picker("Case", selection: Binding(
+                    get: { token.casing },
+                    set: { newValue in updateNameToken(at: index) { $0.casing = newValue } }
+                )) {
+                    ForEach(NameToken.Casing.allCases) { Text(namingLabel(for: $0)).tag($0) }
+                }
+            }
+            Picker("Shorten", selection: Binding(
+                get: { token.abbreviation },
+                set: { newValue in updateNameToken(at: index) { $0.abbreviation = newValue } }
+            )) {
+                ForEach(NameToken.Abbreviation.allCases) { Text(namingLabel(for: $0)).tag($0) }
+            }
+            Stepper(maxLengthLabel, value: Binding(
+                get: { token.maxLength },
+                set: { newValue in updateNameToken(at: index) { $0.maxLength = newValue } }
+            ), in: 0...80, step: 5)
+        }
+        .padding(14)
+        .frame(width: 230)
+    }
+
+    private var addTokenMenu: some View {
+        Menu {
+            ForEach(NameToken.Kind.allCases) { kind in
+                Button(namingLabel(for: kind)) {
+                    updateNamePattern { $0.elements.append(.token(NameToken(kind))) }
+                }
+            }
+        } label: {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .tip("Add a field to the pattern")
+    }
+
+    @ViewBuilder
+    private var namingPreviewFooter: some View {
+        let samples = Array(runner.results.prefix(5))
+        VStack(alignment: .leading, spacing: 3) {
+            if samples.isEmpty {
+                Text("Preview appears once files are found.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(samples) { item in
+                    let rendered = PDFHammerCore.preview(namePattern, for: item, guess: runner.guesses[item.key], under: item.root)
+                    HStack(spacing: 4) {
+                        Text(rendered.originalName)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.tertiary)
+                        Text(rendered.renderedName)
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                }
+            }
+        }
+        .font(.caption.monospaced())
+        .padding(.top, 2)
     }
 
 
@@ -1019,6 +1307,64 @@ struct SourceRow: View {
             .help("Remove this source")
             .accessibilityLabel("Remove \(url.lastPathComponent)")
         }
+    }
+}
+
+// MARK: - Naming pattern chips
+
+/// Wraps chips onto as many lines as the sidebar's width needs, the same idea as a
+/// browser's tag field: fixed-size pieces that flow rather than one row that clips.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth.isFinite ? maxWidth : x, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// Reorders the pattern's elements as a chip is dragged over its neighbours, the same
+/// immediate feedback a `List`'s own drag-to-reorder gives.
+struct ChipDropDelegate: DropDelegate {
+    let index: Int
+    @Binding var draggingIndex: Int?
+    let reorder: (Int, Int) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let from = draggingIndex, from != index else { return }
+        reorder(from, index)
+        draggingIndex = index
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingIndex = nil
+        return true
     }
 }
 
