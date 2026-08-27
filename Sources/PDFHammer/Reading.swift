@@ -159,6 +159,8 @@ struct NotesRail: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
             .background(.bar)
 
             Divider()
@@ -314,6 +316,8 @@ struct ContentsRail: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
             .background(.bar)
 
             Divider()

@@ -575,6 +575,8 @@ struct ResultsPane: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
         .background(.bar)
     }
 
@@ -658,9 +660,6 @@ struct ResultsPane: View {
         }
     }
 
-    /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
-    /// whenever its children change, which is why the inspector kept jumping; here the
-    /// width only ever changes because someone dragged it, and it is remembered.
     /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
     /// whenever its children change, which is why the inspector kept jumping; here the
     /// width only ever changes because someone dragged it, and it is remembered.
@@ -1301,10 +1300,7 @@ struct StatusPill: View {
         .foregroundStyle(color)
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .background(color.opacity(0.16), in: Capsule())
-        // A Capsule fills whatever height it is handed; without this the pill grows into
-        // any spare room its row is given.
-        .fixedSize()
+        .fittedBackground(color.opacity(0.16), in: Capsule())
         .tip(status.explanation)
     }
 

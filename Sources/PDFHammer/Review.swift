@@ -184,6 +184,8 @@ struct ReviewInspector: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
         .background(.bar)
     }
 
@@ -257,10 +259,9 @@ struct ReviewInspector: View {
             Text(text)
                 .font(.caption)
                 .lineLimit(1)
-                .fixedSize()
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(.regularMaterial, in: Capsule())
+                .fittedBackground(.regularMaterial, in: Capsule())
                 .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
                 .offset(y: -24)
                 .transition(.opacity)
@@ -383,7 +384,7 @@ struct ReviewInspector: View {
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(.regularMaterial, in: Capsule())
+                .fittedBackground(.regularMaterial, in: Capsule())
                 .padding(10)
         }
     }

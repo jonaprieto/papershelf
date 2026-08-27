@@ -10,6 +10,19 @@ extension View {
     func tip(_ what: String, key: String? = nil) -> some View {
         help(key.map { "\(what)  (\($0))" } ?? what)
     }
+
+    /// A background shape sized to what this view actually draws, not to whatever space
+    /// a parent hands it.
+    ///
+    /// `.background(_, in:)` alone lets a Capsule or RoundedRectangle grow to fill any
+    /// spare height its row is given: that is how the status pill, twice now, ended up
+    /// rendering as a tall coloured slab instead of a small badge. Reach for this instead
+    /// of the raw modifier for any background that exists to trace a chip, pill or badge
+    /// around single-line content; keep using the raw modifier where the background is
+    /// meant to fill its container, such as a card behind wrapped or multi-line text.
+    func fittedBackground(_ style: some ShapeStyle, in shape: some Shape) -> some View {
+        background(style, in: shape).fixedSize()
+    }
 }
 
 extension Status {
