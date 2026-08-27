@@ -244,12 +244,22 @@ public func render(
     for item: Item,
     guess: BookGuess? = nil,
     folder: FolderContext = .none,
-    collisionIndex: Int = 1
+    collisionIndex: Int = 1,
+    rules: NameRules? = nil
 ) -> String {
     let resolved: [(NameElement, String?)] = pattern.elements.map { element in
         guard case .token(let token) = element else { return (element, nil) }
+        // A token's value comes out of a filename or a PDF's metadata, so it arrives
+        // carrying whatever that filename carried: runs of spaces, a stray '--', the
+        // publisher and the hash some download site appended. Given rules, it goes
+        // through the same tidy the rest of the app renames by, so a pattern and the
+        // ordinary rename agree about what a name looks like. Without them the value is
+        // passed through as it is, which is what a caller wanting the raw text gets.
+        // Literals the user typed are never touched either way.
         let value = resolvedValue(for: token.kind, item: item, guess: guess,
                                    folder: folder, collisionIndex: collisionIndex)
+            .map { value in rules.map { tidy(value, $0) } ?? value }
+            .flatMap { $0.isEmpty ? nil : $0 }
             .map { apply(token, to: $0) }
         return (element, value)
     }

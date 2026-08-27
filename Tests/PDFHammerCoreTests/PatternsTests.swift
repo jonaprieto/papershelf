@@ -409,3 +409,35 @@ final class PatternsTests: XCTestCase {
         XCTAssertEqual(results.map(\.renderedName), ["Alpha.pdf", "Beta.pdf"])
     }
 }
+
+extension PatternsTests {
+
+    /// A real book downloaded from the wild carries the publisher, a hash and the name of
+    /// the site in its filename. Rendering with the app's own rules has to produce the
+    /// same kind of name the ordinary rename produces, rather than copying that through.
+    func testRenderingWithRulesTidiesAValueTheWayARenameWould() {
+        let messy = item("Algebra Driven Design_ Elegant Software -- Sandy Maguire -- "
+                         + "1_1_2, 2020 -- Leanpub -- b953645d -- Anna's Archive.pdf")
+        let pattern = NamePattern(parsing: "[title]")
+
+        let raw = render(pattern, for: messy)
+        XCTAssertTrue(raw.contains(" "), "with no rules the value is passed through: \(raw)")
+
+        let tidied = render(pattern, for: messy, rules: NameRules(casing: .lowercase,
+                                                                  separator: .dash,
+                                                                  stripSymbols: true))
+        XCTAssertFalse(tidied.contains(" "), tidied)
+        XCTAssertFalse(tidied.contains("--"), tidied)
+        XCTAssertEqual(tidied, tidied.lowercased(), tidied)
+        XCTAssertTrue(tidied.hasSuffix(".pdf"))
+    }
+
+    /// The rules tidy the value; the token's own casing still has the last word on it.
+    func testATokensOwnCasingWinsOverTheRules() {
+        let pattern = NamePattern(elements: [.token(NameToken(.title, casing: .upper))])
+        let guess = BookGuess(title: "quiet american", author: nil, year: nil)
+        XCTAssertEqual(render(pattern, for: item("x.pdf"), guess: guess,
+                              rules: NameRules(casing: .lowercase, separator: .dash)),
+                       "QUIET-AMERICAN.pdf")
+    }
+}

@@ -165,7 +165,7 @@ private func clipped(_ slug: String, to limit: Int) -> String {
 /// Collapses runs of separators to a single character, trims them from both ends, and
 /// applies the casing, symbol and accent rules. Whitespace of every kind, including
 /// non-breaking spaces, is always a separator and never survives.
-private func tidy(_ input: String, _ rules: NameRules) -> String {
+func tidy(_ input: String, _ rules: NameRules) -> String {
     var text = input
     if rules.stripDiacritics {
         text = text.folding(options: [.diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
