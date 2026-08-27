@@ -251,5 +251,19 @@ struct AIClient {
         let billed = price.map { cost(usage: usage, price: $0) }
         try? await spendRecorder.recordSpend(timestamp: Date(), model: model, endpoint: baseURL,
                                               feature: feature, usage: usage, cost: billed, succeeded: succeeded)
+        await SpendSignal.shared.bump()
     }
+}
+
+
+/// Bumped after every recorded call, so anything showing a total can notice.
+///
+/// The AI panel used to refresh on the count of naming guesses, which meant that improving
+/// a citation, asking a reading project or testing the connection all spent money without
+/// the number moving.
+@MainActor
+final class SpendSignal: ObservableObject {
+    static let shared = SpendSignal()
+    @Published private(set) var version = 0
+    func bump() { version += 1 }
 }

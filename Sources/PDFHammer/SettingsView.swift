@@ -17,7 +17,7 @@ struct SettingsView: View {
     @State private var status: Status = .idle
     @State private var testing = false
 
-    @StateObject private var priceBook = PriceBook()
+    @ObservedObject private var priceBook: PriceBook = .shared
     @State private var editingPrice = false
     @State private var draftInput = ""
     @State private var draftOutput = ""
@@ -329,6 +329,10 @@ struct SettingsView: View {
 /// rarely, so it is held and persisted exactly the way Palette holds highlight styles.
 @MainActor
 final class PriceBook: ObservableObject {
+    /// One table, shared. Two windows each holding their own copy meant a price edited in
+    /// Settings did not reach the panel where the model is chosen until the next launch.
+    static let shared = PriceBook()
+
     @Published private(set) var table: PriceTable
 
     init() {

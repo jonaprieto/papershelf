@@ -164,6 +164,9 @@ final class Runner: ObservableObject {
         for key in gone {
             set(nil, for: key)
             guesses[key] = nil
+            // Otherwise its bytes stay in the index and a later, unrelated arrival is
+            // reported as a copy of a file that is no longer being watched.
+            duplicateIndex?.remove(key)
         }
         jobs.removeAll { belongs($0.root) }
 
@@ -593,6 +596,7 @@ final class Runner: ObservableObject {
         for key in vanished {
             set(nil, for: key)
             guesses[key] = nil
+            duplicateIndex?.remove(key)
         }
         jobs = found
         lastAbsorbed = fresh.count
@@ -614,8 +618,13 @@ final class Runner: ObservableObject {
     private func announceDuplicates(among fresh: [Item], all: [Item], passwords: [String]) async {
         guard !fresh.isEmpty else { return }
         if duplicateIndex == nil {
-            var index = DuplicateIndex(items: all.filter { item in !fresh.contains { $0.key == item.key } },
-                                       passwords: passwords)
+            // Seeding reads the opening pages of every file already on the shelf, which is
+            // far too much work for the main actor: every other heavy path in this file is
+            // detached for the same reason.
+            let existing = all.filter { item in !fresh.contains { $0.key == item.key } }
+            var index = await Task.detached(priority: .utility) {
+                DuplicateIndex(items: existing, passwords: passwords)
+            }.value
             // Anything already decided stays decided, including across a relaunch.
             if let library = Library.shared,
                let dismissed = try? await library.dismissedDuplicateIDs() {
@@ -624,6 +633,8 @@ final class Runner: ObservableObject {
             duplicateIndex = index
         }
         for item in fresh {
+            // Reading one arriving file is small beside seeding, and it has to update the
+            // index that lives here, so it stays put.
             guard let group = duplicateIndex?.insert(item, passwords: passwords) else { continue }
             note(.scanned, subject: item.sourceName, detail: "looks like a copy of something here")
             DuplicateAlert.present(
@@ -733,6 +744,9 @@ final class Runner: ObservableObject {
         duplicates = []
         duplicateKind = [:]
         duplicatesChecked = false
+        // A scan of a different folder must not go on matching arrivals against the last
+        // one's files. The index is rebuilt from whatever this run finds.
+        duplicateIndex = nil
         guesses = [:]
         matchingKeys = nil
         searchText = ""

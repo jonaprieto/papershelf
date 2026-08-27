@@ -600,16 +600,40 @@ final class LibraryBibtexTests: XCTestCase {
 
     /// The migration has to run on a database made by the previous version, not only on a
     /// fresh one, or an existing library loses the feature silently.
-    func testAnOlderDatabaseGainsTheTable() async throws {
+    ///
+    /// The database is built by hand at version 2 rather than by opening a Library, since
+    /// opening one migrates it straight to the current schema and the test would then be
+    /// checking nothing: it passed identically with the migration deleted.
+    func testAVersionTwoDatabaseGainsTheTable() async throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("bib-old-\(UUID().uuidString).sqlite")
+            .appendingPathComponent("bib-v2-\(UUID().uuidString).sqlite")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        _ = try Library(url: url)                      // creates it at the current version
-        let reopened = try Library(url: url)           // and again, which must not re-run
-        let id = try await reopened.indexDocument(path: "/tmp/x.pdf", contentHash: nil).id
-        try await reopened.storeBibtex("@book{x}", forDocument: id, origin: "you")
-        let kept = try await reopened.storedBibtex()
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &handle,
+                                       SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil), SQLITE_OK)
+        let older = """
+            CREATE TABLE documents (
+                id TEXT PRIMARY KEY, first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+                content_hash TEXT, byte_count INTEGER, page_count INTEGER, title TEXT,
+                author TEXT, document_info TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE TABLE locations (
+                path TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL
+            );
+            PRAGMA user_version = 2;
+            """
+        XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(handle)
+
+        // Opening it must bring it forward rather than leaving the feature missing.
+        let library = try Library(url: url)
+        let id = try await library.indexDocument(path: "/tmp/x.pdf", contentHash: nil).id
+        try await library.storeBibtex("@book{x}", forDocument: id, origin: "you")
+        let kept = try await library.storedBibtex()
         XCTAssertEqual(kept.count, 1)
     }
+
 }

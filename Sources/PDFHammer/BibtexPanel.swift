@@ -61,6 +61,9 @@ extension ReviewInspector {
                         Button("Reset") {
                             citationDraft = generatedCitation
                             citationStored = false
+                            // Back to the generated entry, which the model did not write:
+                            // keeping the flag would record it as the model's work.
+                            citationImprovedByAI = false
                         }
                         .buttonStyle(.link)
                     }
@@ -112,13 +115,16 @@ extension ReviewInspector {
         let current = citationDraft
         let filename = item.destinationName
         let text = excerpt ?? openingText(of: item.currentURL, passwords: passwords, pages: 3)
+        // A slow reply must not land on whatever file is on screen by the time it arrives.
+        let asked = item.key
 
         Task {
-            defer { citationImproving = false }
+            defer { if asked == item.key { citationImproving = false } }
             do {
                 let reply = try await improveCitation(
                     bibtexImproveInstruction,
                     bibtexImprovePrompt(entry: current, filename: filename, excerpt: text))
+                guard asked == item.key else { return }
                 guard let improved = extractBibtexEntry(from: reply) else {
                     citationNote = "The reply had no entry in it, so nothing was changed."
                     return
@@ -130,6 +136,7 @@ extension ReviewInspector {
                     ? "The model left it as it was."
                     : "Changed by the model. Check it before you keep it."
             } catch {
+                guard asked == item.key else { return }
                 citationNote = error.localizedDescription
             }
         }
@@ -144,6 +151,9 @@ extension ReviewInspector {
     private func loadCitation() async {
         citationNote = nil
         citationImproving = false
+        // A new file starts with no history, or the last file's improvement would be
+        // recorded as the provenance of this one's entry.
+        citationImprovedByAI = false
         runner.ensureBib()
 
         // A kept entry wins over a generated one: it is the answer someone already
@@ -170,21 +180,26 @@ extension ReviewInspector {
         }
         let path = item.currentURL.resolvingSymlinksInPath().path
         let origin = citationImprovedByAI ? "the model" : "you"
+        let asked = item.key
         Task {
             guard let documentID = try? await library.document(atPath: path)?.id else {
+                guard asked == item.key else { return }
                 citationNote = "This file is not in the library yet, so there is nothing to "
                     + "attach the entry to."
                 return
             }
             do {
                 try await library.storeBibtex(entry, forDocument: documentID, origin: origin)
+                // The entry belongs to that document whether or not it is still on screen,
+                // so it is kept either way; only what the panel says is conditional.
+                let places = (try? await library.locations(forDocument: documentID))?.map(\.path) ?? []
+                KeptBibtex.shared.remember(entry, at: places + [path, asked])
+                runner.note(.edited, subject: item.relativePath, detail: "citation kept")
+                guard asked == item.key else { return }
                 citationStored = true
                 citationNote = "Kept with the document."
-                // So the bibliography tab shows it at once rather than after a reload.
-                let places = (try? await library.locations(forDocument: documentID))?.map(\.path) ?? []
-                KeptBibtex.shared.remember(entry, at: places + [path, item.key])
-                runner.note(.edited, subject: item.relativePath, detail: "citation kept")
             } catch {
+                guard asked == item.key else { return }
                 citationNote = "Could not keep it: \(error.localizedDescription)"
             }
         }

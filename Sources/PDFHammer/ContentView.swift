@@ -61,7 +61,8 @@ struct ContentView: View {
     @AppStorage("bibType") private var bibType: BibType = .book
     @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
     @State private var availableModels: [String] = []
-    @StateObject private var priceBook = PriceBook()
+    @ObservedObject private var priceBook: PriceBook = .shared
+    @ObservedObject private var spendSignal: SpendSignal = .shared
     @State var librarySummary: LibrarySummary?
     @State var libraryQuery = ""
     @State var libraryHits: [DocumentRecord]?
@@ -1060,8 +1061,8 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Re-read after every answer the model gives, since each one has been paid for.
-            .task(id: runner.guesses.count) { await refreshSessionSpend() }
+            // Re-read after every call that was paid for, whatever asked for it.
+            .task(id: spendSignal.version) { await refreshSessionSpend() }
     }
 
 

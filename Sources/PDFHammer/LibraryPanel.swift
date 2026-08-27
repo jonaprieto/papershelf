@@ -10,7 +10,9 @@ import PDFHammerCore
 extension ContentView {
 
     @ViewBuilder var libraryPanel: some View {
-        Form {
+        // Bare Sections, like every other tab: the sidebar owns the Form, and nesting a
+        // second one boxed and indented this tab differently from all its siblings.
+        Group {
             if Library.shared == nil {
                 Section {
                     Note(icon: "exclamationmark.triangle.fill", tint: .orange,
@@ -99,7 +101,6 @@ extension ContentView {
                 }
             }
         }
-        .formStyle(.grouped)
         .task(id: runner.revision) { await refreshLibrarySummary() }
         .sheet(isPresented: $showingProjects) {
             if let library = Library.shared {
