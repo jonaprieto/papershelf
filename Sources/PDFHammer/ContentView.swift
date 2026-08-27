@@ -46,7 +46,7 @@ struct ContentView: View {
     @AppStorage("watchSources") private var watchSources = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
-    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
+    @AppStorage("aiBaseURL") var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @AppStorage("autoIdentify") private var autoIdentify = false
     @AppStorage("bibLineWidth") private var bibLineWidth = 80
@@ -61,10 +61,17 @@ struct ContentView: View {
     @AppStorage("bibType") private var bibType: BibType = .book
     @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
     @State private var availableModels: [String] = []
+    @StateObject private var priceBook = PriceBook()
+    @State var librarySummary: LibrarySummary?
+    @State var libraryQuery = ""
+    @State var libraryHits: [DocumentRecord]?
+    @State var librarySearching = false
+    @State var showingProjects = false
+    @State private var sessionSpend: SpendTotals?
     @State private var loadingModels = false
     @State private var modelsError: String?
 
-    @StateObject private var runner = Runner()
+    @StateObject var runner = Runner()
     @StateObject private var covers = Covers()
     @State private var selection: [URL] = []
     @State private var importing = false
@@ -105,7 +112,7 @@ struct ContentView: View {
         )
     }
 
-    private var aiClient: AIClient {
+    var aiClient: AIClient {
         AIClient(baseURL: aiBaseURL, model: aiModel,
                  apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
     }
@@ -456,6 +463,7 @@ struct ContentView: View {
                     runningPanel
                 case .ai: aiPanel
                 case .bibtex: bibtexPanel
+                case .library: libraryPanel
                 case .reading: readingPanel
                 case .log: logPanel
                 case .appearance: appearancePanel
@@ -930,8 +938,62 @@ struct ContentView: View {
     }
 
 
-    @ViewBuilder
-    private var aiPanel: some View {
+    private func refreshSessionSpend() async {
+        guard let library = Library.shared else { return }
+        guard let entries = try? await library.spendEntries(since: sessionStart) else { return }
+        sessionSpend = spendTotals(for: entries)
+    }
+
+    /// What the chosen model costs, and what has been spent this session.
+    ///
+    /// An unknown price is said to be unknown. Showing nothing, or a zero, would read as
+    /// free, and this app talks to any OpenAI-compatible endpoint, most of which this
+    /// table has never heard of.
+    @ViewBuilder private var modelPrice: some View {
+        if let price = priceBook.table.price(model: aiModel, endpoint: aiBaseURL) {
+            LabeledContent("Price") {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(price.inputPerMillion.formatted(.currency(code: price.currency))) in")
+                    Text("\(price.outputPerMillion.formatted(.currency(code: price.currency))) out")
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+            .tip("Per million tokens. Recorded "
+                 + price.recordedAt.formatted(date: .abbreviated, time: .omitted)
+                 + ", and rates change.")
+        } else {
+            LabeledContent("Price") {
+                Text("unknown")
+                    .font(.caption)
+                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+            }
+            .tip("No price is known for this model at this endpoint. Calls are still "
+                 + "recorded; set a rate in Settings to see what they cost.")
+        }
+
+        if let sessionSpend, sessionSpend.calls > 0 {
+            LabeledContent("This session") {
+                VStack(alignment: .trailing, spacing: 1) {
+                    // Currencies are listed, never added together: a rate typed in for a
+                    // provider that does not bill in dollars is not dollars.
+                    Text(sessionSpend.byCurrency.isEmpty
+                         ? "no priced calls"
+                         : sessionSpend.byCurrency.sorted { $0.key < $1.key }
+                             .map { $1.formatted(.currency(code: $0)) }.joined(separator: " + "))
+                    Text("\(sessionSpend.calls) call\(sessionSpend.calls == 1 ? "" : "s")"
+                         + (sessionSpend.callsWithUnknownCost > 0
+                            ? ", \(sessionSpend.callsWithUnknownCost) unpriced" : ""))
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+            .tip("What this run of the app has spent. Settings has the whole ledger.")
+        }
+    }
+
+    @ViewBuilder private var aiPanel: some View {
             Section {
                 LabeledContent("API key") {
                     if aiReady {
@@ -958,6 +1020,10 @@ struct ContentView: View {
                         ForEach(availableModels, id: \.self) { Text($0).tag($0) }
                     }
                 }
+                // The price belongs where the model is chosen, not only in Settings: it
+                // is what the choice costs.
+                modelPrice
+
                 HStack {
                     Button(loadingModels ? "Loading…" : "Refresh models", action: loadModels)
                         .buttonStyle(.link)
@@ -994,6 +1060,8 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Re-read after every answer the model gives, since each one has been paid for.
+            .task(id: runner.guesses.count) { await refreshSessionSpend() }
     }
 
 
@@ -1454,7 +1522,7 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, passwords, naming, files, ai, bibtex, reading, log, appearance
+    case sources, passwords, naming, files, ai, bibtex, library, reading, log, appearance
 
     var id: String { rawValue }
 
@@ -1466,6 +1534,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "tray.full"
         case .ai: return "sparkles"
         case .bibtex: return "text.quote"
+        case .library: return "books.vertical"
         case .reading: return "highlighter"
         case .log: return "list.bullet.rectangle"
         case .appearance: return "paintbrush"
@@ -1480,6 +1549,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .files: return "Files"
         case .ai: return "AI"
         case .bibtex: return "BibTeX"
+        case .library: return "Library"
         case .reading: return "Reading"
         case .log: return "Activity"
         case .appearance: return "Appearance"

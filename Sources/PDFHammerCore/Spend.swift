@@ -230,13 +230,17 @@ public func identifyOutcome(responseBody: Data, statusCode: Int) -> IdentifyOutc
 public enum AIFeature: String, Sendable, CaseIterable, Codable, Hashable {
     case identify         // renaming one item
     case batchIdentify    // "identify pending" sweep
-    case connectionTest   // Settings' Test connection button — still real spend, tagged apart
+    case connectionTest   // Settings' Test connection button, still real spend, tagged apart
+    case readingProject   // a question asked of a reading project
+    case bibtex           // improving a bibliography entry
 
     public var displayName: String {
         switch self {
         case .identify: return "Identify"
         case .batchIdentify: return "Identify pending"
         case .connectionTest: return "Connection test"
+        case .readingProject: return "Reading project"
+        case .bibtex: return "Bibliography"
         }
     }
 }

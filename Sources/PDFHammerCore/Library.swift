@@ -118,7 +118,7 @@ public actor Library {
     /// followed by bumping `PRAGMA user_version` to match. Adding the spend ledger or the
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
-    fileprivate static let migrations: [String] = [schemaV1, schemaV2]
+    fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -229,6 +229,18 @@ public actor Library {
         CREATE TABLE dismissed_duplicates (
             group_id     TEXT PRIMARY KEY,
             dismissed_at TEXT NOT NULL
+        );
+        """
+
+    /// A bibliography entry the user kept, so it survives a relaunch and can be exported
+    /// without being regenerated from a filename that may since have changed.
+    fileprivate static let schemaV3 = """
+        CREATE TABLE bibtex_entries (
+            document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+            entry       TEXT NOT NULL,
+            -- where it came from: generated, a registry, or the model.
+            origin      TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
         );
         """
 
@@ -719,7 +731,7 @@ public actor Library {
         return formatter.string(from: date)
     }
 
-    private static func isoDate(_ text: String) -> Date? {
+    static func isoDate(_ text: String) -> Date? {
         let precise = ISO8601DateFormatter()
         precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = precise.date(from: text) { return date }
@@ -809,7 +821,7 @@ private func bindInt(_ statement: OpaquePointer, _ index: Int32, _ value: Int?) 
     sqlite3_bind_int64(statement, index, Int64(value))
 }
 
-private func columnText(_ statement: OpaquePointer, _ index: Int32) -> String? {
+func columnText(_ statement: OpaquePointer, _ index: Int32) -> String? {
     guard let cString = sqlite3_column_text(statement, index) else { return nil }
     return String(cString: cString)
 }
@@ -896,4 +908,126 @@ public func libraryDatabaseURL(named name: String = "library.sqlite") -> URL? {
     let folder = base.appendingPathComponent("PDF Hammer", isDirectory: true)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder.appendingPathComponent(name)
+}
+
+// MARK: - What the interface needs to show the store
+
+extension Library {
+
+    /// A project and everything under it go together: leaving members behind would be a
+    /// row pointing at a project that no longer exists.
+    public func deleteProject(id: Int64) throws {
+        try transaction {
+            try run("DELETE FROM project_members WHERE project_id = ?;") { statement in
+                sqlite3_bind_int64(statement, 1, id)
+            }
+            try run("DELETE FROM projects WHERE id = ?;") { statement in
+                sqlite3_bind_int64(statement, 1, id)
+            }
+        }
+    }
+
+    /// Documents, most recently seen first, for a picker to choose from.
+    public func documents(limit: Int = 500) throws -> [DocumentRecord] {
+        try withStatement(
+            "SELECT * FROM documents ORDER BY last_seen_at DESC LIMIT ?;",
+            bind: { statement in sqlite3_bind_int(statement, 1, Int32(max(0, limit))) }
+        ) { statement in
+            var found: [DocumentRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                found.append(Library.documentRecord(from: statement))
+            }
+            return found
+        }
+    }
+
+    /// What the store holds, for the panel that shows it.
+    public func summary() throws -> LibrarySummary {
+        func count(_ table: String) throws -> Int {
+            try withStatement("SELECT COUNT(*) FROM \(table);") { statement in
+                sqlite3_step(statement) == SQLITE_ROW ? Int(sqlite3_column_int64(statement, 0)) : 0
+            }
+        }
+        return LibrarySummary(
+            documents: try count("documents"),
+            paths: try count("locations"),
+            tags: try count("tags"),
+            projects: try count("projects"),
+            withText: try count("extracted_text")
+        )
+    }
+}
+
+public struct LibrarySummary: Sendable, Equatable {
+    public var documents: Int
+    public var paths: Int
+    public var tags: Int
+    public var projects: Int
+    /// How many have had their text extracted, which is what full-text search can reach.
+    public var withText: Int
+}
+
+// MARK: - Kept bibliography entries
+
+extension Library {
+
+    /// The entry the user decided on, replacing whatever was there.
+    public func storeBibtex(_ entry: String, forDocument documentID: String,
+                            origin: String, at date: Date = Date()) throws {
+        try run("""
+            INSERT INTO bibtex_entries (document_id, entry, origin, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(document_id) DO UPDATE SET
+                entry = excluded.entry, origin = excluded.origin, updated_at = excluded.updated_at;
+            """) { statement in
+            bindText(statement, 1, documentID)
+            bindText(statement, 2, entry)
+            bindText(statement, 3, origin)
+            bindText(statement, 4, Library.isoString(date))
+        }
+    }
+
+    public func bibtex(forDocument documentID: String) throws -> StoredBibtex? {
+        try withStatement(
+            "SELECT entry, origin, updated_at FROM bibtex_entries WHERE document_id = ?;",
+            bind: { statement in bindText(statement, 1, documentID) }
+        ) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return StoredBibtex(documentID: documentID,
+                                entry: columnText(statement, 0) ?? "",
+                                origin: columnText(statement, 1) ?? "",
+                                updatedAt: columnText(statement, 2).flatMap(Library.isoDate) ?? Date())
+        }
+    }
+
+    public func removeBibtex(forDocument documentID: String) throws {
+        try run("DELETE FROM bibtex_entries WHERE document_id = ?;") { statement in
+            bindText(statement, 1, documentID)
+        }
+    }
+
+    /// Everything kept, for an export that should prefer a decided entry over a guess.
+    public func storedBibtex() throws -> [StoredBibtex] {
+        try withStatement("SELECT document_id, entry, origin, updated_at FROM bibtex_entries;") {
+            statement in
+            var out: [StoredBibtex] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                out.append(StoredBibtex(documentID: columnText(statement, 0) ?? "",
+                                        entry: columnText(statement, 1) ?? "",
+                                        origin: columnText(statement, 2) ?? "",
+                                        updatedAt: columnText(statement, 3)
+                                            .flatMap(Library.isoDate) ?? Date()))
+            }
+            return out
+        }
+    }
+}
+
+public struct StoredBibtex: Sendable, Equatable {
+    public var documentID: String
+    public var entry: String
+    /// How it was arrived at, so a kept entry can say whether a person, a registry or a
+    /// model produced it.
+    public var origin: String
+    public var updatedAt: Date
 }

@@ -16,6 +16,9 @@ struct ReviewInspector: View {
     let applyNow: () -> Void
     let identify: () -> Void
     let copyCitation: () -> Void
+    /// A raw exchange with the model, for correcting one entry. A closure because the
+    /// client lives with the view that owns the settings, not with this one.
+    let improveCitation: (String, String) async throws -> String
     @Binding var autoIdentify: Bool
     let reveal: () -> Void
     let openExternally: () -> Void
@@ -31,6 +34,13 @@ struct ReviewInspector: View {
     @ObservedObject var annotator: Annotator
     @ObservedObject var palette: Palette
     @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
+
+    // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
+    @State var citationDraft = ""
+    @State var citationStored = false
+    @State var citationImproving = false
+    @State var citationImprovedByAI = false
+    @State var citationNote: String?
     @AppStorage("inspectorCollapsed") private var collapsed = false
     @AppStorage("notesShown") private var notesShown = false
     @AppStorage("contentsShown") private var contentsShown = false
@@ -98,8 +108,11 @@ struct ReviewInspector: View {
                     Divider()
                     ScrollView {
                         VStack(alignment: .leading, spacing: 10) {
-                            if panel == .rename { renamePanel }
-                            else { MetadataPanel(item: item, excerpt: excerpt) }
+                            switch panel {
+                            case .rename: renamePanel
+                            case .details: MetadataPanel(item: item, excerpt: excerpt)
+                            case .bibtex: bibtexPanel
+                            }
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -127,7 +140,7 @@ struct ReviewInspector: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(collapsed)
-                .tip("Rename this file, or read what it says about itself")
+                .tip("Rename this file, read what it says about itself, or take its citation")
             }
 
             Spacer(minLength: 8)
@@ -528,9 +541,16 @@ struct PDFPreview: NSViewRepresentable {
 
 /// Which panel the inspector's bottom pane shows.
 enum InspectorPanel: String, CaseIterable, Identifiable {
-    case rename, details
+    case rename, details, bibtex
     var id: String { rawValue }
-    var label: String { self == .rename ? "Rename" : "Details" }
+
+    var label: String {
+        switch self {
+        case .rename: return "Rename"
+        case .details: return "Details"
+        case .bibtex: return "BibTeX"
+        }
+    }
 }
 
 /// What the file says about itself, under the actions that act on it.

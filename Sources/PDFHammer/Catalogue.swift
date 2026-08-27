@@ -754,6 +754,9 @@ struct ResultsPane: View {
                 applyNow: applyNow,
                 identify: identifySelected,
                 copyCitation: copyCitation,
+                improveCitation: { system, user in
+                    try await aiClient.ask(system: system, user: user, feature: .bibtex)
+                },
                 autoIdentify: $autoIdentify,
                 reveal: revealInFinder,
                 openExternally: openInViewer,

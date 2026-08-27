@@ -97,9 +97,13 @@ struct AIClient {
     var model: String
     var apiKey: String
 
-    /// Where a completed call is logged. Optional so every existing call site keeps
-    /// compiling unchanged; nil simply means this call is not tracked.
-    var spendRecorder: SpendRecorder? = nil
+    /// Where a completed call is logged.
+    ///
+    /// It defaults to the library rather than to nil on purpose: this defaulted to
+    /// nothing, four of the five places that build a client did not pass one, and the
+    /// ledger stayed empty while real money was being spent. A client that records is the
+    /// one you get by not thinking about it; pass nil deliberately to opt out.
+    var spendRecorder: SpendRecorder? = Library.shared
 
     /// Reads the key from the environment when the field is empty, so the app can be used
     /// without the key ever being stored anywhere by us.
@@ -193,6 +197,49 @@ struct AIClient {
             throw AIError.unreadable(outcome.failureReason ?? "")
         }
         throw AIError.http(code, outcome.failureReason ?? "")
+    }
+
+    /// A free-text exchange, for the questions `identify` cannot carry.
+    ///
+    /// `identify` parses its reply into a `BookGuess` and throws when it will not parse,
+    /// which is right for naming a file and useless for asking about a reading project,
+    /// where the answer is prose with citations in it.
+    func ask(system: String, user: String, feature: AIFeature) async throws -> String {
+        guard !apiKey.isEmpty else { throw AIError.noKey }
+        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")
+        else { throw AIError.unreadable("bad base URL") }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        // Longer than identify's: a project question reads far more than three pages.
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": system],
+                ["role": "user", "content": user],
+            ],
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+
+        // Read before anything can throw, for the same reason identify does it: a reply
+        // the provider billed for is spend whether or not it turned out to be usable.
+        let usage = body.flatMap { parseTokenUsage($0) }
+        let text = ((body?["choices"] as? [[String: Any]])?.first?["message"]
+                    as? [String: Any])?["content"] as? String
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        await record(usage: usage, feature: feature, succeeded: !trimmed.isEmpty)
+
+        if !trimmed.isEmpty { return trimmed }
+        guard (200..<300).contains(code) else {
+            throw AIError.http(code, (body?["error"] as? [String: Any])?["message"] as? String ?? "")
+        }
+        throw AIError.unreadable("the reply had no text in it")
     }
 
     /// Best-effort: a broken spend ledger must never be the reason an AI call fails or

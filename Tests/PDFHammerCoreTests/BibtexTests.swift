@@ -566,3 +566,54 @@ extension BibtexTests {
         XCTAssertNil(extractISBN(from: "no identifier on this page at all"))
     }
 }
+
+extension BibtexTests {
+
+    func testAnEntryIsPulledOutOfAFencedReply() {
+        let reply = """
+            Sure, here is the corrected entry:
+
+            ```bibtex
+            @book{maguire:2020:algebra,
+              title = {Algebra-Driven Design},
+              author = {Maguire, Sandy},
+              year = {2020}
+            }
+            ```
+
+            I fixed the author format.
+            """
+        let entry = extractBibtexEntry(from: reply)
+        XCTAssertEqual(entry?.hasPrefix("@book{maguire:2020:algebra,"), true)
+        XCTAssertEqual(entry?.hasSuffix("}"), true)
+        XCTAssertFalse(entry?.contains("I fixed") ?? true)
+        XCTAssertFalse(entry?.contains("```") ?? true)
+    }
+
+    func testNestedBracesDoNotEndTheEntryEarly() {
+        let reply = "@article{a:2020:b, title = {The {NASA} Report}, year = {2020}}"
+        XCTAssertEqual(extractBibtexEntry(from: reply), reply)
+    }
+
+    /// A reply with no entry in it keeps what the user already had.
+    func testAReplyWithNoEntryIsRefused() {
+        XCTAssertNil(extractBibtexEntry(from: "I could not work out what this document is."))
+        XCTAssertNil(extractBibtexEntry(from: ""))
+        XCTAssertNil(extractBibtexEntry(from: "@"))
+        XCTAssertNil(extractBibtexEntry(from: "@book{unterminated, title = {x}"))
+    }
+
+    func testThePromptCarriesTheEntryAndStopsTheExcerptGettingSilly() {
+        let prompt = bibtexImprovePrompt(entry: "@book{k, title = {T}}",
+                                         filename: "book.pdf",
+                                         excerpt: String(repeating: "a", count: 10_000))
+        XCTAssertTrue(prompt.contains("@book{k, title = {T}}"))
+        XCTAssertTrue(prompt.contains("book.pdf"))
+        XCTAssertLessThan(prompt.count, 4_500)
+    }
+
+    func testAnEmptyExcerptIsLeftOutRatherThanLabelledEmpty() {
+        let prompt = bibtexImprovePrompt(entry: "@book{k}", filename: "x.pdf", excerpt: "   \n ")
+        XCTAssertFalse(prompt.contains("Opening text"))
+    }
+}

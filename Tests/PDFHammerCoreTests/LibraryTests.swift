@@ -524,3 +524,92 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(columns, ["group_id", "dismissed_at"])
     }
 }
+
+/// The kept-bibliography table, against a real database. A generated entry is cheap to
+/// rebuild; one a person corrected is not, so losing it is the failure that matters.
+final class LibraryBibtexTests: XCTestCase {
+
+    private func library() throws -> (Library, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bib-\(UUID().uuidString).sqlite")
+        return (try Library(url: url), url)
+    }
+
+    private func document(in library: Library) async throws -> String {
+        try await library.indexDocument(path: "/tmp/a-book-\(UUID().uuidString).pdf",
+                                        contentHash: nil, title: "A Book").id
+    }
+
+    func testAnEntryIsKeptAndReadBack() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let id = try await document(in: library)
+
+        let before = try await library.bibtex(forDocument: id)
+        XCTAssertNil(before)
+        try await library.storeBibtex("@book{a, title = {A}}", forDocument: id, origin: "you")
+
+        let storedMaybe = try await library.bibtex(forDocument: id)
+        let stored = try XCTUnwrap(storedMaybe)
+        XCTAssertEqual(stored.entry, "@book{a, title = {A}}")
+        XCTAssertEqual(stored.origin, "you")
+    }
+
+    /// Storing again replaces rather than failing on the primary key or making a second row.
+    func testStoringAgainReplaces() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let id = try await document(in: library)
+
+        try await library.storeBibtex("@book{a}", forDocument: id, origin: "you")
+        try await library.storeBibtex("@article{a}", forDocument: id, origin: "the model")
+
+        let storedMaybe = try await library.bibtex(forDocument: id)
+        let stored = try XCTUnwrap(storedMaybe)
+        XCTAssertEqual(stored.entry, "@article{a}")
+        XCTAssertEqual(stored.origin, "the model")
+        let all = try await library.storedBibtex()
+        XCTAssertEqual(all.count, 1)
+    }
+
+    /// A kept entry has to survive the app being quit, which is the whole point of keeping it.
+    func testAKeptEntrySurvivesReopening() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let id = try await document(in: library)
+        try await library.storeBibtex("@book{kept}", forDocument: id, origin: "you")
+
+        let reopened = try Library(url: url)
+        let storedMaybe = try await reopened.bibtex(forDocument: id)
+        let stored = try XCTUnwrap(storedMaybe)
+        XCTAssertEqual(stored.entry, "@book{kept}")
+    }
+
+    func testRemovingAnEntryLeavesTheDocumentAlone() async throws {
+        let (library, url) = try library()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let id = try await document(in: library)
+        try await library.storeBibtex("@book{a}", forDocument: id, origin: "you")
+
+        try await library.removeBibtex(forDocument: id)
+        let gone = try await library.bibtex(forDocument: id)
+        let document = try await library.document(id: id)
+        XCTAssertNil(gone)
+        XCTAssertNotNil(document, "the document itself stays")
+    }
+
+    /// The migration has to run on a database made by the previous version, not only on a
+    /// fresh one, or an existing library loses the feature silently.
+    func testAnOlderDatabaseGainsTheTable() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bib-old-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        _ = try Library(url: url)                      // creates it at the current version
+        let reopened = try Library(url: url)           // and again, which must not re-run
+        let id = try await reopened.indexDocument(path: "/tmp/x.pdf", contentHash: nil).id
+        try await reopened.storeBibtex("@book{x}", forDocument: id, origin: "you")
+        let kept = try await reopened.storedBibtex()
+        XCTAssertEqual(kept.count, 1)
+    }
+}

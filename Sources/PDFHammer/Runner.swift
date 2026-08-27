@@ -280,6 +280,12 @@ final class Runner: ObservableObject {
         textCache[key] = nil
         let previous = results[index].status
         results[index] = item
+        // The row now describes a different file on disk, so the copy the duplicate index
+        // holds is stale: it would match a future file against bytes that have moved.
+        if duplicateIndex != nil {
+            duplicateIndex?.remove(key)
+            _ = duplicateIndex?.insert(item)
+        }
         refreshBib()
         revision += 1
         guard previous != item.status else { return }
@@ -314,6 +320,8 @@ final class Runner: ObservableObject {
     @Published private(set) var matchingKeys: Set<String>?
     /// Opening text, read once per file and only when a text query has asked for it.
     private var textCache: [String: String] = [:]
+    /// Built once from what is already on the shelf, then kept current as files arrive.
+    private var duplicateIndex: DuplicateIndex?
 
     /// The searchable projection of every file, built once per result set. Rebuilding it
     /// per keystroke was most of what a metadata search cost.
@@ -593,6 +601,41 @@ final class Runner: ObservableObject {
         finish(merged, keepingDecisions: true, derived: derived)
         self.fingerprint = fingerprint
         saveRunCache(RunCache(fingerprint: fingerprint, items: merged))
+
+        await announceDuplicates(among: arrived.values.map { $0 }, all: merged,
+                                 passwords: options.passwords)
+    }
+
+    /// A copy of something already on the shelf, said as it arrives.
+    ///
+    /// The check is incremental on purpose: the watcher fires on every settle, and
+    /// rescanning the whole library each time would read every PDF again to answer a
+    /// question about one new file.
+    private func announceDuplicates(among fresh: [Item], all: [Item], passwords: [String]) async {
+        guard !fresh.isEmpty else { return }
+        if duplicateIndex == nil {
+            var index = DuplicateIndex(items: all.filter { item in !fresh.contains { $0.key == item.key } },
+                                       passwords: passwords)
+            // Anything already decided stays decided, including across a relaunch.
+            if let library = Library.shared,
+               let dismissed = try? await library.dismissedDuplicateIDs() {
+                for id in dismissed { index.dismiss(id) }
+            }
+            duplicateIndex = index
+        }
+        for item in fresh {
+            guard let group = duplicateIndex?.insert(item, passwords: passwords) else { continue }
+            note(.scanned, subject: item.sourceName, detail: "looks like a copy of something here")
+            DuplicateAlert.present(
+                group,
+                thumbnail: { _ in nil },
+                trashNow: { [weak self] copy in
+                    guard let self else { return }
+                    self.markForDeletion(copy)
+                },
+                onKeepBoth: { [weak self] id in self?.duplicateIndex?.dismiss(id) }
+            )
+        }
     }
 
     func preview(roots: [URL], options: Options, fingerprint: String) {

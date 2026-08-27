@@ -8,9 +8,10 @@ struct SettingsView: View {
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
 
-    /// nil until the app has a Library to read from, in which case the spend sections
-    /// say so plainly rather than showing an empty ledger as though nothing was spent.
-    var library: Library? = nil
+    /// The ledger's home. Nil only when the database could not be opened at all, in
+    /// which case the spend sections say so rather than showing an empty ledger as though
+    /// nothing had been spent.
+    var library: Library? = Library.shared
 
     @State private var key = ""
     @State private var status: Status = .idle

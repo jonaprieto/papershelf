@@ -981,3 +981,71 @@ public func bibtexTokens(_ text: String) -> [BibToken] {
     }
     return tokens
 }
+
+// MARK: - Improving an entry with a model
+
+/// What the model is told before it is shown an entry.
+///
+/// The rules are blunt because the failure that matters is invention: a fabricated DOI or
+/// a plausible publisher is worse than a missing field, since a missing field is visible
+/// and a wrong one is not.
+public let bibtexImproveInstruction = """
+    You correct BibTeX entries. You are given one entry and the opening text of the \
+    document it describes.
+
+    Reply with one BibTeX entry and nothing else: no explanation, no code fence, no \
+    commentary before or after.
+
+    Rules:
+    - Only use what the entry already says or what the document text supports. If you \
+    cannot tell what a field should be, leave it out. Never invent a DOI, an ISBN, a \
+    publisher, a journal, or a page range.
+    - Keep the citation key exactly as it is.
+    - Fix the entry type if the document is plainly something else.
+    - Write authors as "Last, First and Last, First".
+    - Brace-protect capitals that must survive lowercasing, like {LaTeX} or {NASA}.
+    - Use a double dash in page ranges.
+    """
+
+public func bibtexImprovePrompt(entry: String, filename: String, excerpt: String) -> String {
+    var prompt = "Filename: \(filename)\n\nCurrent entry:\n\(entry)\n"
+    let trimmed = excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty {
+        prompt += "\nOpening text of the document:\n\(String(trimmed.prefix(4000)))\n"
+    }
+    return prompt
+}
+
+/// Pulls the entry back out of whatever the model wrapped it in.
+///
+/// Models add a code fence or a sentence of preamble however plainly they are asked not
+/// to, so the reply is read for the entry rather than trusted to be one. Nil when there
+/// is no entry in it at all, which is the honest answer: better to keep what the user had
+/// than to replace it with prose.
+public func extractBibtexEntry(from reply: String) -> String? {
+    guard let at = reply.firstIndex(of: "@") else { return nil }
+
+    var depth = 0
+    var sawBrace = false
+    var end: String.Index?
+    var index = at
+    while index < reply.endIndex {
+        let character = reply[index]
+        if character == "{" {
+            depth += 1
+            sawBrace = true
+        } else if character == "}" {
+            depth -= 1
+            if sawBrace && depth == 0 {
+                end = reply.index(after: index)
+                break
+            }
+        }
+        index = reply.index(after: index)
+    }
+
+    guard let end else { return nil }
+    let entry = String(reply[at..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+    // A bare "@" with nothing after it is not an entry.
+    return entry.count > 3 ? entry : nil
+}
