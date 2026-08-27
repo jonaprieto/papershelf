@@ -317,6 +317,27 @@ extension BibtexTests {
         XCTAssertFalse(minimalEntry(.book).isValid(for: .classic))
         XCTAssertTrue(minimalEntry(.misc).isValid(for: .classic))
     }
+
+    /// A requirement group is satisfied by *either* member, not just the first one named
+    /// in the group. Every group `gaps(for:)` checks today happens to list `author` (or
+    /// `doi`) first, so a check that only ever looked at `group[0]` would pass every
+    /// assertion above without anyone noticing; these two entries only pass because the
+    /// *second* member of the group is what is actually present.
+    func testEitherFieldInAGroupSatisfiesIt() {
+        // "author or editor": no author, but an editor is enough.
+        let edited = BibEntry(itemKey: "k", key: "k", title: "T", editor: "E", year: "2020",
+                              publisher: "P", file: "/tmp/a.pdf", type: .book)
+        let editedGaps: [String] = edited.gaps(for: BibStandard.classic)
+        XCTAssertEqual(editedGaps, [])
+        XCTAssertFalse(editedGaps.contains("author"))
+
+        // "doi or url": no doi, but a url is enough.
+        let linked = BibEntry(itemKey: "k", key: "k", title: "T", author: "A", year: "2020",
+                              url: "https://example.com", file: "/tmp/a.pdf", type: .online)
+        let linkedGaps: [String] = linked.gaps(for: BibStandard.biblatex)
+        XCTAssertEqual(linkedGaps, [])
+        XCTAssertFalse(linkedGaps.contains("doi"))
+    }
 }
 
 extension BibtexTests {

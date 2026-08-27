@@ -91,7 +91,7 @@ extension BibType {
             return [["author"], ["title"], ["school"], ["year"]]
         case (.thesis, .biblatex):
             // biblatex's own @thesis also requires a `type` field ("mathesis" or
-            // "phdthesis"), but the phdthesis alias this app writes sets that itself --
+            // "phdthesis"), but the phdthesis alias this app writes sets that itself,
             // the same mechanism `report` already relies on for `@techreport`.
             return [["author"], ["title"], ["institution"], ["year"]]
         case (.misc, .classic):
@@ -170,8 +170,8 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
 
     public var isComplete: Bool { missing.isEmpty }
 
-    /// This entry's value for a BibTeX field name, or nil if it has none -- either
-    /// because it is empty or because `BibEntry` has nowhere to hold it at all.
+    /// This entry's value for a BibTeX field name, or nil if it has none: either
+    /// because it is empty, or because `BibEntry` has nowhere to hold it at all.
     private func fieldValue(_ name: String) -> String? {
         let value: String?
         switch name {
@@ -191,7 +191,7 @@ public struct BibEntry: Identifiable, Sendable, Equatable {
         return value?.isEmpty == false ? value : nil
     }
 
-    /// The fields `standard` requires that this entry has no value for -- every field
+    /// The fields `standard` requires that this entry has no value for: every field
     /// BibTeX or biblatex actually asks for, not just the handful `missing` checks. Says
     /// plainly that a submitted `@inproceedings` with no `booktitle` will not compile,
     /// rather than treat it as merely "incomplete" by this app's own narrower bar.
@@ -287,7 +287,7 @@ public func bibtexTransliterate(_ value: String) -> String {
 
 /// Wraps every word past the first in an extra pair of braces, so a citation style that
 /// lowercases everything but a title's first letter cannot touch a proper noun or an
-/// acronym -- the "enclose the words ... in braces" convention (TeX FAQ, FAQ-capbibtex),
+/// acronym, per the "enclose the words ... in braces" convention (TeX FAQ, FAQ-capbibtex),
 /// e.g. `The {Great} {API}`. The first word is left alone: every style capitalizes a
 /// title's first letter regardless, so protecting it would only add noise.
 public func bibtexProtectCapitals(_ value: String) -> String {
@@ -299,7 +299,7 @@ public func bibtexProtectCapitals(_ value: String) -> String {
 }
 
 /// Turns a single hyphen (or an en/em dash typed by mistake) between two page numbers
-/// into BibTeX's own double dash, which TeX renders as the en dash a range needs --
+/// into BibTeX's own double dash, which TeX renders as the en dash a range needs:
 /// "the standard styles convert a single dash ... to the double dash" (BibTeXing §3.2).
 /// Already-doubled dashes, and anything that is not a plain number range (`43+`, a
 /// single page), pass through unchanged.
@@ -327,13 +327,13 @@ private let bibtexMonthNames: [String: String] = {
 }()
 
 /// The three-letter BibTeX month macro (`jan` … `dec`) for a month given as a number, an
-/// abbreviation, or a full English name -- nil for anything else, so a caller can fall
+/// abbreviation, or a full English name; nil for anything else, so a caller can fall
 /// back to writing the value as given rather than emit something that is not a macro.
 public func bibtexMonthMacro(_ value: String) -> String? {
     bibtexMonthNames[value.trimmingCharacters(in: .whitespaces).lowercased()]
 }
 
-/// One BibTeX name in its four parts (BibTeXing §4, item 18): First, von, Last, and Jr --
+/// One BibTeX name in its four parts (BibTeXing §4, item 18): First, von, Last, and Jr.
 /// "Ludwig van Beethoven" is First "Ludwig", von "van", Last "Beethoven"; "Gates, Jr,
 /// Henry Louis" is Last "Gates", Jr "Jr", First "Henry Louis".
 public struct BibName: Sendable, Equatable {
@@ -349,7 +349,7 @@ public struct BibName: Sendable, Equatable {
         self.jr = jr
     }
 
-    /// BibTeX's own canonical form, "von Last, Jr, First" -- the only one of the three
+    /// BibTeX's own canonical form, "von Last, Jr, First": the only one of the three
     /// input forms with no ambiguity about where each part ends.
     public var canonical: String {
         var out = von.isEmpty ? last : "\(von) \(last)"
@@ -359,7 +359,7 @@ public struct BibName: Sendable, Equatable {
     }
 }
 
-/// Splits `text` on `separator`, ignoring any occurrence inside braces -- exactly where
+/// Splits `text` on `separator`, ignoring any occurrence inside braces: exactly where
 /// BibTeX itself stops looking, since a corporate author like "{Brace and Center}" is
 /// braced specifically to keep BibTeX's own name-list splitter out of it.
 private func splitOutsideBraces(_ text: String, on separator: String) -> [String] {
@@ -571,7 +571,7 @@ public struct BibStyle: Sendable, Equatable {
     /// Drop a field entirely rather than write it with an empty value.
     public var dropEmptyFields: Bool
     /// Write a value that is only digits (a year, a lone page number) bare, with no
-    /// braces or quotes -- bibtex-tidy's --numeric.
+    /// braces or quotes: bibtex-tidy's --numeric.
     public var numericFields: Bool
     public var monthStyle: MonthStyle
     public var unicodeHandling: UnicodeHandling
