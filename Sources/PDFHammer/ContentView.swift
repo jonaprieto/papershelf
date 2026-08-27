@@ -78,6 +78,9 @@ struct ContentView: View {
     @State private var importing = false
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
+    /// Rebuilt from the results whenever they change, so the Explorer draws a folder
+    /// hierarchy without walking the disk again.
+    @State private var explorerTree: [ExplorerNode] = []
     @State private var expanded: Set<String> = []
     @State private var sizedWindow = false
     @State private var confirmingApply = false
@@ -464,6 +467,7 @@ struct ContentView: View {
         Form {
             switch sidebarTab {
             case .sources: sourcesPanel
+            case .explorer: explorerPanel
             case .passwords: passwordsPanel
             case .naming:
                 namingPanel
@@ -513,6 +517,64 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .frame(width: railWidth)
         .background(.quaternary.opacity(0.25))
+    }
+
+    // MARK: Explorer
+
+    @ViewBuilder
+    private var explorerPanel: some View {
+        Section {
+            if runner.results.isEmpty {
+                Text("Nothing scanned yet").foregroundStyle(.secondary)
+            } else {
+                OutlineGroup(explorerTree, children: \.children) { node in
+                    explorerRow(node)
+                }
+            }
+        } header: {
+            Text("Explorer")
+        } footer: {
+            Text("The same files the results view shows, organised for browsing. "
+                 + "Selecting one here selects it everywhere; right-click a folder to "
+                 + "open it in the catalogue.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task(id: runner.results.count) {
+            explorerTree = buildExplorerTree(runner.results)
+        }
+    }
+
+    private func explorerRow(_ node: ExplorerNode) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: node.itemKey == nil ? "folder" : "doc")
+                .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
+            Text(node.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .background(
+            node.itemKey != nil && node.itemKey == reviewing
+                ? Color.accentColor.opacity(0.15) : .clear
+        )
+        .onTapGesture {
+            guard let key = node.itemKey else { return }
+            reviewing = key
+        }
+        .contextMenu {
+            if node.itemKey == nil {
+                // The catalogue is the only thing that can honour this, and it owns its own
+                // state, so the intent is posted rather than reached for directly.
+                Button("Open in Catalogue") {
+                    NotificationCenter.default.post(
+                        name: .openFolderInCatalogue, object: nil,
+                        userInfo: ["path": node.url.path])
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -1543,13 +1605,14 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, passwords, naming, files, ai, bibtex, library, reading, log, appearance
+    case sources, explorer, passwords, naming, files, ai, bibtex, library, reading, log, appearance
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
         case .sources: return "folder"
+        case .explorer: return "list.bullet.indent"
         case .passwords: return "key"
         case .naming: return "textformat"
         case .files: return "tray.full"
@@ -1565,6 +1628,7 @@ enum SidebarTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .sources: return "Sources"
+        case .explorer: return "Explorer"
         case .passwords: return "Passwords"
         case .naming: return "Name rules"
         case .files: return "Files"
@@ -1576,6 +1640,72 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         }
     }
+}
+
+// MARK: - Explorer tree
+
+/// A folder or file in the current results, for the Explorer tab. Keyed by a real URL
+/// rather than the results tree's synthetic node ids (`buildTree(_:)` in PDFHammerCore
+/// names a node after its path components, not the path itself), since offering to open a
+/// folder in the catalogue needs a path that actually exists on disk.
+struct ExplorerNode: Identifiable {
+    let id: String
+    let name: String
+    let url: URL
+    /// `Item.key`, or nil for a folder.
+    let itemKey: String?
+    var children: [ExplorerNode]?
+}
+
+/// Groups the current results into the same folder hierarchy the results view builds,
+/// keeping the real URL at every folder along the way.
+func buildExplorerTree(_ items: [Item]) -> [ExplorerNode] {
+    final class Builder {
+        let name: String
+        let url: URL
+        var order: [String] = []
+        var children: [String: Builder] = [:]
+        var itemKey: String?
+        init(name: String, url: URL) {
+            self.name = name
+            self.url = url
+        }
+
+        func child(_ key: String, name: String, url: URL) -> Builder {
+            if let existing = children[key] { return existing }
+            let made = Builder(name: name, url: url)
+            children[key] = made
+            order.append(key)
+            return made
+        }
+
+        func node() -> ExplorerNode {
+            guard itemKey == nil else {
+                return ExplorerNode(id: itemKey!, name: name, url: url, itemKey: itemKey, children: nil)
+            }
+            // Folders first, then alphabetical, the way Finder lists a folder.
+            let sortedChildren = order.map { children[$0]! }.sorted { lhs, rhs in
+                if (lhs.itemKey == nil) != (rhs.itemKey == nil) { return lhs.itemKey == nil }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+            return ExplorerNode(id: url.path, name: name, url: url, itemKey: nil,
+                                children: sortedChildren.map { $0.node() })
+        }
+    }
+
+    let top = Builder(name: "", url: URL(fileURLWithPath: "/"))
+    for item in items {
+        var cursor = top.child(item.root.path, name: item.root.lastPathComponent, url: item.root)
+        var url = item.root
+        for folder in item.relativePath.split(separator: "/").map(String.init).dropLast() {
+            url.appendPathComponent(folder)
+            cursor = cursor.child(url.path, name: folder, url: url)
+        }
+        let fileURL = item.currentURL
+        let leaf = cursor.child(item.key, name: fileURL.lastPathComponent, url: fileURL)
+        leaf.itemKey = item.key
+    }
+    return top.order.map { top.children[$0]!.node() }
 }
 
 /// The rail's width, shared by the rail itself and the window's minimum, so the two cannot

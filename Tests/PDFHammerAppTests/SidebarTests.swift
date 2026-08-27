@@ -26,7 +26,7 @@ final class SidebarTests: XCTestCase {
     /// here first.
     func testRailTabsAreAllStillThere() {
         let expected: [SidebarTab] = [
-            .sources, .passwords, .naming, .files,
+            .sources, .explorer, .passwords, .naming, .files,
             .ai, .bibtex, .library, .reading, .log, .appearance,
         ]
         XCTAssertEqual(SidebarTab.allCases, expected)
@@ -35,6 +35,7 @@ final class SidebarTests: XCTestCase {
     func testEveryTabHasItsOwnIcon() {
         let icons = SidebarTab.allCases.map(\.icon)
         XCTAssertEqual(Set(icons).count, icons.count, "two tabs share an icon")
+        XCTAssertEqual(SidebarTab.explorer.icon, "list.bullet.indent")
     }
 
     // MARK: - Rail width under a squeeze
