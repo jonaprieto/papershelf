@@ -586,7 +586,12 @@ struct ContentView: View {
             } header: {
                 Text("Naming pattern")
             } footer: {
-                namingPreviewFooter
+                VStack(alignment: .leading, spacing: 4) {
+                    Note(icon: "info.circle.fill", tint: .secondary,
+                         text: "Preview only for now: Preview and Apply still use Name rules below.",
+                         size: .caption)
+                    namingPreviewFooter
+                }
             }
 
             Section {
@@ -606,8 +611,31 @@ struct ContentView: View {
                     .tip("Non-ASCII becomes a separator, so words stay apart")
                 Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
                     .help("So a shelf sorts by what the book is called rather than by its article")
+                Picker("Date goes", selection: $ruleDatePosition) {
+                    ForEach(NameRules.DatePosition.allCases) { Text($0.label).tag($0) }
+                }
+                .help("Whether the date leads the name or trails it")
+                Picker("Date looks like", selection: $ruleDateFormat) {
+                    ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
+                }
+                LabeledContent("Max length") {
+                    HStack(spacing: 6) {
+                        Slider(value: Binding(get: { Double(ruleMaxLength) },
+                                              set: { ruleMaxLength = Int($0) }),
+                               in: 0...120, step: 5)
+                        Text(ruleMaxLength == 0 ? "off" : "\(ruleMaxLength)")
+                            .monospacedDigit()
+                            .frame(width: 26, alignment: .trailing)
+                    }
+                }
+                .tip("Trims the name on a word boundary; the date is never cut")
             } header: {
-                Text("Text cleanup")
+                // These three, plus everything above, are what Preview and Apply actually
+                // use (NameRules/normalizedName, Hammer.swift): the Naming pattern section
+                // above is not wired into that pipeline yet (render()'s own header comment
+                // in Patterns.swift says as much), so these controls stay here rather than
+                // being retired in favour of a pattern that does not yet drive real output.
+                Text("Name rules")
             } footer: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(Self.sampleName)
@@ -751,7 +779,17 @@ struct ContentView: View {
         Menu {
             ForEach(NameToken.Kind.allCases) { kind in
                 Button(namingLabel(for: kind)) {
-                    updateNamePattern { $0.elements.append(.token(NameToken(kind))) }
+                    updateNamePattern { pattern in
+                        // A token landing directly against another token with nothing
+                        // between them renders glued together (assemble() in
+                        // Patterns.swift only drops a separator, never adds one), so a
+                        // dash goes in first when the pattern does not already end on
+                        // one of its own.
+                        if case .token = pattern.elements.last {
+                            pattern.elements.append(.literal("-"))
+                        }
+                        pattern.elements.append(.token(NameToken(kind)))
+                    }
                 }
             }
         } label: {
