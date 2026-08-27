@@ -14,8 +14,9 @@ final class Chrome: ObservableObject {
     @Published var canUndo = false
     /// Hides everything that is about deciding, leaving the page.
     @AppStorage("readingMode") var reading = false
-    /// Shared with the inspector through the same key, so the menu can reach it.
+    /// Shared with the inspector through the same keys, so the menu can reach them.
     @AppStorage("notesShown") var notesShown = false
+    @AppStorage("contentsShown") var contentsShown = false
 
     func toggleSidebar() {
         withAnimation(.easeOut(duration: 0.18)) {
@@ -49,6 +50,10 @@ struct PDFHammerApp: App {
                     chrome.notesShown.toggle()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button(chrome.contentsShown ? "Hide Contents" : "Show Contents") {
+                    chrome.contentsShown.toggle()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
             }
@@ -2102,6 +2107,11 @@ private struct ResultsPane: View {
     @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
+    @AppStorage("notesShown") private var notesShown = false
+    @StateObject private var annotator = Annotator()
+    @State private var addingNote = false
+    @State private var noteText = ""
+
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
     @AppStorage("bibType") private var bibType: BibType = .book
@@ -2719,6 +2729,14 @@ private struct ResultsPane: View {
                 inspector
                     .frame(width: reading ? nil : width)
                     .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
+                if notesShown {
+                    Divider()
+                    NotesRail(annotator: annotator, palette: palette,
+                              addingNote: $addingNote, noteText: $noteText,
+                              lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
+                              close: { withAnimation(.easeOut(duration: 0.15)) { notesShown = false } })
+                        .frame(width: 240)
+                }
             }
         }
     }
@@ -2791,6 +2809,7 @@ private struct ResultsPane: View {
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
                 reading: reading,
+                annotator: annotator,
                 palette: palette
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
@@ -3068,14 +3087,14 @@ private struct ReviewInspector: View {
     let excerpt: String?
     let reading: Bool
 
-    @StateObject private var annotator = Annotator()
+    @ObservedObject var annotator: Annotator
     @ObservedObject var palette: Palette
     @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
     @AppStorage("inspectorCollapsed") private var collapsed = false
     @AppStorage("notesShown") private var notesShown = false
+    @AppStorage("contentsShown") private var contentsShown = false
     @State private var addingNote = false
     @State private var noteText = ""
-    @State private var clearingMarks = false
     @AppStorage("lastHighlightColour") private var lastColourID = ""
     @State private var hovered: UUID?
     @State private var hoveringNote = false
@@ -3115,13 +3134,21 @@ private struct ReviewInspector: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
+        VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    if contentsShown && !annotator.contents.isEmpty {
+                        ContentsRail(annotator: annotator,
+                                     close: { withAnimation(.easeOut(duration: 0.15)) {
+                                         contentsShown = false } })
+                            .frame(width: 196)
+                        Divider()
+                    }
+                    PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.quaternary.opacity(0.35))
                     .overlay(alignment: .topTrailing) { lockedOverlay }
                     .overlay(alignment: .topLeading) { floatingSelectionBar }
+                }
 
                 Divider()
                 panelHeader
@@ -3138,24 +3165,6 @@ private struct ReviewInspector: View {
                     }
                     .frame(maxHeight: 300)
                 }
-            }
-
-            // Notes sit beside the page rather than under it: a mark belongs next to the
-            // line it is on, and the bottom pane is for deciding about the file.
-            if notesShown {
-                Divider()
-                notesRail.frame(width: 240)
-            }
-        }
-        .confirmationDialog("Remove every mark from this document?",
-                            isPresented: $clearingMarks) {
-            Button("Remove \(annotator.marks.count)", role: .destructive) {
-                annotator.removeAll()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Highlights and notes are written into the PDF itself, so this cannot be "
-                 + "undone from here.")
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
         .onChange(of: item.key) { _, _ in
@@ -3181,6 +3190,17 @@ private struct ReviewInspector: View {
             }
 
             Spacer(minLength: 8)
+
+            if !annotator.contents.isEmpty {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { contentsShown.toggle() }
+                } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(contentsShown ? Color.accentColor : .secondary)
+                .tip(contentsShown ? "Hide the contents" : "Table of contents", key: "⌘⇧T")
+            }
 
             Button(action: reveal) { Image(systemName: "folder") }
                 .buttonStyle(.borderless)
@@ -3304,96 +3324,6 @@ private struct ReviewInspector: View {
                 .offset(y: -24)
                 .transition(.opacity)
         }
-    }
-
-    private var notesRail: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Notes").font(.callout.weight(.semibold))
-                Spacer()
-                Text("\(annotator.marks.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if !annotator.marks.isEmpty {
-                    Button(role: .destructive) { clearingMarks = true } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                    .help("Remove every mark from this document")
-                }
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) { notesShown = false }
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.tertiary)
-                .tip("Hide the notes", key: "⌘⇧N")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.bar)
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if addingNote {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Note on the selection")
-                                .font(.caption).foregroundStyle(.secondary)
-                            TextField("What is worth remembering", text: $noteText, axis: .vertical)
-                                .textFieldStyle(.roundedBorder)
-                                .lineLimit(2...5)
-                            HStack {
-                                Button("Save") {
-                                    annotator.highlightSelection(
-                                        colour: (lastStyle ?? Palette.defaults[0]).nsColor,
-                                        note: noteText)
-                                    noteText = ""
-                                    addingNote = false
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty)
-                                Button("Cancel") { noteText = ""; addingNote = false }
-                            }
-                        }
-                        Divider()
-                    }
-
-                    if annotator.marks.isEmpty && !addingNote {
-                        Text("Select text on the page to highlight it or attach a note.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    ForEach(annotator.marks) { mark in
-                        MarkRow(
-                            mark: mark,
-                            isSelected: annotator.selectedMark == mark.id,
-                            jump: { annotator.jump(to: mark) },
-                            remove: { annotator.remove(mark) },
-                            save: { annotator.setNote($0, on: mark) },
-                            recolour: { annotator.setColour($0, on: mark) },
-                            styles: palette.styles,
-                            meaning: palette.meaning(for: mark.colour)
-                        )
-                    }
-
-                    if let problem = annotator.lastError {
-                        Label(problem, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .background(.background.secondary)
     }
 
     @ViewBuilder
@@ -3926,6 +3856,10 @@ private struct StatusPill: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
         .background(color.opacity(0.16), in: Capsule())
+        // A Capsule fills whatever height it is handed; without this the pill grows into
+        // any spare room its row is given.
+        .fixedSize()
+        .tip(status.explanation)
     }
 
     private var icon: String {
@@ -4436,6 +4370,7 @@ private struct ShortcutsSheet: View {
             ("⌘B", "show or hide the sidebar"),
             ("⌘⇧R", "reading mode: just the page"),
             ("⌘⇧N", "show or hide the notes beside the page"),
+            ("⌘⇧T", "show or hide the table of contents"),
             ("?", "this list"),
         ]),
     ]
@@ -4593,6 +4528,109 @@ private struct MarkRow: View {
     }
 }
 
+/// The marks beside the page. A window-level pane like the sidebar, not part of the
+/// inspector: nesting it inside a column that is already width-constrained made the two
+/// of them overflow the frame and draw over the browser.
+struct NotesRail: View {
+    @ObservedObject var annotator: Annotator
+    @ObservedObject var palette: Palette
+    @Binding var addingNote: Bool
+    @Binding var noteText: String
+    let lastColour: NSColor
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Notes").font(.callout.weight(.semibold))
+                Spacer()
+                Text("\(annotator.marks.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if !annotator.marks.isEmpty {
+                    Button(role: .destructive) { clearing = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .help("Remove every mark from this document")
+                }
+                Button {
+                    close()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tertiary)
+                .tip("Hide the notes", key: "⌘⇧N")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if addingNote {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Note on the selection")
+                                .font(.caption).foregroundStyle(.secondary)
+                            TextField("What is worth remembering", text: $noteText, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...5)
+                            HStack {
+                                Button("Save") {
+                                    annotator.highlightSelection(colour: lastColour, note: noteText)
+                                    noteText = ""
+                                    addingNote = false
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                                Button("Cancel") { noteText = ""; addingNote = false }
+                            }
+                        }
+                        Divider()
+                    }
+
+                    if annotator.marks.isEmpty && !addingNote {
+                        Text("Select text on the page to highlight it or attach a note.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    ForEach(annotator.marks) { mark in
+                        MarkRow(
+                            mark: mark,
+                            isSelected: annotator.selectedMark == mark.id,
+                            jump: { annotator.jump(to: mark) },
+                            remove: { annotator.remove(mark) },
+                            save: { annotator.setNote($0, on: mark) },
+                            recolour: { annotator.setColour($0, on: mark) },
+                            styles: palette.styles,
+                            meaning: palette.meaning(for: mark.colour)
+                        )
+                    }
+
+                    if let problem = annotator.lastError {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(.background.secondary)
+    }
+
+
+    @State private var clearing = false
+}
+
 // MARK: - Metadata
 
 /// What the file says about itself, under the actions that act on it.
@@ -4710,5 +4748,62 @@ private struct StatusStrip: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .background(.bar)
+    }
+}
+
+// MARK: - Contents
+
+/// The document's own table of contents, on the page's left where a reader expects it.
+/// Only offered when the PDF actually carries an outline.
+struct ContentsRail: View {
+    @ObservedObject var annotator: Annotator
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Contents").font(.callout.weight(.semibold))
+                Spacer()
+                Text("\(annotator.contents.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button(action: close) { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.tertiary)
+                    .tip("Hide the contents", key: "⌘⇧T")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            Divider()
+
+            List(annotator.contents) { chapter in
+                Button {
+                    annotator.go(to: chapter)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(chapter.label)
+                            .font(chapter.level == 0 ? .callout.weight(.medium) : .caption)
+                            .foregroundStyle(chapter.level == 0 ? .primary : .secondary)
+                            .lineLimit(2)
+                        Spacer(minLength: 4)
+                        if let page = chapter.page {
+                            Text("\(page)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    // Depth by indent: a table of contents is read straight down far more
+                    // often than it is folded.
+                    .padding(.leading, CGFloat(chapter.level) * 11)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+            }
+            .listStyle(.inset)
+        }
+        .background(.background.secondary)
     }
 }

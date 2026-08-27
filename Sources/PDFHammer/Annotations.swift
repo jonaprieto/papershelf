@@ -20,6 +20,19 @@ final class Annotator: ObservableObject {
     @Published private(set) var lastError: String?
     /// The mark being looked at, so the rail can show it and the page can point at it.
     @Published var selectedMark: UUID?
+    /// The document's own table of contents, if it has one.
+    @Published private(set) var contents: [Chapter] = []
+
+    /// One outline entry, flattened with its depth. A table of contents is read top to
+    /// bottom far more often than it is folded, and indentation carries the structure
+    /// without a disclosure triangle on every line.
+    struct Chapter: Identifiable {
+        let id = UUID()
+        let label: String
+        let level: Int
+        let page: Int?
+        let destination: PDFDestination?
+    }
 
     struct Mark: Identifiable {
         let id = UUID()
@@ -40,6 +53,31 @@ final class Annotator: ObservableObject {
         self.view = view
         self.url = url
         refresh()
+        readContents()
+    }
+
+    private func readContents() {
+        guard let document = view?.document, let root = document.outlineRoot else {
+            contents = []
+            return
+        }
+        var found: [Chapter] = []
+        func walk(_ node: PDFOutline, level: Int) {
+            for index in 0..<node.numberOfChildren {
+                guard let child = node.child(at: index) else { continue }
+                let page = child.destination?.page.map { document.index(for: $0) + 1 }
+                found.append(Chapter(label: child.label ?? "Untitled", level: level,
+                                     page: page, destination: child.destination))
+                walk(child, level: level + 1)
+            }
+        }
+        walk(root, level: 0)
+        contents = found
+    }
+
+    func go(to chapter: Chapter) {
+        guard let view, let destination = chapter.destination else { return }
+        view.go(to: destination)
     }
 
     func selectionChanged() {
