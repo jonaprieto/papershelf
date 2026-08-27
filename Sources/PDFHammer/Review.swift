@@ -53,6 +53,7 @@ struct ReviewInspector: View {
     @AppStorage("lastHighlightColour") private var lastColourID = ""
     @State private var hovered: UUID?
     @State private var hoveringNote = false
+    @State private var hoveringChatGPT = false
 
     private var lastStyle: HighlightStyle? {
         palette.styles.first { $0.id.uuidString == lastColourID } ?? palette.styles.first
@@ -214,7 +215,9 @@ struct ReviewInspector: View {
     private var floatingSelectionBar: some View {
         if annotator.hasSelection {
             GeometryReader { geometry in
-                let bar = CGSize(width: 250, height: 40)
+                // Wider when the ChatGPT menu is in it: the bar's width is fixed, so a
+                // new target has to be paid for rather than squeezed out of the swatches.
+                let bar = CGSize(width: ChatGPTHandoff.isInstalled ? 284 : 250, height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
                 let above = box.minY - bar.height - 8
@@ -261,6 +264,23 @@ struct ReviewInspector: View {
             }
             .buttonStyle(.plain)
             .onHover { hoveringNote = $0 }
+
+            // One menu, not two more bare icons: the bar is a fixed width and already
+            // carries the swatches, a divider and the note button. Hover is reported into
+            // the same immediate label the rest of the bar uses, since `.help` waits a
+            // second or two before saying anything.
+            if ChatGPTHandoff.isInstalled {
+                Menu {
+                    Button("Open in ChatGPT") { handOffSelection(copyOnly: false) }
+                    Button("Copy for ChatGPT") { handOffSelection(copyOnly: true) }
+                } label: {
+                    Image(systemName: "bubble.left.and.text.bubble.right")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .onHover { hoveringChatGPT = $0 }
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -269,10 +289,26 @@ struct ReviewInspector: View {
         .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
     }
 
+    /// Hands whatever is selected right now to ChatGPT. Read at the moment the button is
+    /// pressed rather than held in state, so a selection changed while the menu was open
+    /// cannot send the passage the reader was looking at a moment ago.
+    private func handOffSelection(copyOnly: Bool) {
+        guard let selection = annotator.selectionForHandoff() else { return }
+        let prompt = ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
+                                           page: selection.page, title: selection.title)
+        if copyOnly {
+            ChatGPTHandoff.copy(prompt)
+        } else {
+            ChatGPTHandoff.open(prompt)
+        }
+    }
+
     /// What the colour under the pointer means, shown immediately above the bar.
     @ViewBuilder
     private var meaningLabel: some View {
-        if let text = hoveredMeaning ?? (hoveringNote ? "Highlight and attach a note" : nil) {
+        if let text = hoveredMeaning
+            ?? (hoveringNote ? "Highlight and attach a note" : nil)
+            ?? (hoveringChatGPT ? "Ask ChatGPT about this passage" : nil) {
             Text(text)
                 .font(.caption)
                 .lineLimit(1)

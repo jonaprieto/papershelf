@@ -103,6 +103,19 @@ final class Annotator: ObservableObject {
                                width: box.width, height: box.height)
     }
 
+    /// What a live selection would hand to ChatGPT: the passage, the page it sits on, and
+    /// a title for context. A selection is not a mark yet, so there is no stored page
+    /// number or note the way `Mark` has them; both are read straight off the current
+    /// selection and the file on screen, the same way `highlightSelection` reads the
+    /// selection fresh rather than from a cached property.
+    func selectionForHandoff() -> (quoted: String, page: Int, title: String)? {
+        guard let view, let selection = view.currentSelection,
+              let quoted = selection.string, !quoted.isEmpty,
+              let page = selection.pages.first, let document = view.document else { return nil }
+        let title = url?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        return (quoted: quoted, page: document.index(for: page) + 1, title: title)
+    }
+
     func refresh() {
         guard let document = view?.document else { marks = []; return }
         var found: [Mark] = []
