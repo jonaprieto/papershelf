@@ -55,4 +55,73 @@ final class ExplorerTreeTests: XCTestCase {
         XCTAssertEqual(papers.count, 1)
         XCTAssertEqual(papers.first?.children?.count, 2)
     }
+
+    // MARK: - Folding
+
+    /// "Unfold everything" needs the folders and only the folders: a set carrying file ids
+    /// would claim open folders that do not exist.
+    func testFolderIDsAreEveryFolderAndNoFile() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([
+            item(root, "papers/2020/a.pdf"),
+            item(root, "loose.pdf"),
+        ])
+
+        XCTAssertEqual(explorerFolderIDs(tree), [
+            "/tmp/shelf", "/tmp/shelf/papers", "/tmp/shelf/papers/2020",
+        ])
+    }
+
+    // MARK: - Filtering
+
+    func testAnEmptyFilterChangesNothing() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([item(root, "papers/a.pdf")])
+
+        XCTAssertEqual(filterExplorerTree(tree, matching: "   ").count, tree.count)
+    }
+
+    /// A matching file keeps the folders needed to reach it, and nothing else.
+    func testAMatchingFileKeepsItsAncestorsAndDropsItsSiblings() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([
+            item(root, "papers/graphs.pdf"),
+            item(root, "papers/other.pdf"),
+            item(root, "music/song.pdf"),
+        ])
+
+        let filtered = filterExplorerTree(tree, matching: "graphs")
+        let papers = try XCTUnwrap(filtered.first?.children)
+        XCTAssertEqual(papers.count, 1, "the music folder has nothing matching in it")
+        XCTAssertEqual(papers.first?.name, "papers")
+        XCTAssertEqual(papers.first?.children?.map(\.name), ["graphs.pdf"])
+    }
+
+    /// A folder whose own name matches keeps everything under it, the way typing a folder
+    /// name into an editor's explorer shows its contents rather than an empty branch.
+    func testAMatchingFolderKeepsEverythingUnderIt() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([
+            item(root, "papers/a.pdf"),
+            item(root, "papers/b.pdf"),
+        ])
+
+        let filtered = filterExplorerTree(tree, matching: "papers")
+        let papers = try XCTUnwrap(filtered.first?.children?.first)
+        XCTAssertEqual(papers.children?.count, 2)
+    }
+
+    func testFilteringIgnoresCaseAndDiacritics() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([item(root, "Álgebra.pdf")])
+
+        XCTAssertEqual(filterExplorerTree(tree, matching: "algebra").count, 1)
+    }
+
+    func testNothingMatchingLeavesNothing() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([item(root, "papers/a.pdf")])
+
+        XCTAssertTrue(filterExplorerTree(tree, matching: "zzz").isEmpty)
+    }
 }

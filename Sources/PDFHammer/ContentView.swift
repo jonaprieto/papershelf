@@ -85,6 +85,10 @@ struct ContentView: View {
     /// Rebuilt from the results whenever they change, so the Explorer draws a folder
     /// hierarchy without walking the disk again.
     @State private var explorerTree: [ExplorerNode] = []
+    /// Which folders are open, by path. Kept here rather than inside `OutlineGroup` so the
+    /// Explorer can be folded and unfolded from its header the way an editor's can.
+    @State private var explorerExpanded: Set<String> = []
+    @State private var explorerFilter = ""
     @State private var expanded: Set<String> = []
     @State private var sizedWindow = false
     @State private var confirmingApply = false
@@ -608,18 +612,58 @@ struct ContentView: View {
 
     // MARK: Explorer
 
+    /// What the filter box leaves of the tree. Recomputed as it is typed rather than kept
+    /// in state, so it can never disagree with the tree it is filtering.
+    private var visibleExplorerTree: [ExplorerNode] {
+        filterExplorerTree(explorerTree, matching: explorerFilter)
+    }
+
     @ViewBuilder
     private var explorerPanel: some View {
         Section {
             if runner.results.isEmpty {
                 Text("Nothing scanned yet").foregroundStyle(.secondary)
             } else {
-                OutlineGroup(explorerTree, children: \.children) { node in
-                    explorerRow(node)
+                explorerFilterField
+                let visible = visibleExplorerTree
+                if visible.isEmpty {
+                    Text("No file here matches \"\(explorerFilter)\"")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ExplorerOutline(
+                        nodes: visible,
+                        expanded: $explorerExpanded,
+                        // A filter that hid its own matches inside folded folders would be
+                        // useless, so filtering opens everything it kept and folding is
+                        // handed back once the box is empty again.
+                        forceExpanded: !explorerFilter.isEmpty,
+                        selected: reviewing,
+                        select: { reviewing = $0 }
+                    )
                 }
             }
         } header: {
-            Text("Explorer")
+            HStack(spacing: 4) {
+                Text("Explorer")
+                Spacer()
+                Button {
+                    explorerExpanded = explorerFolderIDs(explorerTree)
+                } label: {
+                    Image(systemName: "rectangle.expand.vertical")
+                }
+                .buttonStyle(.borderless)
+                .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+                .tip("Unfold every folder")
+
+                Button {
+                    explorerExpanded = []
+                } label: {
+                    Image(systemName: "rectangle.compress.vertical")
+                }
+                .buttonStyle(.borderless)
+                .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+                .tip("Fold every folder")
+            }
         } footer: {
             Text("The same files the results view shows, organised for browsing. "
                  + "Selecting one here selects it everywhere; right-click a folder to "
@@ -630,38 +674,31 @@ struct ContentView: View {
         }
         .task(id: runner.results.count) {
             explorerTree = buildExplorerTree(runner.results)
+            // The roots open on their own: a tree that arrives entirely folded says nothing
+            // about what was just scanned. Anything folded by hand below them stays folded.
+            explorerExpanded.formUnion(explorerTree.map(\.id))
         }
     }
 
-    private func explorerRow(_ node: ExplorerNode) -> some View {
+    private var explorerFilterField: some View {
         HStack(spacing: 6) {
-            Image(systemName: node.itemKey == nil ? "folder" : "doc")
-                .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
-            Text(node.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 1)
-        .contentShape(Rectangle())
-        .background(
-            node.itemKey != nil && node.itemKey == reviewing
-                ? Color.accentColor.opacity(0.15) : .clear
-        )
-        .onTapGesture {
-            guard let key = node.itemKey else { return }
-            reviewing = key
-        }
-        .contextMenu {
-            if node.itemKey == nil {
-                // The catalogue is the only thing that can honour this, and it owns its own
-                // state, so the intent is posted rather than reached for directly.
-                Button("Open in Catalogue") {
-                    NotificationCenter.default.post(
-                        name: .openFolderInCatalogue, object: nil,
-                        userInfo: ["path": node.url.path])
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            TextField("Filter by name", text: $explorerFilter)
+                .textFieldStyle(.plain)
+            if !explorerFilter.isEmpty {
+                Button { explorerFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .tip("Clear the filter")
             }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
     }
 
     @ViewBuilder
@@ -1795,6 +1832,113 @@ func buildExplorerTree(_ items: [Item]) -> [ExplorerNode] {
         leaf.itemKey = item.key
     }
     return top.order.map { top.children[$0]!.node() }
+}
+
+/// The Explorer's tree, folded and unfolded from the outside.
+///
+/// `OutlineGroup` keeps its own expansion state where nothing can reach it, which is fine
+/// until a header offers "unfold everything" or a filter has to open what it kept. Plain
+/// `DisclosureGroup`s over a shared set of open folder paths put that state somewhere both
+/// can act on.
+struct ExplorerOutline: View {
+    let nodes: [ExplorerNode]
+    @Binding var expanded: Set<String>
+    /// Overrides the set while a filter is on: everything shown is open, and folding it by
+    /// hand meanwhile is not offered rather than silently ignored.
+    let forceExpanded: Bool
+    let selected: String?
+    let select: (String) -> Void
+
+    var body: some View {
+        ForEach(nodes) { node in
+            if let children = node.children {
+                DisclosureGroup(isExpanded: binding(for: node)) {
+                    ExplorerOutline(nodes: children, expanded: $expanded,
+                                    forceExpanded: forceExpanded,
+                                    selected: selected, select: select)
+                } label: {
+                    row(node)
+                }
+            } else {
+                row(node)
+            }
+        }
+    }
+
+    private func binding(for node: ExplorerNode) -> Binding<Bool> {
+        Binding(
+            get: { forceExpanded || expanded.contains(node.id) },
+            set: { open in
+                guard !forceExpanded else { return }
+                if open { expanded.insert(node.id) } else { expanded.remove(node.id) }
+            }
+        )
+    }
+
+    private func row(_ node: ExplorerNode) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: node.itemKey == nil ? "folder" : "doc")
+                .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
+            Text(node.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .background(
+            node.itemKey != nil && node.itemKey == selected
+                ? Color.accentColor.opacity(0.15) : .clear
+        )
+        .onTapGesture {
+            guard let key = node.itemKey else { return }
+            select(key)
+        }
+        .contextMenu {
+            if node.itemKey == nil {
+                // The catalogue is the only thing that can honour this, and it owns its own
+                // state, so the intent is posted rather than reached for directly.
+                Button("Open in Catalogue") {
+                    NotificationCenter.default.post(
+                        name: .openFolderInCatalogue, object: nil,
+                        userInfo: ["path": node.url.path])
+                }
+            }
+        }
+    }
+}
+
+/// Every folder in the tree, for "unfold everything". Files are left out: they have nothing
+/// to unfold, and a set carrying them would claim folders that do not exist.
+func explorerFolderIDs(_ nodes: [ExplorerNode]) -> Set<String> {
+    var found: Set<String> = []
+    for node in nodes {
+        guard let children = node.children else { continue }
+        found.insert(node.id)
+        found.formUnion(explorerFolderIDs(children))
+    }
+    return found
+}
+
+/// The tree with only what matches `query` left in it, plus the folders needed to reach it.
+///
+/// A folder whose own name matches keeps everything under it, the way typing a folder name
+/// into an editor's explorer shows you that folder's contents rather than an empty branch.
+/// Matching is `localizedStandardContains`, so it ignores case and diacritics the same way
+/// the rest of the app's searching does.
+func filterExplorerTree(_ nodes: [ExplorerNode], matching query: String) -> [ExplorerNode] {
+    let needle = query.trimmingCharacters(in: .whitespaces)
+    guard !needle.isEmpty else { return nodes }
+
+    return nodes.compactMap { node in
+        let matches = node.name.localizedStandardContains(needle)
+        guard let children = node.children else { return matches ? node : nil }
+        if matches { return node }
+        let kept = filterExplorerTree(children, matching: needle)
+        guard !kept.isEmpty else { return nil }
+        var copy = node
+        copy.children = kept
+        return copy
+    }
 }
 
 /// The rail's width, shared by the rail itself and the window's minimum, so the two cannot
