@@ -121,6 +121,10 @@ Three passes, weakest claim last:
 
 A file lands in at most one group, and the stronger claim wins.
 
+The background watcher checks each file as it arrives against what is already known,
+rather than rescanning the shelf, and says so when a copy of something you already own
+turns up. A pair you keep is remembered and never raised again.
+
 Duplicates get their own view, because choosing between two copies means seeing them
 beside each other and beside the page. Each group shows its copies with sizes, the keeper
 starred, and **Keep this one** on the others to change that choice. **Trash the other N**
@@ -166,6 +170,60 @@ breaking a path to satisfy a column is worse than exceeding it. **Edit** switche
 yours; ordering is frozen while it is, and **Discard edits** goes back to the generated
 version. The highlighter's tokens rebuild their input exactly, so what you read is
 character for character what Copy and Save write.
+
+## Naming by pattern
+
+The naming panel is a row of chips you drag into the order you want: date, author, title,
+year, publisher, a literal separator, a counter. Each shows what it currently produces for
+the selected file, and a chip that resolves to nothing looks empty rather than vanishing,
+so a name that came out short says why.
+
+A chip carries its own case, length and abbreviation, and the whole pattern is also a
+line of text you can type instead, which parses back into chips exactly, both ways.
+Presets cover the shapes people actually want. A token whose value is missing takes its
+separator with it, so `[author]-[title]` with no author is `title`, not `-title`.
+
+Values are tidied by the same rules the ordinary rename uses, which matters more than it
+sounds: a book downloaded from the wild arrives carrying the publisher, a hash and the
+name of the site, and without that step a pattern would copy all of it through.
+
+## Reading projects
+
+A project is a named subset of the shelf, tagged, that you can open and ask questions
+about with its documents as context. The extracted Markdown is chunked, selected against
+your question through the library's own full-text index, and each chunk keeps its
+document and page so an answer can cite where it came from and you can click through.
+
+Before anything is sent you are shown what: how many documents, roughly how much text,
+and which endpoint by name, with a clearer warning when it is not the default one.
+Sending a whole project is a different act from sending three pages of one file.
+
+## What it costs
+
+Every AI call is priced and recorded: model, endpoint, what asked for it, tokens each way
+including cached and reasoning ones, and the cost. Settings shows the total, this
+session, and a breakdown by model and by feature. Where a model is chosen, its price per
+million tokens is shown beside it.
+
+Amounts are exact decimals carrying their currency, never floating point, because any
+OpenAI-compatible endpoint is allowed and a rate from a provider that does not bill in
+dollars must not be added as though it did. A call is recorded even when it fails, since
+the provider billed for it either way. A model with no known price is recorded as unknown
+rather than as zero, and the price table says when each rate was written down.
+
+## The library
+
+Everything the app has seen is kept in a small SQLite database under Application Support:
+what the document is, every path it has been seen at, its tags, its notes, and its
+extracted text with a full-text index over it. The filesystem watcher keeps it current.
+
+A document's identity is its own, not a hash of its bytes. This app decrypts, renames and
+writes highlights into PDFs, so the bytes change under ordinary use; keying on them would
+lose a book's tags and notes the first time you renamed it. Renaming tells the library
+where the file went instead.
+
+It is SQLite rather than a JSON file because two processes use it: the app writes while
+the MCP server reads. That is WAL's job, and it was measured rather than assumed.
 
 ## Naming with AI
 
