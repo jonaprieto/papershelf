@@ -521,6 +521,6 @@ final class LibraryTests: XCTestCase {
         let library = try Library(url: url)
 
         let columns = try await library.columnNames(ofTable: "dismissed_duplicates")
-        XCTAssertEqual(columns, ["document_id_a", "document_id_b", "dismissed_at"])
+        XCTAssertEqual(columns, ["group_id", "dismissed_at"])
     }
 }

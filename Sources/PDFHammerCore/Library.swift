@@ -222,13 +222,13 @@ public actor Library {
             succeeded        INTEGER NOT NULL
         );
 
-        -- document_id_a/document_id_b are written in canonical order (a < b as strings) by
-        -- whoever inserts a row, so the same pair is never recorded twice under swapped ids.
+        -- Keyed on the match's own id rather than on a pair of documents: a duplicate
+        -- group can hold three copies as easily as two, and DuplicateGroup.id is already
+        -- derived from what made them match, so it survives a relaunch and a rename
+        -- without needing the documents to have been indexed first.
         CREATE TABLE dismissed_duplicates (
-            document_id_a TEXT NOT NULL,
-            document_id_b TEXT NOT NULL,
-            dismissed_at  TEXT NOT NULL,
-            PRIMARY KEY (document_id_a, document_id_b)
+            group_id     TEXT PRIMARY KEY,
+            dismissed_at TEXT NOT NULL
         );
         """
 
@@ -683,7 +683,10 @@ public actor Library {
 
     /// Prepares `sql`, lets `bind` attach parameters, and finalizes the statement no matter
     /// how `body` returns or throws, so a thrown error never leaks a live `sqlite3_stmt*`.
-    private func withStatement<T>(
+    /// Internal rather than private: `Spend.swift` and `Duplicates.swift` own the
+    /// accessors for their own tables and live in their own files. An extension is still
+    /// isolated to this actor, so nothing about the concurrency guarantee changes.
+    func withStatement<T>(
         _ sql: String,
         bind: (OpaquePointer) throws -> Void = { _ in },
         body: (OpaquePointer) throws -> T
@@ -700,7 +703,7 @@ public actor Library {
 
     /// For a statement whose result nobody reads: an INSERT/UPDATE/DELETE stepped to
     /// completion.
-    private func run(_ sql: String, bind: (OpaquePointer) throws -> Void = { _ in }) throws {
+    func run(_ sql: String, bind: (OpaquePointer) throws -> Void = { _ in }) throws {
         try withStatement(sql, bind: bind) { statement in
             let result = sqlite3_step(statement)
             guard result == SQLITE_DONE else {
@@ -710,7 +713,7 @@ public actor Library {
         }
     }
 
-    private static func isoString(_ date: Date) -> String {
+    static func isoString(_ date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: date)
@@ -790,7 +793,7 @@ private func prepareConnection(_ db: OpaquePointer) throws {
 /// copy the bytes immediately rather than assume they will still be there.
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-private func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String?) {
+func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String?) {
     guard let value else {
         sqlite3_bind_null(statement, index)
         return
