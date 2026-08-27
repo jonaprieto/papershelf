@@ -1253,7 +1253,8 @@ struct ContentView: View {
                 .toolbar { toolbar }
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1000, minHeight: 560)
+        // Sidebar, browser, inspector and, when it is open, the notes rail.
+        .frame(minWidth: chrome.notesShown ? 1180 : 1000, minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
@@ -2624,6 +2625,7 @@ private struct ResultsPane: View {
     }
 
     private var bibBar: some View {
+      ScrollView(.horizontal) {
         HStack(spacing: 10) {
             let incomplete = runner.bib.filter { !$0.isComplete }.count
             Text("\(runner.bib.count) entries").font(.callout).foregroundStyle(.secondary)
@@ -2645,7 +2647,10 @@ private struct ResultsPane: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
+      }
+      .scrollIndicators(.hidden)
+      .fixedSize(horizontal: false, vertical: true)
+      .background(.bar)
     }
 
     /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store
@@ -2835,6 +2840,8 @@ private struct ResultsPane: View {
                 }
                 Spacer(minLength: 8)
                 stateLabel
+                    .lineLimit(1)
+                    .fixedSize()
               }
               .padding(.trailing, 2)
             }
@@ -3137,7 +3144,7 @@ private struct ReviewInspector: View {
             // line it is on, and the bottom pane is for deciding about the file.
             if notesShown {
                 Divider()
-                notesRail.frame(width: 264)
+                notesRail.frame(width: 240)
             }
         }
         .confirmationDialog("Remove every mark from this document?",
@@ -4035,6 +4042,7 @@ private struct BibFileView: View {
     @Binding var completeOnly: Bool
     let style: BibStyle
 
+    @AppStorage("bibWrapped") private var wrapped = true
     @State private var blocks: [String] = []
     @State private var edited: String?
     @State private var copied = false
@@ -4075,7 +4083,9 @@ private struct BibFileView: View {
                             Text(highlighted(block))
                                 .font(.system(.callout, design: .monospaced))
                                 .textSelection(.enabled)
-                                .fixedSize(horizontal: true, vertical: false)
+                                // Wrapped, a long path folds into the pane instead of
+                                // running off it. Unwrapped, the layout is the file's own.
+                                .fixedSize(horizontal: !wrapped, vertical: false)
                         }
                     }
                     .padding(14)
@@ -4102,6 +4112,7 @@ private struct BibFileView: View {
     }
 
     private var controls: some View {
+      ScrollView(.horizontal) {
         HStack(spacing: 10) {
             Picker("Order", selection: $order) {
                 ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
@@ -4111,6 +4122,9 @@ private struct BibFileView: View {
             .fixedSize()
             .disabled(edited != nil)
 
+            Toggle("Wrap", isOn: $wrapped)
+                .toggleStyle(.checkbox)
+                .tip("Fold long lines into the pane; the file itself is unchanged")
             Toggle("Complete only", isOn: $completeOnly)
                 .toggleStyle(.checkbox)
                 .disabled(edited != nil)
@@ -4137,10 +4151,15 @@ private struct BibFileView: View {
                 Task { try? await Task.sleep(for: .seconds(2)); copied = false }
             }
             .controlSize(.small)
-            Button("Save…") { saving = true }.controlSize(.small)
+            Button("Save…") { saving = true }
+                .controlSize(.small)
+                .tip("Write the file somewhere")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+      }
+      .scrollIndicators(.hidden)
+      .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -4484,6 +4503,9 @@ private struct MarkRow: View {
     @State private var editing = false
     @State private var text = ""
 
+    /// The colour it was actually painted with, whatever palette that came from.
+    private var colour: Color { Color(nsColor: mark.colour ?? .systemYellow) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
@@ -4496,24 +4518,39 @@ private struct MarkRow: View {
                     }
                 } label: {
                     Circle()
-                        .fill(Color(nsColor: mark.colour ?? .systemYellow))
-                        .frame(width: 12, height: 12)
-                        .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1))
+                        .fill(colour)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.25), lineWidth: 1))
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .frame(width: 14)
-                .padding(.top, 3)
+                .frame(width: 16)
+                .padding(.top, 2)
                 .tip(meaning)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     if !mark.quoted.isEmpty {
-                        Text(mark.quoted).font(.callout).lineLimit(3)
+                        // The quote carries the highlight it has on the page. A swatch
+                        // says which colour; this says what the page looks like.
+                        Text(mark.quoted)
+                            .font(.callout)
+                            .lineLimit(3)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(colour.opacity(0.38), in: RoundedRectangle(cornerRadius: 3))
                     }
                     if !mark.note.isEmpty && !editing {
                         Text(mark.note).font(.caption).foregroundStyle(.secondary).lineLimit(4)
                     }
-                    Text("page \(mark.page)").font(.caption).foregroundStyle(.tertiary)
+                    HStack(spacing: 5) {
+                        Text("page \(mark.page)")
+                        if !meaning.isEmpty && meaning != "Highlight" {
+                            Text("·")
+                            Text(meaning).lineLimit(1)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -4524,11 +4561,11 @@ private struct MarkRow: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tertiary)
-                .help(mark.note.isEmpty ? "Add a note here" : "Edit this note")
+                .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
                 Button(action: remove) { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.tertiary)
-                    .help("Remove this mark from the file")
+                    .tip("Remove this mark from the file")
             }
 
             if editing {

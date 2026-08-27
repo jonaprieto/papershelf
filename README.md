@@ -148,7 +148,9 @@ missing, because nothing here can read them off a PDF and a complaint you cannot
 just noise. The `file` field is omitted by default.
 
 The BibTeX view has two panes: **Entries**, the browser above, and **File**, the generated
-`.bib` itself, syntax-highlighted and ordered alphabetically or by folder.
+`.bib` itself, syntax-highlighted and ordered alphabetically or by folder. **Wrap** folds
+long lines into the pane so a `file` path can be read at any width; the file written out is
+unaffected either way.
 
 Entries are built only when something is about to look at them, so a run that never opens
 this view never pays for it. The file is rendered one entry at a time inside a lazy stack,
