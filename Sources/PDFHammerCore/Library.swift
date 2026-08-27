@@ -37,7 +37,8 @@ public actor Library {
 
     // MARK: - Connection
 
-    /// The one place this file's connection is ever touched. The system SQLite reports
+    /// The one place this connection is ever touched outside actor isolation, which is to
+    /// say never. The system SQLite reports
     /// `sqlite3_threadsafe() == 2` ("multi-thread"), not 3 ("serialized"): distinct
     /// connections may run on distinct threads at once, but a single connection must never
     /// be entered by two threads at the same instant. Wrapping the connection in an actor,
@@ -48,7 +49,12 @@ public actor Library {
     /// GUI connection and a separate MCP server connection, both open at once) is a
     /// different mechanism, WAL, verified separately; this actor only has to answer for
     /// what happens inside one process.
-    private var db: OpaquePointer?
+    /// Not private: `Spend.swift` and `Duplicates.swift` add their own tables' accessors
+    /// as extensions on this actor, and an extension in another file is still isolated to
+    /// it, so the guarantee below is unchanged. What must stay true is that nothing hands
+    /// this pointer to a DispatchQueue, a Task.detached, or anything else that would run it
+    /// outside this actor.
+    var db: OpaquePointer?
 
     public init(url: URL) throws {
         var handle: OpaquePointer?
@@ -208,8 +214,11 @@ public actor Library {
             output_tokens    INTEGER NOT NULL,
             cached_tokens    INTEGER NOT NULL,
             reasoning_tokens INTEGER NOT NULL,
-            cost             TEXT NOT NULL,
-            currency         TEXT NOT NULL,
+            -- null when no price is known for that model: an unknown cost is not a cost
+            -- of zero, and recording it as zero is the exact failure this table exists to
+            -- avoid.
+            cost             TEXT,
+            currency         TEXT,
             succeeded        INTEGER NOT NULL
         );
 

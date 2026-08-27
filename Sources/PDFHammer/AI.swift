@@ -65,6 +65,10 @@ struct AIClient {
     var model: String
     var apiKey: String
 
+    /// Where a completed call is logged. Optional so every existing call site keeps
+    /// compiling unchanged; nil simply means this call is not tracked.
+    var spendRecorder: SpendRecorder? = nil
+
     /// Reads the key from the environment when the field is empty, so the app can be used
     /// without the key ever being stored anywhere by us.
     static func environmentKey() -> String? {
@@ -121,7 +125,9 @@ struct AIClient {
         return ids.filter(looksLikeChatModel).sorted()
     }
 
-    func identify(filename: String, excerpt: String) async throws -> BookGuess {
+    /// `feature` only labels the spend entry; it changes nothing about the request. It
+    /// defaults to `.identify` because that is what every caller before this round meant.
+    func identify(filename: String, excerpt: String, feature: AIFeature = .identify) async throws -> BookGuess {
         guard !apiKey.isEmpty else { throw AIError.noKey }
         guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")
         else { throw AIError.unreadable("bad base URL") }
@@ -142,14 +148,29 @@ struct AIClient {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(code) else {
-            throw AIError.http(code, String(data: data, encoding: .utf8) ?? "")
-        }
 
-        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let reply = ((object?["choices"] as? [[String: Any]])?.first?["message"]
-            as? [String: Any])?["content"] as? String ?? ""
-        guard let guess = parseBookGuess(reply) else { throw AIError.unreadable(reply) }
-        return guess
+        // Usage is read here, before anything below can throw: a 2xx reply the provider
+        // has already billed for must be recorded even when its content never turns into
+        // a usable guess. See docs/design/critique.md's "real spend is dropped exactly
+        // when a call goes wrong".
+        let outcome = identifyOutcome(responseBody: data, statusCode: code)
+        await record(usage: outcome.usage, feature: feature, succeeded: outcome.guess != nil)
+
+        if let guess = outcome.guess { return guess }
+        if (200..<300).contains(code) {
+            throw AIError.unreadable(outcome.failureReason ?? "")
+        }
+        throw AIError.http(code, outcome.failureReason ?? "")
+    }
+
+    /// Best-effort: a broken spend ledger must never be the reason an AI call fails or
+    /// its error is swallowed, so a write failure here is dropped, not surfaced.
+    private func record(usage: TokenUsage?, feature: AIFeature, succeeded: Bool) async {
+        guard let spendRecorder else { return }
+        let usage = usage ?? .zero
+        let price = PriceTable.loadCustom().price(model: model, endpoint: baseURL)
+        let billed = price.map { cost(usage: usage, price: $0) }
+        try? await spendRecorder.recordSpend(timestamp: Date(), model: model, endpoint: baseURL,
+                                              feature: feature, usage: usage, cost: billed, succeeded: succeeded)
     }
 }

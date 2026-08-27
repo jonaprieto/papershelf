@@ -8,9 +8,22 @@ struct SettingsView: View {
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
 
+    /// nil until the app has a Library to read from, in which case the spend sections
+    /// say so plainly rather than showing an empty ledger as though nothing was spent.
+    var library: Library? = nil
+
     @State private var key = ""
     @State private var status: Status = .idle
     @State private var testing = false
+
+    @StateObject private var priceBook = PriceBook()
+    @State private var editingPrice = false
+    @State private var draftInput = ""
+    @State private var draftOutput = ""
+    @State private var draftCurrency = "USD"
+
+    @State private var entries: [SpendRecord] = []
+    @State private var entriesLoadFailed = false
 
     private enum Status: Equatable {
         case idle, ok(String), failed(String)
@@ -100,11 +113,186 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Section {
+                priceRow
+            } header: {
+                Text("Price for \(model)")
+            } footer: {
+                Text("Seeded prices are dated, not guaranteed current. Edit one here if it "
+                     + "has changed, or add one for an endpoint that is not OpenAI's own.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                spendSummary
+            } header: {
+                Text("AI spend")
+            }
         }
         .formStyle(.grouped)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { key = StoredKey.shared.value ?? "" }
+        .task { await loadEntries() }
+    }
+
+    // MARK: - Price for the currently chosen model
+
+    private var currentPrice: ModelPrice? {
+        priceBook.table.price(model: model, endpoint: baseURL)
+    }
+
+    @ViewBuilder
+    private var priceRow: some View {
+        if let price = currentPrice {
+            LabeledContent("Input") { Text(perMillion(price.inputPerMillion, price.currency)) }
+            LabeledContent("Output") { Text(perMillion(price.outputPerMillion, price.currency)) }
+            if let cached = price.cachedInputPerMillion {
+                LabeledContent("Cached input") { Text(perMillion(cached, price.currency)) }
+            }
+            Text("Recorded \(price.recordedAt.formatted(date: .abbreviated, time: .omitted))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Label("Cost unknown for this model", systemImage: "questionmark.circle")
+                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+        }
+        if editingPrice {
+            priceEditor
+        } else {
+            Button(currentPrice == nil ? "Add a price" : "Edit price", action: beginEditingPrice)
+        }
+    }
+
+    private var priceEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Input $/1M", text: $draftInput).textFieldStyle(.roundedBorder)
+                TextField("Output $/1M", text: $draftOutput).textFieldStyle(.roundedBorder)
+                TextField("Currency", text: $draftCurrency)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 64)
+            }
+            HStack {
+                Button("Save", action: savePrice).disabled(!draftIsValid)
+                Button("Cancel") { editingPrice = false }
+            }
+        }
+    }
+
+    private var draftIsValid: Bool {
+        Decimal(string: draftInput) != nil && Decimal(string: draftOutput) != nil
+            && draftCurrency.trimmingCharacters(in: .whitespaces).count == 3
+    }
+
+    private func perMillion(_ amount: Decimal, _ currency: String) -> String {
+        "\(amount.formatted(.currency(code: currency))) / 1M tokens"
+    }
+
+    private func beginEditingPrice() {
+        if let price = currentPrice {
+            draftInput = "\(price.inputPerMillion)"
+            draftOutput = "\(price.outputPerMillion)"
+            draftCurrency = price.currency
+        } else {
+            draftInput = ""
+            draftOutput = ""
+            draftCurrency = "USD"
+        }
+        editingPrice = true
+    }
+
+    private func savePrice() {
+        guard let input = Decimal(string: draftInput), let output = Decimal(string: draftOutput) else { return }
+        let price = ModelPrice(inputPerMillion: input, outputPerMillion: output,
+                                currency: draftCurrency.trimmingCharacters(in: .whitespaces).uppercased(),
+                                recordedAt: Date())
+        priceBook.setCustom(price, endpoint: baseURL, model: model)
+        editingPrice = false
+    }
+
+    // MARK: - Spend
+
+    @ViewBuilder
+    private var spendSummary: some View {
+        if library == nil {
+            Text("Spend tracking is not connected in this build.")
+                .foregroundStyle(.secondary)
+        } else if entriesLoadFailed {
+            // Distinct from the empty-ledger case below: this is "could not read the
+            // ledger," not "nothing has been spent," and must not be shown as $0.
+            Text("Could not read the spend ledger.")
+                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+        } else if entries.isEmpty {
+            Text("No AI calls recorded yet.")
+                .foregroundStyle(.secondary)
+        } else {
+            totalsRow(label: "All time", totals: spendTotals(for: entries))
+            totalsRow(label: "This session", totals: spendTotals(for: entries, since: sessionStart))
+
+            Divider()
+            Text("By model").font(.caption).foregroundStyle(.secondary)
+            let byModel = spendTotals(for: entries, groupedBy: \.model)
+            ForEach(byModel.keys.sorted(), id: \.self) { key in
+                totalsRow(label: key, totals: byModel[key]!)
+            }
+
+            Divider()
+            Text("By feature").font(.caption).foregroundStyle(.secondary)
+            let byFeature = spendTotals(for: entries, groupedBy: \.feature)
+            ForEach(AIFeature.allCases, id: \.self) { feature in
+                if let totals = byFeature[feature] {
+                    totalsRow(label: feature.displayName, totals: totals)
+                }
+            }
+        }
+        if library != nil {
+            Button("Refresh", action: { Task { await loadEntries() } })
+        }
+    }
+
+    private func totalsRow(label: String, totals: SpendTotals) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text(costSummary(totals))
+            }
+            Text(callSummary(totals))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Currencies are never added together: each gets its own term, joined for display.
+    private func costSummary(_ totals: SpendTotals) -> String {
+        guard !totals.byCurrency.isEmpty else { return "—" }
+        return totals.byCurrency.sorted { $0.key < $1.key }
+            .map { $0.value.formatted(.currency(code: $0.key)) }
+            .joined(separator: " + ")
+    }
+
+    private func callSummary(_ totals: SpendTotals) -> String {
+        var parts = ["\(totals.calls) call\(totals.calls == 1 ? "" : "s")"]
+        if totals.failedCalls > 0 { parts.append("\(totals.failedCalls) failed") }
+        if totals.callsWithUnknownCost > 0 { parts.append("\(totals.callsWithUnknownCost) cost unknown") }
+        return parts.joined(separator: ", ")
+    }
+
+    private func loadEntries() async {
+        guard let library else { return }
+        do {
+            entries = try await library.spendEntries()
+            entriesLoadFailed = false
+        } catch {
+            // A read failure must not be shown as "no calls recorded" -- that would
+            // report real, possibly nonzero spend as zero merely because it could not
+            // be read back.
+            entriesLoadFailed = true
+        }
     }
 
     private func saveKey() {
@@ -117,19 +305,37 @@ struct SettingsView: View {
     private func test() {
         testing = true
         status = .idle
-        let client = AIClient(baseURL: baseURL, model: model, apiKey: resolvedKey(useEnvironment: useEnvironment))
+        let client = AIClient(baseURL: baseURL, model: model, apiKey: resolvedKey(useEnvironment: useEnvironment),
+                               spendRecorder: library)
         Task {
             do {
                 let guess = try await client.identify(
                     filename: "godel-escher-bach.pdf",
-                    excerpt: "Gödel, Escher, Bach: an Eternal Golden Braid. Douglas R. Hofstadter. 1979."
+                    excerpt: "Gödel, Escher, Bach: an Eternal Golden Braid. Douglas R. Hofstadter. 1979.",
+                    feature: .connectionTest
                 )
                 status = .ok("Answered: \(guess.title)")
             } catch {
                 status = .failed(error.localizedDescription)
             }
             testing = false
+            await loadEntries()
         }
+    }
+}
+
+/// The user's own corrections and additions to the price table: small, personal, edited
+/// rarely, so it is held and persisted exactly the way Palette holds highlight styles.
+@MainActor
+final class PriceBook: ObservableObject {
+    @Published private(set) var table: PriceTable
+
+    init() {
+        table = PriceTable.loadCustom()
+    }
+
+    func setCustom(_ price: ModelPrice, endpoint: String, model: String) {
+        table.setCustom(price, endpoint: endpoint, model: model)
     }
 }
 
