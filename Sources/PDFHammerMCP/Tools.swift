@@ -197,4 +197,137 @@ let libraryTools: [Tool] = [
             return ToolOutput(text: text, structured: ["groups": described])
         }
     ),
+
+    // The tools above scan a folder fresh on every call, which is all that is possible
+    // before anything has been indexed. The ones below read the library PDF Hammer itself
+    // builds while indexing (projects, tags), through a read-only connection opened in
+    // Projects.swift; each one reports a missing library politely (isError, not a crash)
+    // rather than assuming one exists.
+
+    Tool(
+        name: "list_projects",
+        title: "List reading projects",
+        description: "List the reading projects recorded in the library, with how many "
+            + "documents each one holds.",
+        inputSchema: ["type": "object", "properties": [String: Any]()],
+        run: { _ in
+            let reader = try openLibraryOrFail()
+            let projects = try reader.projects()
+            let rows = projects.map { project -> [String: Any] in
+                ["id": Int(project.id), "name": project.name, "created_at": project.createdAt,
+                 "document_count": project.documentCount]
+            }
+            let text = projects.isEmpty
+                ? "No projects yet."
+                : projects.map { "\($0.name)  (\($0.documentCount) documents)" }
+                    .joined(separator: "\n")
+            return ToolOutput(text: text, structured: ["count": rows.count, "projects": rows])
+        }
+    ),
+
+    Tool(
+        name: "list_project_documents",
+        title: "List a project's documents",
+        description: "List the documents in one reading project, with each document's most "
+            + "recently known path, its tags, and its page count.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
+                "limit": ["type": "integer", "description": "Maximum documents. Default 500."],
+            ],
+            "required": ["project"],
+        ],
+        run: { arguments in
+            let identifier = try requireString(arguments, "project")
+            let reader = try openLibraryOrFail()
+            let project = try resolveProject(identifier, in: reader)
+            let limit = arguments["limit"] as? Int ?? 500
+            let documents = try reader.documents(inProject: project.id, limit: limit)
+            let rows = documents.map(describeDocument)
+            let text = documents.isEmpty
+                ? "\(project.name) has no documents."
+                : documents.map { $0.path ?? "(no known path) \($0.id)" }.joined(separator: "\n")
+            return ToolOutput(text: text,
+                               structured: ["project": ["id": Int(project.id), "name": project.name],
+                                            "count": rows.count, "documents": rows])
+        }
+    ),
+
+    Tool(
+        name: "search_project",
+        title: "Search within a project",
+        description: "Full-text search the extracted text of the documents in one reading "
+            + "project. Only documents PDF Hammer has already extracted text for can match.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
+                "query": ["type": "string", "description": "Words to search for, matched as a phrase."],
+                "limit": ["type": "integer", "description": "Maximum results. Default 50."],
+            ],
+            "required": ["project", "query"],
+        ],
+        run: { arguments in
+            let identifier = try requireString(arguments, "project")
+            let query = try requireString(arguments, "query")
+            guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ToolFailure("the query is empty")
+            }
+            let reader = try openLibraryOrFail()
+            let project = try resolveProject(identifier, in: reader)
+            let limit = arguments["limit"] as? Int ?? 50
+            let documents = try reader.search(inProject: project.id, query: query, limit: limit)
+            let rows = documents.map(describeDocument)
+            let text = documents.isEmpty
+                ? "Nothing matched in \(project.name)."
+                : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
+            return ToolOutput(text: text,
+                               structured: ["project": ["id": Int(project.id), "name": project.name],
+                                            "matched": rows.count, "documents": rows])
+        }
+    ),
+
+    Tool(
+        name: "list_tags",
+        title: "List tags",
+        description: "List every tag in the library and how many documents carry it.",
+        inputSchema: ["type": "object", "properties": [String: Any]()],
+        run: { _ in
+            let reader = try openLibraryOrFail()
+            let tags = try reader.tags()
+            let rows = tags.map { tag -> [String: Any] in
+                ["name": tag.name, "document_count": tag.documentCount]
+            }
+            let text = tags.isEmpty
+                ? "No tags yet."
+                : tags.map { "\($0.name)  (\($0.documentCount))" }.joined(separator: "\n")
+            return ToolOutput(text: text, structured: ["count": rows.count, "tags": rows])
+        }
+    ),
+
+    Tool(
+        name: "documents_by_tag",
+        title: "Find documents by tag",
+        description: "List the documents carrying a given tag.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "tag": ["type": "string", "description": "Tag name, matched case-insensitively."],
+                "limit": ["type": "integer", "description": "Maximum documents. Default 200."],
+            ],
+            "required": ["tag"],
+        ],
+        run: { arguments in
+            let tag = try requireString(arguments, "tag")
+            let reader = try openLibraryOrFail()
+            let limit = arguments["limit"] as? Int ?? 200
+            let documents = try reader.documents(taggedWith: tag, limit: limit)
+            let rows = documents.map(describeDocument)
+            let text = documents.isEmpty
+                ? "No documents tagged '\(tag)'."
+                : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
+            return ToolOutput(text: text, structured: ["tag": tag, "count": rows.count, "documents": rows])
+        }
+    ),
 ]
