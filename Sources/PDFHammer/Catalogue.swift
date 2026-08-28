@@ -108,6 +108,8 @@ struct ResultsPane: View {
     @FocusState private var listFocused: Bool
     @State private var keyMonitor: Any?
     @State private var showingPalette = false
+    @State private var paletteTags: [TagCount] = []
+    @State private var paletteProjects: [ProjectSummary] = []
     /// The document the reader is open on, by key. Nil means the browser has the middle
     /// of the window.
     ///
@@ -452,9 +454,11 @@ struct ResultsPane: View {
                 commands: Self.performable.filter { $0 != .palette },
                 documents: runner.results,
                 run: { perform($0) },
-                open: { selected = $0.key }
+                open: { openReader($0.key) },
+                sources: paletteSources
             )
         }
+        .task(id: showingPalette) { await loadPalettePlaces() }
     }
 
     /// What this view can do to what is in it, in the place a person looks for an
@@ -540,6 +544,70 @@ struct ResultsPane: View {
     /// at least one of them left to act on.
     private var canApply: Bool {
         previewIsCurrent && runner.allReviewed && runner.actionable > 0 && !runner.busy
+    }
+
+    /// Everywhere the palette can send you, and everything it can look inside.
+    ///
+    /// Assembled here because this is the one view that knows all four answers: which
+    /// list the shelf is on, which folders the results are in, which document is open,
+    /// and which projects and tags the library holds.
+    private var paletteSources: PaletteSources {
+        var places: [PalettePlace] = SmartList.allCases.map { list in
+            PalettePlace(id: "list:" + list.rawValue, title: list.title,
+                         detail: list.explanation, kind: .list) {
+                shelves.current = list
+                folderScope = nil
+            }
+        }
+        places += runner.tree.filter { $0.children != nil }.prefix(40).map { node in
+            PalettePlace(id: "folder:" + node.id, title: node.name,
+                         detail: "\(node.children?.count ?? 0) documents", kind: .folder) {
+                openFolder(URL(fileURLWithPath: node.id))
+            }
+        }
+        places += paletteProjects.map { project in
+            PalettePlace(id: "project:\(project.id)", title: project.name,
+                         detail: "project · \(project.documentCount) documents", kind: .project) {
+                NotificationCenter.default.post(name: .openProject, object: nil,
+                                                userInfo: ["id": project.id])
+            }
+        }
+        places += paletteTags.map { tag in
+            PalettePlace(id: "tag:" + tag.name, title: tag.name,
+                         detail: "\(tag.documents) documents", kind: .tag) {
+                showTag(tag.name)
+            }
+        }
+
+        return PaletteSources(
+            places: places,
+            inTheText: { text in
+                guard let library = Library.shared else { return [] }
+                return (try? await library.fullTextHits(text, limit: 4)) ?? []
+            },
+            inThisDocument: { text in
+                annotator.find(text).map { hit in
+                    PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
+                            line: hit.line, go: hit.jump)
+                }
+            },
+            goToPage: annotator.view == nil ? nil : { annotator.go(toPage: $0) },
+            help: { showingShortcuts = true }
+        )
+    }
+
+    /// Loaded when the palette opens rather than kept in step: it is two queries, and
+    /// they are only ever read by one field that is not usually on screen.
+    private func loadPalettePlaces() async {
+        guard showingPalette, let library = Library.shared else { return }
+        paletteTags = (try? await library.tagCounts()) ?? []
+        let projects = (try? await library.projects()) ?? []
+        var summaries: [ProjectSummary] = []
+        for project in projects {
+            let count = ((try? await library.members(ofProject: project.id)) ?? []).count
+            summaries.append(ProjectSummary(id: project.id, name: project.name, documentCount: count))
+        }
+        paletteProjects = summaries
     }
 
     /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
@@ -1812,6 +1880,9 @@ extension Notification.Name {
     static let openFolderInCatalogue = Notification.Name("PDFHammer.openFolderInCatalogue")
     /// Posted with the tag's name in `userInfo["tag"]` by the sidebar's Tags panel.
     static let showTagInCatalogue = Notification.Name("PDFHammer.showTagInCatalogue")
+    /// Posted with a project's `Int64` id in `userInfo["id"]` by the palette, which can
+    /// reach a project the sidebar would have to be scrolled to.
+    static let openProject = Notification.Name("PDFHammer.openProject")
 }
 
 // MARK: - Review inspector

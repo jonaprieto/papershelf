@@ -356,6 +356,13 @@ struct ContentView: View {
             return true
         }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
+        .onReceive(NotificationCenter.default.publisher(for: .openProject)) { note in
+            guard let id = note.userInfo?["id"] as? Int64 else { return }
+            Task {
+                await reloadProjects()
+                openProject = projects.first { $0.id == id }
+            }
+        }
         // The pattern editor lives in the settings window now and has no scanner of its
         // own, so the window that does have one publishes the few files it previews
         // against. Keyed on the results token rather than the array: this runs on every

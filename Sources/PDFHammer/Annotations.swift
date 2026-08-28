@@ -201,6 +201,33 @@ final class Annotator: ObservableObject {
         contents = found
     }
 
+    /// Turns to a page, one-based, clamped to the document. The palette's `:` and the
+    /// jump that follows a full-text hit both come through here.
+    func go(toPage number: Int) {
+        guard let view, let document = view.document, document.pageCount > 0,
+              let page = document.page(at: min(max(number, 1), document.pageCount) - 1)
+        else { return }
+        view.go(to: PDFDestination(page: page, at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
+    }
+
+    /// What the open document says about a phrase: the page, the line it sits on, and a
+    /// way back to it. The palette's `/` is this, and nothing else in the app could
+    /// answer it -- the library's index knows the text of every document except the one
+    /// being read, which may have been edited since it was indexed.
+    func find(_ text: String, limit: Int = 8) -> [(page: Int, line: String, jump: () -> Void)] {
+        guard let view, let document = view.document, text.count > 1 else { return [] }
+        let matches = document.findString(text, withOptions: [.caseInsensitive])
+        return matches.prefix(limit).compactMap { selection in
+            guard let page = selection.pages.first else { return nil }
+            let number = document.index(for: page) + 1
+            let line = selection.string ?? text
+            return (page: number, line: line, jump: { [weak view] in
+                view?.go(to: selection)
+                view?.setCurrentSelection(selection, animate: true)
+            })
+        }
+    }
+
     func go(to chapter: Chapter) {
         guard let view, let destination = chapter.destination else { return }
         view.go(to: destination)

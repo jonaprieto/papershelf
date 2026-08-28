@@ -192,3 +192,29 @@ final class QueryChipTests: XCTestCase {
         XCTAssertEqual(Query.removing("methods", from: "methods"), "")
     }
 }
+
+/// A palette that lists titles makes a person open each one to find out which sentence
+/// matched, so a hit carries the passage and the page it came from.
+final class TextHitTests: XCTestCase {
+
+    func testThePageIsReadBackOffTheMarkerTheExtractedTextCarries() {
+        XCTAssertEqual(pageMarker(in: "…<!-- page:12 --> A directed path…"), 12)
+        XCTAssertEqual(pageMarker(in: "<!-- page:1 --> a <!-- page:44 --> b"), 44,
+                       "the last marker before the end of the snippet is the page it ends on")
+    }
+
+    /// A snippet cut mid-page carries no marker. That is a hit whose page is unknown,
+    /// which is worth saying; page 1 would be a guess dressed as a fact.
+    func testASnippetWithNoMarkerHasNoPage() {
+        XCTAssertNil(pageMarker(in: "…composed entirely of arrows…"))
+    }
+
+    func testTheMarkersComeOutAndTheWhitespaceCollapses() {
+        XCTAssertEqual(tidySnippet("<!-- page:12 -->\n  A directed   path\n\n is composed…"),
+                       "A directed path is composed…")
+    }
+
+    func testASnippetOfNothingIsEmptyRatherThanWhitespace() {
+        XCTAssertEqual(tidySnippet("   \n  "), "")
+    }
+}

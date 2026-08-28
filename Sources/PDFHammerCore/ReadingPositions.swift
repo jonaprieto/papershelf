@@ -157,3 +157,87 @@ extension Library {
         }
     }
 }
+
+// MARK: - Full text, with the line it was found on
+
+/// One full-text hit, with enough of the sentence around it to recognise.
+public struct TextHit: Sendable, Equatable, Identifiable {
+    public let documentID: String
+    public let title: String
+    public let author: String?
+    /// The matched run with a little of its sentence on either side, the matched words
+    /// marked with the delimiters asked for.
+    public let snippet: String
+    /// The page the snippet came from, read back off the `<!-- page:N -->` marker the
+    /// extracted text carries, or nil when the text has no markers.
+    public let page: Int?
+
+    public var id: String { documentID + "#" + (page.map(String.init) ?? "?") }
+
+    public init(documentID: String, title: String, author: String?, snippet: String, page: Int?) {
+        self.documentID = documentID
+        self.title = title
+        self.author = author
+        self.snippet = snippet
+        self.page = page
+    }
+}
+
+extension Library {
+
+    /// Full-text hits with the passage each one was found in.
+    ///
+    /// `fullTextSearch` answers which documents match, which is the right answer for
+    /// ranking a project's documents and the wrong one for a palette: a list of titles
+    /// makes a person open each of them to find out which sentence matched.
+    public func fullTextHits(_ text: String, limit: Int = 5) throws -> [TextHit] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return try withStatement("""
+            SELECT d.id, d.title, d.author,
+                   snippet(extracted_text_fts, 0, '', '', '…', 14)
+            FROM extracted_text_fts
+            JOIN extracted_text e ON e.rowid = extracted_text_fts.rowid
+            JOIN documents d ON d.id = e.document_id
+            WHERE extracted_text_fts MATCH ?
+            ORDER BY bm25(extracted_text_fts)
+            LIMIT ?;
+            """, bind: { statement in
+            bindText(statement, 1, phrase)
+            sqlite3_bind_int64(statement, 2, Int64(limit))
+        }) { statement in
+            var out: [TextHit] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let snippet = columnText(statement, 3) ?? ""
+                out.append(TextHit(documentID: columnText(statement, 0) ?? "",
+                                   title: columnText(statement, 1) ?? "untitled",
+                                   author: columnText(statement, 2),
+                                   snippet: tidySnippet(snippet),
+                                   page: pageMarker(in: snippet)))
+            }
+            return out
+        }
+    }
+}
+
+/// The page a snippet came from, when the extracted text carries the marker convention
+/// `<!-- page:N -->`. A snippet cut mid-page carries no marker, which is not an error --
+/// it is a hit whose page is unknown, and saying so beats guessing page 1.
+public func pageMarker(in snippet: String) -> Int? {
+    guard let range = snippet.range(of: "<!-- page:", options: .backwards) else { return nil }
+    let rest = snippet[range.upperBound...]
+    let digits = rest.prefix { $0.isNumber }
+    return Int(digits)
+}
+
+/// A snippet as a person reads it: the page markers taken out, the whitespace collapsed.
+public func tidySnippet(_ snippet: String) -> String {
+    var text = snippet
+    while let start = text.range(of: "<!-- page:"), let end = text.range(of: "-->", range: start.lowerBound..<text.endIndex) {
+        text.removeSubrange(start.lowerBound..<end.upperBound)
+    }
+    return text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        .joined(separator: " ")
+        .trimmingCharacters(in: .whitespaces)
+}
