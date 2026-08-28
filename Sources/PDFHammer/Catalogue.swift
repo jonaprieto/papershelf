@@ -1670,6 +1670,11 @@ struct CoverCard: View {
     /// render landing anywhere else on the shelf does not redraw this card.
     @State private var cover: NSImage?
 
+    /// How tall to rasterise, in pixels: the size a card actually draws at, doubled for a
+    /// retina display. It used to be a flat 320 whatever the card measured, which on a
+    /// dense shelf is a lot of pixels rendered to be thrown away.
+    static let rasterHeight = Metric.coverHeight(forWidth: Metric.coverWidth) * 2
+
     private var name: String {
         if case .confirmed(let confirmed) = decision { return confirmed }
         return item.destinationName
@@ -1692,13 +1697,17 @@ struct CoverCard: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .frame(height: 168)
+            // As wide as its cell and as tall as a book of that width. It was 168 points
+            // whatever the width, which is why a tall book sat in a letterbox and a wide
+            // one was cropped: the band was a constant and a book is not.
             .frame(maxWidth: .infinity)
+            .aspectRatio(1 / Metric.coverAspect, contentMode: .fit)
             .overlay(alignment: .topTrailing) { badges }
             .task(id: "\(item.key)#\(covers.generation)") {
                 if let hit = covers.cached(item) { cover = hit; return }
                 cover = nil
-                cover = await covers.cover(for: item, passwords: passwords, height: 320)
+                cover = await covers.cover(for: item, passwords: passwords,
+                                           height: CoverCard.rasterHeight)
             }
 
             Text(name)

@@ -61,6 +61,17 @@ enum Metric {
     /// fixed band, so the grid asks for a width and derives the height.
     static let coverWidth: CGFloat = 176
     static let coverAspect: CGFloat = 1.32
+
+    /// How tall a cover is at a given width.
+    ///
+    /// It used to be 168 points whatever the width, which is why a tall book sat in a
+    /// letterbox with grey above and below it and a wide one was cropped: the band was a
+    /// constant and a book is not. Anything at or below zero returns zero rather than a
+    /// negative frame, since a grid mid-resize will ask.
+    static func coverHeight(forWidth width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        return (width * coverAspect).rounded()
+    }
     static let gridSpacing: CGFloat = 18
 
     /// Breakpoints. Below each, something folds away rather than being cut off.
