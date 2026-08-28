@@ -114,7 +114,7 @@ struct DuplicateCompare: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: isKeeper ? "star.fill" : "star")
-                    .foregroundStyle(isKeeper ? Ink.green : .tertiary)
+                    .foregroundStyle(isKeeper ? AnyShapeStyle(Ink.green) : AnyShapeStyle(.tertiary))
                 Text(isKeeper ? "Keeping this one" : "Would go to the Trash")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(isKeeper ? Ink.green : .secondary)
