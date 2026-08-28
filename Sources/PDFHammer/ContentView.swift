@@ -62,11 +62,14 @@ struct ContentView: View {
     @State private var availableModels: [String] = []
     @ObservedObject private var priceBook: PriceBook = .shared
     @ObservedObject private var spendSignal: SpendSignal = .shared
-    @State var librarySummary: LibrarySummary?
-    @State var libraryQuery = ""
-    @State var libraryHits: [DocumentRecord]?
-    @State var librarySearching = false
-    @State var showingProjects = false
+    @ObservedObject private var shelves: Shelves = .shared
+    @ObservedObject private var libraryStatus: LibraryStatus = .shared
+    @State private var projects: [ProjectSummary] = []
+    @State private var namingProject = false
+    @State private var newProjectName = ""
+    /// The project being read, if any. It takes the middle of the window, the way a
+    /// document does.
+    @State private var openProject: ProjectSummary?
     @State private var sessionSpend: SpendTotals?
     @State private var loadingModels = false
     @State private var modelsError: String?
@@ -328,7 +331,8 @@ struct ContentView: View {
                 watching: watchSources && !selection.isEmpty,
                 sources: selection.count,
                 spend: sessionSpendLabel,
-                planIsCurrent: previewIsCurrent
+                planIsCurrent: previewIsCurrent,
+                library: libraryStatus.label
             )
         }
         // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
@@ -428,10 +432,10 @@ struct ContentView: View {
         // for the one column that answers "where am I": there the rows want to be small,
         // dense and close together.
         List {
+            shelvesPanel
             sourcesPanel
-            explorerPanel
+            projectsPanel
             tagsPanel
-            libraryPanel
         }
         .listStyle(.sidebar)
         .frame(maxWidth: .infinity)
@@ -439,6 +443,110 @@ struct ContentView: View {
 
     // Not private: SidebarTests renders this on its own, squeezed, to check that it holds
     // its width rather than being compressed away.
+    // MARK: Where you are
+
+    /// Four rows at the top of the sidebar, because four questions get asked of a shelf
+    /// often enough to deserve one each. Two of them cannot be typed into the search box
+    /// at all: "carries no tag" is the absence of a term, and "opened but not finished"
+    /// is a fact about the reader rather than about the file.
+    private var shelvesPanel: some View {
+        Section("Library") {
+            ForEach(SmartList.allCases) { list in
+                Button {
+                    shelves.current = list
+                } label: {
+                    HStack {
+                        Label(list.title, systemImage: list.icon)
+                        Spacer()
+                        Text("\(shelves.count(list, among: runner.results))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(shelves.current == list ? Color.accentColor : .primary)
+                .tip(list.explanation)
+            }
+        }
+        .task(id: runner.revision) {
+            await shelves.refresh()
+            await libraryStatus.refresh()
+        }
+    }
+
+    // MARK: Projects
+
+    /// The projects, where a person looks for them. They were a sheet 720 points wide
+    /// opened from a link buried in the library tab, which is a filing cabinet in a
+    /// drawer.
+    private var projectsPanel: some View {
+        Section("Projects") {
+            if Library.shared == nil {
+                Text("The library is unavailable").foregroundStyle(.secondary)
+            } else if projects.isEmpty {
+                Text("No projects yet").foregroundStyle(.secondary)
+            } else {
+                ForEach(projects) { project in
+                    Button {
+                        openProject = openProject?.id == project.id ? nil : project
+                    } label: {
+                        HStack {
+                            Label(project.name, systemImage: "books.vertical.fill")
+                                .lineLimit(1)
+                            Spacer()
+                            Text("\(project.documentCount)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(openProject?.id == project.id ? Color.accentColor : .primary)
+                    .tip("Ask a question across these \(project.documentCount) documents")
+                }
+            }
+            if namingProject {
+                TextField("Project name", text: $newProjectName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { Task { await createProject() } }
+                    .onExitCommand { namingProject = false }
+            } else {
+                Button {
+                    newProjectName = ""
+                    namingProject = true
+                } label: {
+                    Label("New project", systemImage: "plus.circle")
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .task(id: runner.revision) { await reloadProjects() }
+    }
+
+    private func reloadProjects() async {
+        guard let library = Library.shared else {
+            projects = []
+            return
+        }
+        let found = (try? await library.projects()) ?? []
+        var summaries: [ProjectSummary] = []
+        for project in found {
+            let count = ((try? await library.members(ofProject: project.id)) ?? []).count
+            summaries.append(ProjectSummary(id: project.id, name: project.name,
+                                            documentCount: count))
+        }
+        projects = summaries
+    }
+
+    private func createProject() async {
+        let name = newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        namingProject = false
+        guard !name.isEmpty, let library = Library.shared else { return }
+        _ = try? await library.createProject(name: name)
+        await reloadProjects()
+    }
+
     // MARK: Tags
 
     @ViewBuilder
@@ -523,34 +631,35 @@ struct ContentView: View {
         filterExplorerTree(explorerTree, matching: explorerFilter)
     }
 
+    /// The folder tree, drawn inside the Sources section rather than beside it.
+    ///
+    /// It was a tab of its own, which put "which folders are these files in" one level
+    /// away from "where do the files come from" -- the same question, one level down.
     @ViewBuilder
-    private var explorerPanel: some View {
-        Section {
-            if runner.results.isEmpty {
-                Text("Nothing scanned yet").foregroundStyle(.secondary)
+    private var explorerTreeRows: some View {
+        if !runner.results.isEmpty {
+            explorerFilterField
+            let visible = visibleExplorerTree
+            if visible.isEmpty {
+                Text("No file here matches \"\(explorerFilter)\"")
+                    .foregroundStyle(.secondary)
             } else {
-                explorerFilterField
-                let visible = visibleExplorerTree
-                if visible.isEmpty {
-                    Text("No file here matches \"\(explorerFilter)\"")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ExplorerOutline(
-                        nodes: visible,
-                        expanded: $explorerExpanded,
-                        // A filter that hid its own matches inside folded folders would be
-                        // useless, so filtering opens everything it kept and folding is
-                        // handed back once the box is empty again.
-                        forceExpanded: !explorerFilter.isEmpty,
-                        selected: reviewing,
-                        select: { reviewing = $0 }
-                    )
-                }
+                ExplorerOutline(
+                    nodes: visible,
+                    expanded: $explorerExpanded,
+                    // A filter that hid its own matches inside folded folders would be
+                    // useless, so filtering opens everything it kept and folding is
+                    // handed back once the box is empty again.
+                    forceExpanded: !explorerFilter.isEmpty,
+                    selected: reviewing,
+                    select: { reviewing = $0 }
+                )
             }
-        } header: {
-            HStack(spacing: 4) {
-                Text("Explorer")
-                Spacer()
+        }
+    }
+
+    private var explorerFolding: some View {
+        HStack(spacing: 4) {
                 Button {
                     explorerExpanded = explorerFolderIDs(explorerTree)
                 } label: {
@@ -568,13 +677,6 @@ struct ContentView: View {
                 .buttonStyle(.borderless)
                 .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
                 .tip("Fold every folder")
-            }
-        }
-        .task(id: runner.results.count) {
-            explorerTree = buildExplorerTree(runner.results)
-            // The roots open on their own: a tree that arrives entirely folded says nothing
-            // about what was just scanned. Anything folded by hand below them stays folded.
-            explorerExpanded.formUnion(explorerTree.map(\.id))
         }
     }
 
@@ -601,7 +703,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var sourcesPanel: some View {
-            Section("Sources") {
+            Section {
                 if selection.isEmpty {
                     Text("Nothing selected")
                         .foregroundStyle(.secondary)
@@ -624,6 +726,20 @@ struct ContentView: View {
                     .buttonStyle(.link)
                     .tip("Clears the selection, the results and the thumbnails")
                 }
+                explorerTreeRows
+            } header: {
+                HStack(spacing: 4) {
+                    Text("Sources")
+                    Spacer()
+                    explorerFolding
+                }
+            }
+            .task(id: runner.results.count) {
+                explorerTree = buildExplorerTree(runner.results)
+                // The roots open on their own: a tree that arrives entirely folded says
+                // nothing about what was just scanned. Anything folded by hand below
+                // them stays folded.
+                explorerExpanded.formUnion(explorerTree.map(\.id))
             }
     }
 

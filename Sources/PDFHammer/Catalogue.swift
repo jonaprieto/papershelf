@@ -54,6 +54,9 @@ struct ResultsPane: View {
     @State private var addingNote = false
     @State private var noteText = ""
     @StateObject private var tagIndex = CatalogueTags()
+    /// Which of the four library lists the shelf is showing, shared with the sidebar that
+    /// sets it.
+    @ObservedObject private var shelves: Shelves = .shared
     /// Remembers the last filter result. The grid, the folder tree and the "N of M shown"
     /// label each need it, and each used to recompute it: three passes over the whole
     /// collection per render, and again on every tick of a window resize because the grid
@@ -157,7 +160,9 @@ struct ResultsPane: View {
             query: query,
             scope: folderScope,
             undecidedOnly: onlyUndecided && mode == .list,
-            decisions: runner.reviewed
+            decisions: runner.reviewed,
+            list: shelves.current,
+            lists: shelves.revision
         ), compute: computeVisibleKeys)
     }
 
@@ -178,6 +183,10 @@ struct ResultsPane: View {
             let base = current ?? runner.results
             let scope = FolderScope(folderScope)
             current = base.filter { scope.contains($0) }
+        }
+        if shelves.current != .all {
+            let base = current ?? runner.results
+            current = base.filter { shelves.contains($0, in: shelves.current) }
         }
         if onlyUndecided && mode == .list {
             let base = current ?? runner.results
@@ -1332,6 +1341,12 @@ struct ResultsPane: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal) {
                 HStack(spacing: 7) {
+                    if shelves.current != .all {
+                        chip(shelves.current.title, icon: shelves.current.icon) {
+                            shelves.current = .all
+                        }
+                        .tip(shelves.current.explanation)
+                    }
                     if let folderScope {
                         chip(folderScope.lastPathComponent, icon: "folder.fill") {
                             self.folderScope = nil
@@ -1381,7 +1396,8 @@ struct ResultsPane: View {
         switch mode {
         case .bibliography: return "Bibliography"
         case .duplicates: return "Duplicates"
-        default: return folderScope?.lastPathComponent ?? "All Documents"
+        default:
+            return folderScope?.lastPathComponent ?? shelves.current.title
         }
     }
 
@@ -2265,6 +2281,10 @@ final class VisibleFilter {
         /// How many files have been decided. A decision changes what "only undecided"
         /// leaves on screen, and nothing else in this signature would notice.
         let decisions: Int
+        let list: SmartList
+        /// Bumped when the library's answer for a list changes -- a file tagged, a page
+        /// turned -- which nothing else here would notice either.
+        let lists: Int
     }
 
     private var signature: Signature?

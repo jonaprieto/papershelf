@@ -137,3 +137,23 @@ extension Library {
         }
     }
 }
+
+extension Library {
+
+    /// The paths of every document carrying no tag at all.
+    ///
+    /// Not something the query language can ask: it searches for tags a file has, and
+    /// "none of them" is the absence of a term rather than a term.
+    public func pathsWithoutTags() throws -> Set<String> {
+        try withStatement("""
+            SELECT l.path FROM locations l
+            WHERE NOT EXISTS (SELECT 1 FROM document_tags t WHERE t.document_id = l.document_id);
+            """) { statement in
+            var out: Set<String> = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let path = columnText(statement, 0) { out.insert(path) }
+            }
+            return out
+        }
+    }
+}

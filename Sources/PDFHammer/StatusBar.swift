@@ -18,6 +18,9 @@ struct StatusBar: View {
     /// a label in the results bar; it belongs with everything else that is about right
     /// now rather than about the collection.
     let planIsCurrent: Bool
+    /// What the library holds. A fact about the whole collection rather than about this
+    /// run, and the last thing before the watcher's own state.
+    let library: String?
     @State private var showingActivity = false
 
     var body: some View {
@@ -45,6 +48,11 @@ struct StatusBar: View {
 
             if let spend {
                 Text(spend)
+                separator
+            }
+
+            if let library {
+                Text(library)
                 separator
             }
 
