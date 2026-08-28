@@ -88,6 +88,27 @@ enum Metric {
 }
 
 
+/// The type scale.
+///
+/// One face for the interface and a serif for anything that came out of a document — page
+/// text, a quoted highlight, a book's own title on its cover. The sizes are the ones the
+/// app already used most; naming them is what stops a caption being 11 points in one view
+/// and 12 in the next.
+enum Face {
+    static let title = Font.system(size: 22, weight: .semibold)
+    static let headline = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: 13)
+    static let control = Font.system(size: 12)
+    static let caption = Font.system(size: 11)
+    static let section = Font.system(size: 11, weight: .semibold)
+    static let micro = Font.system(size: 10)
+    /// Filenames, paths and anything else where a character's identity matters more than
+    /// how the line looks.
+    static let mono = Font.system(size: 11.5, design: .monospaced)
+    /// Anything the document itself said.
+    static let page = Font.system(size: 13.5, design: .serif)
+}
+
 /// Things held for this run of the app and never written down.
 ///
 /// The output password lived as `@State` on the one view that asked for it, which was

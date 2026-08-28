@@ -2109,6 +2109,22 @@ struct CoverCard: View {
         return item.destinationName
     }
 
+    /// What the book calls itself, or the filename without its extension when it says
+    /// nothing. Never the model's guess: that guess is already in the name below, and a
+    /// card claiming a title the file does not carry is a card that lies.
+    private var bookTitle: String {
+        let stated = item.documentInfo["Title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let stated, !stated.isEmpty { return stated }
+        return (name as NSString).deletingPathExtension
+    }
+
+    private var physical: String {
+        [
+            item.pageCount.map { "\($0) pp" },
+            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+        ].compactMap { $0 }.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack {
@@ -2139,12 +2155,31 @@ struct CoverCard: View {
                                            height: CoverCard.rasterHeight)
             }
 
-            Text(name)
-                .font(.caption)
+            // A book says its own name in its own voice, with the filename underneath
+            // in mono where a character's identity matters. Read off the document rather
+            // than guessed: the card must not disagree with the file it draws.
+            Text(bookTitle)
+                .font(Face.page)
                 .lineLimit(2, reservesSpace: true)
-                .truncationMode(.middle)
                 .foregroundStyle(decision == .deleted ? .secondary : .primary)
                 .strikethrough(decision == .deleted)
+
+            if let author = item.documentInfo["Author"], !author.isEmpty {
+                Text(author)
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(name)
+                .font(Face.mono)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.tertiary)
+
+            Text(physical)
+                .font(Face.micro.monospacedDigit())
+                .foregroundStyle(.tertiary)
 
             if !tags.isEmpty {
                 FlowRow(spacing: 4) {
