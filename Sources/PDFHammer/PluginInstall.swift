@@ -273,7 +273,7 @@ enum ChatGPTPlugin {
     /// The app's own version, so the plugin cannot claim a different one than the build it
     /// points at. A command-line build has no Info.plist to read it from.
     static var releaseVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
     }
 
     /// `mcpServers`, not `mcp_servers`: the plugin schema names it in camel case, and a
