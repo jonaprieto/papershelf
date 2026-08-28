@@ -4,8 +4,8 @@ import PDFKit
 import UniformTypeIdentifiers
 import PDFHammerCore
 
-private let bibGoodColor = Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
-private let bibWarnColor = Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+private let bibGoodColor = Ink.green
+private let bibWarnColor = Ink.amber
 
 // MARK: - Real lookups
 
@@ -637,15 +637,15 @@ func highlighted(_ text: String) -> AttributedString {
         var piece = AttributedString(token.text)
         switch token.kind {
         case .entryType:
-            piece.foregroundColor = Color(light: srgb(142, 42, 152), dark: srgb(214, 137, 226))
+            piece.foregroundColor = Ink.magenta
             piece.font = .system(.callout, design: .monospaced).weight(.semibold)
         case .key:
-            piece.foregroundColor = Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
+            piece.foregroundColor = Ink.blue
             piece.font = .system(.callout, design: .monospaced).weight(.semibold)
         case .field:
-            piece.foregroundColor = Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+            piece.foregroundColor = Ink.amber
         case .value:
-            piece.foregroundColor = Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+            piece.foregroundColor = Ink.green
         case .punctuation:
             piece.foregroundColor = .secondary
         case .plain:

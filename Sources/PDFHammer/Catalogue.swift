@@ -51,6 +51,11 @@ struct ResultsPane: View {
     @State private var addingNote = false
     @State private var noteText = ""
     @StateObject private var tagIndex = CatalogueTags()
+    /// Remembers the last filter result. The grid, the folder tree and the "N of M shown"
+    /// label each need it, and each used to recompute it: three passes over the whole
+    /// collection per render, and again on every tick of a window resize because the grid
+    /// asks from inside a `GeometryReader`.
+    @State private var filter = VisibleFilter()
     /// The file a "New Tag…" prompt was opened for. Non-nil drives the sheet.
     @State private var taggingItem: Item?
     @State private var newTagName = ""
@@ -106,6 +111,18 @@ struct ResultsPane: View {
     /// about. Nil means nothing is filtering at all, the same meaning `runner.matchingKeys`
     /// already carries on its own.
     private var visibleKeys: Set<String>? {
+        filter.keys(matching: VisibleFilter.Signature(
+            results: runner.resultsToken,
+            matching: runner.matchingToken,
+            tags: tagIndex.revision,
+            query: query,
+            scope: folderScope
+        ), compute: computeVisibleKeys)
+    }
+
+    /// The filter itself, unchanged. It is called at most once per body pass now, and not
+    /// at all when nothing it reads has moved.
+    private func computeVisibleKeys() -> Set<String>? {
         var current: [Item]?
         if let keys = runner.matchingKeys {
             current = runner.results.filter { keys.contains($0.key) }
@@ -715,7 +732,7 @@ struct ResultsPane: View {
             }
             .controlSize(.small)
             .tip("Byte-identical groups only; name matches are left alone")
-            .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            .tint(Ink.red)
             .disabled(runner.identicalExtras == 0)
         }
         .padding(.horizontal, 16)
@@ -741,7 +758,7 @@ struct ResultsPane: View {
             if incomplete > 0 {
                 Label("\(incomplete) incomplete", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(Ink.amber)
                     .help("Ask AI on those files to fill in author and year")
             }
             Spacer()
@@ -1012,12 +1029,12 @@ struct ResultsPane: View {
                             .font(.callout)
                             .monospacedDigit()
                             .foregroundStyle(keys.isEmpty
-                                             ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                             ? Ink.amber
                                              : .secondary)
                     } else if runner.pendingCount == 0 {
                         Label("All \(runner.results.count) reviewed", systemImage: "checkmark.circle.fill")
                             .font(.callout)
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .foregroundStyle(Ink.green)
                     } else {
                         Text("\(runner.reviewed) of \(runner.results.count) reviewed")
                             .font(.callout)
@@ -1148,11 +1165,11 @@ struct ResultsPane: View {
         if !runner.lastRunWasDry {
             Label("Applied, files on disk have changed", systemImage: "checkmark.seal.fill")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else if !previewIsCurrent {
             Label("Settings changed, plan again", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
         } else if runner.showingCached {
             Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
                 .font(.callout)
@@ -1161,7 +1178,7 @@ struct ResultsPane: View {
             Label("\(runner.appliedCount) applied so far, the rest is still only planned",
                   systemImage: "checkmark.seal")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else {
             Label("A plan only, nothing has changed on disk", systemImage: "list.bullet.rectangle")
                 .font(.callout)
@@ -1232,6 +1249,9 @@ final class CatalogueTags: ObservableObject {
     /// Every tag name in use anywhere, offered when adding one so nobody has to retype or
     /// misspell a tag that already exists.
     @Published private(set) var everyTag: [String] = []
+    /// Bumped whenever the tag tables change, so a view filtering by tag can tell in one
+    /// comparison whether its last answer still holds.
+    @Published private(set) var revision = 0
 
     init(library: Library? = Library.shared) {
         self.library = library
@@ -1252,6 +1272,7 @@ final class CatalogueTags: ObservableObject {
         guard let library else { return }
         if let all = try? await library.tagsByDocument() { byDocument = all }
         if let counts = try? await library.tagCounts() { everyTag = counts.map(\.name) }
+        defer { revision &+= 1 }
 
         let unresolved = items.filter { documentID[$0.key] == nil }
         guard !unresolved.isEmpty else { return }
@@ -1479,7 +1500,7 @@ struct ResultRow: View {
                 if decision == .deleted {
                     Label("will be moved to the Trash", systemImage: "trash")
                         .font(.caption)
-                        .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                        .foregroundStyle(Ink.red)
                 } else if shownName != item.sourceName {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.turn.down.right")
@@ -1562,17 +1583,17 @@ struct ResultRow: View {
         switch decision {
         case .confirmed:
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .applied:
             Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .skipped:
             Image(systemName: "minus.circle.fill").foregroundStyle(.tertiary)
         case .deleted:
             Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
         case .moveTo:
-            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
         case nil:
             Image(systemName: "circle.dotted").foregroundStyle(.tertiary)
         }
@@ -1591,6 +1612,9 @@ struct CoverCard: View {
     /// What this file is tagged with. Shown on the card so a shelf can be read by tag at a
     /// glance rather than one right-click at a time.
     var tags: [String] = []
+    /// This card's own cover. Held here rather than read out of a shared counter, so a
+    /// render landing anywhere else on the shelf does not redraw this card.
+    @State private var cover: NSImage?
 
     private var name: String {
         if case .confirmed(let confirmed) = decision { return confirmed }
@@ -1602,9 +1626,7 @@ struct CoverCard: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(.quaternary.opacity(0.5))
-                // Touching `revision` is what redraws this card when its render lands.
-                let _ = covers.revision
-                if let cover = covers.cover(for: item, passwords: passwords, height: 320) {
+                if let cover {
                     Image(nsImage: cover)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -1619,6 +1641,11 @@ struct CoverCard: View {
             .frame(height: 168)
             .frame(maxWidth: .infinity)
             .overlay(alignment: .topTrailing) { badges }
+            .task(id: "\(item.key)#\(covers.generation)") {
+                if let hit = covers.cached(item) { cover = hit; return }
+                cover = nil
+                cover = await covers.cover(for: item, passwords: passwords, height: 320)
+            }
 
             Text(name)
                 .font(.caption)
@@ -1663,13 +1690,13 @@ struct CoverCard: View {
             }
             switch decision {
             case .confirmed: Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
             case .applied: Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
             case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
             case .deleted: Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                .foregroundStyle(Ink.red)
+            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
             case nil: EmptyView()
             }
         }
@@ -1712,13 +1739,13 @@ struct StatusPill: View {
     /// unreadable at caption size. These are darkened for light and lifted for dark.
     private var color: Color {
         switch status {
-        case .decrypted: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
-        case .renamed:   return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
-        case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
-        case .encrypted: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
-        case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
-        case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-        case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+        case .decrypted: return Ink.green
+        case .renamed:   return Ink.blue
+        case .locked:    return Ink.amber
+        case .encrypted: return Ink.blue
+        case .trashed:   return Ink.grey
+        case .moved:     return Ink.purple
+        case .failed:    return Ink.red
         }
     }
 }
@@ -1760,7 +1787,7 @@ struct DuplicateSection: View {
                 }
                 .controlSize(.small)
                 .tip("Keeps the starred copy, trashes the rest of this group")
-                .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .tint(Ink.red)
             }
             .font(.callout)
             .padding(.vertical, 2)
@@ -1786,9 +1813,9 @@ func duplicateIcon(_ kind: DuplicateGroup.Kind) -> String {
 
 func duplicateColour(_ kind: DuplicateGroup.Kind) -> Color {
     switch kind {
-    case .identical: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-    case .sameText: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-    case .likely: return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+    case .identical: return Ink.red
+    case .sameText: return Ink.purple
+    case .likely: return Ink.amber
     }
 }
 
@@ -1810,7 +1837,7 @@ struct DuplicateRow: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: isKeeper ? "star.fill" : "circle")
                 .foregroundStyle(isKeeper
-                                 ? Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+                                 ? Ink.green
                                  : Color.secondary.opacity(0.5))
                 .padding(.top, 2)
                 .help(isKeeper ? "The copy to keep" : "A spare copy")
@@ -1836,7 +1863,7 @@ struct DuplicateRow: View {
             if decision == .deleted {
                 Label("Trash", systemImage: "trash.fill")
                     .font(.caption)
-                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .foregroundStyle(Ink.red)
             } else if !isKeeper {
                 Button("Keep this one", action: keep)
                     .controlSize(.small)
@@ -1849,3 +1876,32 @@ struct DuplicateRow: View {
 }
 
 // MARK: - Sidebar rail
+
+
+// MARK: - Filter cache
+
+/// Holds the last answer `visibleKeys` gave, keyed on everything that could change it.
+///
+/// Deliberately not an `ObservableObject` and deliberately a reference type held in
+/// `@State`: it publishes nothing, which is what makes it safe to read and update from
+/// inside `body`, and it survives the body passes that a value type would not.
+final class VisibleFilter {
+    struct Signature: Equatable {
+        let results: Int
+        let matching: Int
+        let tags: Int
+        let query: String
+        let scope: URL?
+    }
+
+    private var signature: Signature?
+    private var cached: Set<String>?
+
+    func keys(matching new: Signature, compute: () -> Set<String>?) -> Set<String>? {
+        if signature == new { return cached }
+        let value = compute()
+        signature = new
+        cached = value
+        return value
+    }
+}

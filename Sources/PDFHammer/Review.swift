@@ -205,7 +205,7 @@ struct ReviewInspector: View {
             .overlay(alignment: .topTrailing) {
                 if !annotator.marks.isEmpty && !notesShown {
                     Circle()
-                        .fill(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                        .fill(Ink.amber)
                         .frame(width: 6, height: 6)
                         .offset(x: 3, y: -2)
                 }
@@ -366,7 +366,7 @@ struct ReviewInspector: View {
                 Text("was \(item.sourceName)")
                 if isEdited {
                     Text("edited")
-                        .foregroundStyle(Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255)))
+                        .foregroundStyle(Ink.blue)
                     Button("Reset", action: reset).buttonStyle(.link)
                 }
                 Spacer(minLength: 0)
@@ -438,12 +438,12 @@ struct ReviewInspector: View {
                 Spacer(minLength: 0)
                 Button(action: applyNow) { KeyLabel("A", "Apply now") }
                     .disabled(decision == .applied)
-                    .tint(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                    .tint(Ink.green)
                     .tip("Rename this one file on disk now", key: "A")
                 Button(action: moveTo) { KeyLabel("M", "Move to…") }
-                    .tint(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                    .tint(Ink.purple)
                 Button(action: markDeleted) { KeyLabel("D", "Trash") }
-                    .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .tint(Ink.red)
                     .tip("To the Trash on apply, recoverable", key: "D")
             }
           }
@@ -468,19 +468,19 @@ struct ReviewInspector: View {
         switch decision {
         case .confirmed:
             Label("Confirmed", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .applied:
             Label("Applied", systemImage: "checkmark.seal.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .skipped:
             Label("Skipped", systemImage: "minus.circle.fill")
                 .foregroundStyle(.secondary)
         case .deleted:
             Label("Will be trashed", systemImage: "trash.circle.fill")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
         case .moveTo(let folder):
             Label("Moving to \(folder.lastPathComponent)", systemImage: "arrow.right.circle.fill")
-                .foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                .foregroundStyle(Ink.purple)
         case nil:
             Label("Not reviewed", systemImage: "circle.dotted")
                 .foregroundStyle(.tertiary)

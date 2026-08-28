@@ -81,9 +81,12 @@ struct PDFHammerApp: App {
 @MainActor
 final class Covers: ObservableObject {
     private let cache = NSCache<NSString, NSImage>()
-    private var inFlight: Set<String> = []
-    /// Bumped when a render lands, to redraw the cards waiting on one.
-    @Published private(set) var revision = 0
+    /// Cards awaiting a render, by key, so several asking for the same file share one.
+    private var waiting: [String: [CheckedContinuation<NSImage?, Never>]] = [:]
+    /// Bumped only when the whole cache is emptied. A single thumbnail landing used to
+    /// bump a counter every card read, so one render redrew the entire visible grid;
+    /// now each card awaits its own cover and redraws alone.
+    @Published private(set) var generation = 0
 
     /// Four at a time: enough to fill a scroll, few enough to leave the UI responsive.
     private static let queue: OperationQueue = {
@@ -95,30 +98,49 @@ final class Covers: ObservableObject {
 
     init() { cache.countLimit = 400 }
 
-    func cover(for item: Item, passwords: [String], height: CGFloat) -> NSImage? {
-        if let hit = cache.object(forKey: item.key as NSString) { return hit }
-        guard !inFlight.contains(item.key) else { return nil }
-        inFlight.insert(item.key)
-
-        let url = item.currentURL
-        let key = item.key
-        Covers.queue.addOperation { [weak self] in
-            let image = Covers.render(url, passwords: passwords, height: height)
-            Task { @MainActor in
-                guard let self else { return }
-                self.inFlight.remove(key)
-                guard let image else { return }
-                self.cache.setObject(image, forKey: key as NSString)
-                self.revision &+= 1
-            }
-        }
-        return nil
+    /// The cover if one is already rendered. Synchronous and cheap, so a card that has
+    /// its cover draws it on the first pass with no flicker.
+    func cached(_ item: Item) -> NSImage? {
+        cache.object(forKey: item.key as NSString)
     }
 
+    /// This one file's cover, awaited by the card that wants it.
+    ///
+    /// Several cards asking for the same file share a single render, and a card scrolled
+    /// out of the grid simply stops awaiting. The queue is still four wide and the cache
+    /// still holds four hundred, both of which were measured; what changed is who gets
+    /// told when a render lands.
+    func cover(for item: Item, passwords: [String], height: CGFloat) async -> NSImage? {
+        if let hit = cache.object(forKey: item.key as NSString) { return hit }
+        let key = item.key
+
+        if waiting[key] != nil {
+            return await withCheckedContinuation { continuation in
+                waiting[key, default: []].append(continuation)
+            }
+        }
+        waiting[key] = []
+
+        let url = item.currentURL
+        let image = await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
+            Covers.queue.addOperation {
+                continuation.resume(returning: Covers.render(url, passwords: passwords, height: height))
+            }
+        }
+
+        if let image { cache.setObject(image, forKey: key as NSString) }
+        for pending in waiting.removeValue(forKey: key) ?? [] {
+            pending.resume(returning: image)
+        }
+        return image
+    }
+
+    /// Renders already in flight are left to finish rather than cancelled: resuming their
+    /// waiters here as well as at the end of the render would resume twice, and a
+    /// continuation resumed twice traps.
     func forget() {
         cache.removeAllObjects()
-        inFlight.removeAll()
-        revision &+= 1
+        generation &+= 1
     }
 
     private nonisolated static func render(_ url: URL, passwords: [String], height: CGFloat) -> NSImage? {

@@ -1093,7 +1093,7 @@ struct ContentView: View {
                        + "through as it is rather than being sealed with one it never had.")
                     .font(.caption)
                     .foregroundStyle(encryptOutput && encryptPassword.isEmpty
-                                     ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                     ? Ink.amber
                                      : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1133,7 +1133,7 @@ struct ContentView: View {
             } footer: {
                 Text(backupSummary)
                     .font(.caption)
-                    .foregroundStyle(moveOriginals ? .secondary : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(moveOriginals ? .secondary : Ink.amber)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1168,7 +1168,7 @@ struct ContentView: View {
             LabeledContent("Price") {
                 Text("unknown")
                     .font(.caption)
-                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(Ink.amber)
             }
             .tip("No price is known for this model at this endpoint. Calls are still "
                  + "recorded; set a rate in Settings to see what they cost.")
@@ -1200,10 +1200,10 @@ struct ContentView: View {
                 LabeledContent("API key") {
                     if aiReady {
                         Label("Ready", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .foregroundStyle(Ink.green)
                     } else {
                         Label("Not set", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                            .foregroundStyle(Ink.amber)
                     }
                 }
                 if availableModels.isEmpty {
@@ -1234,7 +1234,7 @@ struct ContentView: View {
                     if let modelsError {
                         Text(modelsError)
                             .font(.caption)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .foregroundStyle(Ink.red)
                             .lineLimit(2)
                     }
                 }
@@ -1452,12 +1452,12 @@ struct ContentView: View {
 
     private func logColour(_ kind: LogEntry.Kind) -> Color {
         switch kind {
-        case .failed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-        case .trashed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-        case .moved: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-        case .decrypted, .renamed, .applied: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+        case .failed: return Ink.red
+        case .trashed: return Ink.red
+        case .moved: return Ink.purple
+        case .decrypted, .renamed, .applied: return Ink.green
         case .skipped: return .secondary
-        default: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
+        default: return Ink.blue
         }
     }
 

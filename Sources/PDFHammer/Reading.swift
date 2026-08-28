@@ -170,7 +170,7 @@ struct NotesRail: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .foregroundStyle(Ink.red)
                     .help("Remove every mark from this document")
                 }
                 Button {
@@ -237,7 +237,7 @@ struct NotesRail: View {
                     if let problem = annotator.lastError {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .foregroundStyle(Ink.red)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

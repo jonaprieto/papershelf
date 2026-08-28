@@ -51,11 +51,11 @@ struct SettingsPanel: View {
                         if let found = environmentKey ?? DiscoveredKey.shared.value {
                             Label("Found, ending \(String(found.suffix(4)))",
                                   systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                                .foregroundStyle(Ink.green)
                         } else {
                             Label("Not found in the environment or your login shell",
                                   systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                                .foregroundStyle(Ink.amber)
                         }
                     }
                 }
@@ -108,10 +108,10 @@ struct SettingsPanel: View {
                     case .idle: EmptyView()
                     case .ok(let message):
                         Label(message, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .foregroundStyle(Ink.green)
                     case .failed(let message):
                         Text(message)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .foregroundStyle(Ink.red)
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -182,7 +182,7 @@ struct SettingsPanel: View {
                 .foregroundStyle(.secondary)
         } else {
             Label("Cost unknown for this model", systemImage: "questionmark.circle")
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
         }
         if editingPrice {
             priceEditor
@@ -249,7 +249,7 @@ struct SettingsPanel: View {
             // Distinct from the empty-ledger case below: this is "could not read the
             // ledger," not "nothing has been spent," and must not be shown as $0.
             Text("Could not read the spend ledger.")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
         } else if entries.isEmpty {
             Text("No AI calls recorded yet.")
                 .foregroundStyle(.secondary)
@@ -325,7 +325,7 @@ struct SettingsPanel: View {
     private var chatGPTPluginRow: some View {
         if pluginStatus.installed {
             Label("Installed at \(pluginStatus.destination.path)", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else {
             Text("Not installed").foregroundStyle(.secondary)
         }
@@ -338,7 +338,7 @@ struct SettingsPanel: View {
         if !serverFound {
             Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
                   systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
                 .fixedSize(horizontal: false, vertical: true)
         }
         if serverFound || pluginStatus.installed {
@@ -356,11 +356,11 @@ struct SettingsPanel: View {
         case .idle: EmptyView()
         case .ok(let message):
             Label(message, systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
                 .fixedSize(horizontal: false, vertical: true)
         case .failed(let message):
             Text(message)
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }

@@ -54,7 +54,16 @@ final class Annotator: ObservableObject {
     private var generation = 0
     private var scan: Task<Void, Never>?
 
+    /// A save waiting out the pause after the last edit, and whether there is anything to
+    /// write. Recolouring a mark or typing a note used to serialize the whole document on
+    /// every keystroke; now a burst of edits costs one write.
+    private var saveTask: Task<Void, Never>?
+    private var unsaved = false
+
     func attach(_ view: PDFView, url: URL) {
+        // Whatever the previous document still owed the disk, it owes now: the debounce
+        // must never outlive the file it was waiting for.
+        flush()
         self.view = view
         self.url = url
         generation &+= 1
@@ -281,23 +290,64 @@ final class Annotator: ObservableObject {
         }
     }
 
-    /// Writes through a temporary file, so an interrupted save cannot leave a half-written
-    /// document where the original was.
+    /// Marks the document dirty and waits out a short pause before writing.
+    ///
+    /// The mark itself is already on the page, so the reader sees it immediately; what is
+    /// deferred is only the trip to disk. Dragging through a paragraph, recolouring it and
+    /// typing a note is one write instead of a dozen.
     private func save() {
-        guard let document = view?.document, let url else { return }
-        let temporary = url.deletingLastPathComponent()
-            .appendingPathComponent(".pdfhammer-notes-\(UUID().uuidString).pdf")
-        guard document.write(to: temporary) else {
+        unsaved = true
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.persist()
+        }
+    }
+
+    /// Writes right now, whatever the pause was waiting for. Called before another
+    /// document is attached and when the reader goes away, so nothing is ever lost to the
+    /// delay — and so a save can never land on the file that replaced the one it was for.
+    func flush() {
+        saveTask?.cancel()
+        saveTask = nil
+        persist()
+    }
+
+    /// Serializes on the main actor — the document belongs to the view, and PDFKit will
+    /// not have it read from two threads at once — then hands the finished bytes to a
+    /// detached task for the part that actually waits on hardware.
+    ///
+    /// Both the document and its URL are read here, synchronously, rather than inside the
+    /// task: by the time a task runs, `attach` may already have pointed this object at a
+    /// different file.
+    private func persist() {
+        guard unsaved, let document = view?.document, let url else { return }
+        guard let data = document.dataRepresentation() else {
             lastError = "Could not write the note"
-            try? FileManager.default.removeItem(at: temporary)
             return
         }
-        do {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
-            lastError = nil
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            lastError = error.localizedDescription
+        unsaved = false
+        Task { [weak self] in
+            let failure = await Annotator.persist(data, to: url)
+            await MainActor.run { self?.lastError = failure }
         }
+    }
+
+    /// Writing through a temporary file means an interrupted save cannot leave a
+    /// half-written document where the original was.
+    private nonisolated static func persist(_ data: Data, to url: URL) async -> String? {
+        await Task.detached(priority: .utility) { () -> String? in
+            let temporary = url.deletingLastPathComponent()
+                .appendingPathComponent(".pdfhammer-notes-\(UUID().uuidString).pdf")
+            do {
+                try data.write(to: temporary, options: .atomic)
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+                return nil
+            } catch {
+                try? FileManager.default.removeItem(at: temporary)
+                return error.localizedDescription
+            }
+        }.value
     }
 }

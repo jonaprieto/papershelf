@@ -8,7 +8,12 @@ import PDFHammerCore
 final class Runner: ObservableObject {
     enum Phase: Equatable { case idle, scanning, processing }
 
-    @Published private(set) var results: [Item] = []
+    @Published private(set) var results: [Item] = [] { didSet { resultsToken &+= 1 } }
+    /// Changes exactly when `results` does. A view that has to know whether the set it
+    /// filtered last time is still the same set can compare one integer instead of two
+    /// arrays. Deliberately not `@Published`: `results` already publishes, and a second
+    /// signal for the same change would only cost another pass.
+    private(set) var resultsToken = 0
     @Published var phase: Phase = .idle
     @Published var done = 0
     @Published var total = 0
@@ -321,7 +326,10 @@ final class Runner: ObservableObject {
     @Published private(set) var searchText = ""
     @Published private(set) var searching = false
     /// Nil when no query is active, so the views can tell "no filter" from "no matches".
-    @Published private(set) var matchingKeys: Set<String>?
+    @Published private(set) var matchingKeys: Set<String>? { didSet { matchingToken &+= 1 } }
+    /// As `resultsToken`, for the search result. Hashing a set of ten thousand keys to
+    /// notice it had not changed would cost more than the filter it is meant to skip.
+    private(set) var matchingToken = 0
     /// Opening text, read once per file and only when a text query has asked for it.
     private var textCache: [String: String] = [:]
     /// Built once from what is already on the shelf, then kept current as files arrive.
