@@ -549,7 +549,7 @@ struct ReviewInspector: View {
                 .tip(autoIdentify ? "Asking the model on each new file"
                                   : "Ask the model on each new file")
                 Button(action: identify) { KeyLabel("G", "Ask AI") }
-                    .disabled(!aiReady || runner.isThinking(item))
+                    .disabled(!aiReady || runner.ai.isThinking(item))
                     .tip(aiReady ? "Read the opening pages and suggest a title"
                              : "Add an API key in Settings first", key: "G")
           }

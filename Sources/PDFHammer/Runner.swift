@@ -15,10 +15,45 @@ final class Runner: ObservableObject {
     /// signal for the same change would only cost another pass.
     private(set) var resultsToken = 0
     @Published var phase: Phase = .idle
-    @Published var done = 0
-    @Published var total = 0
-    @Published var found = 0
-    @Published var current = ""
+    /// Everything that changes many times a second while work runs, on an object of its
+    /// own so a scan tick no longer invalidates every row on screen. See `Activity`.
+    let activity = Activity()
+    /// What the model has been asked and what it said, likewise. See `Identifications`.
+    let ai = Identifications()
+
+    // Written here, read by the two views that show progress. Private on purpose: a view
+    // reading these through `Runner` would not be subscribed to the object that actually
+    // publishes them, and would quietly show a stale number.
+    private var done: Int {
+        get { activity.done }
+        set { activity.done = newValue }
+    }
+    private var total: Int {
+        get { activity.total }
+        set { activity.total = newValue }
+    }
+    private var found: Int {
+        get { activity.found }
+        set { activity.found = newValue }
+    }
+    private var current: String {
+        get { activity.current }
+        set { activity.current = newValue }
+    }
+    private var absorbing: Bool {
+        get { activity.absorbing }
+        set { activity.absorbing = newValue }
+    }
+    private var lastAbsorbed: Int {
+        get { activity.lastAbsorbed }
+        set { activity.lastAbsorbed = newValue }
+    }
+    private var showingCached: Bool {
+        get { activity.showingCached }
+        set { activity.showingCached = newValue }
+    }
+    private var guesses: [String: BookGuess] { ai.guesses }
+
     @Published var lastRunWasDry = true
     /// Snapshot of the inputs the current results were produced from.
     @Published var fingerprint = ""
@@ -33,7 +68,6 @@ final class Runner: ObservableObject {
     @Published private(set) var bib: [BibEntry] = []
     @Published private(set) var bibByItem: [String: BibEntry] = [:]
     private var bibStale = true
-    @Published private(set) var log: [LogEntry] = []
     /// One entry per undoable step. A step can touch many files, so each holds the
     /// decisions exactly as they were before it ran.
     private var undoStack: [[(key: String, decision: Decision?)]] = []
@@ -168,7 +202,7 @@ final class Runner: ObservableObject {
         let gone = Set(results.filter { belongs($0.root) }.map(\.key))
         for key in gone {
             set(nil, for: key)
-            guesses[key] = nil
+            ai.forget(key)
             // Otherwise its bytes stay in the index and a later, unrelated arrival is
             // reported as a copy of a file that is no longer being watched.
             duplicateIndex?.remove(key)
@@ -219,7 +253,7 @@ final class Runner: ObservableObject {
     }
 
     func note(_ kind: LogEntry.Kind, subject: String, detail: String = "") {
-        log.append(LogEntry(kind: kind, subject: subject, detail: detail))
+        activity.note(kind, subject: subject, detail: detail)
     }
 
     private func note(_ kind: LogEntry.Kind, for item: Item, detail: String = "") {
@@ -495,18 +529,11 @@ final class Runner: ObservableObject {
         }
     }
 
-    /// What the model has said about a file, by `Item.key`. Keeps author and year, which
-    /// a filename cannot carry, so a bibliography can use them.
-    @Published private(set) var guesses: [String: BookGuess] = [:]
-    @Published private(set) var thinking: Set<String> = []
-    @Published var aiError: String?
-
     /// Asks the model what a file is and puts the answer in as the suggested name.
     /// Nothing is decided: the suggestion still has to be confirmed like any other.
     func identify(_ item: Item, client: AIClient, passwords: [String], rules: NameRules) async {
-        guard !thinking.contains(item.key) else { return }
-        thinking.insert(item.key)
-        defer { thinking.remove(item.key) }
+        guard ai.begin(item.key) else { return }
+        defer { ai.end(item.key) }
 
         let source = item.currentURL
         let excerpt = await Task.detached(priority: .userInitiated) {
@@ -515,7 +542,7 @@ final class Runner: ObservableObject {
 
         do {
             let guess = try await client.identify(filename: item.sourceName, excerpt: excerpt)
-            guesses[item.key] = guess
+            ai.record(guess, for: item.key)
             let name = filename(for: guess, rules: rules)
             guard !name.isEmpty, let index = indexByKey[item.key] else { return }
             var updated = results[index]
@@ -523,11 +550,9 @@ final class Runner: ObservableObject {
                 .appendingPathComponent(name)
             replace(item.key, with: updated)
         } catch {
-            aiError = error.localizedDescription
+            ai.error = error.localizedDescription
         }
     }
-
-    func isThinking(_ item: Item) -> Bool { thinking.contains(item.key) }
 
     /// Runs over everything still undecided, a few at a time so one slow reply does not
     /// hold up the rest and the service is not hit with hundreds at once.
@@ -547,9 +572,6 @@ final class Runner: ObservableObject {
         }
     }
 
-    /// True while what is on screen came from the last launch rather than from a scan.
-    @Published private(set) var showingCached = false
-
     /// Puts the previous run on screen at once. Nothing here is a claim about the present:
     /// it is what was true last time, shown so the window is not empty while the disk is
     /// read, and replaced the moment a real scan lands.
@@ -564,10 +586,6 @@ final class Runner: ObservableObject {
              detail: "from \(cache.savedAt.formatted(date: .abbreviated, time: .shortened))")
         return true
     }
-
-    @Published private(set) var absorbing = false
-    /// How many files the last absorb brought in, for the status strip to report.
-    @Published private(set) var lastAbsorbed = 0
 
     /// Folds changes on disk into the current results without starting over.
     ///
@@ -612,7 +630,7 @@ final class Runner: ObservableObject {
         let merged = found.compactMap { known[$0.key] ?? arrived[$0.key] }
         for key in vanished {
             set(nil, for: key)
-            guesses[key] = nil
+            ai.forget(key)
             duplicateIndex?.remove(key)
         }
         jobs = found
@@ -764,7 +782,7 @@ final class Runner: ObservableObject {
         // A scan of a different folder must not go on matching arrivals against the last
         // one's files. The index is rebuilt from whatever this run finds.
         duplicateIndex = nil
-        guesses = [:]
+        ai.forgetEverything()
         matchingKeys = nil
         searchText = ""
         textCache = [:]

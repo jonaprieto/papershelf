@@ -9,6 +9,9 @@ import PDFHammerCore
 /// of that lives here now, in a bar that is always exactly one line tall.
 struct StatusBar: View {
     @ObservedObject var runner: Runner
+    /// Observed on its own: these are the numbers that move several times a second, and
+    /// this bar is one of the two places that show them.
+    @ObservedObject var activity: Activity
     let watching: Bool
     let sources: Int
     /// Already formatted by the caller: money carries its currency and is never coerced
@@ -26,7 +29,7 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            activity
+            runningNow
 
             if let counts = decisions {
                 separator
@@ -37,7 +40,7 @@ struct StatusBar: View {
 
             Spacer(minLength: 8)
 
-            if runner.showingCached {
+            if activity.showingCached {
                 Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
                 separator
             }
@@ -104,7 +107,7 @@ struct StatusBar: View {
     /// you are looking at something else is worth one line of acknowledgement.
     private var watchingLabel: String {
         guard watching else { return "Not watching" }
-        let taken = runner.lastAbsorbed
+        let taken = activity.lastAbsorbed
         guard taken > 0 else {
             return "Watching \(sources) source\(sources == 1 ? "" : "s")"
         }
@@ -117,28 +120,28 @@ struct StatusBar: View {
 
     /// What the app is doing, with a bar only while there is something to measure.
     @ViewBuilder
-    private var activity: some View {
+    private var runningNow: some View {
         switch runner.phase {
         case .scanning:
             HStack(spacing: 7) {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12)
-                Text("Scanning — \(runner.found) PDF\(runner.found == 1 ? "" : "s") found")
+                Text("Scanning — \(activity.found) PDF\(activity.found == 1 ? "" : "s") found")
             }
         case .processing:
             HStack(spacing: 7) {
-                ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
+                ProgressView(value: Double(activity.done), total: Double(max(activity.total, 1)))
                     .progressViewStyle(.linear)
                     .frame(width: 120)
-                Text("\(runner.done) of \(runner.total)")
+                Text("\(activity.done) of \(activity.total)")
                     .monospacedDigit()
             }
-        case .idle where runner.absorbing:
+        case .idle where activity.absorbing:
             // The watcher taking in files it just noticed. Its own line until now, in a
             // second bar underneath this one.
             HStack(spacing: 7) {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12)
-                Text(runner.total > 0
-                     ? "Reading \(runner.done) of \(runner.total) new files"
+                Text(activity.total > 0
+                     ? "Reading \(activity.done) of \(activity.total) new files"
                      : "Checking what changed")
             }
         case .idle:
@@ -151,7 +154,7 @@ struct StatusBar: View {
             .buttonStyle(.plain)
             .help("Everything that has happened, newest first")
             .popover(isPresented: $showingActivity, arrowEdge: .top) {
-                ActivityLog(entries: runner.log)
+                ActivityLog(entries: activity.log)
             }
         }
     }

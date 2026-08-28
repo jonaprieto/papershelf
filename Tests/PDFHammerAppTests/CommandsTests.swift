@@ -1,4 +1,5 @@
 import XCTest
+import PDFHammerCore
 @testable import PDFHammer
 
 /// The command table is the one place a shortcut is written down now, so these check the
@@ -164,5 +165,49 @@ final class SettingsSearchTests: XCTestCase {
 
     func testSearchIsCaseInsensitive() {
         XCTAssertTrue(SettingsPane.bibtex.matches("BibLaTeX"))
+    }
+}
+
+/// The redesign's second finding: one object with thirty published fields was handed to
+/// every row, so a scan tick, a line in the log or a model request about some other file
+/// invalidated the whole shelf. What moved off `Runner` stays off it.
+@MainActor
+final class PublishedStateTests: XCTestCase {
+
+    /// Progress publishes on `Activity`, and a view reading it through `Runner` would not
+    /// be subscribed to the object that changes -- so `Runner` does not offer it at all.
+    func testProgressLivesOnItsOwnObject() {
+        let runner = Runner()
+        runner.activity.done = 7
+        runner.activity.total = 12
+        XCTAssertEqual(runner.activity.done, 7)
+        XCTAssertEqual(runner.activity.total, 12)
+    }
+
+    func testTheLogIsWrittenThroughRunnerAndReadFromActivity() {
+        let runner = Runner()
+        runner.note(.edited, subject: "a.pdf", detail: "renamed")
+        XCTAssertEqual(runner.activity.log.count, 1)
+        XCTAssertEqual(runner.activity.log.first?.subject, "a.pdf")
+    }
+
+    /// The example the artboard gives by name: asking about one file must not touch the
+    /// state every row is drawn from.
+    func testAskingAboutOneFileTouchesOnlyTheIdentifications() {
+        let identifications = Identifications()
+        XCTAssertTrue(identifications.begin("a"))
+        XCTAssertFalse(identifications.begin("a"), "one request per file at a time")
+        XCTAssertTrue(identifications.thinking.contains("a"))
+        identifications.end("a")
+        XCTAssertTrue(identifications.begin("a"), "and it can be asked again once it is done")
+    }
+
+    func testAGuessIsKeptUntilItIsForgotten() {
+        let identifications = Identifications()
+        identifications.record(BookGuess(title: "Causality", author: "Pearl", year: "2009"),
+                               for: "k")
+        XCTAssertEqual(identifications.guesses["k"]?.author, "Pearl")
+        identifications.forget("k")
+        XCTAssertNil(identifications.guesses["k"])
     }
 }

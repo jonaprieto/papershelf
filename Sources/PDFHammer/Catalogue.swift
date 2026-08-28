@@ -420,9 +420,9 @@ struct ResultsPane: View {
                  + "You are billed by \(aiModel)'s provider.")
         }
             .alert("The service could not be reached", isPresented: aiErrorShown) {
-            Button("OK") { runner.aiError = nil }
+            Button("OK") { runner.ai.error = nil }
         } message: {
-            Text(runner.aiError ?? "")
+            Text(runner.ai.error ?? "")
         }
         // Built here rather than in ContentView's toolbar because this is where the query
         // and the mode live, and SwiftUI merges toolbars down the hierarchy. Moving the
@@ -527,7 +527,7 @@ struct ResultsPane: View {
                 .keyboardShortcut("d", modifiers: .command)
             Divider()
             Button("Copy the catalogue as Markdown") {
-                copyText(markdownCatalogue(runner.results, known: runner.guesses))
+                copyText(markdownCatalogue(runner.results, known: runner.ai.guesses))
             }
             Button("Copy the bibliography as Markdown") {
                 runner.ensureBib()
@@ -613,7 +613,7 @@ struct ResultsPane: View {
     /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
     /// past what the type-checker will work through.
     private var aiErrorShown: Binding<Bool> {
-        Binding(get: { runner.aiError != nil }, set: { if !$0 { runner.aiError = nil } })
+        Binding(get: { runner.ai.error != nil }, set: { if !$0 { runner.ai.error = nil } })
     }
 
     // MARK: Keys
@@ -858,8 +858,8 @@ struct ResultsPane: View {
     private func askOnArrival() {
         guard autoIdentify, aiReady, let item = selectedItem,
               runner.decision(for: item) == nil,
-              runner.guesses[item.key] == nil,
-              !runner.isThinking(item)
+              runner.ai.guesses[item.key] == nil,
+              !runner.ai.isThinking(item)
         else { return }
         Task { await runner.identify(item, client: aiClient, passwords: passwords, rules: rules) }
     }
@@ -988,7 +988,7 @@ struct ResultsPane: View {
         Task {
             runner.ensureBib()
             if let entry = runner.bibByItem[item.key], !entry.isComplete,
-               aiReady, runner.guesses[item.key] == nil {
+               aiReady, runner.ai.guesses[item.key] == nil {
                 await runner.identify(item, client: aiClient, passwords: passwords, rules: rules)
                 runner.ensureBib()
             }
@@ -1357,7 +1357,7 @@ struct ResultsPane: View {
         ScrollViewReader { scroll in
             List(selection: $selected) {
                 ForEach(runner.tree) { node in
-                    NodeView(node: node, expanded: $expanded, runner: runner,
+                    NodeView(node: node, expanded: $expanded, facts: RowFacts(runner: runner),
                              menu: fileMenu, tags: tagIndex.tags, openFolder: openFolder,
                              visible: visibleKeys)
                 }
@@ -1523,7 +1523,7 @@ struct ResultsPane: View {
     /// the window already knows.
     private var placeTitle: String {
         if let item = readerItem ?? (reading ? selectedItem : nil) {
-            return runner.guesses[item.key]?.title ?? item.destinationName
+            return runner.ai.guesses[item.key]?.title ?? item.destinationName
         }
         switch mode {
         case .bibliography: return "Bibliography"
@@ -1537,7 +1537,7 @@ struct ResultsPane: View {
     /// has been decided -- is in the status bar and deliberately not here.
     private var placeSubtitle: String {
         if let item = readerItem ?? (reading ? selectedItem : nil) {
-            let guess = runner.guesses[item.key]
+            let guess = runner.ai.guesses[item.key]
             let pages = item.pageCount.map { "\($0) pages" }
             return [guess?.author, guess?.year, pages]
                 .compactMap { $0 }.joined(separator: " · ")
@@ -1668,51 +1668,8 @@ struct ResultsPane: View {
         }
     }
 
-    @ViewBuilder
-    private var stateLabel: some View {
-        if !runner.lastRunWasDry {
-            Label("Applied, files on disk have changed", systemImage: "checkmark.seal.fill")
-                .font(.callout)
-                .foregroundStyle(Ink.green)
-        } else if !previewIsCurrent {
-            Label("Settings changed, plan again", systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
-                .foregroundStyle(Ink.amber)
-        } else if runner.showingCached {
-            Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        } else if runner.appliedCount > 0 {
-            Label("\(runner.appliedCount) applied so far, the rest is still only planned",
-                  systemImage: "checkmark.seal")
-                .font(.callout)
-                .foregroundStyle(Ink.green)
-        } else {
-            Label("A plan only, nothing has changed on disk", systemImage: "list.bullet.rectangle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private var busyState: some View {
-        VStack(spacing: 10) {
-            ProgressView().controlSize(.large)
-            Text(runner.phase == .scanning ? "Looking for PDFs" : "Processing files")
-                .font(.headline)
-            Text(runner.phase == .scanning
-                 ? "\(runner.found) found so far"
-                 : "\(runner.done) of \(runner.total)")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Text(runner.current)
-                .font(.caption.monospaced())
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.head)
-                .frame(maxWidth: 480)
-                .opacity(runner.current.isEmpty ? 0 : 1)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        BusyOverlay(activity: runner.activity, scanning: runner.phase == .scanning)
     }
 
     private var emptyState: some View {
@@ -1887,10 +1844,28 @@ extension Notification.Name {
 
 // MARK: - Review inspector
 
+/// What a row needs to know about the file it draws, without being handed the object
+/// that also knows about the scan, the model, the log and the spend.
+@MainActor
+struct RowFacts {
+    var item: (String) -> Item?
+    var decision: (Item) -> Decision?
+    var duplicate: (String) -> DuplicateGroup.Kind?
+
+    init(runner: Runner) {
+        item = { [weak runner] key in runner?.item(key) }
+        decision = { [weak runner] item in runner?.decision(for: item) }
+        duplicate = { [weak runner] key in runner?.duplicateKind[key] }
+    }
+}
+
 struct NodeView: View {
     let node: Node
     @Binding var expanded: Set<String>
-    @ObservedObject var runner: Runner
+    /// Three lookups, not an observable. A row subscribed to `Runner` was redrawn by a
+    /// scan tick, a line in the log, and a model request about some other file -- which
+    /// is the whole of the redesign's second finding.
+    let facts: RowFacts
     var menu: (Item) -> FileContextMenu = { item in
         FileContextMenu(item: item, confirm: {}, identify: {}, moveTo: {}, trash: {},
                         skip: {}, convert: {})
@@ -1923,9 +1898,9 @@ struct NodeView: View {
     var body: some View {
         if isHidden {
             EmptyView()
-        } else if let key = node.itemKey, let item = runner.item(key) {
-            ResultRow(item: item, decision: runner.decision(for: item),
-                      duplicate: runner.duplicateKind[item.key], tags: tags(item))
+        } else if let key = node.itemKey, let item = facts.item(key) {
+            ResultRow(item: item, decision: facts.decision(item),
+                      duplicate: facts.duplicate(item.key), tags: tags(item))
                 .tag(key)
                 .id(key)
                 .contextMenu { menu(item) }
@@ -1934,7 +1909,7 @@ struct NodeView: View {
         } else {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
-                    NodeView(node: child, expanded: $expanded, runner: runner,
+                    NodeView(node: child, expanded: $expanded, facts: facts,
                              menu: menu, tags: tags, openFolder: openFolder, visible: visible,
                              relativeFolder: relativeFolder.isEmpty ? child.name : "\(relativeFolder)/\(child.name)")
                 }
@@ -1965,7 +1940,7 @@ struct NodeView: View {
     /// `Node` only ever stores names, and every folder here has at least one file under
     /// it (see `buildTree`), so there is always one to ask.
     private func firstDescendantItem(of node: Node) -> Item? {
-        if let key = node.itemKey { return runner.item(key) }
+        if let key = node.itemKey { return facts.item(key) }
         for child in node.children ?? [] {
             if let found = firstDescendantItem(of: child) { return found }
         }
@@ -2397,6 +2372,36 @@ struct DuplicateRow: View {
 
 // MARK: - Sidebar rail
 
+
+/// What a run is doing, while it does it.
+///
+/// A view of its own so the numbers that move several times a second are watched by
+/// something the size of this box rather than by the pane that holds every row.
+struct BusyOverlay: View {
+    @ObservedObject var activity: Activity
+    let scanning: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView().controlSize(.large)
+            Text(scanning ? "Looking for PDFs" : "Processing files")
+                .font(.headline)
+            Text(scanning
+                 ? "\(activity.found) found so far"
+                 : "\(activity.done) of \(activity.total)")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Text(activity.current)
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: 480)
+                .opacity(activity.current.isEmpty ? 0 : 1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
 
 // MARK: - Filter cache
 
