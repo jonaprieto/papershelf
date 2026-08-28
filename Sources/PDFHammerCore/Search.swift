@@ -192,3 +192,34 @@ public func matches(_ subject: Searchable, _ query: PreparedQuery) -> Bool {
 public func matches(_ subject: Searchable, _ query: Query) -> Bool {
     matches(subject, PreparedQuery(query))
 }
+
+// MARK: - The query as chips
+
+public extension Query {
+    /// The query broken into the pieces a person can take back one at a time.
+    ///
+    /// A search box that can only be cleared whole is a search box people retype. These
+    /// are the same pieces the parser reads, put back the way they were typed, so a chip
+    /// removed leaves a query that still means what the remaining chips say.
+    static func chips(_ text: String) -> [String] {
+        split(text).map(requoted)
+    }
+
+    /// The query without one chip.
+    static func removing(_ chip: String, from text: String) -> String {
+        chips(text).filter { $0 != chip }.joined(separator: " ")
+    }
+
+    /// A piece as it has to be written to survive another parse. Splitting drops the
+    /// quotes that held a value together, so anything with a space in it gets them back.
+    private static func requoted(_ piece: String) -> String {
+        guard piece.contains(" ") else { return piece }
+        for separator in [":", ">", "<"] {
+            guard let index = piece.firstIndex(of: Character(separator)) else { continue }
+            let field = String(piece[piece.startIndex..<index])
+            guard !field.contains(" ") else { continue }
+            return field + separator + "\"" + String(piece[piece.index(after: index)...]) + "\""
+        }
+        return "\"" + piece + "\""
+    }
+}

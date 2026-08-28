@@ -36,6 +36,9 @@ struct ResultsPane: View {
     /// being dragged.
     @State private var dragAnchor: CGFloat?
     @AppStorage("sortDescending") private var sortDescending = false
+    /// Hides everything already decided, so what is left is what is still asking for a
+    /// decision. A filter like any other, and it says so in the filter bar.
+    @AppStorage("onlyUndecided") private var onlyUndecided = false
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
     @State private var showingShortcuts = false
@@ -152,7 +155,9 @@ struct ResultsPane: View {
             matching: runner.matchingToken,
             tags: tagIndex.revision,
             query: query,
-            scope: folderScope
+            scope: folderScope,
+            undecidedOnly: onlyUndecided && mode == .list,
+            decisions: runner.reviewed
         ), compute: computeVisibleKeys)
     }
 
@@ -173,6 +178,10 @@ struct ResultsPane: View {
             let base = current ?? runner.results
             let scope = FolderScope(folderScope)
             current = base.filter { scope.contains($0) }
+        }
+        if onlyUndecided && mode == .list {
+            let base = current ?? runner.results
+            current = base.filter { runner.decision(for: $0) == nil }
         }
         return current.map { Set($0.map(\.key)) }
     }
@@ -269,6 +278,16 @@ struct ResultsPane: View {
     }
 
     private var core: some View {
+        titled(place)
+    }
+
+    private func titled<V: View>(_ view: V) -> some View {
+        view
+            .navigationTitle(placeTitle)
+            .navigationSubtitle(placeSubtitle)
+    }
+
+    private var place: some View {
         Group {
             if runner.busy {
                 busyState
@@ -277,7 +296,7 @@ struct ResultsPane: View {
             } else {
                 VStack(spacing: 0) {
                     if !reading {
-                        summaryBar
+                        filterBar
                         Divider()
                     }
                     split
@@ -402,6 +421,9 @@ struct ResultsPane: View {
             ToolbarItem(placement: .primaryAction) {
                 searchField
             }
+            ToolbarItemGroup(placement: .primaryAction) {
+                contextualActions
+            }
         }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
@@ -411,6 +433,91 @@ struct ResultsPane: View {
                 open: { selected = $0.key }
             )
         }
+    }
+
+    /// What this view can do to what is in it, in the place a person looks for an
+    /// action.
+    ///
+    /// They were in the results bar, which is also where progress and the counts were, so
+    /// the bar changed shape while work was running and the content under it jumped. Here
+    /// the prominent one is always the action that touches disk, and everything rarer is
+    /// one menu behind it.
+    @ViewBuilder
+    private var contextualActions: some View {
+        switch mode {
+        case .duplicates:
+            Button {
+                runner.findDuplicates(passwords: passwords)
+            } label: {
+                Label(runner.duplicates.isEmpty ? "Find duplicates" : "Recheck",
+                      systemImage: "doc.on.doc")
+            }
+            .disabled(runner.findingDuplicates)
+            .tip("Compare every file by size, then by bytes", key: "⌘D")
+
+            Button("Trash \(runner.identicalExtras) spare\(runner.identicalExtras == 1 ? "" : "s")") {
+                runner.markIdenticalExtras()
+                ensureSelection()
+            }
+            .disabled(runner.identicalExtras == 0)
+            .tip("Only files that are identical byte for byte. A likely match is never batched.")
+        default:
+            Button(action: preview) {
+                Label("Plan", systemImage: "list.bullet.rectangle")
+            }
+            .labelStyle(.titleAndIcon)
+            .disabled(!hasSources || runner.busy)
+            .keyboardShortcut("p", modifiers: .command)
+            .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
+
+            Button(action: apply) {
+                Label(canApply ? "Apply \(runner.actionable)" : "Apply",
+                      systemImage: "checkmark.circle")
+            }
+            .labelStyle(.titleAndIcon)
+            .buttonStyle(.borderedProminent)
+            .disabled(!canApply)
+            .keyboardShortcut(.return, modifiers: .command)
+            .tip("Carry out the reviewed plan on disk", key: "⌘Return")
+        }
+
+        Menu {
+            Button("Confirm everything still pending") {
+                runner.confirmAllPending()
+                ensureSelection()
+            }
+            .disabled(runner.pendingCount == 0)
+            .keyboardShortcut(.return, modifiers: [.command, .shift])
+
+            if aiReady {
+                Button("Ask AI for \(runner.pendingCount) name\(runner.pendingCount == 1 ? "" : "s")") {
+                    confirmingBatchAI = true
+                }
+                .disabled(runner.pendingCount == 0)
+            }
+
+            Divider()
+            Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
+                .keyboardShortcut("d", modifiers: .command)
+            Divider()
+            Button("Copy the catalogue as Markdown") {
+                copyText(markdownCatalogue(runner.results, known: runner.guesses))
+            }
+            Button("Copy the bibliography as Markdown") {
+                runner.ensureBib()
+                copyText(markdownBibliography(runner.bib))
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .menuIndicator(.hidden)
+        .disabled(runner.results.isEmpty)
+    }
+
+    /// Applying needs a preview that still matches the settings, every file reviewed, and
+    /// at least one of them left to act on.
+    private var canApply: Bool {
+        previewIsCurrent && runner.allReviewed && runner.actionable > 0 && !runner.busy
     }
 
     /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
@@ -1214,113 +1321,145 @@ struct ResultsPane: View {
 
     // MARK: Header
 
-    private var summaryBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    /// One row, and only what says what is on screen: where you are, what is filtering,
+    /// how much of the collection that leaves, and the order.
+    ///
+    /// It was two rows that scrolled sideways and changed shape while work was running,
+    /// because it was also where progress, decision counts, batch actions and the state
+    /// label lived. Progress and counts are in the status bar; the actions are in the
+    /// toolbar, where an action belongs.
+    private var filterBar: some View {
+        HStack(spacing: 8) {
             ScrollView(.horizontal) {
-              HStack(spacing: 10) {
-                if let folderScope {
-                    Button {
-                        self.folderScope = nil
-                    } label: {
-                        Label(folderScope.lastPathComponent, systemImage: "folder.fill")
+                HStack(spacing: 7) {
+                    if let folderScope {
+                        chip(folderScope.lastPathComponent, icon: "folder.fill") {
+                            self.folderScope = nil
+                        }
+                        .tip("Showing only this folder's files")
                     }
-                    .controlSize(.small)
-                    .tip("Showing only this folder's files. Click to show everything again.")
+                    ForEach(Query.chips(query), id: \.self) { piece in
+                        chip(piece, icon: nil) { removeChip(piece) }
+                    }
+                    if mode == .list {
+                        Toggle("Only undecided", isOn: $onlyUndecided)
+                            .toggleStyle(.button)
+                            .controlSize(.small)
+                            .tip("Hide everything already confirmed, skipped or trashed")
+                    }
+                    ForEach(runner.statusCounts, id: \.0) { status, count in
+                        StatusPill(status: status, count: count)
+                    }
                 }
-                ForEach(runner.statusCounts, id: \.0) { status, count in
-                    StatusPill(status: status, count: count)
-                }
-                Spacer(minLength: 8)
-                stateLabel
-                    .lineLimit(1)
-                    .fixedSize()
-              }
-              .padding(.trailing, 2)
+                .padding(.vertical, 1)
             }
             .scrollIndicators(.hidden)
 
-            if runner.lastRunWasDry {
-              ScrollView(.horizontal) {
-                HStack(spacing: 10) {
-                    ProgressView(value: Double(runner.reviewed),
-                                 total: Double(max(runner.results.count, 1)))
-                        .frame(width: 140)
-                    if let keys = visibleKeys {
-                        Text("\(keys.count) of \(runner.results.count) shown")
-                            .font(.callout)
-                            .monospacedDigit()
-                            .foregroundStyle(keys.isEmpty
-                                             ? Ink.amber
-                                             : .secondary)
-                    } else if runner.pendingCount == 0 {
-                        Label("All \(runner.results.count) reviewed", systemImage: "checkmark.circle.fill")
-                            .font(.callout)
-                            .foregroundStyle(Ink.green)
-                    } else {
-                        Text("\(runner.reviewed) of \(runner.results.count) reviewed")
-                            .font(.callout)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
+            Spacer(minLength: 6)
 
-                    Spacer(minLength: 8)
+            Text(shownLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
+                .fixedSize()
 
-                    Picker("Sort", selection: $sortOrder) {
-                        ForEach(ItemSort.allCases) { Text($0.label).tag($0) }
-                    }
-                    .frame(width: 150)
-                    .help("Reorders within each folder, and across the catalogue")
-                    Button {
-                        sortDescending.toggle()
-                    } label: {
-                        Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
-                    }
-                    .controlSize(.small)
-                    .tip(sortDescending ? "Largest or newest first" : "Smallest or oldest first")
-                    .help(sortDescending ? "Largest or newest first" : "Smallest or oldest first")
-
-                    duplicateControls
-                    if aiReady && runner.pendingCount > 0 {
-                        Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
-                            .controlSize(.small)
-                            .tip("One billed request per file still waiting")
-                    }
-                    Menu {
-                        Button("Catalogue as Markdown") {
-                            copyText(markdownCatalogue(runner.results, known: runner.guesses))
-                        }
-                        Button("Bibliography as Markdown") {
-                            runner.ensureBib()
-                            copyText(markdownBibliography(runner.bib))
-                        }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .frame(width: 20)
-                    .tip("Copy the list or the bibliography as Markdown")
-
-                    Button("Confirm all remaining") {
-                        runner.confirmAllPending()
-                        ensureSelection()
-                    }
-                    .controlSize(.small)
-                    .tip("Accept every suggestion still waiting", key: "⌘⇧Return")
-                    .disabled(runner.pendingCount == 0)
-                }
-                .padding(.trailing, 2)
-              }
-              .scrollIndicators(.hidden)
-            }
+            sortMenu
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        // A bar keeps its natural height. Without this it absorbs whatever room the panes
-        // below leave, and everything inside it stretches to match.
-        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 14)
+        .frame(height: Metric.filterBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
+    }
+
+    /// What the window is looking at, in the title where the platform puts it.
+    ///
+    /// It said "PDF Hammer" on every screen, which is the one thing a person looking at
+    /// the window already knows.
+    private var placeTitle: String {
+        if let item = readerItem ?? (reading ? selectedItem : nil) {
+            return runner.guesses[item.key]?.title ?? item.destinationName
+        }
+        switch mode {
+        case .bibliography: return "Bibliography"
+        case .duplicates: return "Duplicates"
+        default: return folderScope?.lastPathComponent ?? "All Documents"
+        }
+    }
+
+    /// What is in the place, counted. The transient part of this -- what is running, what
+    /// has been decided -- is in the status bar and deliberately not here.
+    private var placeSubtitle: String {
+        if let item = readerItem ?? (reading ? selectedItem : nil) {
+            let guess = runner.guesses[item.key]
+            let pages = item.pageCount.map { "\($0) pages" }
+            return [guess?.author, guess?.year, pages]
+                .compactMap { $0 }.joined(separator: " · ")
+        }
+        switch mode {
+        case .duplicates:
+            let files = runner.duplicates.reduce(0) { $0 + $1.items.count }
+            return "\(runner.duplicates.count) group\(runner.duplicates.count == 1 ? "" : "s") · \(files) files"
+        case .bibliography:
+            return "\(runner.bib.count) entr\(runner.bib.count == 1 ? "y" : "ies")"
+        default:
+            let shown = visibleKeys?.count ?? runner.results.count
+            return "\(shown) shown · \(sourceCount) source\(sourceCount == 1 ? "" : "s")"
+        }
+    }
+
+    /// How much of the collection is on screen. Always M of N, so the number never has to
+    /// be read twice to find out whether anything is filtering.
+    private var shownLabel: String {
+        let shown = visibleKeys?.count ?? runner.results.count
+        return "\(shown) of \(runner.results.count) shown"
+    }
+
+    private func removeChip(_ piece: String) {
+        query = Query.removing(piece, from: query)
+        runner.search(strippingTagTerms(query), passwords: passwords)
+    }
+
+    /// A filter, with the ✕ that takes it off. Nothing here is a state you cannot leave.
+    private func chip(_ text: String, icon: String?, remove: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            if let icon { Image(systemName: icon).font(.caption2) }
+            Text(text).font(.caption).lineLimit(1)
+            Button(action: remove) {
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: Metric.control))
+        .foregroundStyle(Color.accentColor)
+    }
+
+    /// One control rather than a picker and a direction button beside it: the order and
+    /// which way it runs are one decision.
+    private var sortMenu: some View {
+        Menu {
+            ForEach(ItemSort.allCases) { order in
+                Button {
+                    sortOrder = order
+                } label: {
+                    if order == sortOrder { Label(order.label, systemImage: "checkmark") }
+                    else { Text(order.label) }
+                }
+            }
+            Divider()
+            Toggle("Largest or newest first", isOn: $sortDescending)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
+                Text(sortOrder.label)
+            }
+            .font(.caption)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .tip("Reorders within each folder, and across the catalogue")
     }
 
     private var searchField: some View {
@@ -2122,6 +2261,10 @@ final class VisibleFilter {
         let tags: Int
         let query: String
         let scope: URL?
+        let undecidedOnly: Bool
+        /// How many files have been decided. A decision changes what "only undecided"
+        /// leaves on screen, and nothing else in this signature would notice.
+        let decisions: Int
     }
 
     private var signature: Signature?

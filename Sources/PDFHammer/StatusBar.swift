@@ -14,6 +14,10 @@ struct StatusBar: View {
     /// Already formatted by the caller: money carries its currency and is never coerced
     /// into a Double on the way to a label.
     let spend: String?
+    /// Whether the plan on screen still describes the settings it was built with. It was
+    /// a label in the results bar; it belongs with everything else that is about right
+    /// now rather than about the collection.
+    let planIsCurrent: Bool
     @State private var showingActivity = false
 
     var body: some View {
@@ -24,6 +28,8 @@ struct StatusBar: View {
                 separator
                 Text(counts)
             }
+
+            plan
 
             Spacer(minLength: 8)
 
@@ -56,6 +62,27 @@ struct StatusBar: View {
         .frame(height: Metric.statusBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
+    }
+
+    /// Whether what is on screen is a plan, an applied run, or a plan that no longer
+    /// describes the settings it was built with.
+    @ViewBuilder
+    private var plan: some View {
+        if runner.results.isEmpty {
+            EmptyView()
+        } else if !runner.lastRunWasDry {
+            separator
+            Label("Applied, files on disk have changed", systemImage: "checkmark.seal.fill")
+                .foregroundStyle(Ink.green)
+        } else if !planIsCurrent {
+            separator
+            Label("Settings changed, plan again", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(Ink.amber)
+        } else if runner.appliedCount > 0 {
+            separator
+            Text("\(runner.appliedCount) applied so far, the rest is still only planned")
+                .foregroundStyle(Ink.green)
+        }
     }
 
     /// What the watcher is doing, including the thing it last did — a file arriving while

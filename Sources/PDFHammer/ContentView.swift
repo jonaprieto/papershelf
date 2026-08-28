@@ -272,12 +272,6 @@ struct ContentView: View {
         return lines
     }
 
-    /// Applying needs a preview that still matches the settings, every file reviewed, and
-    /// at least one of them kept.
-    private var canApply: Bool {
-        previewIsCurrent && runner.allReviewed && runner.actionable > 0 && !runner.busy
-    }
-
     var body: some View {
         // The rail sits outside the split view on purpose: it is how every part of the app
         // is reached, and a NavigationSplitView on macOS collapses its own sidebar column,
@@ -319,8 +313,8 @@ struct ContentView: View {
                 // this region now, so the detail side no longer has to be wide enough for
                 // panes that may not be drawn.
                 .frame(minWidth: SplitLayout.detailMinWidth())
-                .navigationTitle("PDF Hammer")
-                .navigationSubtitle(subtitle)
+                // The title is the place and its counts, set by the pane that knows
+                // which place that is.
                 .toolbar { toolbar }
             }
             .navigationSplitViewStyle(.balanced)
@@ -333,7 +327,8 @@ struct ContentView: View {
                 runner: runner,
                 watching: watchSources && !selection.isEmpty,
                 sources: selection.count,
-                spend: sessionSpendLabel
+                spend: sessionSpendLabel,
+                planIsCurrent: previewIsCurrent
             )
         }
         // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
@@ -413,22 +408,6 @@ struct ContentView: View {
             .map { $1.formatted(.currency(code: $0)) }
             .joined(separator: " + ")
         return "\(amounts) this session"
-    }
-
-    private var subtitle: String {
-        switch runner.phase {
-        case .scanning: return "Scanning, \(runner.found) PDF\(runner.found == 1 ? "" : "s") found"
-        case .processing: return "Processing \(runner.done) of \(runner.total)"
-        case .idle: break
-        }
-        guard !runner.results.isEmpty else {
-            return selection.isEmpty ? "No sources" : "\(selection.count) source\(selection.count == 1 ? "" : "s")"
-        }
-        if !runner.lastRunWasDry { return "Applied to \(runner.results.count) files" }
-        guard previewIsCurrent else { return "The plan is out of date" }
-        return runner.pendingCount == 0
-            ? "All \(runner.results.count) reviewed, ready to apply"
-            : "\(runner.reviewed) of \(runner.results.count) reviewed"
     }
 
     // MARK: Sidebar
@@ -736,38 +715,6 @@ struct ContentView: View {
             .tip("Info, rename, notes and the citation", key: "⌥⌘I")
         }
 
-        ToolbarItemGroup(placement: .primaryAction) {
-            switch runner.phase {
-            case .scanning:
-                ProgressView().controlSize(.small)
-            case .processing:
-                ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
-                    .progressViewStyle(.linear)
-                    .frame(width: 110)
-            case .idle:
-                EmptyView()
-            }
-
-            Button(action: preview) {
-                Label("Plan", systemImage: "list.bullet.rectangle")
-            }
-            .labelStyle(.titleAndIcon)
-            .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
-            .disabled(selection.isEmpty || runner.busy)
-            .keyboardShortcut("p", modifiers: .command)
-            .help("Read-only. Works out the new names without touching a file.")
-
-            Button(action: confirmApply) {
-                Label(canApply ? "Apply to \(runner.actionable) files" : "Apply",
-                      systemImage: "checkmark.circle")
-            }
-            .labelStyle(.titleAndIcon)
-            .buttonStyle(.borderedProminent)
-            .disabled(!canApply)
-            .tip("Carry out the reviewed plan on disk", key: "⌘Return")
-            .keyboardShortcut(.return, modifiers: .command)
-            .help("Carry out the reviewed plan on disk")
-        }
     }
 
     /// The selection is a set of non-overlapping roots: a folder absorbs anything already

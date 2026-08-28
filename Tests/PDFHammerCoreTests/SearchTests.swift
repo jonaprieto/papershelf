@@ -160,3 +160,35 @@ extension SearchTests {
         XCTAssertEqual(query.terms.first?.value, "reading")
     }
 }
+
+/// A query is a row of chips, and a chip can be taken back on its own.
+final class QueryChipTests: XCTestCase {
+
+    func testEachPieceIsItsOwnChip() {
+        XCTAssertEqual(Query.chips("methods pages>100 status:locked"),
+                       ["methods", "pages>100", "status:locked"])
+    }
+
+    /// Splitting drops the quotes that held the value together. Put back as typed, or the
+    /// remaining query means something else the moment a chip beside it is removed.
+    func testAQuotedValueKeepsItsQuotes() {
+        XCTAssertEqual(Query.chips("text:\"structural model\" methods"),
+                       ["text:\"structural model\"", "methods"])
+    }
+
+    func testABareQuotedPhraseKeepsItsQuotes() {
+        XCTAssertEqual(Query.chips("\"causal inference\""), ["\"causal inference\""])
+    }
+
+    func testRemovingAChipLeavesTheRestParsingTheSameWay() {
+        let text = "text:\"structural model\" methods pages>100"
+        let left = Query.removing("methods", from: text)
+        XCTAssertEqual(left, "text:\"structural model\" pages>100")
+        XCTAssertEqual(Query(left).terms.count, 2)
+        XCTAssertEqual(Query(left).terms.first?.value, "structural model")
+    }
+
+    func testRemovingTheOnlyChipEmptiesTheQuery() {
+        XCTAssertEqual(Query.removing("methods", from: "methods"), "")
+    }
+}
