@@ -332,6 +332,26 @@ public func normalizedName(
 /// dates already captured when it was first read. No PDF is opened, so the whole list
 /// can be restyled as fast as a switch can be flipped.
 public func restyled(_ item: Item, options: Options, guess: BookGuess? = nil) -> Item {
+    // An arranged pattern decides the shape of the name; the rules still decide how each
+    // piece is written, which is why they are handed to the renderer rather than applied
+    // to the result. The pattern reads the model's guess itself, so it covers the case
+    // below as well as the ordinary one.
+    if let pattern = options.pattern, !pattern.elements.isEmpty {
+        let folder = folderContext(for: item.source, under: item.root, rules: options.rules)
+        // Nil means every token came out empty: the pattern has nothing to say about this
+        // file, which is not the same as it legitimately rendering the name the file
+        // already has. The first hands back to the ordinary rules; the second is an answer.
+        if let name = rendered(pattern, for: item, guess: guess, folder: folder,
+                               rules: options.rules, fallbacks: options.dateFallbacks) {
+            var restyled = item
+            restyled.destination = availableURL(
+                item.source.deletingLastPathComponent().appendingPathComponent(name),
+                ignoring: item.source
+            )
+            return restyled
+        }
+    }
+
     // A name the model produced is still only a suggestion of title, author and year:
     // the rules decide how those are written, so they are reapplied here rather than
     // the AI's spelling being frozen in place.
@@ -592,6 +612,16 @@ public struct Options: Sendable {
     public var useMetadataDate: Bool
     public var useFileDate: Bool
     public var rules: NameRules
+    /// The arranged pattern, when there is one. Nil means the ordinary rename: date
+    /// lifted out of the filename and put back at the front, tidied by `rules`.
+    public var pattern: NamePattern?
+
+    /// The three switches above, in the form the renderer reads them.
+    public var dateFallbacks: DateFallbacks {
+        DateFallbacks(folderNames: useFolderNames,
+                      metadataDate: useMetadataDate,
+                      fileDate: useFileDate)
+    }
 
     public init(
         passwords: [String],
@@ -602,7 +632,8 @@ public struct Options: Sendable {
         useFolderNames: Bool = true,
         useMetadataDate: Bool = false,
         useFileDate: Bool = false,
-        rules: NameRules = .standard
+        rules: NameRules = .standard,
+        pattern: NamePattern? = nil
     ) {
         self.passwords = passwords
         self.recursive = recursive
@@ -613,6 +644,7 @@ public struct Options: Sendable {
         self.useMetadataDate = useMetadataDate
         self.useFileDate = useFileDate
         self.rules = rules
+        self.pattern = pattern
     }
 }
 

@@ -10,13 +10,13 @@ struct ContentView: View {
     @AppStorage("passwords") private var passwordsText = ""
     @AppStorage("moveOriginals") private var moveOriginals = true
     @AppStorage("encryptOutput") private var encryptOutput = false
-    /// Kept in memory only. A password written into a preferences plist is not a password.
-    @State private var encryptPassword = ""
+    /// Kept in memory only, and shared with the settings window rather than owned here.
+    /// A password written into a preferences plist is not a password.
+    @ObservedObject private var secret = SessionSecret.shared
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
     @State private var choosingBackupFolder = false
-    @State private var savingLog = false
     @State private var watcher: FolderWatcher?
     @StateObject private var palette = Palette()
     @AppStorage("useFolderNames") private var useFolderNames = true
@@ -59,7 +59,6 @@ struct ContentView: View {
     @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
     @AppStorage("bibOmitFile") private var bibOmitFile = true
     @AppStorage("bibType") private var bibType: BibType = .book
-    @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
     @State private var availableModels: [String] = []
     @ObservedObject private var priceBook: PriceBook = .shared
     @ObservedObject private var spendSignal: SpendSignal = .shared
@@ -155,32 +154,20 @@ struct ContentView: View {
                   dateFormat: ruleDateFormat)
     }
 
-    private var namePattern: NamePattern {
-        NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
-    }
-
-    /// Every chip and text-field edit goes through here, so the two stay in sync: both
-    /// read and write the same pair of AppStorage values.
-    private func updateNamePattern(_ transform: (inout NamePattern) -> Void) {
-        var updated = namePattern
-        transform(&updated)
-        namePatternText = updated.text
-        namePatternMaxLength = updated.maxTotalLength
-    }
-
-    private func updateNameToken(at index: Int, _ transform: (inout NameToken) -> Void) {
-        updateNamePattern { pattern in
-            guard pattern.elements.indices.contains(index),
-                  case .token(var token) = pattern.elements[index] else { return }
-            transform(&token)
-            pattern.elements[index] = .token(token)
-        }
-    }
-
     /// Runs once: a user who already had toggles set gets an arranged pattern that
     /// reproduces them, rather than landing on today's plain default and looking like
     /// their settings were dropped. After this the pattern is its own preference and the
     /// toggles it replaces (date position, date format, max length) are read here only.
+    /// The handful of files the pattern editor previews against, handed to the window
+    /// that shows it.
+    private func publishNamingPreview() {
+        NamingPreviewSource.shared.update(
+            reference: reviewing.flatMap(runner.item) ?? runner.results.first,
+            samples: Array(runner.results.prefix(5)),
+            guesses: runner.guesses
+        )
+    }
+
     private func seedNamePatternIfNeeded() {
         guard UserDefaults.standard.string(forKey: "namePattern") == nil else { return }
         var date = NameToken(.date)
@@ -194,80 +181,25 @@ struct ContentView: View {
         namePatternText = NamePattern(elements: elements).text
     }
 
-    /// The document a chip's own preview value is drawn from: whichever file is open for
-    /// review, else the first result, so the row means something before anything is
-    /// selected.
-    private var namePatternReferenceItem: Item? {
-        reviewing.flatMap(runner.item) ?? runner.results.first
-    }
 
-    private var namePatternReferencePreview: NamePreview? {
-        guard let item = namePatternReferenceItem else { return nil }
-        // Qualified: this type's own `preview()` (the toolbar action) would otherwise
-        // shadow PDFHammerCore's free function of the same name.
-        return PDFHammerCore.preview(namePattern, for: item, guess: runner.guesses[item.key], under: item.root)
-    }
 
-    /// Matched by position among token elements, not by kind: two tokens of the same
-    /// kind can carry different options and must not be shown each other's value.
-    private func namePatternChipPreview(atElementIndex index: Int) -> NameTokenPreview? {
-        let tokenIndex = namePattern.elements[..<index].reduce(into: 0) { count, element in
-            if case .token = element { count += 1 }
-        }
-        let tokens = namePatternReferencePreview?.tokens ?? []
-        return tokens.indices.contains(tokenIndex) ? tokens[tokenIndex] : nil
+    /// The pattern Plan and Apply actually use, or nil when there is none to use.
+    ///
+    /// An empty pattern is not an instruction to produce empty names — it is the absence
+    /// of one, and the ordinary rename takes over.
+    private var activePattern: NamePattern? {
+        let parsed = NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
+        return parsed.elements.isEmpty ? nil : parsed
     }
-
-    private func namingLabel(for kind: NameToken.Kind) -> String {
-        switch kind {
-        case .date: return "Date"
-        case .year: return "Year"
-        case .title: return "Title"
-        case .author: return "Author"
-        case .publisher: return "Publisher"
-        case .journal: return "Journal"
-        case .folder: return "Folder"
-        case .originalStem: return "Original name"
-        case .counter: return "Counter"
-        }
-    }
-
-    private func namingLabel(for casing: NameToken.Casing) -> String {
-        switch casing {
-        case .unchanged: return "As is"
-        case .lower: return "lowercase"
-        case .upper: return "UPPERCASE"
-        case .titleCase: return "Title Case"
-        }
-    }
-
-    private func namingLabel(for abbreviation: NameToken.Abbreviation) -> String {
-        switch abbreviation {
-        case .none: return "Full"
-        case .compact: return "Compact"
-        case .surname: return "Surname only"
-        case .initials: return "Initials"
-        }
-    }
-
-    /// Casing is a no-op on a token that is already digits.
-    private func showsCasing(_ kind: NameToken.Kind) -> Bool {
-        switch kind {
-        case .date, .year, .counter: return false
-        default: return true
-        }
-    }
-
-    /// Exercises every rule at once, so the footer shows what each switch actually does.
-    private static let sampleName = "Extracto Señor_Acme 66 (1)_23_08_2026.pdf"
 
     private func options(dryRun: Bool) -> Options {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
-                encryption: EncryptionSettings(enabled: encryptOutput, password: encryptPassword),
+                encryption: EncryptionSettings(enabled: encryptOutput, password: secret.encryptPassword),
                 useFolderNames: useFolderNames,
-                useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
+                useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules,
+                pattern: activePattern)
     }
 
     /// What only a fresh scan can answer: which files there are, and which of them open.
@@ -276,6 +208,7 @@ struct ContentView: View {
     private var fingerprint: String {
         [
             selection.map(\.path).joined(separator: "|"),
+            namePatternText, String(namePatternMaxLength),
             passwords.joined(separator: "|"),
             "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
         ].joined(separator: "\u{1}")
@@ -353,12 +286,11 @@ struct ContentView: View {
         // with the panel, and nothing short of widening the window brought it back. Beside
         // the split view instead, the panel still hides on a narrow window, as a sidebar
         // should, while the rail stays put.
+        VStack(spacing: 0) {
         HStack(spacing: 0) {
-            rail
-            Divider()
             NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
                 sidebarPanel
-                    .navigationSplitViewColumnWidth(min: 244, ideal: 264, max: 354)
+                    .navigationSplitViewColumnWidth(min: Metric.sidebarMin, ideal: Metric.sidebarIdeal, max: Metric.sidebarMax)
             } detail: {
             ResultsPane(
                 runner: runner,
@@ -383,25 +315,39 @@ struct ContentView: View {
                 // this can no longer drift out of step with what the panes inside it
                 // actually add up to. Grows with the notes rail and, since it is nested
                 // inside the inspector, the contents rail.
-                .frame(minWidth: SplitLayout.minWidth(
-                    notesShown: chrome.notesShown))
+                .frame(minWidth: SplitLayout.minWidth())
                 .navigationTitle("PDF Hammer")
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
             }
             .navigationSplitViewStyle(.balanced)
         }
-        // The rail, the panel's own floor (matching the min above), plus the detail pane's.
-        .frame(minWidth: railWidth + 244 + SplitLayout.minWidth(
-            notesShown: chrome.notesShown), minHeight: 560)
+
+            // Everything transient goes here and only here, so the toolbar never changes
+            // shape while work is running.
+            Divider()
+            StatusBar(
+                runner: runner,
+                watching: watchSources && !selection.isEmpty,
+                sources: selection.count,
+                spend: sessionSpendLabel
+            )
+        }
+        // The panel's own floor (matching the min above) plus the detail pane's. Forty-six
+        // points narrower than it was, now that nothing sits outside the split view.
+        .frame(minWidth: Metric.sidebarMin + SplitLayout.minWidth(),
+               minHeight: Metric.windowFloorHeight)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { _ in
-            selectTab(.settings)
-        }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
+        // The pattern editor lives in the settings window now and has no scanner of its
+        // own, so the window that does have one publishes the few files it previews
+        // against. Keyed on the results token rather than the array: this runs on every
+        // change to a large collection and must not copy it to find out nothing moved.
+        .onChange(of: runner.resultsToken, initial: true) { _, _ in publishNamingPreview() }
+        .onChange(of: reviewing) { _, _ in publishNamingPreview() }
         .onAppear {
             seedNamePatternIfNeeded()
             chrome.undo = { runner.undo() }
@@ -431,10 +377,6 @@ struct ContentView: View {
         } message: {
             Text(applyWarnings.joined(separator: "\n\n"))
         }
-        .fileExporter(isPresented: $savingLog,
-                      document: TextDocument(text: logText(runner.log)),
-                      contentType: .plainText,
-                      defaultFilename: "pdf-hammer-log.txt") { _ in }
         .fileImporter(
             isPresented: $choosingBackupFolder,
             allowedContentTypes: [.folder],
@@ -451,6 +393,22 @@ struct ContentView: View {
         ) { outcome in
             if case .success(let urls) = outcome { add(urls) }
         }
+    }
+
+    /// The session's spend for the status bar, or nil when nothing has been billed yet.
+    ///
+    /// Currencies are listed rather than added together, the same as everywhere else that
+    /// shows money: a rate typed in for a provider that does not bill in dollars is not
+    /// dollars, and a bar is no place to start pretending otherwise.
+    private var sessionSpendLabel: String? {
+        guard let sessionSpend, sessionSpend.calls > 0 else { return nil }
+        guard !sessionSpend.byCurrency.isEmpty else {
+            return "\(sessionSpend.calls) unpriced call\(sessionSpend.calls == 1 ? "" : "s")"
+        }
+        let amounts = sessionSpend.byCurrency.sorted { $0.key < $1.key }
+            .map { $1.formatted(.currency(code: $0)) }
+            .joined(separator: " + ")
+        return "\(amounts) this session"
     }
 
     private var subtitle: String {
@@ -474,55 +432,26 @@ struct ContentView: View {
     /// The panel behind the rail. Everything used to be one long scroll of nine sections;
     /// this shows one job at a time. The rail that switches between them is a sibling of
     /// this in `body`, not a parent of it.
+    /// One list, in sections, rather than twelve tabs behind a rail.
+    ///
+    /// The rail existed because nine sections in a single scroll was too much to read;
+    /// with everything you set once moved into the settings window, what is left is four
+    /// things that are all navigation, and they belong on screen together. Sources first
+    /// because it is where the files come from, the folder tree under it because that is
+    /// the same question one level down.
     private var sidebarPanel: some View {
         Form {
-            switch sidebarTab {
-            case .sources: sourcesPanel
-            case .explorer: explorerPanel
-            case .passwords: passwordsPanel
-            case .naming:
-                namingPanel
-                datesPanel
-            case .files:
-                originalsPanel
-                runningPanel
-            case .ai: aiPanel
-            case .bibtex: bibtexPanel
-            case .tags: tagsPanel
-            case .library: libraryPanel
-            case .reading: readingPanel
-            case .log: logPanel
-            case .settings: settingsPanel
-            }
+            sourcesPanel
+            explorerPanel
+            tagsPanel
+            libraryPanel
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity)
     }
 
-    /// Picking a tab is also a request to see it: a narrow window may have hidden the panel
-    /// behind the automatic sidebar toggle, and clicking a tab while it is hidden should
-    /// not look like nothing happened.
-    private func selectTab(_ tab: SidebarTab) {
-        sidebarTab = tab
-        if chrome.columnVisibility == .detailOnly {
-            chrome.columnVisibility = .all
-        }
-    }
-
     // Not private: SidebarTests renders this on its own, squeezed, to check that it holds
     // its width rather than being compressed away.
-    var rail: some View {
-        VStack(spacing: 2) {
-            ForEach(SidebarTab.allCases) { tab in
-                RailButton(tab: tab, isSelected: sidebarTab == tab) { selectTab(tab) }
-            }
-            Spacer()
-        }
-        .padding(.vertical, 8)
-        .frame(width: railWidth)
-        .background(.quaternary.opacity(0.25))
-    }
-
     // MARK: Tags
 
     @ViewBuilder
@@ -725,421 +654,9 @@ struct ContentView: View {
     }
 
 
-    @ViewBuilder
-    private var passwordsPanel: some View {
-            Section {
-                ForEach(Array(passwordRows.enumerated()), id: \.offset) { index, _ in
-                    HStack(spacing: 6) {
-                        // Without labelsHidden the Form treats the string as a left-hand
-                        // label and squeezes the field into the value column.
-                        TextField("", text: passwordBinding(index), prompt: Text("Password"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.callout, design: .monospaced))
-                            .multilineTextAlignment(.leading)
-                            .focused($focusedPassword, equals: index)
-                            .onSubmit(addPassword)
-                        Button {
-                            passwordsText = PasswordList.removing(index, from: passwordsText)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
-                        .tip("Remove this password")
-                        .help("Remove this password")
-                        .accessibilityLabel("Remove password \(index + 1)")
-                    }
-                }
-                Button(action: addPassword) {
-                    Label("Add password", systemImage: "plus.circle")
-                }
-                .tip("Another password to try, in order")
-                .buttonStyle(.link)
-            } header: {
-                Text("Passwords")
-            } footer: {
-                if passwords.isEmpty {
-                    Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                         text: "No passwords set. Encrypted files will be renamed but stay locked.",
-                         size: .caption)
-                } else {
-                    Text("Tried in order, top to bottom.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-    }
 
 
     @ViewBuilder
-    private var namingPanel: some View {
-            Section {
-                HStack(spacing: 6) {
-                    ForEach(NamePattern.presets) { preset in
-                        Button(preset.name) {
-                            updateNamePattern { $0 = preset.pattern }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(preset.summary)
-                    }
-                }
-                .padding(.vertical, 2)
-
-                namingChipRow
-                    .tip("Drag a field to reorder it, click one to adjust it")
-
-                LabeledContent("Pattern") {
-                    TextField("", text: $namePatternText, prompt: Text("[date]-[title]"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.callout, design: .monospaced))
-                }
-                .tip("Chips and this text describe the same pattern; edit whichever is easier")
-            } header: {
-                Text("Naming pattern")
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Note(icon: "info.circle.fill", tint: .secondary,
-                         text: "Not used yet: Plan and Apply still use Name rules below.",
-                         size: .caption)
-                    namingPreviewFooter
-                }
-            }
-
-            Section {
-                Picker("Case", selection: $ruleCasing) {
-                    ForEach(NameRules.Casing.allCases) { Text($0.label).tag($0) }
-                }
-                .help("Applied to the whole name, date aside")
-                Picker("Separators", selection: $ruleSeparator) {
-                    ForEach(NameRules.Separator.allCases) { Text($0.label).tag($0) }
-                }
-                .tip("How runs of spaces, dashes and underscores are written")
-                Toggle("Remove symbols", isOn: $ruleStripSymbols)
-                    .tip("Punctuation becomes a separator: report (1)! reads report-1")
-                Toggle("Remove accents", isOn: $ruleStripDiacritics)
-                    .help("señor becomes senor. Separate from Remove symbols, since ñ is a letter")
-                Toggle("ASCII only", isOn: $ruleAsciiOnly)
-                    .tip("Non-ASCII becomes a separator, so words stay apart")
-                Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
-                    .help("So a shelf sorts by what the book is called rather than by its article")
-                Picker("Date goes", selection: $ruleDatePosition) {
-                    ForEach(NameRules.DatePosition.allCases) { Text($0.label).tag($0) }
-                }
-                .help("Whether the date leads the name or trails it")
-                Picker("Date looks like", selection: $ruleDateFormat) {
-                    ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
-                }
-                LabeledContent("Max length") {
-                    HStack(spacing: 6) {
-                        Slider(value: Binding(get: { Double(ruleMaxLength) },
-                                              set: { ruleMaxLength = Int($0) }),
-                               in: 0...120, step: 5)
-                        Text(ruleMaxLength == 0 ? "off" : "\(ruleMaxLength)")
-                            .monospacedDigit()
-                            .frame(width: 26, alignment: .trailing)
-                    }
-                }
-                .tip("Trims the name on a word boundary; the date is never cut")
-            } header: {
-                // These three, plus everything above, are what Preview and Apply actually
-                // use (NameRules/normalizedName, Hammer.swift): the Naming pattern section
-                // above is not wired into that pipeline yet (render()'s own header comment
-                // in Patterns.swift says as much), so these controls stay here rather than
-                // being retired in favour of a pattern that does not yet drive real output.
-                Text("Name rules")
-            } footer: {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(Self.sampleName)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .foregroundStyle(.tertiary)
-                        Text(normalizedName(for: Self.sampleName, rules: rules))
-                    }
-                }
-                .font(.caption.monospaced())
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.top, 2)
-            }
-    }
-
-    private var namingChipRow: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(Array(namePattern.elements.enumerated()), id: \.offset) { index, element in
-                chipView(for: element, at: index)
-                    .onDrag {
-                        draggingElementIndex = index
-                        return NSItemProvider(object: String(index) as NSString)
-                    }
-                    .onDrop(of: [.text], delegate: ChipDropDelegate(
-                        index: index,
-                        draggingIndex: $draggingElementIndex,
-                        reorder: { from, to in
-                            updateNamePattern { pattern in
-                                guard pattern.elements.indices.contains(from),
-                                      pattern.elements.indices.contains(to) else { return }
-                                let moved = pattern.elements.remove(at: from)
-                                pattern.elements.insert(moved, at: to)
-                            }
-                        }
-                    ))
-            }
-            addTokenMenu
-        }
-    }
-
-    @ViewBuilder
-    private func chipView(for element: NameElement, at index: Int) -> some View {
-        switch element {
-        case .token(let token):
-            tokenChip(token, at: index)
-        case .literal(let text):
-            literalChip(text, at: index)
-        }
-    }
-
-    private func tokenChip(_ token: NameToken, at index: Int) -> some View {
-        let preview = namePatternChipPreview(atElementIndex: index)
-        return HStack(spacing: 5) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(namingLabel(for: token.kind))
-                    .font(.caption2.weight(.semibold))
-                if let preview, !preview.isEmpty {
-                    Text(preview.value)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 90, alignment: .leading)
-                } else {
-                    Text("empty")
-                        .font(.caption2.italic())
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            Button {
-                updateNamePattern { $0.elements.remove(at: index) }
-            } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 10))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
-            .accessibilityLabel("Remove \(namingLabel(for: token.kind))")
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.5)))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.tertiary.opacity(0.35)))
-        .contentShape(Rectangle())
-        .onTapGesture { editingElementIndex = index }
-        .popover(isPresented: Binding(
-            get: { editingElementIndex == index },
-            set: { if !$0 { editingElementIndex = nil } }
-        )) {
-            tokenOptions(token, at: index)
-        }
-    }
-
-    private func literalChip(_ text: String, at index: Int) -> some View {
-        HStack(spacing: 3) {
-            Text(text.isEmpty ? "·" : text)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Button {
-                updateNamePattern { $0.elements.remove(at: index) }
-            } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 9))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
-            .accessibilityLabel("Remove separator")
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func tokenOptions(_ token: NameToken, at index: Int) -> some View {
-        let maxLengthLabel = token.maxLength == 0 ? "Max length: off" : "Max length: \(token.maxLength)"
-        Form {
-            if showsCasing(token.kind) {
-                Picker("Case", selection: Binding(
-                    get: { token.casing },
-                    set: { newValue in updateNameToken(at: index) { $0.casing = newValue } }
-                )) {
-                    ForEach(NameToken.Casing.allCases) { Text(namingLabel(for: $0)).tag($0) }
-                }
-            }
-            Picker("Shorten", selection: Binding(
-                get: { token.abbreviation },
-                set: { newValue in updateNameToken(at: index) { $0.abbreviation = newValue } }
-            )) {
-                ForEach(NameToken.Abbreviation.allCases) { Text(namingLabel(for: $0)).tag($0) }
-            }
-            Stepper(maxLengthLabel, value: Binding(
-                get: { token.maxLength },
-                set: { newValue in updateNameToken(at: index) { $0.maxLength = newValue } }
-            ), in: 0...80, step: 5)
-        }
-        .padding(14)
-        .frame(width: 230)
-    }
-
-    private var addTokenMenu: some View {
-        Menu {
-            ForEach(NameToken.Kind.allCases) { kind in
-                Button(namingLabel(for: kind)) {
-                    updateNamePattern { pattern in
-                        // A token landing directly against another token with nothing
-                        // between them renders glued together (assemble() in
-                        // Patterns.swift only drops a separator, never adds one), so a
-                        // dash goes in first when the pattern does not already end on
-                        // one of its own.
-                        if case .token = pattern.elements.last {
-                            pattern.elements.append(.literal("-"))
-                        }
-                        pattern.elements.append(.token(NameToken(kind)))
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "plus.circle.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .tip("Add a field to the pattern")
-    }
-
-    @ViewBuilder
-    private var namingPreviewFooter: some View {
-        let samples = Array(runner.results.prefix(5))
-        VStack(alignment: .leading, spacing: 3) {
-            if samples.isEmpty {
-                Text("The plan appears once files are found.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(samples) { item in
-                    let rendered = PDFHammerCore.preview(namePattern, for: item, guess: runner.guesses[item.key], under: item.root)
-                    HStack(spacing: 4) {
-                        Text(rendered.originalName)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.tertiary)
-                        Text(rendered.renderedName)
-                    }
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                }
-            }
-        }
-        .font(.caption.monospaced())
-        .padding(.top, 2)
-    }
-
-
-    @ViewBuilder
-    private var datesPanel: some View {
-            Section {
-                Toggle("Use the folder name", isOn: $useFolderNames)
-                    .tip("Take the date, and a name for scan001, from the folder")
-                Toggle("Use the PDF's creation date", isOn: $useMetadataDate)
-                    .tip("When the PDF was written, often long after the period it covers")
-                Toggle("Use the file's modification date", isOn: $useFileDate)
-                    .tip("Least trustworthy: often just when the file landed here")
-            } header: {
-                Text("When the filename has no date")
-            } footer: {
-                Text("Tried in this order. A date already in the filename always wins, "
-                     + "since it is the only one the document itself states.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-    }
-
-
-    @ViewBuilder
-    private var originalsPanel: some View {
-        if !moveOriginals {
-            Section {
-                Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                     text: "Applying will replace the originals. Nothing is kept and there is no undo.")
-            }
-        }
-
-            Section {
-                Toggle("Lock the output with a password", isOn: $encryptOutput)
-                    .tip("Write every file out locked with your password")
-                if encryptOutput {
-                    LabeledContent("Password") {
-                        SecureField("", text: $encryptPassword, prompt: Text("required"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-            } header: {
-                Text("Encryption")
-            } footer: {
-                Text(encryptOutput && encryptPassword.isEmpty
-                     ? "Without a password nothing is encrypted."
-                     : "Held in memory only, never written to preferences, so it has to be "
-                       + "given again next launch. A file no password opened is passed "
-                       + "through as it is rather than being sealed with one it never had.")
-                    .font(.caption)
-                    .foregroundStyle(encryptOutput && encryptPassword.isEmpty
-                                     ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
-                                     : .secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Keep the originals", isOn: $moveOriginals)
-                    .help("Off replaces each file in place, with no copy kept and no undo")
-                if moveOriginals {
-                    if backupCustomPath.isEmpty {
-                        LabeledContent("Folder") {
-                            TextField("", text: $backupFolderName, prompt: Text(defaultBackupFolderName))
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.callout, design: .monospaced))
-                        }
-                    } else {
-                        LabeledContent("Folder") {
-                            Text(backupCustomPath)
-                                .font(.caption.monospaced())
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                        }
-                    }
-                    HStack {
-                        Button("Choose folder…") { choosingBackupFolder = true }
-                            .buttonStyle(.link)
-                            .tip("One folder for the originals of every source")
-                        Spacer()
-                        if !backupCustomPath.isEmpty {
-                            Button("Use a folder per source") { backupCustomPath = "" }
-                                .buttonStyle(.link)
-                        }
-                    }
-                }
-            } header: {
-                Text("Originals")
-            } footer: {
-                Text(backupSummary)
-                    .font(.caption)
-                    .foregroundStyle(moveOriginals ? .secondary : Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-    }
-
-
     private func refreshSessionSpend() async {
         guard let library = Library.shared else { return }
         guard let entries = try? await library.spendEntries(since: sessionStart) else { return }
@@ -1168,7 +685,7 @@ struct ContentView: View {
             LabeledContent("Price") {
                 Text("unknown")
                     .font(.caption)
-                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(Ink.amber)
             }
             .tip("No price is known for this model at this endpoint. Calls are still "
                  + "recorded; set a rate in Settings to see what they cost.")
@@ -1195,297 +712,15 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder private var aiPanel: some View {
-            Section {
-                LabeledContent("API key") {
-                    if aiReady {
-                        Label("Ready", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
-                    } else {
-                        Label("Not set", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
-                    }
-                }
-                if availableModels.isEmpty {
-                    LabeledContent("Model") {
-                        TextField("", text: $aiModel, prompt: Text("gpt-4o-mini"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.callout, design: .monospaced))
-                    }
-                } else {
-                    Picker("Model", selection: $aiModel) {
-                        // The stored one may not be in the list; keep it selectable.
-                        if !availableModels.contains(aiModel) {
-                            Text(aiModel).tag(aiModel)
-                        }
-                        ForEach(availableModels, id: \.self) { Text($0).tag($0) }
-                    }
-                }
-                // The price belongs where the model is chosen, not only in Settings: it
-                // is what the choice costs.
-                modelPrice
-
-                HStack {
-                    Button(loadingModels ? "Loading…" : "Refresh models", action: loadModels)
-                        .buttonStyle(.link)
-                        .tip("Ask the endpoint what it can run")
-                        .disabled(!aiReady || loadingModels)
-                    if let modelsError {
-                        Text(modelsError)
-                            .font(.caption)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-                            .lineLimit(2)
-                    }
-                }
-                Toggle("Ask on each new file", isOn: $autoIdentify)
-                    .disabled(!aiReady)
-                    .help("One request per file as you reach it, billed like any other")
-                Button {
-                    selectTab(.settings)
-                } label: {
-                    Label("Open settings", systemImage: "gearshape")
-                }
-                .buttonStyle(.link)
-                if aiReady && runner.pendingCount > 0 && runner.lastRunWasDry {
-                    Button {
-                        Task { await runner.identifyPending(client: aiClient, passwords: passwords, rules: rules) }
-                    } label: {
-                        Label("Name the \(runner.pendingCount) still pending", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.link)
-                }
-            } header: {
-                Text("AI")
-            } footer: {
-                Text("Suggestions still go through the name rules above, and still have to "
-                     + "be confirmed. Only the filename and the opening text are sent.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            // Re-read after every call that was paid for, whatever asked for it.
-            .task(id: spendSignal.version) { await refreshSessionSpend() }
-    }
-
-
-    @ViewBuilder
-    private var runningPanel: some View {
-            Section("Running") {
-                Toggle("Watch the sources for changes", isOn: $watchSources)
-                    .tip("Pick up new files on their own, keeping this review")
-                    .onChange(of: watchSources) { _, _ in startWatching() }
-                Picker("Default view", selection: $mode) {
-                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Plan as soon as a source is added", isOn: $autoPreview)
-                    .help("Planning is read-only, so this changes nothing on disk")
-            }
-    }
-
-
-    @ViewBuilder
-    private var bibtexPanel: some View {
-            Section {
-                Picker("Entry type", selection: $bibType) {
-                    ForEach(BibType.allCases) { Text($0.label).tag($0) }
-                }
-                .help("Decides which fields count as missing. @misc asks only for a title.")
-            } header: {
-                Text("Entries")
-            } footer: {
-                Text("Publisher, journal and institution are never written: nothing here "
-                     + "can read them off a PDF, so they are not reported as missing either.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                LabeledContent("Line width") {
-                    HStack(spacing: 6) {
-                        Slider(value: Binding(get: { Double(bibLineWidth) },
-                                              set: { bibLineWidth = Int($0) }),
-                               in: 0...200, step: 10)
-                        Text(bibLineWidth == 0 ? "off" : "\(bibLineWidth)")
-                            .monospacedDigit()
-                            .frame(width: 30, alignment: .trailing)
-                    }
-                }
-                Picker("Indent", selection: $bibIndent) {
-                    Text("2 spaces").tag(2)
-                    Text("4 spaces").tag(4)
-                    Text("None").tag(0)
-                }
-                Picker("Values in", selection: $bibDelimiter) {
-                    ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Align the equals signs", isOn: $bibAlign)
-                Toggle("Trailing comma", isOn: $bibTrailingComma)
-                Toggle("Blank line between entries", isOn: $bibBlankLines)
-                Toggle("Sort fields alphabetically", isOn: $bibSortFields)
-                Toggle("Lowercase ALL-CAPS values", isOn: $bibDropAllCaps)
-                Toggle("Omit the file field", isOn: $bibOmitFile)
-            } header: {
-                Text("BibTeX")
-            } footer: {
-                Text("A long value wraps onto indented continuations. A single word "
-                     + "longer than the budget is left whole, since breaking a path to "
-                     + "satisfy a column is worse than exceeding it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-    }
-
-
-    @ViewBuilder
-    private var readingPanel: some View {
-        Section {
-            ForEach(palette.styles) { style in
-                HStack(spacing: 8) {
-                    ColorPicker("", selection: Binding(
-                        get: { style.swatch },
-                        set: { palette.setColour($0, on: style) }
-                    ))
-                    .labelsHidden()
-                    .tip("Pick this highlighter's colour")
-
-                    TextField("", text: Binding(
-                        get: { style.meaning },
-                        set: { palette.setMeaning($0, on: style) }
-                    ), prompt: Text("What it means"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-
-                    Button {
-                        palette.remove(style)
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tertiary)
-                    .disabled(palette.styles.count < 2)
-                    .tip(palette.styles.count < 2
-                         ? "The last colour stays; without one there is no highlighter"
-                         : "Remove this colour")
-                }
-            }
-
-            HStack {
-                Button { palette.add() } label: {
-                    Label("Add a colour", systemImage: "plus.circle")
-                }
-                .buttonStyle(.link)
-                .tip("Another highlighter, with its own meaning")
-                Spacer()
-                Button("Reset") { palette.resetToDefaults() }
-                    .buttonStyle(.link)
-                    .tip("Back to the five it started with")
-            }
-        } header: {
-            Text("Highlighters")
-        } footer: {
-            Text("Shown beside the bar as you highlight and next to every mark, so the "
-                 + "convention is legible where it is used rather than remembered.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        Section("Mode") {
-            Toggle("Reading mode", isOn: $chrome.reading)
-                .tip("Hide the list, the header and the deciding controls", key: "⌘⇧R")
-        }
-    }
-
-    @ViewBuilder
-    private var logPanel: some View {
-        Section {
-            if runner.log.isEmpty {
-                Text("Nothing yet").foregroundStyle(.secondary)
-            } else {
-                // Newest first: the last thing that happened is what you came to check.
-                ForEach(runner.log.reversed().prefix(200)) { entry in
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
-                            Text(entry.kind.rawValue)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(logColour(entry.kind))
-                            Text(entry.at, style: .time)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Text(entry.subject)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                        if !entry.detail.isEmpty {
-                            Text(entry.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    .padding(.vertical, 1)
-                }
-            }
-        } header: {
-            Text("Activity")
-        } footer: {
-            HStack {
-                Button("Copy log") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(logText(runner.log), forType: .string)
-                }
-                .buttonStyle(.link)
-                .disabled(runner.log.isEmpty)
-                Spacer()
-                Button("Save…") { savingLog = true }
-                    .buttonStyle(.link)
-                    .disabled(runner.log.isEmpty)
-            }
-        }
-    }
-
-    private func logColour(_ kind: LogEntry.Kind) -> Color {
-        switch kind {
-        case .failed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-        case .trashed: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-        case .moved: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-        case .decrypted, .renamed, .applied: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
-        case .skipped: return .secondary
-        default: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
-        }
-    }
-
-    /// Appearance and the settings that used to live in a window of their own, in one
-    /// tab: both are set once and then forgotten, and neither was worth a second place to
-    /// look. See `SettingsPanel` for why the window went.
-    @ViewBuilder
-    private var settingsPanel: some View {
-            Section("Appearance") {
-                Picker("Theme", selection: $appearance) {
-                    ForEach(Appearance.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-            SettingsPanel()
-    }
-
-
     // MARK: Toolbar
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button { selectTab(.settings) } label: {
+            SettingsLink {
                 Label("Settings", systemImage: "gearshape")
             }
-            .tip("API key, model, prices and the ChatGPT plugin", key: "⌘,")
+            .tip("Everything you set once, in a window of its own", key: "⌘,")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -1731,46 +966,6 @@ struct Note: View {
 
 // MARK: - Results
 
-enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, passwords, naming, files, ai, bibtex, tags, library, reading, log, settings
-
-    var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .sources: return "folder"
-        case .explorer: return "list.bullet.indent"
-        case .passwords: return "key"
-        case .naming: return "textformat"
-        case .files: return "tray.full"
-        case .ai: return "sparkles"
-        case .bibtex: return "text.quote"
-        case .tags: return "tag"
-        case .library: return "books.vertical"
-        case .reading: return "highlighter"
-        case .log: return "list.bullet.rectangle"
-        case .settings: return "gearshape"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .sources: return "Sources"
-        case .explorer: return "Explorer"
-        case .passwords: return "Passwords"
-        case .naming: return "Name rules"
-        case .files: return "Files"
-        case .ai: return "AI"
-        case .bibtex: return "BibTeX"
-        case .tags: return "Tags"
-        case .library: return "Library"
-        case .reading: return "Reading"
-        case .log: return "Activity"
-        case .settings: return "Settings"
-        }
-    }
-}
-
 // MARK: - Explorer tree
 
 /// A folder or file in the current results, for the Explorer tab. Keyed by a real URL
@@ -1946,40 +1141,6 @@ func filterExplorerTree(_ nodes: [ExplorerNode], matching query: String) -> [Exp
 
 /// The rail's width, shared by the rail itself and the window's minimum, so the two cannot
 /// drift apart. Fixed rather than flexible: it holds while the panel beside it collapses.
-let railWidth: CGFloat = 46
-
-struct RailButton: View {
-    let tab: SidebarTab
-    let isSelected: Bool
-    let select: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: select) {
-            Image(systemName: tab.icon)
-                .font(.system(size: 15))
-                .frame(width: 34, height: 32)
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Color.accentColor.opacity(0.15)
-                              : hovering ? Color.secondary.opacity(0.12) : .clear)
-                )
-                // The marker an editor puts on the active tab.
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(isSelected ? Color.accentColor : .clear)
-                        .frame(width: 2, height: 18)
-                        .offset(x: -6)
-                }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .tip(tab.title)
-        .accessibilityLabel(tab.title)
-    }
-}
 
 // MARK: - Shortcuts
 

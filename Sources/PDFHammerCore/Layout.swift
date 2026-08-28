@@ -12,8 +12,10 @@ public enum SplitLayout {
     /// use this as their floor.
     public static let contentFloor: CGFloat = 360
 
-    /// The notes rail's own fixed width, plus the divider `split` draws ahead of it.
-    public static let notesReserved: CGFloat = 240 + 1
+    /// The inspector panel's width, plus the divider drawn ahead of it. It sits beside the
+    /// page inside the inspector rather than under it, which is what let the notes stop
+    /// being a column of their own.
+    public static let panelReserved: CGFloat = 320 + 1
 
     /// The contents rail's own fixed width, plus the divider `ReviewInspector` draws
     /// ahead of it. Nested inside the inspector rather than a sibling in `split`'s own
@@ -40,29 +42,35 @@ public enum SplitLayout {
     /// the rail, and the divider ahead of it, get squeezed past the window edge, taking the
     /// browser down with it: the inspector would happily claim room the notes rail also
     /// needed.
-    public static func inspectorMaximum(
-        available: CGFloat, notesShown: Bool, contentsShown: Bool
-    ) -> CGFloat {
+    public static func inspectorMaximum(available: CGFloat, contentsShown: Bool) -> CGFloat {
         let minimum = inspectorMinimum(contentsShown: contentsShown)
-        let reserved = contentFloor + dividerBeforeInspector + (notesShown ? notesReserved : 0)
-        return max(minimum, available - reserved)
+        return max(minimum, available - contentFloor - dividerBeforeInspector)
     }
 
     /// What the window has to be at least this wide for: the browser's floor, the divider
-    /// ahead of the inspector, the inspector's own floor, and the notes rail when it is
-    /// open. The window's own `.frame(minWidth:)` is derived from this so it can no longer
-    /// drift out of step with what the panes inside it actually add up to.
+    /// ahead of the inspector, and the inspector's own floor. The window's own
+    /// `.frame(minWidth:)` is derived from this so it can no longer drift out of step with
+    /// what the panes inside it actually add up to.
     ///
-    /// Deliberately not counting the contents rail. It used to, and opening a table of
-    /// contents then raised the window's minimum by nearly 200 points: a window that could
-    /// grow jumped, and a window that could not -- one tiled or filling a small display --
-    /// was asked for a width it had no way to give, so the inspector's right-hand side and
-    /// the notes rail beyond it were simply cut off. The rail now comes out of the room the
-    /// inspector already has (see `inspectorWidth` and `contentsRailWidth`), which is a
-    /// narrower page rather than a broken window.
-    public static func minWidth(notesShown: Bool) -> CGFloat {
+    /// Neither optional rail counts towards it. The contents rail never did, and the
+    /// comment explaining why applies word for word to the notes rail, which until now
+    /// did: opening it raised the window's minimum by 241 points, so a window that could
+    /// grow jumped, and a window that could not -- one tiled, or filling a small display
+    /// -- was asked for a width it had no way to give. Both rails now come out of the room
+    /// that exists (see `roomForNotes`), which is a rail that folds away rather than a
+    /// window that breaks.
+    public static func minWidth() -> CGFloat {
         contentFloor + dividerBeforeInspector + contentFloor
-            + (notesShown ? notesReserved : 0)
+    }
+
+    /// Whether the inspector panel fits beside the page in an inspector this wide.
+    ///
+    /// A preference, not a reservation. Asked for where there is no room it simply is not
+    /// drawn, and it comes back the moment there is — the bargain both rails already make.
+    /// Without it, moving the panel beside the page would have pushed the window's floor
+    /// up by its full width, which is the fault this whole exercise removed.
+    public static func roomForPanel(inspectorWidth: CGFloat, contentsShown: Bool) -> Bool {
+        inspectorWidth - panelReserved >= inspectorMinimum(contentsShown: contentsShown)
     }
 
     /// A page still worth looking at beside an open contents rail. Less than the browser's
@@ -90,8 +98,8 @@ public enum SplitLayout {
     /// which keeps every pane on screen and legible even when it is smaller than anyone
     /// would like.
     public static func inspectorWidth(preferred: CGFloat, available: CGFloat,
-                                      notesShown: Bool, contentsShown: Bool) -> CGFloat {
-        let room = max(0, available - dividerBeforeInspector - (notesShown ? notesReserved : 0))
+                                      contentsShown: Bool) -> CGFloat {
+        let room = max(0, available - dividerBeforeInspector)
         let floor = inspectorMinimum(contentsShown: contentsShown)
         guard room >= floor + contentFloor else { return (room / 2).rounded() }
         return min(max(preferred, floor), room - contentFloor)

@@ -234,19 +234,40 @@ extension NamePattern {
     }
 }
 
+/// Which guesses may stand in for a date the filename does not state.
+///
+/// Three switches the person has actually set. They exist so that a file with no date of
+/// its own can still be filed by year; none of them can displace a date the filename
+/// already carries, which is why they are consulted only after that has been looked for.
+public struct DateFallbacks: Sendable, Equatable {
+    public var folderNames: Bool
+    public var metadataDate: Bool
+    public var fileDate: Bool
+
+    public init(folderNames: Bool, metadataDate: Bool, fileDate: Bool) {
+        self.folderNames = folderNames
+        self.metadataDate = metadataDate
+        self.fileDate = fileDate
+    }
+
+    public static let all = DateFallbacks(folderNames: true, metadataDate: true, fileDate: true)
+    public static let none = DateFallbacks(folderNames: false, metadataDate: false, fileDate: false)
+}
+
 // MARK: - Rendering
 
-/// Renders `pattern` for one file. Only fields already on `item`, `guess`, `folder` are
-/// read, no PDF is opened, no disk is touched, so a whole catalogue restyles as fast as
-/// a preference can be flipped.
-public func render(
+/// Renders `pattern` for one file, or nil when every token came out empty. Only fields
+/// already on `item`, `guess`, `folder` are read, no PDF is opened, no disk is touched, so
+/// a whole catalogue restyles as fast as a preference can be flipped.
+public func rendered(
     _ pattern: NamePattern,
     for item: Item,
     guess: BookGuess? = nil,
     folder: FolderContext = .none,
     collisionIndex: Int = 1,
-    rules: NameRules? = nil
-) -> String {
+    rules: NameRules? = nil,
+    fallbacks: DateFallbacks = .all
+) -> String? {
     let resolved: [(NameElement, String?)] = pattern.elements.map { element in
         guard case .token(let token) = element else { return (element, nil) }
         // A token's value comes out of a filename or a PDF's metadata, so it arrives
@@ -257,7 +278,9 @@ public func render(
         // passed through as it is, which is what a caller wanting the raw text gets.
         // Literals the user typed are never touched either way.
         let value = resolvedValue(for: token.kind, item: item, guess: guess,
-                                   folder: folder, collisionIndex: collisionIndex)
+                                   folder: folder, collisionIndex: collisionIndex,
+                                   fallbacks: fallbacks)
+            .map { abbreviated(token, $0) }
             .map { value in rules.map { tidy(value, $0) } ?? value }
             .flatMap { $0.isEmpty ? nil : $0 }
             .map { apply(token, to: $0) }
@@ -265,10 +288,30 @@ public func render(
     }
 
     let joined = assemble(resolved)
-    guard !joined.isEmpty else { return item.sourceName }
+    guard !joined.isEmpty else { return nil }
 
     let clippedJoined = pattern.maxTotalLength > 0 ? clip(joined, to: pattern.maxTotalLength) : joined
     return sanitizedFilename(safeStem(clippedJoined))
+}
+
+/// `rendered`, with the source name standing in when the pattern had nothing to say.
+///
+/// Two different questions, and they were the same function until a caller needed to tell
+/// them apart: a pattern that resolves to nothing is not the same as one that legitimately
+/// renders the name the file already has, and `restyled` has to hand the first back to the
+/// ordinary rules while keeping the second.
+public func render(
+    _ pattern: NamePattern,
+    for item: Item,
+    guess: BookGuess? = nil,
+    folder: FolderContext = .none,
+    collisionIndex: Int = 1,
+    rules: NameRules? = nil,
+    fallbacks: DateFallbacks = .all
+) -> String {
+    rendered(pattern, for: item, guess: guess, folder: folder,
+             collisionIndex: collisionIndex, rules: rules, fallbacks: fallbacks)
+        ?? item.sourceName
 }
 
 /// Joins resolved elements left to right. A literal sitting directly next to a token
@@ -318,13 +361,15 @@ private func resolvedValue(
     item: Item,
     guess: BookGuess?,
     folder: FolderContext,
-    collisionIndex: Int
+    collisionIndex: Int,
+    fallbacks: DateFallbacks
 ) -> String? {
     switch kind {
     case .date:
-        return datePrefix(item: item, guess: guess, folder: folder)
+        return datePrefix(item: item, guess: guess, folder: folder, fallbacks: fallbacks)
     case .year:
-        return datePrefix(item: item, guess: guess, folder: folder).map { String($0.prefix(4)) }
+        return datePrefix(item: item, guess: guess, folder: folder, fallbacks: fallbacks)
+            .map { String($0.prefix(4)) }
     case .title:
         if let title = nonEmpty(guess?.title) { return title }
         let stem = titleStem(of: item)
@@ -350,12 +395,19 @@ private func resolvedValue(
 /// date there is (BookGuess.swift:73-81); after that, a date already sitting in the
 /// filename, then the enclosing folder, then the two metadata fallbacks, the same order
 /// `process(job:options:)` assembles them in (Hammer.swift:1282-1285).
-private func datePrefix(item: Item, guess: BookGuess?, folder: FolderContext) -> String? {
+private func datePrefix(item: Item, guess: BookGuess?, folder: FolderContext,
+                        fallbacks: DateFallbacks) -> String? {
+    // A date the filename already states always wins, and is never subject to a switch:
+    // it is the only date the document itself asserts. An annual statement for 2024 is
+    // routinely generated in 2025, so a timestamp read off the file would destroy
+    // information rather than add it.
     if let year = nonEmpty(guess?.year) { return year }
     if let found = findDate(in: stem(of: item)) { return found.prefix }
-    if let prefix = nonEmpty(folder.prefix) { return prefix }
-    if let metadataDate = item.metadataDate { return monthPrefix(metadataDate) }
-    if let modifiedDate = item.modifiedDate { return monthPrefix(modifiedDate) }
+    // Everything past here is a guess about a file that carries no date of its own, and
+    // each one is a switch the person has actually set.
+    if fallbacks.folderNames, let prefix = nonEmpty(folder.prefix) { return prefix }
+    if fallbacks.metadataDate, let metadataDate = item.metadataDate { return monthPrefix(metadataDate) }
+    if fallbacks.fileDate, let modifiedDate = item.modifiedDate { return monthPrefix(modifiedDate) }
     return nil
 }
 
@@ -381,14 +433,15 @@ private func titleStem(of item: Item) -> String {
 }
 
 /// Applies a token's own casing, then abbreviation, then length limit, in that order.
-private func apply(_ token: NameToken, to raw: String) -> String {
+/// The part of a token's options that has to see the value before anything tidies it.
+///
+/// `surname` and `initials` are defined by word boundaries, and tidying is what turns
+/// spaces into dashes — run in the other order, "Judea Pearl" tidies to "judea-pearl",
+/// which has no space left for `surname` to find, and the whole name comes through where
+/// only the surname was asked for. `compact` is here for the same reason: it removes the
+/// dashes inside a date, and tidying is entitled to add more.
+private func abbreviated(_ token: NameToken, _ raw: String) -> String {
     var value = raw
-    switch token.casing {
-    case .unchanged: break
-    case .lower: value = value.lowercased()
-    case .upper: value = value.uppercased()
-    case .titleCase: value = value.capitalized
-    }
     switch token.abbreviation {
     case .none:
         break
@@ -401,6 +454,19 @@ private func apply(_ token: NameToken, to raw: String) -> String {
     case .initials:
         let letters = value.split(separator: " ").compactMap(\.first)
         if !letters.isEmpty { value = String(letters).uppercased() }
+    }
+    return value
+}
+
+/// The rest: how it is written, and how much of it there is. Both are safe to run after
+/// tidying, and casing has to, or the rules would lowercase a token asked to shout.
+private func apply(_ token: NameToken, to raw: String) -> String {
+    var value = raw
+    switch token.casing {
+    case .unchanged: break
+    case .lower: value = value.lowercased()
+    case .upper: value = value.uppercased()
+    case .titleCase: value = value.capitalized
     }
     if token.maxLength > 0 { value = clip(value, to: token.maxLength) }
     return value
@@ -505,19 +571,25 @@ public func preview(
     for item: Item,
     guess: BookGuess? = nil,
     under root: URL? = nil,
-    collisionIndex: Int = 1
+    collisionIndex: Int = 1,
+    rules: NameRules? = nil,
+    fallbacks: DateFallbacks = .all
 ) -> NamePreview {
     let folder = root.map { folderContext(for: item.source, under: $0) } ?? .none
     let tokens: [NameTokenPreview] = pattern.elements.compactMap { element in
         guard case .token(let token) = element else { return nil }
         let value = resolvedValue(for: token.kind, item: item, guess: guess,
-                                   folder: folder, collisionIndex: collisionIndex)
+                                   folder: folder, collisionIndex: collisionIndex,
+                                   fallbacks: fallbacks)
+            .map { abbreviated(token, $0) }
+            .map { value in rules.map { tidy(value, $0) } ?? value }
             .map { apply(token, to: $0) } ?? ""
         return NameTokenPreview(kind: token.kind, value: value, isEmpty: value.isEmpty)
     }
     return NamePreview(
         originalName: item.sourceName,
-        renderedName: render(pattern, for: item, guess: guess, folder: folder, collisionIndex: collisionIndex),
+        renderedName: render(pattern, for: item, guess: guess, folder: folder,
+                             collisionIndex: collisionIndex, rules: rules, fallbacks: fallbacks),
         tokens: tokens
     )
 }
@@ -528,9 +600,14 @@ public func previews(
     _ pattern: NamePattern,
     for items: [Item],
     guesses: [String: BookGuess] = [:],
-    under root: URL? = nil
+    under root: URL? = nil,
+    rules: NameRules? = nil,
+    fallbacks: DateFallbacks = .all
 ) -> [NamePreview] {
-    items.map { preview(pattern, for: $0, guess: guesses[$0.key], under: root) }
+    items.map {
+        preview(pattern, for: $0, guess: guesses[$0.key], under: root,
+                rules: rules, fallbacks: fallbacks)
+    }
 }
 
 // MARK: - Presets

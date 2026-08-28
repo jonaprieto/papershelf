@@ -9,6 +9,18 @@ import PDFHammerCore
 /// scroll to it. In the sidebar they sit in the same scrolling panel as every other tab,
 /// and there is one place to look for a setting rather than two.
 struct SettingsPanel: View {
+    /// Which of its sections to draw. The panel owns the key, the endpoint, the price
+    /// table, the ledger and the plugin, and those now live on two different settings
+    /// panes; a flag is cheaper than either pane owning a copy of the other's logic.
+    struct Sections: OptionSet {
+        let rawValue: Int
+        static let ai = Sections(rawValue: 1 << 0)
+        static let plugin = Sections(rawValue: 1 << 1)
+        static let all: Sections = [.ai, .plugin]
+    }
+
+    var sections: Sections = .all
+
     @AppStorage("aiModel") private var model = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
@@ -44,6 +56,7 @@ struct SettingsPanel: View {
         // Bare Sections, like every other tab: the sidebar owns the Form, and nesting a
         // second one inside it boxes and indents this tab differently from its siblings.
         Group {
+            if sections.contains(.ai) {
             Section {
                 Toggle("Use OPENAI_API_KEY from the environment", isOn: $useEnvironment)
                 if useEnvironment {
@@ -51,11 +64,11 @@ struct SettingsPanel: View {
                         if let found = environmentKey ?? DiscoveredKey.shared.value {
                             Label("Found, ending \(String(found.suffix(4)))",
                                   systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                                .foregroundStyle(Ink.green)
                         } else {
                             Label("Not found in the environment or your login shell",
                                   systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                                .foregroundStyle(Ink.amber)
                         }
                     }
                 }
@@ -108,10 +121,10 @@ struct SettingsPanel: View {
                     case .idle: EmptyView()
                     case .ok(let message):
                         Label(message, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .foregroundStyle(Ink.green)
                     case .failed(let message):
                         Text(message)
-                            .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                            .foregroundStyle(Ink.red)
                             .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -142,7 +155,9 @@ struct SettingsPanel: View {
             } header: {
                 Text("AI spend")
             }
+            }
 
+            if sections.contains(.plugin) {
             Section {
                 chatGPTPluginRow
             } header: {
@@ -158,9 +173,10 @@ struct SettingsPanel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            }
         }
         .onAppear { key = StoredKey.shared.value ?? "" }
-        .task { await loadEntries() }
+        .task { if sections.contains(.ai) { await loadEntries() } }
     }
 
     // MARK: - Price for the currently chosen model
@@ -182,7 +198,7 @@ struct SettingsPanel: View {
                 .foregroundStyle(.secondary)
         } else {
             Label("Cost unknown for this model", systemImage: "questionmark.circle")
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
         }
         if editingPrice {
             priceEditor
@@ -249,7 +265,7 @@ struct SettingsPanel: View {
             // Distinct from the empty-ledger case below: this is "could not read the
             // ledger," not "nothing has been spent," and must not be shown as $0.
             Text("Could not read the spend ledger.")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
         } else if entries.isEmpty {
             Text("No AI calls recorded yet.")
                 .foregroundStyle(.secondary)
@@ -325,7 +341,7 @@ struct SettingsPanel: View {
     private var chatGPTPluginRow: some View {
         if pluginStatus.installed {
             Label("Installed at \(pluginStatus.destination.path)", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else {
             Text("Not installed").foregroundStyle(.secondary)
         }
@@ -338,7 +354,7 @@ struct SettingsPanel: View {
         if !serverFound {
             Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
                   systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
                 .fixedSize(horizontal: false, vertical: true)
         }
         if serverFound || pluginStatus.installed {
@@ -356,11 +372,11 @@ struct SettingsPanel: View {
         case .idle: EmptyView()
         case .ok(let message):
             Label(message, systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
                 .fixedSize(horizontal: false, vertical: true)
         case .failed(let message):
             Text(message)
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }

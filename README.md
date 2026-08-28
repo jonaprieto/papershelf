@@ -74,6 +74,27 @@ Optional rules cover casing, separator style (kebab or snake), symbol stripping 
 accent folding. Flip one and the whole list restyles instantly, without reopening a
 single PDF.
 
+## The window
+
+A sidebar, the document, an inspector beside it, and a status bar along the bottom.
+
+The inspector has four tabs — Info, Rename, Notes, Cite — and sits next to the page rather
+than under it. The notes used to be a column of their own, 240 fixed points that the
+window's minimum width had to reserve for whether or not anyone had opened them; they are
+a tab now. Neither the inspector nor the contents rail widens the window: asked for where
+there is no room, they fold, and come back the moment there is.
+
+The sidebar is one sectioned list — sources and their folders, tags, the library — and
+nothing else. Everything you set once lives in a settings window instead of sharing that
+column: General, Files and passwords, Name rules, Highlighters, BibTeX, Keyboard, AI and
+spend, Integrations. That is the rule the two obey — a setting reachable from two places
+is a setting that can disagree with itself.
+
+Anything transient is in the status bar and only there: what is being scanned, how far
+through a plan you are, how many files no password opened, what the session has cost,
+whether the watcher is on. Clicking it opens the activity log. Nothing about a running
+job changes the shape of the toolbar any more.
+
 ## Two views
 
 **Catalogue** is the default: covers laid out as a shelf. Thumbnails render lazily and
@@ -173,7 +194,12 @@ character for character what Copy and Save write.
 
 ## Naming by pattern
 
-The naming panel is a row of chips you drag into the order you want: date, author, title,
+The pattern is what Plan and Apply use. Chips decide what pieces a name has and in what
+order; the tidying rules below them decide how each piece is written. Leave the pattern
+empty and the ordinary rename takes over — the date lifted out of the filename and put
+back at the front.
+
+**Settings › Name rules** is a row of chips you drag into the order you want: date, author, title,
 year, publisher, a literal separator, a counter. Each shows what it currently produces for
 the selected file, and a chip that resolves to nothing looks empty rather than vanishing,
 so a name that came out short says why.
@@ -232,7 +258,8 @@ suggestion like any other: it still has to be confirmed, and you can type over i
 **Ask AI for N names** runs the whole pending queue, four at a time, behind a
 confirmation that names the count, since you are billed per request.
 
-Settings (the gear, or ⌘,) holds the key, model and endpoint. Any OpenAI-compatible
+Settings (the gear, or ⌘,) is a window with eight panes; **AI & spend** holds the key,
+model and endpoint. Any OpenAI-compatible
 endpoint works. The key is kept in your Keychain rather than in preferences, which are a plain file
 anything running as you can read. `OPENAI_API_KEY` is used as a fallback. A
 Finder-launched app inherits launchd's environment rather than a shell's, so when the
@@ -349,12 +376,19 @@ showing the PDF next to an editable name.
 | `R` | reopen a decided file |
 | `J` `K` `N` `P` arrows | move without deciding; in the catalogue `↑``↓` cross a row |
 | `?` | every shortcut, in one sheet |
+| `⌘K` | the command palette: any file, and every command whether or not it has a key |
 | `⌘1`…`⌘4` | list, catalogue, BibTeX, duplicates |
 | `⌘D` `⌘R` | find duplicates, reveal in Finder |
 | `⌘⇧Return` | confirm everything still pending |
 | `B` | copy this file's BibTeX entry, asking the model first if fields are missing |
 | `O` | open in the default PDF viewer |
 | `⌘Z` | undo the last decision |
+
+Every one of these is a row in **Settings › Keyboard**, and every one can be changed.
+The list is the same table the key monitor reads, so it cannot drift from what actually
+happens, and taking a key that another command already answers to asks first and says
+what it would cost. A command with no shortcut at all is still reachable: `⌘K` lists all
+of them.
 
 The header of the inspector has buttons to reveal the file in Finder and to open it
 externally. List rows carry the file's size, page count and date, which is what tells two

@@ -45,12 +45,17 @@ struct ResultsPane: View {
     @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
-    @AppStorage("notesShown") private var notesShown = false
     @AppStorage("contentsShown") private var contentsShown = false
+    @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
     @StateObject private var annotator = Annotator()
     @State private var addingNote = false
     @State private var noteText = ""
     @StateObject private var tagIndex = CatalogueTags()
+    /// Remembers the last filter result. The grid, the folder tree and the "N of M shown"
+    /// label each need it, and each used to recompute it: three passes over the whole
+    /// collection per render, and again on every tick of a window resize because the grid
+    /// asks from inside a `GeometryReader`.
+    @State private var filter = VisibleFilter()
     /// The file a "New Tag…" prompt was opened for. Non-nil drives the sheet.
     @State private var taggingItem: Item?
     @State private var newTagName = ""
@@ -95,6 +100,7 @@ struct ResultsPane: View {
     @FocusState private var paneFocused: Bool
     @FocusState private var listFocused: Bool
     @State private var keyMonitor: Any?
+    @State private var showingPalette = false
 
     private var selectedItem: Item? {
         runner.results.first { $0.key == selected }
@@ -106,6 +112,18 @@ struct ResultsPane: View {
     /// about. Nil means nothing is filtering at all, the same meaning `runner.matchingKeys`
     /// already carries on its own.
     private var visibleKeys: Set<String>? {
+        filter.keys(matching: VisibleFilter.Signature(
+            results: runner.resultsToken,
+            matching: runner.matchingToken,
+            tags: tagIndex.revision,
+            query: query,
+            scope: folderScope
+        ), compute: computeVisibleKeys)
+    }
+
+    /// The filter itself, unchanged. It is called at most once per body pass now, and not
+    /// at all when nothing it reads has moved.
+    private func computeVisibleKeys() -> Set<String>? {
         var current: [Item]?
         if let keys = runner.matchingKeys {
             current = runner.results.filter { keys.contains($0.key) }
@@ -332,6 +350,36 @@ struct ResultsPane: View {
         } message: {
             Text(runner.aiError ?? "")
         }
+        // Built here rather than in ContentView's toolbar because this is where the query
+        // and the mode live, and SwiftUI merges toolbars down the hierarchy. Moving the
+        // state up instead would have meant reimplementing the search field's behaviour —
+        // metadata filtering live, `text:` waiting for Return, `/` to focus — around a
+        // binding, and that behaviour is the useful part.
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $mode) {
+                    ForEach(ViewMode.allCases) { mode in
+                        Label(mode.label, systemImage: mode.icon).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.iconOnly)
+                .labelsHidden()
+                .fixedSize()
+                .tip("Which view of the same files", key: "⌘1 to ⌘4")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                searchField
+            }
+        }
+        .sheet(isPresented: $showingPalette) {
+            CommandPalette(
+                commands: Self.performable.filter { $0 != .palette },
+                documents: runner.results,
+                run: { perform($0) },
+                open: { selected = $0.key }
+            )
+        }
     }
 
     /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
@@ -357,30 +405,28 @@ struct ResultsPane: View {
         keyMonitor = nil
     }
 
-    private func handle(_ event: NSEvent) -> Bool {
-        guard !runner.busy, !runner.results.isEmpty, selectedItem != nil else { return false }
-        // Command combinations first: these are app-level and must work wherever focus is,
-        // including while a name is being typed.
-        if event.modifierFlags.contains(.command) {
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "1": mode = .list; return true
-            case "2": mode = .catalogue; return true
-            case "3": mode = .bibliography; return true
-            case "4": mode = .duplicates; return true
-            case "r": revealInFinder(); return true
-            case "d": runner.findDuplicates(passwords: passwords); return true
-            case "\r" where event.modifierFlags.contains(.shift):
-                runner.confirmAllPending()
-                ensureSelection()
-                return true
-            default: return false
-            }
-        }
-        guard event.modifierFlags.intersection([.option, .control]).isEmpty else { return false }
+    /// Which commands can be heard here. This pane is where a plan is decided, so the
+    /// reviewing keys are live along with everything scoped anywhere or to the library.
+    private var activeScope: Command.Scope { .reviewing }
 
-        // Anything being typed into, or any control that has its own idea of what a key
-        // means, keeps the event. A table view does not: its type-select is what we are
-        // deliberately replacing.
+    /// The commands that do not need a file in front of them, and so must still work on
+    /// an empty shelf — which is exactly when someone reaches for the palette.
+    private static let alwaysAvailable: Set<Command> = [.palette, .focusSearch, .shortcuts]
+
+    private func handle(_ event: NSEvent) -> Bool {
+        guard !runner.busy else { return false }
+        let match = Keymap.shared.command(for: event, in: activeScope)
+        if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
+        guard !runner.results.isEmpty, selectedItem != nil else { return false }
+        let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
+
+        // Anything carrying a modifier is app-level and must work wherever focus is,
+        // including while a name is being typed.
+        if let match, !bare { return perform(match) }
+
+        // Past here every binding is a bare key, which belongs to whatever is being typed
+        // into. A table view is the exception: its type-select is exactly what this
+        // monitor exists to replace.
         if searchFocused { return false }
         if let responder = event.window?.firstResponder,
            responder is NSTextView || (responder is NSControl && !(responder is NSTableView)) {
@@ -390,6 +436,7 @@ struct ResultsPane: View {
         // The lists are table views and move themselves; the catalogue is a grid and has
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
+        let arrows: Set<UInt16> = [123, 124, 125, 126]
         if !onATable {
             // In a grid a row is a row: up and down cross `gridColumns` items, while left
             // and right move to the neighbour.
@@ -401,27 +448,118 @@ struct ResultsPane: View {
             case 123: step(by: -1); return true     // left
             default: break
             }
+        } else if arrows.contains(event.keyCode) {
+            // Leave them to the table, the way they always were, rather than letting the
+            // arrow alternates on next/previous file take them away from it.
+            return false
         }
 
-        switch event.charactersIgnoringModifiers?.lowercased() {
-        case "\r", "c": confirm()
-        case "e": editingName = true
-        case "s": skip()
-        case "f": skipFolder()
-        case "a": applyNow()
-        case "g": identifySelected()
-        case "m": choosingMoveTarget = true
-        case "o": openInViewer()
-        case "b": copyCitation()
-        case "?": showingShortcuts = true
-        case "/": searchFocused = true
-        case "d": markDeleted()
-        case "r": reopenSelected()
-        case "j", "n": step(by: 1)
-        case "k", "p": step(by: -1)
+        guard let match else { return false }
+        return perform(match)
+    }
+
+    /// Exactly the commands `perform` carries out, in the order the palette lists them.
+    ///
+    /// Kept beside the switch below and used to build the palette, so a line can never be
+    /// offered that would do nothing. Anything absent here is still reachable — it simply
+    /// belongs to a different surface, and its key event falls through to whoever owns it.
+    static let performable: [Command] = [
+        .confirm, .editName, .askAI, .copyCitation, .applyOne,
+        .skip, .skipFolder, .moveTo, .trash, .reopen,
+        .nextFile, .previousFile, .confirmAllPending,
+        .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
+        .findDuplicates, .revealInFinder, .openExternally,
+        .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
+        .addNote, .nextMark, .previousMark,
+        .focusContents, .focusDocument, .focusInspector, .newTag,
+        .focusSearch, .shortcuts, .palette,
+    ]
+
+    /// Carries out one command, whatever asked for it.
+    ///
+    /// The monitor above and the command palette both come through here, which is what
+    /// makes a rebound key and a palette entry do the same thing — and what stops the
+    /// palette from growing its own quietly different copy of `confirm()`.
+    ///
+    /// Returning false means "not mine": the key event carries on to whatever else might
+    /// want it, which is how ⌘↩ still reaches the Apply button in the toolbar.
+    @discardableResult
+    func perform(_ command: Command) -> Bool {
+        switch command {
+        case .viewList: mode = .list
+        case .viewCatalogue: mode = .catalogue
+        case .viewBibliography: mode = .bibliography
+        case .viewDuplicates: mode = .duplicates
+        case .revealInFinder: revealInFinder()
+        case .findDuplicates: runner.findDuplicates(passwords: passwords)
+        case .confirmAllPending:
+            runner.confirmAllPending()
+            ensureSelection()
+        case .confirm: confirm()
+        case .editName: editingName = true
+        case .skip: skip()
+        case .skipFolder: skipFolder()
+        case .applyOne: applyNow()
+        case .askAI: identifySelected()
+        case .moveTo: choosingMoveTarget = true
+        case .openExternally: openInViewer()
+        case .copyCitation: copyCitation()
+        case .shortcuts: showingShortcuts = true
+        case .palette: showingPalette = true
+        case .focusSearch: searchFocused = true
+        case .trash: markDeleted()
+        case .reopen: reopenSelected()
+        case .nextFile: step(by: 1)
+        case .previousFile: step(by: -1)
+
+        case .highlight1: highlight(colourAt: 0)
+        case .highlight2: highlight(colourAt: 1)
+        case .highlight3: highlight(colourAt: 2)
+        case .highlight4: highlight(colourAt: 3)
+        case .highlight5: highlight(colourAt: 4)
+        case .addNote:
+            guard annotator.selectedMark != nil || annotator.hasSelection else { return false }
+            addingNote = true
+        case .nextMark: stepMark(by: 1)
+        case .previousMark: stepMark(by: -1)
+
+        case .focusContents:
+            guard !annotator.contents.isEmpty else { return false }
+            contentsShown = true
+        case .focusDocument: listFocused = true
+        case .focusInspector: inspectorCollapsed = false
+        case .newTag:
+            guard let item = selectedItem else { return false }
+            newTagName = ""
+            taggingItem = item
+
         default: return false
         }
         return true
+    }
+
+    /// Paints the selection in the nth highlighter, or recolours the mark you are on when
+    /// there is nothing selected — which is what a number key means once a mark is under
+    /// the cursor rather than a fresh run of text.
+    private func highlight(colourAt index: Int) {
+        guard palette.styles.indices.contains(index) else { return }
+        let colour = palette.styles[index].nsColor
+        if annotator.hasSelection {
+            _ = annotator.highlightSelection(colour: colour)
+        } else if let selected = annotator.selectedMark,
+                  let mark = annotator.marks.first(where: { $0.id == selected }) {
+            annotator.setColour(colour, on: mark)
+        }
+    }
+
+    /// Moves to the next mark in the document and scrolls the page to it, since a
+    /// highlight on a page you are not looking at is invisible by definition.
+    private func stepMark(by delta: Int) {
+        guard !annotator.marks.isEmpty else { return }
+        let current = annotator.marks.firstIndex { $0.id == annotator.selectedMark }
+        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + annotator.marks.count)
+            % annotator.marks.count
+        annotator.jump(to: annotator.marks[next])
     }
 
     /// Leaving the name field has to hand focus somewhere, or Return drops it on the
@@ -715,7 +853,7 @@ struct ResultsPane: View {
             }
             .controlSize(.small)
             .tip("Byte-identical groups only; name matches are left alone")
-            .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+            .tint(Ink.red)
             .disabled(runner.identicalExtras == 0)
         }
         .padding(.horizontal, 16)
@@ -741,7 +879,7 @@ struct ResultsPane: View {
             if incomplete > 0 {
                 Label("\(incomplete) incomplete", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                    .foregroundStyle(Ink.amber)
                     .help("Ask AI on those files to fill in author and year")
             }
             Spacer()
@@ -823,32 +961,24 @@ struct ResultsPane: View {
             let contentsOpen = contentsShown && !annotator.contents.isEmpty
             let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
             let maximum = SplitLayout.inspectorMaximum(
-                available: geometry.size.width, notesShown: notesShown, contentsShown: contentsOpen)
+                available: geometry.size.width, contentsShown: contentsOpen)
             // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
             // when the window is narrower than the floor, and the pane is then drawn at a
             // width the window cannot show.
             let width = SplitLayout.inspectorWidth(
                 preferred: inspectorWidth, available: geometry.size.width,
-                notesShown: notesShown, contentsShown: contentsOpen)
+                contentsShown: contentsOpen)
             HStack(spacing: 0) {
                 // Reading gives the whole window to the page.
                 if !reading {
                     browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     divider(width: width, minimum: minimum, maximum: maximum)
                 }
-                inspector
+                inspector(panelFits: SplitLayout.roomForPanel(
+                        inspectorWidth: reading ? geometry.size.width : width,
+                        contentsShown: contentsOpen))
                     .frame(width: reading ? nil : width)
                     .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
-                if notesShown {
-                    Divider()
-                    NotesRail(annotator: annotator, palette: palette,
-                              addingNote: $addingNote, noteText: $noteText,
-                              lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
-                              title: selectedItem?.destinationName ?? "Notes",
-                              source: selectedItem?.currentURL.path ?? "",
-                              close: { notesShown = false })
-                        .frame(width: 240)
-                }
             }
         }
     }
@@ -906,9 +1036,11 @@ struct ResultsPane: View {
     // MARK: Review inspector
 
     @ViewBuilder
-    private var inspector: some View {
+    private func inspector(panelFits: Bool) -> some View {
+        Group {
         if let item = selectedItem {
             ReviewInspector(
+                panelFits: panelFits,
                 item: item,
                 runner: runner,
                 passwords: passwords,
@@ -951,6 +1083,7 @@ struct ResultsPane: View {
                 description: Text("Pick a file to see it.")
             )
         }
+        }
     }
 
     /// Fills in a selection only when there is not already a good one. Whatever file you
@@ -971,7 +1104,6 @@ struct ResultsPane: View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal) {
               HStack(spacing: 10) {
-                searchField
                 if let folderScope {
                     Button {
                         self.folderScope = nil
@@ -981,14 +1113,6 @@ struct ResultsPane: View {
                     .controlSize(.small)
                     .tip("Showing only this folder's files. Click to show everything again.")
                 }
-                Picker("View", selection: $mode) {
-                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .tip("Which view of the same files", key: "⌘1 to ⌘4")
-
                 ForEach(runner.statusCounts, id: \.0) { status, count in
                     StatusPill(status: status, count: count)
                 }
@@ -1012,12 +1136,12 @@ struct ResultsPane: View {
                             .font(.callout)
                             .monospacedDigit()
                             .foregroundStyle(keys.isEmpty
-                                             ? Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+                                             ? Ink.amber
                                              : .secondary)
                     } else if runner.pendingCount == 0 {
                         Label("All \(runner.results.count) reviewed", systemImage: "checkmark.circle.fill")
                             .font(.callout)
-                            .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                            .foregroundStyle(Ink.green)
                     } else {
                         Text("\(runner.reviewed) of \(runner.results.count) reviewed")
                             .font(.callout)
@@ -1148,11 +1272,11 @@ struct ResultsPane: View {
         if !runner.lastRunWasDry {
             Label("Applied, files on disk have changed", systemImage: "checkmark.seal.fill")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else if !previewIsCurrent {
             Label("Settings changed, plan again", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
+                .foregroundStyle(Ink.amber)
         } else if runner.showingCached {
             Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
                 .font(.callout)
@@ -1161,7 +1285,7 @@ struct ResultsPane: View {
             Label("\(runner.appliedCount) applied so far, the rest is still only planned",
                   systemImage: "checkmark.seal")
                 .font(.callout)
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         } else {
             Label("A plan only, nothing has changed on disk", systemImage: "list.bullet.rectangle")
                 .font(.callout)
@@ -1232,6 +1356,9 @@ final class CatalogueTags: ObservableObject {
     /// Every tag name in use anywhere, offered when adding one so nobody has to retype or
     /// misspell a tag that already exists.
     @Published private(set) var everyTag: [String] = []
+    /// Bumped whenever the tag tables change, so a view filtering by tag can tell in one
+    /// comparison whether its last answer still holds.
+    @Published private(set) var revision = 0
 
     init(library: Library? = Library.shared) {
         self.library = library
@@ -1252,6 +1379,7 @@ final class CatalogueTags: ObservableObject {
         guard let library else { return }
         if let all = try? await library.tagsByDocument() { byDocument = all }
         if let counts = try? await library.tagCounts() { everyTag = counts.map(\.name) }
+        defer { revision &+= 1 }
 
         let unresolved = items.filter { documentID[$0.key] == nil }
         guard !unresolved.isEmpty else { return }
@@ -1479,7 +1607,7 @@ struct ResultRow: View {
                 if decision == .deleted {
                     Label("will be moved to the Trash", systemImage: "trash")
                         .font(.caption)
-                        .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                        .foregroundStyle(Ink.red)
                 } else if shownName != item.sourceName {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.turn.down.right")
@@ -1562,17 +1690,17 @@ struct ResultRow: View {
         switch decision {
         case .confirmed:
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .applied:
             Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
         case .skipped:
             Image(systemName: "minus.circle.fill").foregroundStyle(.tertiary)
         case .deleted:
             Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .foregroundStyle(Ink.red)
         case .moveTo:
-            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
         case nil:
             Image(systemName: "circle.dotted").foregroundStyle(.tertiary)
         }
@@ -1591,6 +1719,14 @@ struct CoverCard: View {
     /// What this file is tagged with. Shown on the card so a shelf can be read by tag at a
     /// glance rather than one right-click at a time.
     var tags: [String] = []
+    /// This card's own cover. Held here rather than read out of a shared counter, so a
+    /// render landing anywhere else on the shelf does not redraw this card.
+    @State private var cover: NSImage?
+
+    /// How tall to rasterise, in pixels: the size a card actually draws at, doubled for a
+    /// retina display. It used to be a flat 320 whatever the card measured, which on a
+    /// dense shelf is a lot of pixels rendered to be thrown away.
+    static let rasterHeight = Metric.coverHeight(forWidth: Metric.coverWidth) * 2
 
     private var name: String {
         if case .confirmed(let confirmed) = decision { return confirmed }
@@ -1602,9 +1738,7 @@ struct CoverCard: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(.quaternary.opacity(0.5))
-                // Touching `revision` is what redraws this card when its render lands.
-                let _ = covers.revision
-                if let cover = covers.cover(for: item, passwords: passwords, height: 320) {
+                if let cover {
                     Image(nsImage: cover)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -1616,9 +1750,18 @@ struct CoverCard: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .frame(height: 168)
+            // As wide as its cell and as tall as a book of that width. It was 168 points
+            // whatever the width, which is why a tall book sat in a letterbox and a wide
+            // one was cropped: the band was a constant and a book is not.
             .frame(maxWidth: .infinity)
+            .aspectRatio(1 / Metric.coverAspect, contentMode: .fit)
             .overlay(alignment: .topTrailing) { badges }
+            .task(id: "\(item.key)#\(covers.generation)") {
+                if let hit = covers.cached(item) { cover = hit; return }
+                cover = nil
+                cover = await covers.cover(for: item, passwords: passwords,
+                                           height: CoverCard.rasterHeight)
+            }
 
             Text(name)
                 .font(.caption)
@@ -1663,13 +1806,13 @@ struct CoverCard: View {
             }
             switch decision {
             case .confirmed: Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
             case .applied: Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
+                .foregroundStyle(Ink.green)
             case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
             case .deleted: Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
-            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255)))
+                .foregroundStyle(Ink.red)
+            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
             case nil: EmptyView()
             }
         }
@@ -1712,13 +1855,13 @@ struct StatusPill: View {
     /// unreadable at caption size. These are darkened for light and lifted for dark.
     private var color: Color {
         switch status {
-        case .decrypted: return Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
-        case .renamed:   return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
-        case .locked:    return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
-        case .encrypted: return Color(light: srgb(29, 78, 216), dark: srgb(133, 174, 255))
-        case .trashed:   return Color(light: srgb(88, 88, 96), dark: srgb(178, 178, 190))
-        case .moved:     return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-        case .failed:    return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
+        case .decrypted: return Ink.green
+        case .renamed:   return Ink.blue
+        case .locked:    return Ink.amber
+        case .encrypted: return Ink.blue
+        case .trashed:   return Ink.grey
+        case .moved:     return Ink.purple
+        case .failed:    return Ink.red
         }
     }
 }
@@ -1760,7 +1903,7 @@ struct DuplicateSection: View {
                 }
                 .controlSize(.small)
                 .tip("Keeps the starred copy, trashes the rest of this group")
-                .tint(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                .tint(Ink.red)
             }
             .font(.callout)
             .padding(.vertical, 2)
@@ -1786,9 +1929,9 @@ func duplicateIcon(_ kind: DuplicateGroup.Kind) -> String {
 
 func duplicateColour(_ kind: DuplicateGroup.Kind) -> Color {
     switch kind {
-    case .identical: return Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130))
-    case .sameText: return Color(light: srgb(109, 40, 217), dark: srgb(196, 165, 255))
-    case .likely: return Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60))
+    case .identical: return Ink.red
+    case .sameText: return Ink.purple
+    case .likely: return Ink.amber
     }
 }
 
@@ -1810,7 +1953,7 @@ struct DuplicateRow: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: isKeeper ? "star.fill" : "circle")
                 .foregroundStyle(isKeeper
-                                 ? Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140))
+                                 ? Ink.green
                                  : Color.secondary.opacity(0.5))
                 .padding(.top, 2)
                 .help(isKeeper ? "The copy to keep" : "A spare copy")
@@ -1836,7 +1979,7 @@ struct DuplicateRow: View {
             if decision == .deleted {
                 Label("Trash", systemImage: "trash.fill")
                     .font(.caption)
-                    .foregroundStyle(Color(light: srgb(176, 29, 29), dark: srgb(248, 130, 130)))
+                    .foregroundStyle(Ink.red)
             } else if !isKeeper {
                 Button("Keep this one", action: keep)
                     .controlSize(.small)
@@ -1849,3 +1992,32 @@ struct DuplicateRow: View {
 }
 
 // MARK: - Sidebar rail
+
+
+// MARK: - Filter cache
+
+/// Holds the last answer `visibleKeys` gave, keyed on everything that could change it.
+///
+/// Deliberately not an `ObservableObject` and deliberately a reference type held in
+/// `@State`: it publishes nothing, which is what makes it safe to read and update from
+/// inside `body`, and it survives the body passes that a value type would not.
+final class VisibleFilter {
+    struct Signature: Equatable {
+        let results: Int
+        let matching: Int
+        let tags: Int
+        let query: String
+        let scope: URL?
+    }
+
+    private var signature: Signature?
+    private var cached: Set<String>?
+
+    func keys(matching new: Signature, compute: () -> Set<String>?) -> Set<String>? {
+        if signature == new { return cached }
+        let value = compute()
+        signature = new
+        cached = value
+        return value
+    }
+}

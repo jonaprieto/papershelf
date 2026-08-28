@@ -75,3 +75,39 @@ final class CatalogueLayoutTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Covers keep a book's proportions
+
+/// The cover used to be 168 points tall whatever the card measured, so a tall book sat in
+/// a letterbox with grey above and below it and a wide one was cropped. The band was a
+/// constant and a book is not.
+extension CatalogueLayoutTests {
+
+    func testCoverHeightFollowsTheWidth() {
+        XCTAssertEqual(Metric.coverHeight(forWidth: 100), 132)
+        XCTAssertEqual(Metric.coverHeight(forWidth: 176), 232)
+        XCTAssertEqual(Metric.coverHeight(forWidth: 200), 264)
+    }
+
+    /// A grid mid-resize will propose nonsense; a negative frame is a crash, not a layout.
+    func testCoverHeightRefusesToGoNegative() {
+        XCTAssertEqual(Metric.coverHeight(forWidth: 0), 0)
+        XCTAssertEqual(Metric.coverHeight(forWidth: -40), 0)
+    }
+
+    func testWiderCardsAreNeverShorter() {
+        var previous: CGFloat = 0
+        for width in stride(from: CGFloat(20), through: 400, by: 20) {
+            let height = Metric.coverHeight(forWidth: width)
+            XCTAssertGreaterThanOrEqual(height, previous)
+            previous = height
+        }
+    }
+
+    /// The raster is asked for at the size a card draws at, doubled for retina, rather
+    /// than the flat 320 it used to be — which on a dense shelf is a lot of pixels
+    /// rendered in order to be thrown away.
+    func testCoversAreRasterisedAtTheSizeTheyAreDrawn() {
+        XCTAssertEqual(CoverCard.rasterHeight, Metric.coverHeight(forWidth: Metric.coverWidth) * 2)
+    }
+}
