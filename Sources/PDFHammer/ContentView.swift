@@ -353,6 +353,7 @@ struct ContentView: View {
         // with the panel, and nothing short of widening the window brought it back. Beside
         // the split view instead, the panel still hides on a narrow window, as a sidebar
         // should, while the rail stays put.
+        VStack(spacing: 0) {
         HStack(spacing: 0) {
             rail
             Divider()
@@ -390,6 +391,18 @@ struct ContentView: View {
                 .toolbar { toolbar }
             }
             .navigationSplitViewStyle(.balanced)
+        }
+
+            // Everything transient goes here and only here, so the toolbar never changes
+            // shape while work is running.
+            Divider()
+            StatusBar(
+                runner: runner,
+                watching: watchSources && !selection.isEmpty,
+                sources: selection.count,
+                spend: sessionSpendLabel,
+                showActivity: { sidebarTab = .log; chrome.columnVisibility = .all }
+            )
         }
         // The rail, the panel's own floor (matching the min above), plus the detail pane's.
         .frame(minWidth: railWidth + 244 + SplitLayout.minWidth(
@@ -451,6 +464,22 @@ struct ContentView: View {
         ) { outcome in
             if case .success(let urls) = outcome { add(urls) }
         }
+    }
+
+    /// The session's spend for the status bar, or nil when nothing has been billed yet.
+    ///
+    /// Currencies are listed rather than added together, the same as everywhere else that
+    /// shows money: a rate typed in for a provider that does not bill in dollars is not
+    /// dollars, and a bar is no place to start pretending otherwise.
+    private var sessionSpendLabel: String? {
+        guard let sessionSpend, sessionSpend.calls > 0 else { return nil }
+        guard !sessionSpend.byCurrency.isEmpty else {
+            return "\(sessionSpend.calls) unpriced call\(sessionSpend.calls == 1 ? "" : "s")"
+        }
+        let amounts = sessionSpend.byCurrency.sorted { $0.key < $1.key }
+            .map { $1.formatted(.currency(code: $0)) }
+            .joined(separator: " + ")
+        return "\(amounts) this session"
     }
 
     private var subtitle: String {
