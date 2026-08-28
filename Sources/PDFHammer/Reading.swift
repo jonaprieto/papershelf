@@ -278,52 +278,6 @@ struct NotesRail: View {
 
 // MARK: - Metadata
 
-/// A thin line along the bottom for what the app is doing when nothing asked it to:
-/// watching, taking in what turned up, or idle. Its own view so the pane's modifier chain
-/// does not grow any further.
-struct StatusStrip: View {
-    @ObservedObject var runner: Runner
-    let watching: Bool
-
-    private var absorbingText: String {
-        runner.total > 0 ? "Reading \(runner.done) of \(runner.total) new files"
-                         : "Checking what changed"
-    }
-
-    private var watchingText: String {
-        let count = runner.lastAbsorbed
-        guard count > 0 else { return "Watching for changes" }
-        return "Watching. Last took in \(count) new file" + (count == 1 ? "." : "s.")
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if runner.absorbing {
-                ProgressView().controlSize(.small)
-                Text(absorbingText)
-            } else if watching {
-                Image(systemName: "eye").foregroundStyle(.secondary)
-                Text(watchingText)
-            } else {
-                Image(systemName: "eye.slash").foregroundStyle(.tertiary)
-                Text("Not watching")
-            }
-            Spacer()
-            if runner.showingCached {
-                Label("From last time", systemImage: "clock.arrow.circlepath")
-            }
-            Text("\(runner.results.count) files").monospacedDigit()
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
-    }
-}
-
 // MARK: - Contents
 
 /// The document's own table of contents, on the page's left where a reader expects it.

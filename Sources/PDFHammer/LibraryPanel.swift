@@ -32,12 +32,6 @@ extension ContentView {
                     LabeledContent("Projects") { count(librarySummary?.projects) }
                 } header: {
                     Text("Library")
-                } footer: {
-                    Text("Kept in a small database under Application Support and updated as "
-                         + "the watcher notices changes. The MCP server reads the same one.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section {

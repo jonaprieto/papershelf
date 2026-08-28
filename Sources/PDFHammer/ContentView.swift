@@ -440,13 +440,17 @@ struct ContentView: View {
     /// because it is where the files come from, the folder tree under it because that is
     /// the same question one level down.
     private var sidebarPanel: some View {
-        Form {
+        // A sidebar, not a settings sheet. A grouped Form gives every section a white card
+        // and a paragraph of explanation, which is right for the settings window and wrong
+        // for the one column that answers "where am I": there the rows want to be small,
+        // dense and close together.
+        List {
             sourcesPanel
             explorerPanel
             tagsPanel
             libraryPanel
         }
-        .formStyle(.grouped)
+        .listStyle(.sidebar)
         .frame(maxWidth: .infinity)
     }
 
@@ -468,12 +472,6 @@ struct ContentView: View {
             }
         } header: {
             Text("Tags")
-        } footer: {
-            Text("Biggest shelf first. Click a tag to load the catalogue with its "
-                 + "documents; right-click to rename or delete it everywhere.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .task { await reloadTagCounts() }
         .alert("Rename Tag", isPresented: $renamingTag, presenting: tagBeingRenamed) { tag in
@@ -588,13 +586,6 @@ struct ContentView: View {
                 .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
                 .tip("Fold every folder")
             }
-        } footer: {
-            Text("The same files the results view shows, organised for browsing. "
-                 + "Selecting one here selects it everywhere; right-click a folder to "
-                 + "open it in the catalogue.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .task(id: runner.results.count) {
             explorerTree = buildExplorerTree(runner.results)

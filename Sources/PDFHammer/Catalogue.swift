@@ -247,10 +247,6 @@ struct ResultsPane: View {
                     }
                     split
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if !reading {
-                        Divider()
-                        StatusStrip(runner: runner, watching: watching)
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -750,11 +746,26 @@ struct ResultsPane: View {
         VStack(spacing: 0) {
             bibBar
             Divider()
-            if bibShowsFile {
-                BibFileView(entries: runner.bib, order: $bibOrder, completeOnly: $bibCompleteOnly,
-                            style: bibStyle)
-            } else {
-                bibEntryList
+            // Side by side where there is room. The entries and the file they generate are
+            // the same thing seen two ways, and answering "is this entry right" by
+            // flipping a switch and losing the other half is the slow way to do it. Below
+            // 900 points there is not room for both, and the switch decides.
+            GeometryReader { geometry in
+                if geometry.size.width >= 900 {
+                    HStack(spacing: 0) {
+                        bibEntryList
+                            .frame(width: max(380, geometry.size.width * 0.42))
+                        Divider()
+                        BibFileView(entries: runner.bib, order: $bibOrder,
+                                    completeOnly: $bibCompleteOnly, style: bibStyle)
+                            .frame(maxWidth: .infinity)
+                    }
+                } else if bibShowsFile {
+                    BibFileView(entries: runner.bib, order: $bibOrder,
+                                completeOnly: $bibCompleteOnly, style: bibStyle)
+                } else {
+                    bibEntryList
+                }
             }
         }
         .onAppear {

@@ -14,7 +14,37 @@ import PDFHammerCore
 enum KeyStore {
     private static let service = "com.jonaprieto.pdfhammer"
 
+    /// Development and tests skip the Keychain entirely.
+    ///
+    /// An ad-hoc signed build gets a new signature every time it is rebuilt, and the
+    /// Keychain treats each one as a different application: every launch during a working
+    /// session raises a modal asking for permission to read a key it granted a minute ago.
+    /// Debug builds and the test suite keep the value in memory for the life of the
+    /// process instead. Release builds — the ones people actually install — are untouched
+    /// and still use the Keychain, which is the whole point of it being there.
+    private static var developmentOnly: Bool {
+        #if DEBUG
+        return true
+        #else
+        return ProcessInfo.processInfo.environment["PDFHAMMER_SKIP_KEYCHAIN"] != nil
+        #endif
+    }
+
+    /// Only ever touched when `developmentOnly` is true, and never written to disk.
+    private static var inMemory: [String: String] = [:]
+    private static let lock = NSLock()
+
     static func set(_ value: String, account: String) {
+        if developmentOnly {
+            lock.lock()
+            if value.isEmpty { inMemory.removeValue(forKey: account) } else { inMemory[account] = value }
+            lock.unlock()
+            return
+        }
+        setInKeychain(value, account: account)
+    }
+
+    private static func setInKeychain(_ value: String, account: String) {
         remove(account: account)
         guard !value.isEmpty else { return }
         let query: [String: Any] = [
@@ -28,6 +58,11 @@ enum KeyStore {
     }
 
     static func get(account: String) -> String? {
+        if developmentOnly {
+            lock.lock()
+            defer { lock.unlock() }
+            return inMemory[account]
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -45,6 +80,12 @@ enum KeyStore {
     }
 
     static func remove(account: String) {
+        if developmentOnly {
+            lock.lock()
+            inMemory.removeValue(forKey: account)
+            lock.unlock()
+            return
+        }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

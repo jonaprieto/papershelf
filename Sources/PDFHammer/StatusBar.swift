@@ -27,6 +27,11 @@ struct StatusBar: View {
 
             Spacer(minLength: 8)
 
+            if runner.showingCached {
+                Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
+                separator
+            }
+
             ForEach(warnings, id: \.text) { warning in
                 Text(warning.text).foregroundStyle(warning.colour)
                 separator
@@ -41,9 +46,7 @@ struct StatusBar: View {
                 Circle()
                     .fill(watching ? Color.green : Color.secondary.opacity(0.5))
                     .frame(width: 6, height: 6)
-                Text(watching
-                     ? "Watching \(sources) source\(sources == 1 ? "" : "s")"
-                     : "Not watching")
+                Text(watchingLabel)
             }
         }
         .font(.caption)
@@ -53,6 +56,17 @@ struct StatusBar: View {
         .frame(height: Metric.statusBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
+    }
+
+    /// What the watcher is doing, including the thing it last did — a file arriving while
+    /// you are looking at something else is worth one line of acknowledgement.
+    private var watchingLabel: String {
+        guard watching else { return "Not watching" }
+        let taken = runner.lastAbsorbed
+        guard taken > 0 else {
+            return "Watching \(sources) source\(sources == 1 ? "" : "s")"
+        }
+        return "Took in \(taken) new file\(taken == 1 ? "" : "s")"
     }
 
     private var separator: some View {
@@ -75,6 +89,15 @@ struct StatusBar: View {
                     .frame(width: 120)
                 Text("\(runner.done) of \(runner.total)")
                     .monospacedDigit()
+            }
+        case .idle where runner.absorbing:
+            // The watcher taking in files it just noticed. Its own line until now, in a
+            // second bar underneath this one.
+            HStack(spacing: 7) {
+                ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12)
+                Text(runner.total > 0
+                     ? "Reading \(runner.done) of \(runner.total) new files"
+                     : "Checking what changed")
             }
         case .idle:
             Button { showingActivity.toggle() } label: {

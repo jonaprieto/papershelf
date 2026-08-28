@@ -427,9 +427,11 @@ struct ReviewInspector: View {
 
     @ViewBuilder
     private var actionRows: some View {
-        VStack(spacing: 7) {
-          ScrollView(.horizontal) {
-            HStack(spacing: 7) {
+        // Wrapping, not scrolling sideways. In a 320-point column a horizontal scroll
+        // view puts half the decisions off the edge with nothing to say they are there —
+        // which is how "Apply now" ends up invisible on the screen where it matters most.
+        VStack(alignment: .leading, spacing: 7) {
+          FlowLayout(spacing: 7) {
                 Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
                     .buttonStyle(.borderedProminent)
                 Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
@@ -447,13 +449,9 @@ struct ReviewInspector: View {
                     .disabled(!aiReady || runner.isThinking(item))
                     .tip(aiReady ? "Read the opening pages and suggest a title"
                              : "Add an API key in Settings first", key: "G")
-                Spacer(minLength: 0)
-            }
           }
-          .scrollIndicators(.hidden)
 
-          ScrollView(.horizontal) {
-            HStack(spacing: 7) {
+          FlowLayout(spacing: 7) {
                 Button(action: skip) { KeyLabel("S", "Skip") }
                     .tip("Leave this file exactly as it is", key: "S")
                 Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
@@ -462,7 +460,6 @@ struct ReviewInspector: View {
                 if decision != nil {
                     Button(action: reopen) { KeyLabel("R", "Reopen") }
                 }
-                Spacer(minLength: 0)
                 Button(action: applyNow) { KeyLabel("A", "Apply now") }
                     .disabled(decision == .applied)
                     .tint(Ink.green)
@@ -472,9 +469,7 @@ struct ReviewInspector: View {
                 Button(action: markDeleted) { KeyLabel("D", "Trash") }
                     .tint(Ink.red)
                     .tip("To the Trash on apply, recoverable", key: "D")
-            }
           }
-          .scrollIndicators(.hidden)
         }
     }
 
