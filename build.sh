@@ -20,6 +20,9 @@ cp "$BIN" "$APP/Contents/MacOS/PDFHammer"
 # path that survives every rebuild.
 cp "$BINDIR/PDFHammerMCP" "$APP/Contents/MacOS/pdf-hammer-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# Ad-hoc signed, so the Keychain would treat every rebuild as a different application and
+# ask again. The app reads this and keeps the API key in memory for the session instead.
+/usr/libexec/PlistBuddy -c "Add :PDFHammerAdHocBuild bool true" "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # The plugin listing in the ChatGPT app shows this, copied into the plugin folder at
 # install time. It has to travel inside the bundle: a built .app has no source checkout.

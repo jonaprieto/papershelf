@@ -26,7 +26,13 @@ enum KeyStore {
         #if DEBUG
         return true
         #else
-        return ProcessInfo.processInfo.environment["PDFHAMMER_SKIP_KEYCHAIN"] != nil
+        if ProcessInfo.processInfo.environment["PDFHAMMER_SKIP_KEYCHAIN"] != nil { return true }
+        // build.sh stamps this into the bundle it ad-hoc signs. An ad-hoc signature is a
+        // new identity on every rebuild, so the Keychain asks for permission again each
+        // time — the same modal the DEBUG bypass above exists to avoid, and the reason a
+        // locally built app was slower to work on than the debug binary. A signed release
+        // carries no such key and stores the credential where it belongs.
+        return Bundle.main.object(forInfoDictionaryKey: "PDFHammerAdHocBuild") as? Bool == true
         #endif
     }
 
