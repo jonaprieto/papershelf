@@ -37,22 +37,81 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .integrations: return "puzzlepiece.extension"
         }
     }
+
+    /// What someone might type looking for this pane, in their own words rather than the
+    /// app's. "Password" is in two panes and belongs in both; "dark mode" is not a phrase
+    /// this app uses anywhere and is exactly what a person will search for.
+    var keywords: [String] {
+        switch self {
+        case .general:
+            return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
+                    "folders", "watch", "scan", "open in", "view"]
+        case .files:
+            return ["password", "encrypted", "locked", "originals", "backup", "trash",
+                    "cache", "covers"]
+        case .naming:
+            return ["pattern", "rename", "case", "separator", "accents", "date", "year",
+                    "length", "tokens", "chips"]
+        case .bibtex:
+            return ["citation", "biblatex", "entry", "braces", "wrap", "fields", "cite"]
+        case .highlighters:
+            return ["colour", "color", "highlight", "marks", "meaning", "annotations"]
+        case .keyboard:
+            return ["shortcut", "keys", "bindings", "conflict", "rebind"]
+        case .ai:
+            return ["api key", "openai", "model", "endpoint", "price", "spend", "cost",
+                    "tokens"]
+        case .integrations:
+            return ["mcp", "claude", "codex", "chatgpt", "plugin", "markdown", "convert",
+                    "database", "sqlite"]
+        }
+    }
+
+    func matches(_ needle: String) -> Bool {
+        let text = needle.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !text.isEmpty else { return true }
+        return title.lowercased().contains(text) || keywords.contains { $0.contains(text) }
+    }
 }
 
 struct SettingsWindowView: View {
     @AppStorage("settingsPane") private var pane: SettingsPane = .general
     @StateObject private var palette = Palette()
+    @State private var search = ""
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsPane.allCases, selection: Binding(
+            VStack(spacing: 0) {
+                TextField("Search settings", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                paneList
+            }
+        } detail: {
+            detail
+        }
+        .frame(minWidth: 820, minHeight: 560)
+    }
+
+    /// Panes matching what was typed. Never empty: a search that matches nothing leaves
+    /// the whole list rather than an empty window with no way back.
+    private var shown: [SettingsPane] {
+        let matching = SettingsPane.allCases.filter { $0.matches(search) }
+        return matching.isEmpty ? SettingsPane.allCases : matching
+    }
+
+    private var paneList: some View {
+            List(shown, selection: Binding(
                 get: { Optional(pane) },
                 set: { if let new = $0 { pane = new } }
             )) { item in
                 Label(item.title, systemImage: item.icon).tag(item)
             }
             .navigationSplitViewColumnWidth(208)
-        } detail: {
+    }
+
+    private var detail: some View {
             Group {
                 switch pane {
                 case .general: GeneralSettings()
@@ -67,8 +126,6 @@ struct SettingsWindowView: View {
             }
             .frame(minWidth: 560, minHeight: 420)
             .navigationTitle(pane.title)
-        }
-        .frame(minWidth: 820, minHeight: 560)
     }
 }
 
@@ -79,6 +136,13 @@ struct GeneralSettings: View {
     @AppStorage("watchSources") private var watchSources = true
     @AppStorage("autoPreview") private var autoPreview = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
+    @AppStorage("readingTint") private var readingTint = true
+    @AppStorage("sources") private var storedSources = ""
+    @State private var addingSource = false
+
+    private var sources: [URL] {
+        storedSources.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+    }
 
     var body: some View {
         Form {
@@ -87,8 +151,62 @@ struct GeneralSettings: View {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Tint the page while reading in the dark", isOn: $readingTint)
             } header: {
                 Text("Appearance")
+            } footer: {
+                Text("Tinting rather than inverting, so figures and scanned plates stay "
+                     + "readable. Highlights drop to 30% so they tint the paper instead of "
+                     + "glowing off it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                if sources.isEmpty {
+                    Text("Nothing added yet").foregroundStyle(.secondary)
+                }
+                ForEach(sources, id: \.self) { url in
+                    HStack {
+                        Label(url.lastPathComponent, systemImage: "folder")
+                        Spacer()
+                        Text(url.deletingLastPathComponent().path)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Button {
+                            remove(url)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                    }
+                }
+                Button {
+                    addingSource = true
+                } label: {
+                    Label("Add a folder or a PDF", systemImage: "plus.circle")
+                }
+                .buttonStyle(.link)
+            } header: {
+                Text("Sources")
+            } footer: {
+                Text("Kept as a set of non-overlapping roots. Picking a folder absorbs "
+                     + "anything already selected inside it — a file reachable from two "
+                     + "roots would be attributed to whichever was scanned first, and that "
+                     + "root decides where its originals land.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .fileImporter(isPresented: $addingSource,
+                          allowedContentTypes: [.pdf, .folder],
+                          allowsMultipleSelection: true) { outcome in
+                guard case .success(let urls) = outcome else { return }
+                add(urls)
             }
 
             Section {
@@ -110,12 +228,25 @@ struct GeneralSettings: View {
         }
         .formStyle(.grouped)
     }
+
+    /// The same merge the sidebar does, through the same preference: a source added here
+    /// and a source added there have to end up as one non-overlapping set, or the two
+    /// lists disagree about what is being scanned.
+    private func add(_ urls: [URL]) {
+        let merged = mergedSources(sources, adding: urls)
+        storedSources = merged.map(\.path).joined(separator: "\n")
+    }
+
+    private func remove(_ url: URL) {
+        storedSources = sources.filter { $0 != url }.map(\.path).joined(separator: "\n")
+    }
 }
 
 // MARK: - Highlighters
 
 struct HighlighterSettings: View {
     @ObservedObject var palette: Palette
+    @AppStorage(Palette.labelForeignMarksKey) private var labelForeignMarks = true
 
     var body: some View {
         Form {
@@ -174,6 +305,20 @@ struct HighlighterSettings: View {
                 Text("Shown beside the bar as you highlight and next to every mark, so the "
                      + "convention is legible where it is used rather than remembered. The "
                      + "number keys follow this order.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Label them with the nearest colour I use", isOn: $labelForeignMarks)
+            } header: {
+                Text("Marks made in other apps")
+            } footer: {
+                Text("A book highlighted in Preview or Skim keeps its colours; this only "
+                     + "decides what those colours are called in your notes. Anything "
+                     + "further away than a close match stays plain “Highlight”, and "
+                     + "nothing is ever repainted.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -242,6 +387,9 @@ struct KeyboardSettings: View {
                 Spacer(minLength: 0)
                 Button("Restore all") { keymap.resetAll() }
                     .disabled(!keymap.hasCustomisations)
+                Button("Export…") { exportTable() }
+                    .help("Copies every command, where it works and what it answers to, "
+                          + "as Markdown")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -273,6 +421,21 @@ struct KeyboardSettings: View {
         }
         .onChange(of: recording) { startOrStopRecording() }
         .onDisappear { stopMonitoring() }
+    }
+
+    /// The whole table as Markdown, on the clipboard. A keyboard layout somebody has
+    /// tuned is worth being able to print, paste into notes, or hand to someone else.
+    private func exportTable() {
+        var lines = ["| Command | Where it works | Shortcut |", "| --- | --- | --- |"]
+        for (group, commands) in groups {
+            lines.append("| **\(group.label)** | | |")
+            for command in commands {
+                let key = keymap.shortcut(for: command)?.display ?? "—"
+                lines.append("| \(command.title) | \(command.scope.label) | \(key) |")
+            }
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
     @ViewBuilder
@@ -448,6 +611,11 @@ struct BibtexSettings: View {
 /// Where the MCP server finally has a face. It has shipped inside the app for a while and
 /// the only way to find out how to point an editor at it was the README.
 struct IntegrationSettings: View {
+    @AppStorage("defaultConverter") private var defaultConverter = ""
+    @AppStorage("offerChatGPT") private var offerChatGPT = true
+    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
+    @State private var installed: Set<String> = []
+
     private var server: URL? { ChatGPTPlugin.serverExecutableURL() }
 
     private var claudeCode: String {
@@ -500,6 +668,46 @@ struct IntegrationSettings: View {
             SettingsPanel(sections: .plugin)
 
             Section {
+                Picker("Converter", selection: $defaultConverter) {
+                    Text("Built-in reader").tag("")
+                    ForEach(markdownConverters, id: \.name) { converter in
+                        Text(installed.contains(converter.name)
+                             ? converter.name
+                             : "\(converter.name) — not installed")
+                            .tag(converter.name)
+                    }
+                }
+            } header: {
+                Text("Converting to Markdown")
+            } footer: {
+                Text("The built-in reader never leaves the app and needs nothing "
+                     + "installed; the others are found on your PATH and are better on "
+                     + "scanned pages and equations. This is the one the conversion sheet "
+                     + "starts on.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Offer “Open in ChatGPT” beside a highlight", isOn: $offerChatGPT)
+                    .disabled(!ChatGPTHandoff.isInstalled)
+                Toggle("Also offer “Copy for ChatGPT”", isOn: $offerChatGPTCopy)
+                    .disabled(!ChatGPTHandoff.isInstalled)
+                if !ChatGPTHandoff.isInstalled {
+                    Text("ChatGPT is not installed, so neither is offered.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Hand-off while reading")
+            } footer: {
+                Text("Neither sends anything on its own: the passage lands in the composer "
+                     + "and you decide. The app can address a new thread but not one you "
+                     + "already have open, which is why copying is offered as well.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
                 if let database = libraryDatabaseURL() {
                     LabeledContent("Database") {
                         HStack {
@@ -525,6 +733,12 @@ struct IntegrationSettings: View {
             }
         }
         .formStyle(.grouped)
+        .task {
+            // Which tools are actually on this machine. `locate` looks at the places a
+            // GUI app's inherited PATH does not have, which is why a converter installed
+            // by Homebrew was invisible before.
+            installed = Set(markdownConverters.filter { locate($0.executable) != nil }.map(\.name))
+        }
     }
 
     private func copy(_ text: String) {

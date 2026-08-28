@@ -136,3 +136,33 @@ final class CommandsTests: XCTestCase {
                        "a command is listed twice")
     }
 }
+
+/// The settings window's own search. A pane list of eight is short enough to read and
+/// still the wrong thing to make someone read when they know the word they want.
+final class SettingsSearchTests: XCTestCase {
+
+    func testAnEmptySearchMatchesEveryPane() {
+        for pane in SettingsPane.allCases {
+            XCTAssertTrue(pane.matches(""), "\(pane.title)")
+            XCTAssertTrue(pane.matches("   "))
+        }
+    }
+
+    func testAPaneIsFoundByItsOwnName() {
+        XCTAssertTrue(SettingsPane.keyboard.matches("keyb"))
+        XCTAssertFalse(SettingsPane.keyboard.matches("bibtex"))
+    }
+
+    /// The words a person uses, not the app's. "Dark mode" appears nowhere in the
+    /// interface and is exactly what someone will type looking for the theme.
+    func testAPaneIsFoundByWhatSomeoneWouldCallIt() {
+        XCTAssertTrue(SettingsPane.general.matches("dark mode"))
+        XCTAssertTrue(SettingsPane.ai.matches("api key"))
+        XCTAssertTrue(SettingsPane.integrations.matches("mcp"))
+        XCTAssertTrue(SettingsPane.files.matches("password"))
+    }
+
+    func testSearchIsCaseInsensitive() {
+        XCTAssertTrue(SettingsPane.bibtex.matches("BibLaTeX"))
+    }
+}

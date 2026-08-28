@@ -93,7 +93,9 @@ struct MarkdownSheet: View {
     @ObservedObject var converting: Converting
     @Environment(\.dismiss) private var dismiss
     /// By name, because a Picker tag has to be Hashable and a converter carries a closure.
-    @State private var chosen: String = ""
+    /// Starts on whatever Settings › Integrations picked, so the choice is made once
+    /// rather than on every sheet.
+    @AppStorage("defaultConverter") private var chosen: String = ""
     @State private var saving = false
 
     private var installed: [(MarkdownConverter, URL)] { converting.installed }

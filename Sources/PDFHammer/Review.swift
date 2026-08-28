@@ -70,6 +70,11 @@ struct ReviewInspector: View {
     /// of its own is a tab, so "are the notes showing" is a question about the inspector.
     private var showingNotes: Bool { panel == .notes && !collapsed }
     @AppStorage("contentsShown") private var contentsShown = false
+    @AppStorage("readingTint") private var readingTint = true
+    @AppStorage("offerChatGPT") private var offerChatGPT = true
+    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
+    @Environment(\.colorScheme) private var colourScheme
+    private var isDark: Bool { colourScheme == .dark }
     @State private var addingNote = false
     @State private var noteText = ""
     @AppStorage("lastHighlightColour") private var lastColourID = ""
@@ -196,6 +201,7 @@ struct ReviewInspector: View {
                 PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.quaternary.opacity(0.35))
+                .overlay { nightTint }
                 .overlay(alignment: .topTrailing) { lockedOverlay }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
             }
@@ -222,6 +228,21 @@ struct ReviewInspector: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    /// Reading in the dark: the page tinted rather than inverted.
+    ///
+    /// Inverting a scanned plate or a figure turns it into a negative, which is worse than
+    /// a bright page. Multiplying a warm dark colour over the page dims the paper and
+    /// leaves the ink and the artwork where they were, and it takes the highlights down
+    /// with it so they tint the paper instead of glowing off it.
+    @ViewBuilder
+    private var nightTint: some View {
+        if readingTint && isDark {
+            Color(red: 0.42, green: 0.40, blue: 0.36)
+                .blendMode(.multiply)
+                .allowsHitTesting(false)
         }
     }
 
@@ -340,7 +361,8 @@ struct ReviewInspector: View {
             GeometryReader { geometry in
                 // Wider when the ChatGPT menu is in it: the bar's width is fixed, so a
                 // new target has to be paid for rather than squeezed out of the swatches.
-                let bar = CGSize(width: ChatGPTHandoff.isInstalled ? 284 : 250, height: 40)
+                let handoff = ChatGPTHandoff.isInstalled && (offerChatGPT || offerChatGPTCopy)
+                let bar = CGSize(width: handoff ? 284 : 250, height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
                 let above = box.minY - bar.height - 8
@@ -394,10 +416,14 @@ struct ReviewInspector: View {
             // carries the swatches, a divider and the note button. Hover is reported into
             // the same immediate label the rest of the bar uses, since `.help` waits a
             // second or two before saying anything.
-            if ChatGPTHandoff.isInstalled {
+            if ChatGPTHandoff.isInstalled && (offerChatGPT || offerChatGPTCopy) {
                 Menu {
-                    Button("Open in ChatGPT") { handOffSelection(copyOnly: false) }
-                    Button("Copy for ChatGPT") { handOffSelection(copyOnly: true) }
+                    if offerChatGPT {
+                        Button("Open in ChatGPT") { handOffSelection(copyOnly: false) }
+                    }
+                    if offerChatGPTCopy {
+                        Button("Copy for ChatGPT") { handOffSelection(copyOnly: true) }
+                    }
                 } label: {
                     Image(systemName: "bubble.left.and.text.bubble.right")
                 }

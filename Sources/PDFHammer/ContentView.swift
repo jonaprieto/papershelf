@@ -356,6 +356,17 @@ struct ContentView: View {
             return true
         }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
+        // Sources can be added in Settings › General as well as here, and both write the
+        // same preference. Following it means the two lists cannot disagree about what is
+        // being scanned.
+        .onChange(of: storedSources) { _, stored in
+            let wanted = stored.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+            guard wanted.map(\.path) != selection.map(\.path) else { return }
+            selection = wanted.filter { FileManager.default.fileExists(atPath: $0.path) }
+            startWatching()
+            ensureSelectionAfterSourceChange()
+            if !selection.isEmpty { preview() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openProject)) { note in
             guard let id = note.userInfo?["id"] as? Int64 else { return }
             Task {

@@ -19,6 +19,8 @@ struct MarkRow: View {
 
     @State private var editing = false
     @State private var text = ""
+    @AppStorage("offerChatGPT") private var offerChatGPT = true
+    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
 
     /// The colour it was actually painted with, whatever palette that came from.
     private var colour: Color { Color(nsColor: mark.colour ?? .systemYellow) }
@@ -76,13 +78,18 @@ struct MarkRow: View {
                 }
                 Spacer(minLength: 0)
 
-                if ChatGPTHandoff.isInstalled, !mark.quoted.isEmpty || !mark.note.isEmpty {
+                if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
+                   !mark.quoted.isEmpty || !mark.note.isEmpty {
                     Menu {
-                        Button("Open in ChatGPT") {
-                            ChatGPTHandoff.open(handoffPrompt)
+                        if offerChatGPT {
+                            Button("Open in ChatGPT") {
+                                ChatGPTHandoff.open(handoffPrompt)
+                            }
                         }
-                        Button("Copy for ChatGPT") {
-                            ChatGPTHandoff.copy(handoffPrompt)
+                        if offerChatGPTCopy {
+                            Button("Copy for ChatGPT") {
+                                ChatGPTHandoff.copy(handoffPrompt)
+                            }
                         }
                     } label: {
                         Image(systemName: "bubble.left.and.text.bubble.right")
