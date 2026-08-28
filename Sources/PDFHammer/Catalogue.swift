@@ -1047,9 +1047,25 @@ struct ResultsPane: View {
     // MARK: Review inspector
 
     @ViewBuilder
+    /// The group the selected file belongs to, if it is one of a set of copies.
+    private var selectedDuplicateGroup: DuplicateGroup? {
+        guard mode == .duplicates, let selected else { return nil }
+        return runner.duplicates.first { group in
+            group.items.contains { $0.key == selected }
+        }
+    }
+
     private func inspector(panelFits: Bool) -> some View {
         Group {
-        if let item = selectedItem {
+        // Choosing between two copies means seeing them beside each other. In the view
+        // whose whole job is that decision, this is what the pane should hold.
+        if let group = selectedDuplicateGroup {
+            DuplicateCompare(
+                group: group,
+                keep: { runner.keep($0, inGroup: group.id) },
+                trashExtras: { runner.trashExtras(of: group.id) }
+            )
+        } else if let item = selectedItem {
             ReviewInspector(
                 panelFits: panelFits,
                 item: item,

@@ -723,6 +723,15 @@ struct ContentView: View {
             .tip("Hide everything but the page", key: "⌘⇧R")
         }
 
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                chrome.inspectorCollapsed.toggle()
+            } label: {
+                Label("Inspector", systemImage: "sidebar.right")
+            }
+            .tip("Info, rename, notes and the citation", key: "⌥⌘I")
+        }
+
         ToolbarItemGroup(placement: .primaryAction) {
             switch runner.phase {
             case .scanning:
