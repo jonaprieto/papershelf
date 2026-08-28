@@ -76,7 +76,13 @@ single PDF.
 
 ## The window
 
-A sidebar, the document, an inspector, and a status bar along the bottom.
+A sidebar, the document, an inspector beside it, and a status bar along the bottom.
+
+The inspector has four tabs — Info, Rename, Notes, Cite — and sits next to the page rather
+than under it. The notes used to be a column of their own, 240 fixed points that the
+window's minimum width had to reserve for whether or not anyone had opened them; they are
+a tab now. Neither the inspector nor the contents rail widens the window: asked for where
+there is no room, they fold, and come back the moment there is.
 
 The sidebar is one sectioned list — sources and their folders, tags, the library — and
 nothing else. Everything you set once lives in a settings window instead of sharing that

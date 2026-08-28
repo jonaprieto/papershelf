@@ -15,8 +15,20 @@ final class Chrome: ObservableObject {
     /// Hides everything that is about deciding, leaving the page.
     @AppStorage("readingMode") var reading = false
     /// Shared with the inspector through the same keys, so the menu can reach them.
-    @AppStorage("notesShown") var notesShown = false
     @AppStorage("contentsShown") var contentsShown = false
+    @AppStorage("inspectorCollapsed") var inspectorCollapsed = false
+    @AppStorage("inspectorPanel") var inspectorPanel: InspectorPanel = .rename
+
+    /// Showing the notes means opening the inspector on its Notes tab. They were a column
+    /// of their own with their own switch; now there is one inspector and ⌘⇧N says which
+    /// of its tabs to be on, which is also why it can no longer be "shown" while the
+    /// inspector is shut.
+    func showNotes() {
+        inspectorPanel = .notes
+        inspectorCollapsed = false
+    }
+
+    var notesShown: Bool { !inspectorCollapsed && inspectorPanel == .notes }
 
     /// Not animated, and neither are the notes and contents rails.
     ///
@@ -52,9 +64,13 @@ struct PDFHammerApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
-                    chrome.notesShown.toggle()
+                    if chrome.notesShown { chrome.inspectorCollapsed = true } else { chrome.showNotes() }
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button(chrome.inspectorCollapsed ? "Show Inspector" : "Hide Inspector") {
+                    chrome.inspectorCollapsed.toggle()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
                 Button(chrome.contentsShown ? "Hide Contents" : "Show Contents") {
                     chrome.contentsShown.toggle()
                 }

@@ -145,9 +145,13 @@ struct NotesRail: View {
     let title: String
     let source: String
     let close: () -> Void
+    /// Its own bar, with the count, the export menu and the way out. Off when it sits in
+    /// the inspector, which already has one of those and does not need two.
+    var showsHeader: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if showsHeader {
             HStack {
                 Text("Notes").font(.callout.weight(.semibold))
                 Spacer()
@@ -189,6 +193,7 @@ struct NotesRail: View {
             .background(.bar)
 
             Divider()
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {

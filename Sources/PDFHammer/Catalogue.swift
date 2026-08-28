@@ -45,7 +45,6 @@ struct ResultsPane: View {
     @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
-    @AppStorage("notesShown") private var notesShown = false
     @AppStorage("contentsShown") private var contentsShown = false
     @StateObject private var annotator = Annotator()
     @State private var addingNote = false
@@ -910,38 +909,26 @@ struct ResultsPane: View {
             // not a sibling here, so it only needs to widen the inspector's own floor,
             // not the outer reservation `inspectorMaximum` makes for the browser.
             let contentsOpen = contentsShown && !annotator.contents.isEmpty
-            // Asked for, and there is room: otherwise the rail folds away rather than
-            // pushing the panes beside it off the edge of the window.
-            let notesOpen = notesShown && SplitLayout.roomForNotes(
-                available: geometry.size.width, contentsShown: contentsOpen)
             let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
             let maximum = SplitLayout.inspectorMaximum(
-                available: geometry.size.width, notesShown: notesOpen, contentsShown: contentsOpen)
+                available: geometry.size.width, contentsShown: contentsOpen)
             // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
             // when the window is narrower than the floor, and the pane is then drawn at a
             // width the window cannot show.
             let width = SplitLayout.inspectorWidth(
                 preferred: inspectorWidth, available: geometry.size.width,
-                notesShown: notesOpen, contentsShown: contentsOpen)
+                contentsShown: contentsOpen)
             HStack(spacing: 0) {
                 // Reading gives the whole window to the page.
                 if !reading {
                     browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     divider(width: width, minimum: minimum, maximum: maximum)
                 }
-                inspector
+                inspector(panelFits: SplitLayout.roomForPanel(
+                        inspectorWidth: reading ? geometry.size.width : width,
+                        contentsShown: contentsOpen))
                     .frame(width: reading ? nil : width)
                     .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
-                if notesOpen {
-                    Divider()
-                    NotesRail(annotator: annotator, palette: palette,
-                              addingNote: $addingNote, noteText: $noteText,
-                              lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
-                              title: selectedItem?.destinationName ?? "Notes",
-                              source: selectedItem?.currentURL.path ?? "",
-                              close: { notesShown = false })
-                        .frame(width: 240)
-                }
             }
         }
     }
@@ -999,9 +986,11 @@ struct ResultsPane: View {
     // MARK: Review inspector
 
     @ViewBuilder
-    private var inspector: some View {
+    private func inspector(panelFits: Bool) -> some View {
+        Group {
         if let item = selectedItem {
             ReviewInspector(
+                panelFits: panelFits,
                 item: item,
                 runner: runner,
                 passwords: passwords,
@@ -1043,6 +1032,7 @@ struct ResultsPane: View {
                 systemImage: "sidebar.right",
                 description: Text("Pick a file to see it.")
             )
+        }
         }
     }
 

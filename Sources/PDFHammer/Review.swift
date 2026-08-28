@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 import PDFHammerCore
 
 struct ReviewInspector: View {
+    /// Whether there is room beside the page for the panel. Decided by the pane that knows
+    /// how wide this one is, so the panel folds away on a narrow window instead of the
+    /// window having to be wide enough for it whether or not it is open.
+    let panelFits: Bool
     let item: Item
     @ObservedObject var runner: Runner
     let passwords: [String]
@@ -49,7 +53,9 @@ struct ReviewInspector: View {
     @State var citationImprovedByAI = false
     @State var citationNote: String?
     @AppStorage("inspectorCollapsed") private var collapsed = false
-    @AppStorage("notesShown") private var notesShown = false
+    /// The inspector is on its Notes tab and open. What used to be a rail with a switch
+    /// of its own is a tab, so "are the notes showing" is a question about the inspector.
+    private var showingNotes: Bool { panel == .notes && !collapsed }
     @AppStorage("contentsShown") private var contentsShown = false
     @State private var addingNote = false
     @State private var noteText = ""
@@ -69,7 +75,7 @@ struct ReviewInspector: View {
     }
 
     /// While reading, the deciding controls stay out of the way.
-    private var showBottom: Bool { !collapsed && !reading }
+    private var showBottom: Bool { !collapsed && !reading && panelFits }
 
     private var decision: Decision? { runner.decision(for: item) }
     private var isEdited: Bool { sanitizedFilename(draft) != item.destinationName }
@@ -92,18 +98,35 @@ struct ReviewInspector: View {
         return folder.isEmpty ? "in the selected folder" : folder + "/"
     }
 
+    /// The marks on this document, inside the inspector rather than in a column of its
+    /// own. It was a fixed 240 points that the window's minimum width had to reserve for
+    /// whether or not anyone had opened it; here it costs nothing until it is asked for.
+    private var notesPanel: some View {
+        NotesRail(annotator: annotator, palette: palette,
+                  addingNote: $addingNote, noteText: $noteText,
+                  lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
+                  title: item.destinationName,
+                  source: item.currentURL.path,
+                  close: {},
+                  showsHeader: false)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-                // The rail's width is read off the room this inspector actually got, so on
-                // a window too narrow for both it is the chapter list that narrows and not
-                // the page that is squeezed to nothing, or worse, pushed off the edge.
-                GeometryReader { inspector in
+        // The page and the panel beside it, rather than stacked. The panel was a drawer
+        // under the page capped at 300 points, which is why the notes needed a column of
+        // their own to be readable at all — and that column was 240 fixed points the
+        // window's minimum width had to reserve for whether or not anyone opened it.
+        HStack(spacing: 0) {
+                // The contents rail's width is read off the room the page actually got, so
+                // on a window too narrow for both it is the chapter list that narrows and
+                // not the page that is squeezed to nothing, or worse, pushed off the edge.
+                GeometryReader { page in
                 HStack(spacing: 0) {
                     if contentsShown && !annotator.contents.isEmpty {
                         ContentsRail(annotator: annotator,
                                      close: { contentsShown = false })
                             .frame(width: SplitLayout.contentsRailWidth(
-                                inspectorWidth: inspector.size.width))
+                                inspectorWidth: page.size.width))
                         Divider()
                     }
                     PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
@@ -114,23 +137,25 @@ struct ReviewInspector: View {
                 }
                 }
 
-                Divider()
-                panelHeader
-
                 if showBottom {
                     Divider()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            switch panel {
-                            case .rename: renamePanel
-                            case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags)
-                            case .bibtex: bibtexPanel
+                    VStack(alignment: .leading, spacing: 0) {
+                        panelHeader
+                        Divider()
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                                switch panel {
+                                case .rename: renamePanel
+                                case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags)
+                                case .notes: notesPanel
+                                case .bibtex: bibtexPanel
+                                }
                             }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxHeight: 300)
+                    .frame(width: Metric.inspectorIdeal)
                 }
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
@@ -190,20 +215,20 @@ struct ReviewInspector: View {
                 .tip("Open in the default PDF viewer", key: "O")
 
             Button {
-                notesShown.toggle()
+                if panel == .notes && !collapsed { collapsed = true } else { panel = .notes; collapsed = false }
             } label: {
                 if reading {
-                    Label(notesShown ? "Hide notes" : "Notes",
-                          systemImage: notesShown ? "sidebar.trailing" : "note.text")
+                    Label(showingNotes ? "Hide notes" : "Notes",
+                          systemImage: showingNotes ? "sidebar.trailing" : "note.text")
                 } else {
-                    Image(systemName: notesShown ? "sidebar.trailing" : "note.text")
+                    Image(systemName: showingNotes ? "sidebar.trailing" : "note.text")
                 }
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(notesShown ? Color.accentColor : .secondary)
-            .help(notesShown ? "Hide the notes (⌘⇧N)" : "Show notes and highlights (⌘⇧N)")
+            .foregroundStyle(showingNotes ? Color.accentColor : .secondary)
+            .help(showingNotes ? "Hide the notes (⌘⇧N)" : "Show notes and highlights (⌘⇧N)")
             .overlay(alignment: .topTrailing) {
-                if !annotator.marks.isEmpty && !notesShown {
+                if !annotator.marks.isEmpty && !showingNotes {
                     Circle()
                         .fill(Ink.amber)
                         .frame(width: 6, height: 6)
@@ -260,7 +285,8 @@ struct ReviewInspector: View {
                 Button {
                     annotator.highlightSelection(colour: style.nsColor)
                     lastColourID = style.id.uuidString
-                    notesShown = true
+                    panel = .notes
+                    collapsed = false
                 } label: {
                     Circle()
                         .fill(style.swatch)
@@ -278,7 +304,8 @@ struct ReviewInspector: View {
             Divider().frame(height: 16)
 
             Button {
-                notesShown = true
+                panel = .notes
+                collapsed = false
                 addingNote = true
             } label: {
                 Image(systemName: "text.bubble")
@@ -641,14 +668,15 @@ struct PDFPreview: NSViewRepresentable {
 
 /// Which panel the inspector's bottom pane shows.
 enum InspectorPanel: String, CaseIterable, Identifiable {
-    case rename, details, bibtex
+    case details, rename, notes, bibtex
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .details: return "Info"
         case .rename: return "Rename"
-        case .details: return "Details"
-        case .bibtex: return "BibTeX"
+        case .notes: return "Notes"
+        case .bibtex: return "Cite"
         }
     }
 }
