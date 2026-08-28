@@ -9,6 +9,18 @@ import PDFHammerCore
 /// scroll to it. In the sidebar they sit in the same scrolling panel as every other tab,
 /// and there is one place to look for a setting rather than two.
 struct SettingsPanel: View {
+    /// Which of its sections to draw. The panel owns the key, the endpoint, the price
+    /// table, the ledger and the plugin, and those now live on two different settings
+    /// panes; a flag is cheaper than either pane owning a copy of the other's logic.
+    struct Sections: OptionSet {
+        let rawValue: Int
+        static let ai = Sections(rawValue: 1 << 0)
+        static let plugin = Sections(rawValue: 1 << 1)
+        static let all: Sections = [.ai, .plugin]
+    }
+
+    var sections: Sections = .all
+
     @AppStorage("aiModel") private var model = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
@@ -44,6 +56,7 @@ struct SettingsPanel: View {
         // Bare Sections, like every other tab: the sidebar owns the Form, and nesting a
         // second one inside it boxes and indents this tab differently from its siblings.
         Group {
+            if sections.contains(.ai) {
             Section {
                 Toggle("Use OPENAI_API_KEY from the environment", isOn: $useEnvironment)
                 if useEnvironment {
@@ -142,7 +155,9 @@ struct SettingsPanel: View {
             } header: {
                 Text("AI spend")
             }
+            }
 
+            if sections.contains(.plugin) {
             Section {
                 chatGPTPluginRow
             } header: {
@@ -158,9 +173,10 @@ struct SettingsPanel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            }
         }
         .onAppear { key = StoredKey.shared.value ?? "" }
-        .task { await loadEntries() }
+        .task { if sections.contains(.ai) { await loadEntries() } }
     }
 
     // MARK: - Price for the currently chosen model

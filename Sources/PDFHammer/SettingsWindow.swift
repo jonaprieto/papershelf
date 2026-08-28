@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFHammerCore
 
 /// Settings, in a window of their own.
 ///
@@ -7,23 +8,29 @@ import AppKit
 /// looking at" and "what is my API key" at the same level and gave the sidebar two jobs.
 /// These are the things you set once and rarely return to; the sidebar is where you are.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, highlighters, keyboard
+    case general, bibtex, highlighters, keyboard, ai, integrations
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: return "General"
+        case .bibtex: return "BibTeX"
         case .highlighters: return "Highlighters"
         case .keyboard: return "Keyboard"
+        case .ai: return "AI & spend"
+        case .integrations: return "Integrations"
         }
     }
 
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .bibtex: return "text.quote"
         case .highlighters: return "highlighter"
         case .keyboard: return "keyboard"
+        case .ai: return "sparkles"
+        case .integrations: return "puzzlepiece.extension"
         }
     }
 }
@@ -45,8 +52,11 @@ struct SettingsWindowView: View {
             Group {
                 switch pane {
                 case .general: GeneralSettings()
+                case .bibtex: BibtexSettings()
                 case .highlighters: HighlighterSettings(palette: palette)
                 case .keyboard: KeyboardSettings()
+                case .ai: Form { SettingsPanel(sections: .ai) }.formStyle(.grouped)
+                case .integrations: IntegrationSettings()
                 }
             }
             .frame(minWidth: 560, minHeight: 420)
@@ -351,5 +361,168 @@ struct KeyboardSettings: View {
     private func stopMonitoring() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+    }
+}
+
+
+// MARK: - BibTeX
+
+struct BibtexSettings: View {
+    @AppStorage("bibType") private var type: BibType = .book
+    @AppStorage("bibLineWidth") private var lineWidth = 80
+    @AppStorage("bibIndent") private var indent = 2
+    @AppStorage("bibAlign") private var align = true
+    @AppStorage("bibDelimiter") private var delimiter: BibStyle.Delimiter = .braces
+    @AppStorage("bibTrailingComma") private var trailingComma = true
+    @AppStorage("bibBlankLines") private var blankLines = true
+    @AppStorage("bibSortFields") private var sortFields = false
+    @AppStorage("bibDropAllCaps") private var dropAllCaps = false
+    @AppStorage("bibOmitFile") private var omitFile = true
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Entry type", selection: $type) {
+                    ForEach(BibType.allCases) { Text("@\($0.rawValue)").tag($0) }
+                }
+                Toggle("Omit the file field", isOn: $omitFile)
+            } header: {
+                Text("Entries")
+            } footer: {
+                Text("The entry type decides what counts as missing. Publisher, journal and "
+                     + "institution are never written and never reported as missing, because "
+                     + "nothing here can read them off a PDF and a complaint you cannot act "
+                     + "on is just noise.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                LabeledContent("Line width") {
+                    HStack {
+                        Slider(value: Binding(
+                            get: { Double(lineWidth) },
+                            set: { lineWidth = Int($0) }
+                        ), in: 0...200, step: 10)
+                        Text(lineWidth == 0 ? "off" : "\(lineWidth)")
+                            .monospacedDigit()
+                            .frame(width: 30, alignment: .trailing)
+                    }
+                }
+                Picker("Indent", selection: $indent) {
+                    Text("2 spaces").tag(2)
+                    Text("4 spaces").tag(4)
+                    Text("None").tag(0)
+                }
+                Picker("Values in", selection: $delimiter) {
+                    Text("{braces}").tag(BibStyle.Delimiter.braces)
+                    Text("\"quotes\"").tag(BibStyle.Delimiter.quotes)
+                }
+                Toggle("Align the equals signs", isOn: $align)
+                Toggle("Trailing comma", isOn: $trailingComma)
+                Toggle("Blank line between entries", isOn: $blankLines)
+                Toggle("Sort fields alphabetically", isOn: $sortFields)
+                Toggle("Lowercase ALL-CAPS values", isOn: $dropAllCaps)
+            } header: {
+                Text("Formatting")
+            } footer: {
+                Text("A value longer than the line wraps onto indented continuations; a "
+                     + "single word longer than the budget is left whole, since breaking a "
+                     + "path to satisfy a column is worse than exceeding it.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Integrations
+
+/// Where the MCP server finally has a face. It has shipped inside the app for a while and
+/// the only way to find out how to point an editor at it was the README.
+struct IntegrationSettings: View {
+    private var server: URL? { ChatGPTPlugin.serverExecutableURL() }
+
+    private var claudeCode: String {
+        "claude mcp add pdf-hammer -- \"\(server?.path ?? "…")\""
+    }
+
+    private var codex: String {
+        """
+        [mcp_servers.pdf-hammer]
+        command = "\(server?.path ?? "…")"
+        """
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                if let server {
+                    LabeledContent("Server") {
+                        HStack {
+                            Text(server.path)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("Copy") { copy(server.path) }
+                        }
+                    }
+                } else {
+                    Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Ink.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                LabeledContent("Claude Code") {
+                    Button("Copy the command") { copy(claudeCode) }
+                }
+                LabeledContent("Codex") {
+                    Button("Copy the config") { copy(codex) }
+                }
+            } header: {
+                Text("Model Context Protocol")
+            } footer: {
+                Text("list_documents, search_documents, read_document, bibliography and "
+                     + "find_duplicates. A separate binary that holds no state, so every "
+                     + "call names the folder it works on, and nothing leaves the machine.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            SettingsPanel(sections: .plugin)
+
+            Section {
+                if let database = libraryDatabaseURL() {
+                    LabeledContent("Database") {
+                        HStack {
+                            Text(database.path)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([database])
+                            }
+                        }
+                    }
+                } else {
+                    Text("The database could not be located.").foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("The library")
+            } footer: {
+                Text("SQLite rather than a JSON file because two processes use it: the app "
+                     + "writes while the MCP server reads.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
