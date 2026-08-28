@@ -41,14 +41,6 @@ struct PDFHammerApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
-            // No Settings scene to open any more: ⌘, selects the settings tab in the
-            // sidebar, which is where the settings now live.
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") {
-                    NotificationCenter.default.post(name: .showSettings, object: nil)
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
                     .keyboardShortcut("z", modifiers: .command)
@@ -70,6 +62,12 @@ struct PDFHammerApp: App {
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
             }
+        }
+
+        // Settings are a window again. ⌘, is wired to this scene by the platform, which
+        // is also what puts the item in the app menu where people look for it.
+        Settings {
+            SettingsWindowView()
         }
     }
 }

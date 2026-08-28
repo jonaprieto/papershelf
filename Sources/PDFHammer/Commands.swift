@@ -319,6 +319,10 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
 /// without stranding anyone on an old copy of them.
 @MainActor
 final class Keymap: ObservableObject {
+    /// One map for the whole app. The settings window and the window that listens for the
+    /// keys are different scenes; two instances would drift until the next launch.
+    static let shared = Keymap()
+
     @Published private(set) var overrides: [Command: Shortcut?] = [:]
 
     private let defaultsKey = "keymap"
