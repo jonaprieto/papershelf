@@ -23,6 +23,11 @@ struct SettingsPanel: View {
 
     @AppStorage("aiModel") private var model = "gpt-4o-mini"
     @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
+    @AppStorage("autoIdentify") private var autoIdentify = false
+    /// Read from the endpoint when the key works. Empty until then, which is why the
+    /// chosen model is offered as its own row: an endpoint that cannot be reached must
+    /// not silently change which model is configured.
+    @State private var availableModels: [String] = []
     @AppStorage("aiUseEnvironment") private var useEnvironment = true
 
     /// The ledger's home. Nil only when the database could not be opened at all, in
@@ -114,6 +119,22 @@ struct SettingsPanel: View {
             }
 
             Section {
+                Picker("Model", selection: $model) {
+                    if !availableModels.contains(model) { Text(model).tag(model) }
+                    ForEach(availableModels, id: \.self) { Text($0).tag($0) }
+                }
+                Toggle("Ask on each new file as I reach it", isOn: $autoIdentify)
+            } header: {
+                Text("Model")
+            } footer: {
+                Text("Only for a file that is undecided and has never been asked about, so "
+                     + "browsing back over files already dealt with costs nothing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
                 HStack {
                     Button("Test connection", action: test).disabled(testing)
                     if testing { ProgressView().controlSize(.small) }
@@ -176,7 +197,14 @@ struct SettingsPanel: View {
             }
         }
         .onAppear { key = StoredKey.shared.value ?? "" }
-        .task { if sections.contains(.ai) { await loadEntries() } }
+        .task {
+            guard sections.contains(.ai) else { return }
+            await loadEntries()
+            let client = AIClient(baseURL: baseURL, model: model,
+                                  apiKey: resolvedKey(useEnvironment: useEnvironment))
+            guard !client.apiKey.isEmpty else { return }
+            availableModels = (try? await client.models()) ?? []
+        }
     }
 
     // MARK: - Price for the currently chosen model
@@ -427,6 +455,7 @@ struct SettingsPanel: View {
             }
             testing = false
             await loadEntries()
+            availableModels = (try? await client.models()) ?? availableModels
         }
     }
 }

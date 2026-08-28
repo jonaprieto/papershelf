@@ -1672,25 +1672,22 @@ struct ResultsPane: View {
         BusyOverlay(activity: runner.activity, scanning: runner.phase == .scanning)
     }
 
+    @ViewBuilder
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(hasSources ? "Ready to run" : "Nothing selected yet",
-                  systemImage: hasSources ? "wand.and.sparkles" : "tray.and.arrow.down")
-        } description: {
-            Text(hasSources
-                 ? "\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Plan first, then apply."
-                 : "Drop folders or PDFs anywhere in this window.")
-        } actions: {
-            if hasSources {
+        // Two different empty screens. "No sources" is the first thing a person ever sees
+        // and has to explain what the app is for; "sources but nothing scanned" is a
+        // button away from a shelf and needs no introduction.
+        if hasSources {
+            ContentUnavailableView {
+                Label("Ready to run", systemImage: "wand.and.sparkles")
+            } description: {
+                Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Plan first, then apply.")
+            } actions: {
                 Button("Plan", action: preview).buttonStyle(.borderedProminent)
-            } else {
-                Button("Choose Files or Folders…", action: chooseFiles)
-                    .buttonStyle(.borderedProminent)
             }
+        } else {
+            FirstRun(chooseFiles: chooseFiles)
         }
-        // The whole empty pane is the target, not just the button.
-        .contentShape(Rectangle())
-        .onTapGesture { if !hasSources { chooseFiles() } }
     }
 }
 
