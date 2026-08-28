@@ -63,16 +63,6 @@ public enum SplitLayout {
         contentFloor + dividerBeforeInspector + contentFloor
     }
 
-    /// Whether the inspector panel fits beside the page in an inspector this wide.
-    ///
-    /// A preference, not a reservation. Asked for where there is no room it simply is not
-    /// drawn, and it comes back the moment there is — the bargain both rails already make.
-    /// Without it, moving the panel beside the page would have pushed the window's floor
-    /// up by its full width, which is the fault this whole exercise removed.
-    public static func roomForPanel(inspectorWidth: CGFloat, contentsShown: Bool) -> Bool {
-        inspectorWidth - panelReserved >= inspectorMinimum(contentsShown: contentsShown)
-    }
-
     /// A page still worth looking at beside an open contents rail. Less than the browser's
     /// floor on purpose: this is the case where the window is already short of room, and a
     /// page squeezed to this is better than a pane hanging off the edge of the window.
@@ -104,4 +94,48 @@ public enum SplitLayout {
         guard room >= floor + contentFloor else { return (room / 2).rounded() }
         return min(max(preferred, floor), room - contentFloor)
     }
+}
+
+// MARK: - Folding
+
+/// Where each pane gives way as the window narrows.
+///
+/// Nothing is removed at a narrow width; it moves somewhere that costs no horizontal
+/// room. The contents rail becomes a popover, the inspector panel overlays the page
+/// instead of pushing it, and the sidebar collapses to an overlay the platform already
+/// knows how to draw. Pure numbers so a test can hold the window's floor to them: the
+/// floor used to be 1011 points wide, and 1252 with the notes open, because every one of
+/// these was a fixed neighbour the width arithmetic had to reserve for.
+public extension SplitLayout {
+    /// Below this the contents rail folds into a popover under its toolbar button.
+    static let contentsFoldsBelow: CGFloat = 1100
+    /// Below this the inspector panel is drawn over the page rather than beside it.
+    static let inspectorOverlaysBelow: CGFloat = 1000
+    /// Below this the sidebar is an overlay. The platform's split view does this itself;
+    /// the number is here so the rest of the app can agree about when it happens.
+    static let sidebarOverlaysBelow: CGFloat = 900
+
+    /// The smallest window the app will open at, and the smallest it can be dragged to.
+    static let windowFloorWidth: CGFloat = 640
+    static let windowFloorHeight: CGFloat = 480
+
+    static func contentsIsPopover(paneWidth: CGFloat) -> Bool {
+        paneWidth < contentsFoldsBelow
+    }
+
+    static func inspectorOverlays(paneWidth: CGFloat) -> Bool {
+        paneWidth < inspectorOverlaysBelow
+    }
+
+    /// How wide the inspector panel is drawn when it overlays the page. Its ideal width
+    /// where that leaves a readable page behind it, and never more than the pane has.
+    static func overlayPanelWidth(paneWidth: CGFloat) -> CGFloat {
+        let ideal = panelReserved - dividerBeforeInspector
+        return max(0, min(ideal, paneWidth - previewFloorBesideContents))
+    }
+
+    /// What the detail side of the window has to be at least. Two panes and a divider
+    /// while both are drawn side by side; one pane's floor once the panel overlays it,
+    /// which is the whole reason the window can now reach 640.
+    static func detailMinWidth() -> CGFloat { contentFloor }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFHammerCore
 
 /// The app's colours, in one place.
 ///
@@ -75,11 +76,15 @@ enum Metric {
     static let gridSpacing: CGFloat = 18
 
     /// Breakpoints. Below each, something folds away rather than being cut off.
-    static let contentsFoldsBelow: CGFloat = 1100
-    static let inspectorOverlaysBelow: CGFloat = 1000
-    static let sidebarOverlaysBelow: CGFloat = 900
-    static let windowFloorWidth: CGFloat = 640
-    static let windowFloorHeight: CGFloat = 480
+    ///
+    /// Read from `SplitLayout` rather than written again here: the arithmetic that acts
+    /// on them is pure and tested, and a second copy of a breakpoint is how a pane and
+    /// the window's own floor came to disagree in the first place.
+    static let contentsFoldsBelow = SplitLayout.contentsFoldsBelow
+    static let inspectorOverlaysBelow = SplitLayout.inspectorOverlaysBelow
+    static let sidebarOverlaysBelow = SplitLayout.sidebarOverlaysBelow
+    static let windowFloorWidth = SplitLayout.windowFloorWidth
+    static let windowFloorHeight = SplitLayout.windowFloorHeight
 }
 
 

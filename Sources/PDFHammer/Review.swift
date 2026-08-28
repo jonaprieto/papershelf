@@ -5,10 +5,16 @@ import UniformTypeIdentifiers
 import PDFHammerCore
 
 struct ReviewInspector: View {
-    /// Whether there is room beside the page for the panel. Decided by the pane that knows
-    /// how wide this one is, so the panel folds away on a narrow window instead of the
-    /// window having to be wide enough for it whether or not it is open.
-    let panelFits: Bool
+    /// Whether the page is one of the panes here.
+    ///
+    /// The shelf, the bibliography and the duplicates view are about a collection; the
+    /// page belongs to the two places that are about one document -- the reviewer and the
+    /// reader. Showing it everywhere is what gave a shelf of covers half a window of PDF
+    /// nobody asked to see.
+    let showsPage: Bool
+    /// How much room this whole region has. What folds is decided from it rather than
+    /// from the window, since the sidebar and the browser have already taken their share.
+    let paneWidth: CGFloat
     let item: Item
     @ObservedObject var runner: Runner
     let passwords: [String]
@@ -30,6 +36,13 @@ struct ReviewInspector: View {
     let aiReady: Bool
     let markDeleted: () -> Void
     let reopen: () -> Void
+    /// Opens this document in the reader: the page, its outline and the marks on it, with
+    /// the browser out of the way. The shelf draws no page of its own, so this is the way
+    /// from a cover to what is inside it.
+    let read: () -> Void
+    /// Set only while the reader is open, and the way back out of it. ⎋ does the same
+    /// thing; a button is here because a way in that has no visible way out is a trap.
+    var leaveReader: (() -> Void)?
     let reset: () -> Void
     let leaveField: () -> Void
     let excerpt: String?
@@ -75,7 +88,18 @@ struct ReviewInspector: View {
     }
 
     /// While reading, the deciding controls stay out of the way.
-    private var showBottom: Bool { !collapsed && !reading && panelFits }
+    private var showBottom: Bool { !collapsed && !reading }
+
+    /// Below `SplitLayout.inspectorOverlaysBelow` the panel is drawn over the page rather
+    /// than beside it. Nothing is lost at a narrow width; it stops costing the page room
+    /// it does not have, which is what lets the window reach 640 points.
+    private var panelOverlays: Bool { SplitLayout.inspectorOverlays(paneWidth: paneWidth) }
+
+    /// Below `SplitLayout.contentsFoldsBelow` the outline is a popover under its own
+    /// toolbar button instead of a third column.
+    private var contentsIsPopover: Bool { SplitLayout.contentsIsPopover(paneWidth: paneWidth) }
+
+    private var hasContents: Bool { !annotator.contents.isEmpty }
 
     private var decision: Decision? { runner.decision(for: item) }
     private var isEdited: Bool { sanitizedFilename(draft) != item.destinationName }
@@ -112,57 +136,87 @@ struct ReviewInspector: View {
     }
 
     var body: some View {
-        // The page and the panel beside it, rather than stacked. The panel was a drawer
-        // under the page capped at 300 points, which is why the notes needed a column of
-        // their own to be readable at all — and that column was 240 fixed points the
-        // window's minimum width had to reserve for whether or not anyone opened it.
-        HStack(spacing: 0) {
-                // The contents rail's width is read off the room the page actually got, so
-                // on a window too narrow for both it is the chapter list that narrows and
-                // not the page that is squeezed to nothing, or worse, pushed off the edge.
-                GeometryReader { page in
-                HStack(spacing: 0) {
-                    if contentsShown && !annotator.contents.isEmpty {
-                        ContentsRail(annotator: annotator,
-                                     close: { contentsShown = false })
-                            .frame(width: SplitLayout.contentsRailWidth(
-                                inspectorWidth: page.size.width))
-                        Divider()
-                    }
-                    PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary.opacity(0.35))
-                    .overlay(alignment: .topTrailing) { lockedOverlay }
-                    .overlay(alignment: .topLeading) { floatingSelectionBar }
-                }
-                }
-
-                if showBottom {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 0) {
-                        panelHeader
-                        Divider()
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 10) {
-                                switch panel {
-                                case .rename: renamePanel
-                                case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags)
-                                case .notes: notesPanel
-                                case .bibtex: bibtexPanel
-                                }
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .frame(width: Metric.inspectorIdeal)
-                }
+        Group {
+            if showsPage {
+                pageAndPanel
+            } else {
+                // No page here, so the panel is the region: the shelf's inspector is one
+                // column of Info, Rename, Notes and Cite, not a panel clinging to the
+                // side of a PDF nobody opened.
+                panelColumn
+            }
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
         .onChange(of: item.key) { _, _ in
             editing = false
             addingNote = false
             noteText = ""
+        }
+    }
+
+    /// The page and the panel beside it, rather than stacked. The panel was a drawer
+    /// under the page capped at 300 points, which is why the notes needed a column of
+    /// their own to be readable at all -- and that column was 240 fixed points the
+    /// window's minimum width had to reserve for whether or not anyone opened it.
+    private var pageAndPanel: some View {
+        HStack(spacing: 0) {
+            pageRegion
+            if showBottom && !panelOverlays {
+                Divider()
+                panelColumn.frame(width: Metric.inspectorIdeal)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if showBottom && panelOverlays {
+                panelColumn
+                    .frame(width: SplitLayout.overlayPanelWidth(paneWidth: paneWidth))
+                    .background(.regularMaterial)
+                    .overlay(alignment: .leading) { Divider() }
+                    .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+    }
+
+    /// The page, with the outline beside it where the window is wide enough to hold both.
+    private var pageRegion: some View {
+        // The contents rail's width is read off the room the page actually got, so
+        // on a window too narrow for both it is the chapter list that narrows and
+        // not the page that is squeezed to nothing, or worse, pushed off the edge.
+        GeometryReader { page in
+            HStack(spacing: 0) {
+                if contentsShown && hasContents && !contentsIsPopover {
+                    ContentsRail(annotator: annotator,
+                                 close: { contentsShown = false })
+                        .frame(width: SplitLayout.contentsRailWidth(
+                            inspectorWidth: page.size.width))
+                    Divider()
+                }
+                PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.quaternary.opacity(0.35))
+                .overlay(alignment: .topTrailing) { lockedOverlay }
+                .overlay(alignment: .topLeading) { floatingSelectionBar }
+            }
+        }
+    }
+
+    private var panelColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            panelHeader
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    switch panel {
+                    case .rename: renamePanel
+                    case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read)
+                    case .notes: notesPanel
+                    case .bibtex: bibtexPanel
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -179,6 +233,14 @@ struct ReviewInspector: View {
 
     private func header(showingStatus: Bool) -> some View {
         HStack(spacing: 8) {
+            if let leaveReader {
+                Button(action: leaveReader) {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .tip("Back to the shelf", key: "⎋")
+            }
+
             if showingStatus {
                 StatusPill(status: item.status, count: nil)
             }
@@ -196,7 +258,7 @@ struct ReviewInspector: View {
 
             Spacer(minLength: 8)
 
-            if !annotator.contents.isEmpty {
+            if hasContents && showsPage {
                 Button {
                     contentsShown.toggle()
                 } label: {
@@ -205,6 +267,16 @@ struct ReviewInspector: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(contentsShown ? Color.accentColor : .secondary)
                 .tip(contentsShown ? "Hide the contents" : "Table of contents", key: "⌘⇧T")
+                // Under `SplitLayout.contentsFoldsBelow` the outline has nowhere to stand
+                // as a column, so it stands here instead: same button, same key, same
+                // list, no horizontal room.
+                .popover(isPresented: Binding(
+                    get: { contentsShown && contentsIsPopover },
+                    set: { contentsShown = $0 }
+                ), arrowEdge: .bottom) {
+                    ContentsRail(annotator: annotator, close: { contentsShown = false })
+                        .frame(width: 300, height: 420)
+                }
             }
 
             Button(action: reveal) { Image(systemName: "folder") }
@@ -686,6 +758,8 @@ struct MetadataPanel: View {
     /// Tagging where the file is actually being looked at. It was reachable only by
     /// right-clicking a row, which is not somewhere anyone looks for it.
     var tags: TagActions = .none
+    /// Opens this document in the reader. The shelf shows no page, so this is the way in.
+    var read: (() -> Void)?
 
     private var facts: [(String, String)] {
         var rows: [(String, String)] = []
@@ -708,6 +782,16 @@ struct MetadataPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let read {
+                Button(action: read) {
+                    Label("Read", systemImage: "book")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tip("Open the page, its outline and your marks on it", key: "⏎")
+            }
+
             Text(physical)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

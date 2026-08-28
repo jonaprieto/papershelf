@@ -315,7 +315,10 @@ struct ContentView: View {
                 // this can no longer drift out of step with what the panes inside it
                 // actually add up to. Grows with the notes rail and, since it is nested
                 // inside the inspector, the contents rail.
-                .frame(minWidth: SplitLayout.minWidth())
+                // One pane's floor, not two. The panel and the outline both fold inside
+                // this region now, so the detail side no longer has to be wide enough for
+                // panes that may not be drawn.
+                .frame(minWidth: SplitLayout.detailMinWidth())
                 .navigationTitle("PDF Hammer")
                 .navigationSubtitle(subtitle)
                 .toolbar { toolbar }
@@ -333,10 +336,11 @@ struct ContentView: View {
                 spend: sessionSpendLabel
             )
         }
-        // The panel's own floor (matching the min above) plus the detail pane's. Forty-six
-        // points narrower than it was, now that nothing sits outside the split view.
-        .frame(minWidth: Metric.sidebarMin + SplitLayout.minWidth(),
-               minHeight: Metric.windowFloorHeight)
+        // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
+        // because the rail, the notes rail and the contents rail were all fixed
+        // neighbours the width arithmetic had to reserve for. Each of them folds now, so
+        // the window's floor is a number the app chose rather than a sum it was handed.
+        .frame(minWidth: Metric.windowFloorWidth, minHeight: Metric.windowFloorHeight)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true

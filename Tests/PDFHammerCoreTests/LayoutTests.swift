@@ -74,9 +74,10 @@ final class LayoutTests: XCTestCase {
     }
 
     func testMinWidthMatchesTheEstablishedConstantsWithNotesRailOpen() {
-        // Neither optional pane buys itself any window. Both fold instead.
-        XCTAssertFalse(SplitLayout.roomForPanel(inspectorWidth: 360, contentsShown: false))
-        XCTAssertTrue(SplitLayout.roomForPanel(inspectorWidth: 681, contentsShown: false))
+        // Neither optional pane buys itself any window. Both fold instead: at a pane
+        // width of 360 the panel is drawn over the page rather than beside it.
+        XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: 360))
+        XCTAssertFalse(SplitLayout.inspectorOverlays(paneWidth: 1080))
     }
 
     // MARK: The window's floor does not move when the contents rail opens
@@ -87,13 +88,12 @@ final class LayoutTests: XCTestCase {
     /// own edge. The rail comes out of the inspector's existing share now.
     func testOpeningTheContentsRailDoesNotMoveTheWindowsFloor() {
         XCTAssertEqual(SplitLayout.minWidth(), 721)
-        // Neither optional pane buys itself any window: both fold instead. An inspector
-        // exactly at the page's floor has no room for the panel; one a panel wider does.
-        XCTAssertFalse(SplitLayout.roomForPanel(inspectorWidth: SplitLayout.contentFloor,
-                                                contentsShown: false))
-        XCTAssertTrue(SplitLayout.roomForPanel(
-            inspectorWidth: SplitLayout.contentFloor + SplitLayout.panelReserved,
-            contentsShown: false))
+        // Neither optional pane buys itself any window: both fold instead. Where the
+        // panel would not fit beside the page it is drawn over it, at a width that still
+        // leaves a page behind it.
+        XCTAssertLessThan(SplitLayout.overlayPanelWidth(paneWidth: SplitLayout.contentFloor),
+                          SplitLayout.contentFloor)
+        XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: SplitLayout.contentFloor))
     }
 
     // MARK: inspectorWidth never asks for room that is not there
@@ -180,22 +180,51 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(SplitLayout.minWidth(), SplitLayout.contentFloor
                        + SplitLayout.dividerBeforeInspector + SplitLayout.contentFloor)
     }
+}
 
-    func testThePanelFoldsExactlyWhenItWouldNotFit() {
-        // One point short of room for it beside a page at its floor, and one point past.
-        let needed = SplitLayout.contentFloor + SplitLayout.panelReserved
-        XCTAssertFalse(SplitLayout.roomForPanel(inspectorWidth: needed - 1, contentsShown: false))
-        XCTAssertTrue(SplitLayout.roomForPanel(inspectorWidth: needed, contentsShown: false))
+/// The floor, and what folds to reach it. Written as a test rather than a comment
+/// because the old floor -- 1011 wide, 1252 with the notes open -- was the sum of four
+/// fixed neighbours nobody had added up.
+final class FoldingTests: XCTestCase {
+
+    func testTheWindowFloorIsWhatTheRedesignPromises() {
+        XCTAssertEqual(SplitLayout.windowFloorWidth, 640)
+        XCTAssertEqual(SplitLayout.windowFloorHeight, 480)
     }
 
-    /// An open contents rail widens the inspector's own floor, so it takes room the panel
-    /// was counting on. The two must agree about that, or they both draw and the pane
-    /// overflows.
-    func testContentsRailIsCountedWhenDecidingWhetherThePanelFits() {
-        let exact = SplitLayout.contentFloor + SplitLayout.panelReserved
-        XCTAssertTrue(SplitLayout.roomForPanel(inspectorWidth: exact, contentsShown: false))
-        XCTAssertFalse(SplitLayout.roomForPanel(inspectorWidth: exact, contentsShown: true))
-        XCTAssertTrue(SplitLayout.roomForPanel(
-            inspectorWidth: exact + SplitLayout.contentsReserved, contentsShown: true))
+    /// The detail side asks for one pane's floor, not two. Sidebar minimum plus this has
+    /// to fit inside the window's floor, or the window cannot reach it.
+    func testTheDetailFloorLeavesRoomForTheSidebarInsideTheWindowFloor() {
+        XCTAssertLessThanOrEqual(220 + SplitLayout.detailMinWidth(), SplitLayout.windowFloorWidth)
+    }
+
+    func testEachPaneFoldsAtItsOwnWidthAndStaysFoldedBelowIt() {
+        for width in stride(from: 320.0, through: 1600.0, by: 7.0) {
+            XCTAssertEqual(SplitLayout.contentsIsPopover(paneWidth: width),
+                           width < SplitLayout.contentsFoldsBelow, "width=\(width)")
+            XCTAssertEqual(SplitLayout.inspectorOverlays(paneWidth: width),
+                           width < SplitLayout.inspectorOverlaysBelow, "width=\(width)")
+        }
+    }
+
+    /// They fold in order: by the time the sidebar is an overlay the other two have
+    /// already given way, so a window never loses the big thing before the small one.
+    func testTheyFoldOutsideIn() {
+        XCTAssertGreaterThan(SplitLayout.contentsFoldsBelow, SplitLayout.inspectorOverlaysBelow)
+        XCTAssertGreaterThan(SplitLayout.inspectorOverlaysBelow, SplitLayout.sidebarOverlaysBelow)
+    }
+
+    func testAnOverlaidPanelNeverCoversThePageEntirely() {
+        for width in stride(from: 200.0, through: 1000.0, by: 11.0) {
+            let panel = SplitLayout.overlayPanelWidth(paneWidth: width)
+            XCTAssertGreaterThanOrEqual(panel, 0, "width=\(width)")
+            XCTAssertLessThanOrEqual(panel, max(0, width - SplitLayout.previewFloorBesideContents),
+                                     "width=\(width)")
+        }
+    }
+
+    func testAnOverlaidPanelKeepsItsIdealWidthWhenThereIsRoom() {
+        XCTAssertEqual(SplitLayout.overlayPanelWidth(paneWidth: 960),
+                       SplitLayout.panelReserved - SplitLayout.dividerBeforeInspector)
     }
 }

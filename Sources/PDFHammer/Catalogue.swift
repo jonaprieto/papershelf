@@ -101,6 +101,41 @@ struct ResultsPane: View {
     @FocusState private var listFocused: Bool
     @State private var keyMonitor: Any?
     @State private var showingPalette = false
+    /// The document the reader is open on, by key. Nil means the browser has the middle
+    /// of the window.
+    ///
+    /// The page used to be beside every view, so a shelf of covers spent half a window on
+    /// a PDF nobody had asked to open. The middle region shows one thing now: the
+    /// collection, or a document.
+    @State private var reader: String?
+
+    /// Whether the page is one of the panes.
+    ///
+    /// The list is the reviewer -- a name is decided against the page it belongs to -- and
+    /// the reader is the page. The shelf, the bibliography and the duplicates view are
+    /// about a collection and show none.
+    private var showsPage: Bool { reader != nil || reading || mode == .list }
+
+    /// Whether the browser keeps the middle. Reading mode and the reader both take it.
+    private var showsBrowser: Bool { !reading && reader == nil }
+
+    /// The document the reader is on, falling back to the selection when the key no
+    /// longer names a file (a rename applied, a source removed).
+    private var readerItem: Item? {
+        guard let reader else { return nil }
+        return runner.results.first { $0.key == reader }
+    }
+
+    private func openReader(_ key: String?) {
+        guard let key else { return }
+        selected = key
+        reader = key
+    }
+
+    /// One rung of the ⎋ ladder: out of the reader, back into the collection.
+    private func closeReader() {
+        reader = nil
+    }
 
     private var selectedItem: Item? {
         runner.results.first { $0.key == selected }
@@ -949,6 +984,7 @@ struct ResultsPane: View {
                             tags: tagIndex.tags(for: item)
                         )
                         .id(item.key)
+                        .onTapGesture(count: 2) { openReader(item.key) }
                         .onTapGesture { selected = item.key }
                     }
                 }
@@ -964,34 +1000,80 @@ struct ResultsPane: View {
     /// Two panes with a divider the user owns. `HSplitView` renegotiates its own widths
     /// whenever its children change, which is why the inspector kept jumping; here the
     /// width only ever changes because someone dragged it, and it is remembered.
+    ///
+    /// Which two panes depends on what the middle of the window is for. Deciding a name
+    /// and reading a book are both about one document, so the page is there; a shelf, a
+    /// bibliography and a list of duplicate groups are about a collection, and the page
+    /// that used to sit beside them was half a window given to a file nobody had opened.
     private var split: some View {
         GeometryReader { geometry in
-            // The contents rail is nested inside the inspector (see ReviewInspector),
-            // not a sibling here, so it only needs to widen the inspector's own floor,
-            // not the outer reservation `inspectorMaximum` makes for the browser.
-            let contentsOpen = contentsShown && !annotator.contents.isEmpty
-            let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
-            let maximum = SplitLayout.inspectorMaximum(
-                available: geometry.size.width, contentsShown: contentsOpen)
-            // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
-            // when the window is narrower than the floor, and the pane is then drawn at a
-            // width the window cannot show.
-            let width = SplitLayout.inspectorWidth(
-                preferred: inspectorWidth, available: geometry.size.width,
-                contentsShown: contentsOpen)
-            HStack(spacing: 0) {
-                // Reading gives the whole window to the page.
-                if !reading {
-                    browser.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    divider(width: width, minimum: minimum, maximum: maximum)
-                }
-                inspector(panelFits: SplitLayout.roomForPanel(
-                        inspectorWidth: reading ? geometry.size.width : width,
-                        contentsShown: contentsOpen))
-                    .frame(width: reading ? nil : width)
-                    .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
+            if showsPage {
+                pageSplit(available: geometry.size.width)
+            } else {
+                panelSplit(available: geometry.size.width)
             }
         }
+    }
+
+    /// Browser, divider, document. The outline and the inspector panel both fold inside
+    /// the document region rather than widening the window (see `ReviewInspector`).
+    private func pageSplit(available: CGFloat) -> some View {
+        // The contents rail is nested inside the document region, not a sibling here, so
+        // it only needs to widen that region's own floor, not the outer reservation
+        // `inspectorMaximum` makes for the browser.
+        let contentsOpen = contentsShown && !annotator.contents.isEmpty
+        let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
+        let maximum = SplitLayout.inspectorMaximum(
+            available: available, contentsShown: contentsOpen)
+        // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
+        // when the window is narrower than the floor, and the pane is then drawn at a
+        // width the window cannot show.
+        let width = SplitLayout.inspectorWidth(
+            preferred: inspectorWidth, available: available, contentsShown: contentsOpen)
+        return HStack(spacing: 0) {
+            if showsBrowser {
+                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+                divider(width: width, minimum: minimum, maximum: maximum)
+            }
+            documentRegion(paneWidth: showsBrowser ? width : available)
+                .frame(width: showsBrowser ? width : nil)
+                .frame(maxWidth: showsBrowser ? nil : .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Browser and inspector, with nothing between them. Under
+    /// `SplitLayout.inspectorOverlaysBelow` the panel is drawn over the browser instead of
+    /// taking room from it, which is the same bargain the page's own panel makes.
+    private func panelSplit(available: CGFloat) -> some View {
+        let overlays = SplitLayout.inspectorOverlays(paneWidth: available)
+        // Two copies beside each other need more than a panel's width; a panel of
+        // metadata does not.
+        let floor = selectedDuplicateGroup == nil ? Metric.inspectorMin : 420
+        let maximum = max(floor, available - SplitLayout.contentFloor)
+        let width = min(max(inspectorWidth, floor), maximum)
+        return HStack(spacing: 0) {
+            browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !inspectorCollapsed && !overlays {
+                divider(width: width, minimum: floor, maximum: maximum)
+                documentRegion(paneWidth: width)
+                    .frame(width: width)
+                    .frame(maxHeight: .infinity)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if !inspectorCollapsed && overlays {
+                floatingPanel(width: SplitLayout.overlayPanelWidth(paneWidth: available))
+            }
+        }
+    }
+
+    /// The inspector over the browser, on a window with no room to put it beside one.
+    private func floatingPanel(width: CGFloat) -> some View {
+        documentRegion(paneWidth: width)
+            .frame(width: width)
+            .background(.regularMaterial)
+            .overlay(alignment: .leading) { Divider() }
+            .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
     }
 
     private func divider(width: CGFloat, minimum: CGFloat, maximum: CGFloat) -> some View {
@@ -1055,7 +1137,9 @@ struct ResultsPane: View {
         }
     }
 
-    private func inspector(panelFits: Bool) -> some View {
+    /// What the trailing region holds: two copies to choose between, one document with
+    /// its page and panel, or the panel alone.
+    private func documentRegion(paneWidth: CGFloat) -> some View {
         Group {
         // Choosing between two copies means seeing them beside each other. In the view
         // whose whole job is that decision, this is what the pane should hold.
@@ -1065,9 +1149,10 @@ struct ResultsPane: View {
                 keep: { runner.keep($0, inGroup: group.id) },
                 trashExtras: { runner.trashExtras(of: group.id) }
             )
-        } else if let item = selectedItem {
+        } else if let item = readerItem ?? selectedItem {
             ReviewInspector(
-                panelFits: panelFits,
+                showsPage: showsPage,
+                paneWidth: paneWidth,
                 item: item,
                 runner: runner,
                 passwords: passwords,
@@ -1089,6 +1174,8 @@ struct ResultsPane: View {
                 aiReady: aiReady,
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
+                read: { openReader(item.key) },
+                leaveReader: reader == nil ? nil : closeReader,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
