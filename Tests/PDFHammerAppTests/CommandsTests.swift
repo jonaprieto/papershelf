@@ -99,4 +99,40 @@ final class CommandsTests: XCTestCase {
         XCTAssertFalse(keymap.hasCustomisations)
         XCTAssertEqual(keymap.shortcut(for: .trash), Command.trash.defaultShortcut)
     }
+
+    // MARK: Nothing in the table is decoration
+
+    /// The rule this app is built on, made mechanical: every command does something.
+    ///
+    /// A command nobody implements is a line in the palette and a row in the settings
+    /// table that lies about what the app can do — the same fault as a naming pattern that
+    /// renames nothing, or three date switches that change no name. Five commands were
+    /// removed rather than left sitting here: moving between regions, jumping to the
+    /// sidebar or the status bar, and going back and forward through what you opened. They
+    /// can come back when something carries them out.
+    func testEveryCommandHasSomethingBehindIt() {
+        let performed = Set(ResultsPane.performable)
+        let orphans = Set(Command.allCases)
+            .subtracting(performed)
+            .subtracting(Command.handledByTheMenu)
+        XCTAssertTrue(orphans.isEmpty,
+                      "no one carries out: \(orphans.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
+    /// And the other direction: a command claimed by both would be ambiguous about which
+    /// one wins, which is how a key starts doing two things depending on focus.
+    func testNoCommandIsClaimedTwice() {
+        let both = Set(ResultsPane.performable).intersection(Command.handledByTheMenu)
+        XCTAssertTrue(both.isEmpty,
+                      "claimed twice: \(both.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
+    /// The palette is built from `performable` minus itself, so every line it offers is a
+    /// line that acts. Guards against the list growing an entry the switch does not have.
+    func testThePaletteOffersOnlyWhatItCanRun() {
+        XCTAssertTrue(ResultsPane.performable.contains(.palette),
+                      "the palette has to be reachable by key even though it hides itself")
+        XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
+                       "a command is listed twice")
+    }
 }

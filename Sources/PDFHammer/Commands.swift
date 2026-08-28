@@ -10,9 +10,9 @@ import AppKit
 /// to list — including the commands that have no shortcut at all.
 enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Getting around
-    case palette, nextRegion, previousRegion
-    case focusSidebar, focusContents, focusDocument, focusInspector, focusStatus
-    case focusSearch, goBack, goForward, toggleSidebar, toggleInspector
+        case palette
+    case focusContents, focusDocument, focusInspector
+    case focusSearch, toggleSidebar, toggleInspector
 
     // Views
     case viewList, viewCatalogue, viewBibliography, viewDuplicates
@@ -73,9 +73,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var group: Group {
         switch self {
-        case .palette, .nextRegion, .previousRegion, .focusSidebar, .focusContents,
-             .focusDocument, .focusInspector, .focusStatus, .focusSearch, .goBack,
-             .goForward, .toggleSidebar, .toggleInspector:
+        case .palette, .focusContents, .focusDocument, .focusInspector,
+             .focusSearch, .toggleSidebar, .toggleInspector:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .readingMode, .toggleNotes, .toggleContents:
@@ -113,16 +112,10 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     var title: String {
         switch self {
         case .palette: return "Open the command palette"
-        case .nextRegion: return "Move to the next region"
-        case .previousRegion: return "Move to the previous region"
-        case .focusSidebar: return "Jump to the sidebar"
         case .focusContents: return "Jump to the contents"
         case .focusDocument: return "Jump to the document"
         case .focusInspector: return "Jump to the inspector"
-        case .focusStatus: return "Jump to the status bar"
         case .focusSearch: return "Focus the search field"
-        case .goBack: return "Back"
-        case .goForward: return "Forward"
         case .toggleSidebar: return "Show or hide the sidebar"
         case .toggleInspector: return "Show or hide the inspector"
         case .viewList: return "List"
@@ -169,16 +162,10 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     var defaultShortcut: Shortcut? {
         switch self {
         case .palette: return Shortcut("k", .command)
-        case .nextRegion: return Shortcut("\t", .control)
-        case .previousRegion: return Shortcut("\t", [.control, .shift])
-        case .focusSidebar: return Shortcut("1", .control)
         case .focusContents: return Shortcut("2", .control)
         case .focusDocument: return Shortcut("3", .control)
         case .focusInspector: return Shortcut("4", .control)
-        case .focusStatus: return Shortcut("5", .control)
         case .focusSearch: return Shortcut("/", [])
-        case .goBack: return Shortcut("[", .command)
-        case .goForward: return Shortcut("]", .command)
         case .toggleSidebar: return Shortcut("b", .command)
         case .toggleInspector: return Shortcut("i", [.command, .option])
         case .viewList: return Shortcut("1", .command)
@@ -400,6 +387,19 @@ final class Keymap: ObservableObject {
         guard let data = try? JSONEncoder().encode(stored) else { return }
         store.set(data, forKey: defaultsKey)
     }
+}
+
+extension Command {
+    /// Commands the app's menu bar and toolbar carry out, rather than the results pane.
+    ///
+    /// Listed so that a test can hold the whole table to the rule this app is built on:
+    /// every command does something. A command nobody implements is a line in the palette
+    /// and a row in the settings table that lies about what the app can do, and there is
+    /// no version of that which is acceptable.
+    static let handledByTheMenu: Set<Command> = [
+        .plan, .apply, .undo, .readingMode,
+        .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
+    ]
 }
 
 extension Command.Scope {

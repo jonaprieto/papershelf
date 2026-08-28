@@ -46,6 +46,7 @@ struct ResultsPane: View {
     @State private var confirmingBatchAI = false
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
     @AppStorage("contentsShown") private var contentsShown = false
+    @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
     @StateObject private var annotator = Annotator()
     @State private var addingNote = false
     @State private var noteText = ""
@@ -468,6 +469,9 @@ struct ResultsPane: View {
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
         .findDuplicates, .revealInFinder, .openExternally,
+        .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
+        .addNote, .nextMark, .previousMark,
+        .focusContents, .focusDocument, .focusInspector, .newTag,
         .focusSearch, .shortcuts, .palette,
     ]
 
@@ -507,9 +511,55 @@ struct ResultsPane: View {
         case .reopen: reopenSelected()
         case .nextFile: step(by: 1)
         case .previousFile: step(by: -1)
+
+        case .highlight1: highlight(colourAt: 0)
+        case .highlight2: highlight(colourAt: 1)
+        case .highlight3: highlight(colourAt: 2)
+        case .highlight4: highlight(colourAt: 3)
+        case .highlight5: highlight(colourAt: 4)
+        case .addNote:
+            guard annotator.selectedMark != nil || annotator.hasSelection else { return false }
+            addingNote = true
+        case .nextMark: stepMark(by: 1)
+        case .previousMark: stepMark(by: -1)
+
+        case .focusContents:
+            guard !annotator.contents.isEmpty else { return false }
+            contentsShown = true
+        case .focusDocument: listFocused = true
+        case .focusInspector: inspectorCollapsed = false
+        case .newTag:
+            guard let item = selectedItem else { return false }
+            newTagName = ""
+            taggingItem = item
+
         default: return false
         }
         return true
+    }
+
+    /// Paints the selection in the nth highlighter, or recolours the mark you are on when
+    /// there is nothing selected — which is what a number key means once a mark is under
+    /// the cursor rather than a fresh run of text.
+    private func highlight(colourAt index: Int) {
+        guard palette.styles.indices.contains(index) else { return }
+        let colour = palette.styles[index].nsColor
+        if annotator.hasSelection {
+            _ = annotator.highlightSelection(colour: colour)
+        } else if let selected = annotator.selectedMark,
+                  let mark = annotator.marks.first(where: { $0.id == selected }) {
+            annotator.setColour(colour, on: mark)
+        }
+    }
+
+    /// Moves to the next mark in the document and scrolls the page to it, since a
+    /// highlight on a page you are not looking at is invisible by definition.
+    private func stepMark(by delta: Int) {
+        guard !annotator.marks.isEmpty else { return }
+        let current = annotator.marks.firstIndex { $0.id == annotator.selectedMark }
+        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + annotator.marks.count)
+            % annotator.marks.count
+        annotator.jump(to: annotator.marks[next])
     }
 
     /// Leaving the name field has to hand focus somewhere, or Return drops it on the
