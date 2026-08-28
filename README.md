@@ -188,7 +188,12 @@ character for character what Copy and Save write.
 
 ## Naming by pattern
 
-The naming panel is a row of chips you drag into the order you want: date, author, title,
+The pattern is what Plan and Apply use. Chips decide what pieces a name has and in what
+order; the tidying rules below them decide how each piece is written. Leave the pattern
+empty and the ordinary rename takes over — the date lifted out of the filename and put
+back at the front.
+
+**Settings › Name rules** is a row of chips you drag into the order you want: date, author, title,
 year, publisher, a literal separator, a counter. Each shows what it currently produces for
 the selected file, and a chip that resolves to nothing looks empty rather than vanishing,
 so a name that came out short says why.

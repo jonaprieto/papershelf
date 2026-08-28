@@ -78,10 +78,20 @@ struct NameRulesSettings: View {
         }
     }
 
+    /// The three date switches, in the form the renderer reads them.
+    private var fallbacks: DateFallbacks {
+        DateFallbacks(folderNames: useFolderNames,
+                      metadataDate: useMetadataDate,
+                      fileDate: useFileDate)
+    }
+
+    /// Rendered exactly the way Plan will render it — same rules, same fallbacks. A
+    /// preview that took a shortcut the real run does not would be worse than none.
     private var namePatternReferencePreview: NamePreview? {
         guard let item = source.reference else { return nil }
         return PDFHammerCore.preview(namePattern, for: item,
-                                     guess: source.guesses[item.key], under: item.root)
+                                     guess: source.guesses[item.key], under: item.root,
+                                     rules: rules, fallbacks: fallbacks)
     }
 
     var body: some View {
@@ -194,12 +204,7 @@ struct NameRulesSettings: View {
             } header: {
                 Text("Naming pattern")
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Note(icon: "info.circle.fill", tint: .secondary,
-                         text: "Not used yet: Plan and Apply still use Name rules below.",
-                         size: .caption)
-                    namingPreviewFooter
-                }
+                namingPreviewFooter
             }
 
             Section {
@@ -238,12 +243,11 @@ struct NameRulesSettings: View {
                 }
                 .tip("Trims the name on a word boundary; the date is never cut")
             } header: {
-                // These three, plus everything above, are what Preview and Apply actually
-                // use (NameRules/normalizedName, Hammer.swift): the Naming pattern section
-                // above is not wired into that pipeline yet (render()'s own header comment
-                // in Patterns.swift says as much), so these controls stay here rather than
-                // being retired in favour of a pattern that does not yet drive real output.
-                Text("Name rules")
+                // These decide how each piece of a name is written; the pattern above
+                // decides what pieces there are and in what order. Both reach Plan and
+                // Apply, the pattern by way of `Options.pattern` and these through the
+                // same `NameRules` the renderer is handed.
+                Text("Tidying")
             } footer: {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(Self.sampleName)
@@ -419,7 +423,9 @@ struct NameRulesSettings: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(samples) { item in
-                    let rendered = PDFHammerCore.preview(namePattern, for: item, guess: source.guesses[item.key], under: item.root)
+                    let rendered = PDFHammerCore.preview(
+                        namePattern, for: item, guess: source.guesses[item.key],
+                        under: item.root, rules: rules, fallbacks: fallbacks)
                     HStack(spacing: 4) {
                         Text(rendered.originalName)
                             .foregroundStyle(.secondary)

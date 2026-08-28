@@ -183,13 +183,23 @@ struct ContentView: View {
 
 
 
+    /// The pattern Plan and Apply actually use, or nil when there is none to use.
+    ///
+    /// An empty pattern is not an instruction to produce empty names — it is the absence
+    /// of one, and the ordinary rename takes over.
+    private var activePattern: NamePattern? {
+        let parsed = NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
+        return parsed.elements.isEmpty ? nil : parsed
+    }
+
     private func options(dryRun: Bool) -> Options {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
                 encryption: EncryptionSettings(enabled: encryptOutput, password: secret.encryptPassword),
                 useFolderNames: useFolderNames,
-                useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
+                useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules,
+                pattern: activePattern)
     }
 
     /// What only a fresh scan can answer: which files there are, and which of them open.
@@ -198,6 +208,7 @@ struct ContentView: View {
     private var fingerprint: String {
         [
             selection.map(\.path).joined(separator: "|"),
+            namePatternText, String(namePatternMaxLength),
             passwords.joined(separator: "|"),
             "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
         ].joined(separator: "\u{1}")
