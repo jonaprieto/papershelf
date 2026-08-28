@@ -8,13 +8,14 @@ import PDFHammerCore
 /// looking at" and "what is my API key" at the same level and gave the sidebar two jobs.
 /// These are the things you set once and rarely return to; the sidebar is where you are.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, bibtex, highlighters, keyboard, ai, integrations
+    case general, files, bibtex, highlighters, keyboard, ai, integrations
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: return "General"
+        case .files: return "Files & passwords"
         case .bibtex: return "BibTeX"
         case .highlighters: return "Highlighters"
         case .keyboard: return "Keyboard"
@@ -26,6 +27,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .files: return "folder"
         case .bibtex: return "text.quote"
         case .highlighters: return "highlighter"
         case .keyboard: return "keyboard"
@@ -52,6 +54,7 @@ struct SettingsWindowView: View {
             Group {
                 switch pane {
                 case .general: GeneralSettings()
+                case .files: FileSettings()
                 case .bibtex: BibtexSettings()
                 case .highlighters: HighlighterSettings(palette: palette)
                 case .keyboard: KeyboardSettings()
@@ -524,5 +527,135 @@ struct IntegrationSettings: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+
+// MARK: - Files and passwords
+
+struct FileSettings: View {
+    @AppStorage("passwords") private var passwordsText = ""
+    @AppStorage("moveOriginals") private var moveOriginals = true
+    @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
+    @AppStorage("backupCustomPath") private var backupCustomPath = ""
+    @AppStorage("encryptOutput") private var encryptOutput = false
+    @ObservedObject private var secret = SessionSecret.shared
+    @State private var choosingBackupFolder = false
+    @FocusState private var focused: Int?
+
+    private var rows: [String] { PasswordList.rows(passwordsText) }
+
+    private func binding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                let rows = PasswordList.rows(passwordsText)
+                return rows.indices.contains(index) ? rows[index] : ""
+            },
+            set: { passwordsText = PasswordList.setting(index, to: $0, in: passwordsText) }
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, _ in
+                    HStack(spacing: 8) {
+                        Text("\(index + 1)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 14, alignment: .trailing)
+                        SecureField("", text: binding(index), prompt: Text("Password"))
+                            .textFieldStyle(.roundedBorder)
+                            .focused($focused, equals: index)
+                        Button {
+                            passwordsText = PasswordList.removing(index, from: passwordsText)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                    }
+                }
+                Button {
+                    let added = PasswordList.addingRow(to: passwordsText)
+                    passwordsText = added.text
+                    DispatchQueue.main.async { focused = added.focus }
+                } label: {
+                    Label("Add password", systemImage: "plus.circle")
+                }
+                .buttonStyle(.link)
+            } header: {
+                Text("Passwords to try")
+            } footer: {
+                Text("Tried in order; the first that opens a file wins. A file that no "
+                     + "password opened is passed through untouched and marked Locked "
+                     + "rather than skipped silently.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Keep the originals", isOn: $moveOriginals)
+                if moveOriginals {
+                    if backupCustomPath.isEmpty {
+                        LabeledContent("Folder") {
+                            TextField("", text: $backupFolderName)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 200)
+                        }
+                        Button("Use one folder for everything…") { choosingBackupFolder = true }
+                            .buttonStyle(.link)
+                    } else {
+                        LabeledContent("Folder") {
+                            HStack {
+                                Text(backupCustomPath)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1).truncationMode(.middle)
+                                Button("Change…") { choosingBackupFolder = true }
+                                Button("Use a folder per source") { backupCustomPath = "" }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Originals")
+            } footer: {
+                Text("Point everything at one folder and each source still gets its own "
+                     + "subfolder there, so two roots holding the same relative path cannot "
+                     + "collide. Delete always means the Trash, never an outright removal.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Lock the output with a password", isOn: $encryptOutput)
+                if encryptOutput {
+                    LabeledContent("Password") {
+                        SecureField("", text: $secret.encryptPassword, prompt: Text("required"))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                    }
+                    if secret.encryptPassword.isEmpty {
+                        Text("Nothing will be written until this has a value.")
+                            .font(.caption)
+                            .foregroundStyle(Ink.amber)
+                    }
+                }
+            } header: {
+                Text("Locking the output")
+            } footer: {
+                Text("The inverse of the rest of the app, and held in memory only, so it has "
+                     + "to be given again each launch. A file that no password opened is "
+                     + "passed through as it is rather than being sealed with a new one, "
+                     + "since that would strand it behind a password it never had.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .fileImporter(isPresented: $choosingBackupFolder,
+                      allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { backupCustomPath = url.path }
+        }
     }
 }

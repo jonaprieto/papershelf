@@ -70,3 +70,17 @@ enum Metric {
     static let windowFloorWidth: CGFloat = 640
     static let windowFloorHeight: CGFloat = 480
 }
+
+
+/// Things held for this run of the app and never written down.
+///
+/// The output password lived as `@State` on the one view that asked for it, which was
+/// fine while that view was also the only one that used it. Settings is a separate scene,
+/// so it needs somewhere to put the value that is still not a preferences file: a
+/// password written into a plist is not a password.
+@MainActor
+final class SessionSecret: ObservableObject {
+    static let shared = SessionSecret()
+    @Published var encryptPassword = ""
+    private init() {}
+}

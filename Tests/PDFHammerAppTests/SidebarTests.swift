@@ -24,12 +24,24 @@ final class SidebarTests: XCTestCase {
 
     /// A tab silently dropped from `allCases`, or renamed without updating this, breaks
     /// here first.
+    ///
+    /// Six of the original twelve moved into the settings window, which is what a tab is
+    /// for when it holds something you set once. What is left is navigation and the log:
+    /// where you are, and what just happened.
     func testRailTabsAreAllStillThere() {
         let expected: [SidebarTab] = [
-            .sources, .explorer, .passwords, .naming, .files,
-            .ai, .bibtex, .tags, .library, .reading, .log, .settings,
+            .sources, .explorer, .naming, .tags, .library, .log,
         ]
         XCTAssertEqual(SidebarTab.allCases, expected)
+    }
+
+    /// Nothing may be configurable in two places at once. Anything that moved to the
+    /// settings window has to be gone from the rail, or the two copies drift.
+    func testSettingsAreNotAlsoATab() {
+        let titles = Set(SidebarTab.allCases.map(\.title))
+        for moved in ["Passwords", "Files", "AI", "BibTeX", "Reading", "Settings"] {
+            XCTAssertFalse(titles.contains(moved), "\(moved) is still a rail tab as well")
+        }
     }
 
     func testEveryTabHasItsOwnIcon() {
@@ -37,9 +49,6 @@ final class SidebarTests: XCTestCase {
         XCTAssertEqual(Set(icons).count, icons.count, "two tabs share an icon")
         XCTAssertEqual(SidebarTab.explorer.icon, "list.bullet.indent")
         XCTAssertEqual(SidebarTab.tags.icon, "tag")
-        // The settings are a tab now, not a window: the gear has to be in the rail, since
-        // nothing else opens them.
-        XCTAssertEqual(SidebarTab.settings.icon, "gearshape")
     }
 
     // MARK: - Rail width under a squeeze

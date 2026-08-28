@@ -10,8 +10,9 @@ struct ContentView: View {
     @AppStorage("passwords") private var passwordsText = ""
     @AppStorage("moveOriginals") private var moveOriginals = true
     @AppStorage("encryptOutput") private var encryptOutput = false
-    /// Kept in memory only. A password written into a preferences plist is not a password.
-    @State private var encryptPassword = ""
+    /// Kept in memory only, and shared with the settings window rather than owned here.
+    /// A password written into a preferences plist is not a password.
+    @ObservedObject private var secret = SessionSecret.shared
     @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
@@ -265,7 +266,7 @@ struct ContentView: View {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
-                encryption: EncryptionSettings(enabled: encryptOutput, password: encryptPassword),
+                encryption: EncryptionSettings(enabled: encryptOutput, password: secret.encryptPassword),
                 useFolderNames: useFolderNames,
                 useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules)
     }
@@ -411,9 +412,6 @@ struct ContentView: View {
             add(urls)
             return true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { _ in
-            selectTab(.settings)
-        }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
         .onAppear {
             seedNamePatternIfNeeded()
@@ -508,20 +506,12 @@ struct ContentView: View {
             switch sidebarTab {
             case .sources: sourcesPanel
             case .explorer: explorerPanel
-            case .passwords: passwordsPanel
             case .naming:
                 namingPanel
                 datesPanel
-            case .files:
-                originalsPanel
-                runningPanel
-            case .ai: aiPanel
-            case .bibtex: bibtexPanel
             case .tags: tagsPanel
             case .library: libraryPanel
-            case .reading: readingPanel
             case .log: logPanel
-            case .settings: settingsPanel
             }
         }
         .formStyle(.grouped)
@@ -749,53 +739,6 @@ struct ContentView: View {
                     }
                     .buttonStyle(.link)
                     .tip("Clears the selection, the results and the thumbnails")
-                }
-            }
-    }
-
-
-    @ViewBuilder
-    private var passwordsPanel: some View {
-            Section {
-                ForEach(Array(passwordRows.enumerated()), id: \.offset) { index, _ in
-                    HStack(spacing: 6) {
-                        // Without labelsHidden the Form treats the string as a left-hand
-                        // label and squeezes the field into the value column.
-                        TextField("", text: passwordBinding(index), prompt: Text("Password"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.callout, design: .monospaced))
-                            .multilineTextAlignment(.leading)
-                            .focused($focusedPassword, equals: index)
-                            .onSubmit(addPassword)
-                        Button {
-                            passwordsText = PasswordList.removing(index, from: passwordsText)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
-                        .tip("Remove this password")
-                        .help("Remove this password")
-                        .accessibilityLabel("Remove password \(index + 1)")
-                    }
-                }
-                Button(action: addPassword) {
-                    Label("Add password", systemImage: "plus.circle")
-                }
-                .tip("Another password to try, in order")
-                .buttonStyle(.link)
-            } header: {
-                Text("Passwords")
-            } footer: {
-                if passwords.isEmpty {
-                    Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                         text: "No passwords set. Encrypted files will be renamed but stay locked.",
-                         size: .caption)
-                } else {
-                    Text("Tried in order, top to bottom.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
     }
@@ -1094,81 +1037,6 @@ struct ContentView: View {
 
 
     @ViewBuilder
-    private var originalsPanel: some View {
-        if !moveOriginals {
-            Section {
-                Note(icon: "exclamationmark.triangle.fill", tint: .orange,
-                     text: "Applying will replace the originals. Nothing is kept and there is no undo.")
-            }
-        }
-
-            Section {
-                Toggle("Lock the output with a password", isOn: $encryptOutput)
-                    .tip("Write every file out locked with your password")
-                if encryptOutput {
-                    LabeledContent("Password") {
-                        SecureField("", text: $encryptPassword, prompt: Text("required"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-            } header: {
-                Text("Encryption")
-            } footer: {
-                Text(encryptOutput && encryptPassword.isEmpty
-                     ? "Without a password nothing is encrypted."
-                     : "Held in memory only, never written to preferences, so it has to be "
-                       + "given again next launch. A file no password opened is passed "
-                       + "through as it is rather than being sealed with one it never had.")
-                    .font(.caption)
-                    .foregroundStyle(encryptOutput && encryptPassword.isEmpty
-                                     ? Ink.amber
-                                     : .secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Keep the originals", isOn: $moveOriginals)
-                    .help("Off replaces each file in place, with no copy kept and no undo")
-                if moveOriginals {
-                    if backupCustomPath.isEmpty {
-                        LabeledContent("Folder") {
-                            TextField("", text: $backupFolderName, prompt: Text(defaultBackupFolderName))
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(.callout, design: .monospaced))
-                        }
-                    } else {
-                        LabeledContent("Folder") {
-                            Text(backupCustomPath)
-                                .font(.caption.monospaced())
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                        }
-                    }
-                    HStack {
-                        Button("Choose folder…") { choosingBackupFolder = true }
-                            .buttonStyle(.link)
-                            .tip("One folder for the originals of every source")
-                        Spacer()
-                        if !backupCustomPath.isEmpty {
-                            Button("Use a folder per source") { backupCustomPath = "" }
-                                .buttonStyle(.link)
-                        }
-                    }
-                }
-            } header: {
-                Text("Originals")
-            } footer: {
-                Text(backupSummary)
-                    .font(.caption)
-                    .foregroundStyle(moveOriginals ? .secondary : Ink.amber)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-    }
-
-
     private func refreshSessionSpend() async {
         guard let library = Library.shared else { return }
         guard let entries = try? await library.spendEntries(since: sessionStart) else { return }
@@ -1221,210 +1089,6 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             }
             .tip("What this run of the app has spent. Settings has the whole ledger.")
-        }
-    }
-
-    @ViewBuilder private var aiPanel: some View {
-            Section {
-                LabeledContent("API key") {
-                    if aiReady {
-                        Label("Ready", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Ink.green)
-                    } else {
-                        Label("Not set", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Ink.amber)
-                    }
-                }
-                if availableModels.isEmpty {
-                    LabeledContent("Model") {
-                        TextField("", text: $aiModel, prompt: Text("gpt-4o-mini"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.callout, design: .monospaced))
-                    }
-                } else {
-                    Picker("Model", selection: $aiModel) {
-                        // The stored one may not be in the list; keep it selectable.
-                        if !availableModels.contains(aiModel) {
-                            Text(aiModel).tag(aiModel)
-                        }
-                        ForEach(availableModels, id: \.self) { Text($0).tag($0) }
-                    }
-                }
-                // The price belongs where the model is chosen, not only in Settings: it
-                // is what the choice costs.
-                modelPrice
-
-                HStack {
-                    Button(loadingModels ? "Loading…" : "Refresh models", action: loadModels)
-                        .buttonStyle(.link)
-                        .tip("Ask the endpoint what it can run")
-                        .disabled(!aiReady || loadingModels)
-                    if let modelsError {
-                        Text(modelsError)
-                            .font(.caption)
-                            .foregroundStyle(Ink.red)
-                            .lineLimit(2)
-                    }
-                }
-                Toggle("Ask on each new file", isOn: $autoIdentify)
-                    .disabled(!aiReady)
-                    .help("One request per file as you reach it, billed like any other")
-                Button {
-                    selectTab(.settings)
-                } label: {
-                    Label("Open settings", systemImage: "gearshape")
-                }
-                .buttonStyle(.link)
-                if aiReady && runner.pendingCount > 0 && runner.lastRunWasDry {
-                    Button {
-                        Task { await runner.identifyPending(client: aiClient, passwords: passwords, rules: rules) }
-                    } label: {
-                        Label("Name the \(runner.pendingCount) still pending", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.link)
-                }
-            } header: {
-                Text("AI")
-            } footer: {
-                Text("Suggestions still go through the name rules above, and still have to "
-                     + "be confirmed. Only the filename and the opening text are sent.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            // Re-read after every call that was paid for, whatever asked for it.
-            .task(id: spendSignal.version) { await refreshSessionSpend() }
-    }
-
-
-    @ViewBuilder
-    private var runningPanel: some View {
-            Section("Running") {
-                Toggle("Watch the sources for changes", isOn: $watchSources)
-                    .tip("Pick up new files on their own, keeping this review")
-                    .onChange(of: watchSources) { _, _ in startWatching() }
-                Picker("Default view", selection: $mode) {
-                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Plan as soon as a source is added", isOn: $autoPreview)
-                    .help("Planning is read-only, so this changes nothing on disk")
-            }
-    }
-
-
-    @ViewBuilder
-    private var bibtexPanel: some View {
-            Section {
-                Picker("Entry type", selection: $bibType) {
-                    ForEach(BibType.allCases) { Text($0.label).tag($0) }
-                }
-                .help("Decides which fields count as missing. @misc asks only for a title.")
-            } header: {
-                Text("Entries")
-            } footer: {
-                Text("Publisher, journal and institution are never written: nothing here "
-                     + "can read them off a PDF, so they are not reported as missing either.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                LabeledContent("Line width") {
-                    HStack(spacing: 6) {
-                        Slider(value: Binding(get: { Double(bibLineWidth) },
-                                              set: { bibLineWidth = Int($0) }),
-                               in: 0...200, step: 10)
-                        Text(bibLineWidth == 0 ? "off" : "\(bibLineWidth)")
-                            .monospacedDigit()
-                            .frame(width: 30, alignment: .trailing)
-                    }
-                }
-                Picker("Indent", selection: $bibIndent) {
-                    Text("2 spaces").tag(2)
-                    Text("4 spaces").tag(4)
-                    Text("None").tag(0)
-                }
-                Picker("Values in", selection: $bibDelimiter) {
-                    ForEach(BibStyle.Delimiter.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Align the equals signs", isOn: $bibAlign)
-                Toggle("Trailing comma", isOn: $bibTrailingComma)
-                Toggle("Blank line between entries", isOn: $bibBlankLines)
-                Toggle("Sort fields alphabetically", isOn: $bibSortFields)
-                Toggle("Lowercase ALL-CAPS values", isOn: $bibDropAllCaps)
-                Toggle("Omit the file field", isOn: $bibOmitFile)
-            } header: {
-                Text("BibTeX")
-            } footer: {
-                Text("A long value wraps onto indented continuations. A single word "
-                     + "longer than the budget is left whole, since breaking a path to "
-                     + "satisfy a column is worse than exceeding it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-    }
-
-
-    @ViewBuilder
-    private var readingPanel: some View {
-        Section {
-            ForEach(palette.styles) { style in
-                HStack(spacing: 8) {
-                    ColorPicker("", selection: Binding(
-                        get: { style.swatch },
-                        set: { palette.setColour($0, on: style) }
-                    ))
-                    .labelsHidden()
-                    .tip("Pick this highlighter's colour")
-
-                    TextField("", text: Binding(
-                        get: { style.meaning },
-                        set: { palette.setMeaning($0, on: style) }
-                    ), prompt: Text("What it means"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-
-                    Button {
-                        palette.remove(style)
-                    } label: {
-                        Image(systemName: "minus.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tertiary)
-                    .disabled(palette.styles.count < 2)
-                    .tip(palette.styles.count < 2
-                         ? "The last colour stays; without one there is no highlighter"
-                         : "Remove this colour")
-                }
-            }
-
-            HStack {
-                Button { palette.add() } label: {
-                    Label("Add a colour", systemImage: "plus.circle")
-                }
-                .buttonStyle(.link)
-                .tip("Another highlighter, with its own meaning")
-                Spacer()
-                Button("Reset") { palette.resetToDefaults() }
-                    .buttonStyle(.link)
-                    .tip("Back to the five it started with")
-            }
-        } header: {
-            Text("Highlighters")
-        } footer: {
-            Text("Shown beside the bar as you highlight and next to every mark, so the "
-                 + "convention is legible where it is used rather than remembered.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        Section("Mode") {
-            Toggle("Reading mode", isOn: $chrome.reading)
-                .tip("Hide the list, the header and the deciding controls", key: "⌘⇧R")
         }
     }
 
@@ -1490,31 +1154,15 @@ struct ContentView: View {
         }
     }
 
-    /// Appearance and the settings that used to live in a window of their own, in one
-    /// tab: both are set once and then forgotten, and neither was worth a second place to
-    /// look. See `SettingsPanel` for why the window went.
-    @ViewBuilder
-    private var settingsPanel: some View {
-            Section("Appearance") {
-                Picker("Theme", selection: $appearance) {
-                    ForEach(Appearance.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-            SettingsPanel()
-    }
-
-
     // MARK: Toolbar
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button { selectTab(.settings) } label: {
+            SettingsLink {
                 Label("Settings", systemImage: "gearshape")
             }
-            .tip("API key, model, prices and the ChatGPT plugin", key: "⌘,")
+            .tip("Everything you set once, in a window of its own", key: "⌘,")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -1761,7 +1409,7 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, passwords, naming, files, ai, bibtex, tags, library, reading, log, settings
+    case sources, explorer, naming, tags, library, log
 
     var id: String { rawValue }
 
@@ -1769,16 +1417,10 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         switch self {
         case .sources: return "folder"
         case .explorer: return "list.bullet.indent"
-        case .passwords: return "key"
         case .naming: return "textformat"
-        case .files: return "tray.full"
-        case .ai: return "sparkles"
-        case .bibtex: return "text.quote"
         case .tags: return "tag"
         case .library: return "books.vertical"
-        case .reading: return "highlighter"
         case .log: return "list.bullet.rectangle"
-        case .settings: return "gearshape"
         }
     }
 
@@ -1786,16 +1428,10 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         switch self {
         case .sources: return "Sources"
         case .explorer: return "Explorer"
-        case .passwords: return "Passwords"
         case .naming: return "Name rules"
-        case .files: return "Files"
-        case .ai: return "AI"
-        case .bibtex: return "BibTeX"
         case .tags: return "Tags"
         case .library: return "Library"
-        case .reading: return "Reading"
         case .log: return "Activity"
-        case .settings: return "Settings"
         }
     }
 }
