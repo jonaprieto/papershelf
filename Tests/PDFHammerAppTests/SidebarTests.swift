@@ -85,7 +85,9 @@ final class SidebarTests: XCTestCase {
 
         // `onAppear` runs on SwiftUI's own schedule, not synchronously with AppKit layout,
         // so give it a moment to land rather than reading `box` immediately.
-        let deadline = Date().addingTimeInterval(1)
+        // Generous on purpose: this waits for SwiftUI's own scheduling, and a second is
+        // not always enough on a machine that is busy building something else.
+        let deadline = Date().addingTimeInterval(10)
         while box.width == nil && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
             hosting.layoutSubtreeIfNeeded()

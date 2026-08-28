@@ -53,7 +53,9 @@ final class FlowRowTests: XCTestCase {
         let hosting = NSHostingView(rootView: probe)
         hosting.frame = NSRect(x: 0, y: 0, width: width, height: 400)
         hosting.layoutSubtreeIfNeeded()
-        let deadline = Date().addingTimeInterval(1)
+        // Generous on purpose: this waits for SwiftUI's own scheduling, and a second is
+        // not always enough on a machine that is busy building something else.
+        let deadline = Date().addingTimeInterval(10)
         while box.height == nil && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
             hosting.layoutSubtreeIfNeeded()
