@@ -22,6 +22,7 @@ struct StatusBar: View {
     /// run, and the last thing before the watcher's own state.
     let library: String?
     @State private var showingActivity = false
+    @ObservedObject private var regions: Regions = .shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -70,6 +71,12 @@ struct StatusBar: View {
         .frame(height: Metric.statusBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
+        .region(.status)
+        // Focusing the status bar opens what it is a summary of, which is the only useful
+        // thing focus can mean for a bar of text.
+        .onChange(of: regions.focused) { _, region in
+            if region == .status { showingActivity = true }
+        }
     }
 
     /// Whether what is on screen is a plan, an applied run, or a plan that no longer

@@ -57,6 +57,7 @@ struct ResultsPane: View {
     /// Which of the four library lists the shelf is showing, shared with the sidebar that
     /// sets it.
     @ObservedObject private var shelves: Shelves = .shared
+    @ObservedObject private var regions: Regions = .shared
     /// Remembers the last filter result. The grid, the folder tree and the "N of M shown"
     /// label each need it, and each used to recompute it: three passes over the whole
     /// collection per render, and again on every tick of a window resize because the grid
@@ -358,6 +359,18 @@ struct ResultsPane: View {
             runner.sortResults(by: sortOrder, descending: sortDescending)
         }
             .onDisappear(perform: removeKeyMonitor)
+        // Which regions are actually drawn, so ⌃⇥ skips what is not on screen and ⌃1-⌃5
+        // opens what is collapsed rather than appearing to do nothing.
+            .onChange(of: regionSignature, initial: true) { _, _ in
+            var drawn: Set<Region> = [.document, .status]
+            if !reading { drawn.insert(.sidebar) }
+            if !inspectorCollapsed { drawn.insert(.inspector) }
+            if showsPage && contentsShown && !annotator.contents.isEmpty { drawn.insert(.contents) }
+            regions.available = drawn
+        }
+            .onChange(of: regions.focused) { _, region in
+            if region == .document { listFocused = true }
+        }
         // Reruns whenever the result set changes size, resolving any items the tag
         // index has not seen yet. Already-resolved items are skipped inside `refresh`,
         // so this costs nothing extra when nothing new has arrived.
@@ -558,10 +571,15 @@ struct ResultsPane: View {
 
     /// The commands that do not need a file in front of them, and so must still work on
     /// an empty shelf — which is exactly when someone reaches for the palette.
-    private static let alwaysAvailable: Set<Command> = [.palette, .focusSearch, .shortcuts]
+    private static let alwaysAvailable: Set<Command> = [
+        .palette, .focusSearch, .shortcuts,
+        .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
+        .nextRegion, .previousRegion,
+    ]
 
     private func handle(_ event: NSEvent) -> Bool {
         guard !runner.busy else { return false }
+        if event.keyCode == 53 { return escape() }   // ⎋
         let match = Keymap.shared.command(for: event, in: activeScope)
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
         guard !runner.results.isEmpty, selectedItem != nil else { return false }
@@ -605,6 +623,42 @@ struct ResultsPane: View {
         return perform(match)
     }
 
+    /// Everything that decides which regions exist right now.
+    private var regionSignature: String {
+        "\(reading)\(inspectorCollapsed)\(contentsShown)\(annotator.contents.isEmpty)\(showsPage)"
+    }
+
+    /// One key, always meaning "out of this, into what contains it".
+    ///
+    /// Returning false hands ⎋ on to whoever else wants it -- a sheet, a popover, the
+    /// menu bar -- which is what keeps the last rung from swallowing a dismissal.
+    private func escape() -> Bool {
+        switch Regions.escape(editingField: editingName,
+                              rowFocused: regions.rowFocused,
+                              filtering: !query.isEmpty || folderScope != nil
+                                          || shelves.current != .all,
+                              insidePlace: reader != nil) {
+        case .leaveField:
+            // Keeps what was typed: a second press would undo it, and that is a different
+            // decision from leaving the field.
+            editingName = false
+            listFocused = true
+            regions.rowFocused = true
+        case .leaveRow:
+            regions.rowFocused = false
+        case .clearFilters:
+            query = ""
+            folderScope = nil
+            shelves.current = .all
+            runner.search("", passwords: passwords)
+        case .leavePlace:
+            closeReader()
+        case .nothing:
+            return false
+        }
+        return true
+    }
+
     /// Exactly the commands `perform` carries out, in the order the palette lists them.
     ///
     /// Kept beside the switch below and used to build the palette, so a line can never be
@@ -618,7 +672,8 @@ struct ResultsPane: View {
         .findDuplicates, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .nextMark, .previousMark,
-        .focusContents, .focusDocument, .focusInspector, .newTag,
+        .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
+        .nextRegion, .previousRegion, .newTag,
         .focusSearch, .shortcuts, .palette,
     ]
 
@@ -670,11 +725,20 @@ struct ResultsPane: View {
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)
 
+        case .focusSidebar: regions.focus(.sidebar)
         case .focusContents:
             guard !annotator.contents.isEmpty else { return false }
             contentsShown = true
-        case .focusDocument: listFocused = true
-        case .focusInspector: inspectorCollapsed = false
+            regions.focus(.contents)
+        case .focusDocument:
+            listFocused = true
+            regions.focus(.document)
+        case .focusInspector:
+            inspectorCollapsed = false
+            regions.focus(.inspector)
+        case .focusStatus: regions.focus(.status)
+        case .nextRegion: regions.step(1)
+        case .previousRegion: regions.step(-1)
         case .newTag:
             guard let item = selectedItem else { return false }
             newTagName = ""
@@ -1148,7 +1212,7 @@ struct ResultsPane: View {
             preferred: inspectorWidth, available: available, contentsShown: contentsOpen)
         return HStack(spacing: 0) {
             if showsBrowser {
-                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+                browser.frame(maxWidth: .infinity, maxHeight: .infinity).region(.document)
                 divider(width: width, minimum: minimum, maximum: maximum)
             }
             documentRegion(paneWidth: showsBrowser ? width : available)
@@ -1168,7 +1232,7 @@ struct ResultsPane: View {
         let maximum = max(floor, available - SplitLayout.contentFloor)
         let width = min(max(inspectorWidth, floor), maximum)
         return HStack(spacing: 0) {
-            browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+            browser.frame(maxWidth: .infinity, maxHeight: .infinity).region(.document)
             if !inspectorCollapsed && !overlays {
                 divider(width: width, minimum: floor, maximum: maximum)
                 documentRegion(paneWidth: width)

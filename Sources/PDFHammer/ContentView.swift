@@ -287,6 +287,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
                 sidebarPanel
+                    .region(.sidebar)
                     .navigationSplitViewColumnWidth(min: Metric.sidebarMin, ideal: Metric.sidebarIdeal, max: Metric.sidebarMax)
             } detail: {
             if let openProject, let library = Library.shared {

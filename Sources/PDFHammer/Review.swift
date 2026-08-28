@@ -190,6 +190,7 @@ struct ReviewInspector: View {
                                  close: { contentsShown = false })
                         .frame(width: SplitLayout.contentsRailWidth(
                             inspectorWidth: page.size.width))
+                        .region(.contents)
                     Divider()
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
@@ -202,6 +203,10 @@ struct ReviewInspector: View {
     }
 
     private var panelColumn: some View {
+        panelStack.region(.inspector)
+    }
+
+    private var panelStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
             Divider()

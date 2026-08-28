@@ -11,7 +11,8 @@ import AppKit
 enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Getting around
         case palette
-    case focusContents, focusDocument, focusInspector
+    case focusSidebar, focusContents, focusDocument, focusInspector, focusStatus
+    case nextRegion, previousRegion
     case focusSearch, toggleSidebar, toggleInspector
 
     // Views
@@ -73,7 +74,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var group: Group {
         switch self {
-        case .palette, .focusContents, .focusDocument, .focusInspector,
+        case .palette, .focusSidebar, .focusContents, .focusDocument, .focusInspector,
+             .focusStatus, .nextRegion, .previousRegion,
              .focusSearch, .toggleSidebar, .toggleInspector:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
@@ -112,9 +114,13 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     var title: String {
         switch self {
         case .palette: return "Open the command palette"
+        case .focusSidebar: return "Jump to the sidebar"
         case .focusContents: return "Jump to the contents"
         case .focusDocument: return "Jump to the document"
         case .focusInspector: return "Jump to the inspector"
+        case .focusStatus: return "Jump to the status bar"
+        case .nextRegion: return "Move to the next region"
+        case .previousRegion: return "Move to the previous region"
         case .focusSearch: return "Focus the search field"
         case .toggleSidebar: return "Show or hide the sidebar"
         case .toggleInspector: return "Show or hide the inspector"
@@ -162,9 +168,13 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     var defaultShortcut: Shortcut? {
         switch self {
         case .palette: return Shortcut("k", .command)
+        case .focusSidebar: return Shortcut("1", .control)
         case .focusContents: return Shortcut("2", .control)
         case .focusDocument: return Shortcut("3", .control)
         case .focusInspector: return Shortcut("4", .control)
+        case .focusStatus: return Shortcut("5", .control)
+        case .nextRegion: return Shortcut("\t", .control)
+        case .previousRegion: return Shortcut("\t", [.control, .shift])
         case .focusSearch: return Shortcut("/", [])
         case .toggleSidebar: return Shortcut("b", .command)
         case .toggleInspector: return Shortcut("i", [.command, .option])
