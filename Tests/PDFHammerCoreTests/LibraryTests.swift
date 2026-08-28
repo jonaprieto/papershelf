@@ -754,3 +754,53 @@ final class LibraryTagsAndSectionsTests: XCTestCase {
         XCTAssertEqual(members.first?.1, "read next")
     }
 }
+
+/// Resolving a shelf of files to the documents behind them used to be one query per file.
+/// This is the one that replaced them.
+final class DocumentIDsByPathTests: XCTestCase {
+
+    private func makeLibrary() throws -> (Library, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ids-by-path-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("library.sqlite")
+        return (try Library(url: url), directory)
+    }
+
+    func testEveryKnownPathComesBackWithItsDocument() async throws {
+        let (library, directory) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = try await library.indexDocument(path: "/tmp/shelf/a.pdf", contentHash: "aaa")
+        let second = try await library.indexDocument(path: "/tmp/shelf/b.pdf", contentHash: "bbb")
+
+        let byPath = try await library.documentIDsByPath()
+        XCTAssertEqual(byPath["/tmp/shelf/a.pdf"], first.id)
+        XCTAssertEqual(byPath["/tmp/shelf/b.pdf"], second.id)
+        XCTAssertNil(byPath["/tmp/shelf/never-seen.pdf"])
+    }
+
+    /// A renamed document is known at both paths, which is what lets it keep its tags.
+    /// Both have to come back, or the catalogue resolves the file under its new name to
+    /// nothing and shows it as untagged.
+    func testARenamedDocumentIsKnownAtEveryPathItHasHad() async throws {
+        let (library, directory) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let original = try await library.indexDocument(path: "/tmp/shelf/old.pdf", contentHash: "same")
+        try await library.recordLocation("/tmp/shelf/new.pdf", forDocument: original.id)
+
+        let byPath = try await library.documentIDsByPath()
+        XCTAssertEqual(byPath["/tmp/shelf/old.pdf"], original.id)
+        XCTAssertEqual(byPath["/tmp/shelf/new.pdf"], original.id,
+                       "the same document, so the same id at both paths")
+    }
+
+    func testAnEmptyLibraryKnowsNoPaths() async throws {
+        let (library, directory) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let byPath = try await library.documentIDsByPath()
+        XCTAssertTrue(byPath.isEmpty)
+    }
+}

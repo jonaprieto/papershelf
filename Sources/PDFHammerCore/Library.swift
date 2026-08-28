@@ -409,6 +409,23 @@ public actor Library {
         }
     }
 
+    /// Every path the library knows, and the document each one belongs to, in one query.
+    ///
+    /// For resolving a whole shelf at once. Asking file by file meant two statements and a
+    /// round trip through this actor per file, a thousand times over on a thousand-file
+    /// shelf, to end up with nothing but the ids.
+    public func documentIDsByPath() throws -> [String: String] {
+        try withStatement("SELECT path, document_id FROM locations;", bind: { _ in }) { statement in
+            var found: [String: String] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let path = columnText(statement, 0),
+                      let id = columnText(statement, 1) else { continue }
+                found[path] = id
+            }
+            return found
+        }
+    }
+
     public func document(id: String) throws -> DocumentRecord? {
         try withStatement("""
             SELECT id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info

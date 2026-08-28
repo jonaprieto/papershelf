@@ -1252,9 +1252,18 @@ final class CatalogueTags: ObservableObject {
         guard let library else { return }
         if let all = try? await library.tagsByDocument() { byDocument = all }
         if let counts = try? await library.tagCounts() { everyTag = counts.map(\.name) }
-        for item in items where documentID[item.key] == nil {
-            let path = item.currentURL.resolvingSymlinksInPath().path
-            if let id = try? await library.document(atPath: path)?.id {
+
+        let unresolved = items.filter { documentID[$0.key] == nil }
+        guard !unresolved.isEmpty else { return }
+        // One query for the whole shelf. This used to ask per file, which on a thousand
+        // files was a thousand round trips through the library actor and two statements
+        // each, all to end up with the ids.
+        guard let byPath = try? await library.documentIDsByPath() else { return }
+        for item in unresolved {
+            // The plain path first: paths are recorded resolved, but resolving one is a
+            // filesystem call and almost no shelf is reached through a link.
+            if let id = byPath[item.currentURL.path]
+                ?? byPath[item.currentURL.resolvingSymlinksInPath().path] {
                 documentID[item.key] = id
             }
         }
