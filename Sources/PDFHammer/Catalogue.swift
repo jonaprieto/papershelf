@@ -350,6 +350,28 @@ struct ResultsPane: View {
         } message: {
             Text(runner.aiError ?? "")
         }
+        // Built here rather than in ContentView's toolbar because this is where the query
+        // and the mode live, and SwiftUI merges toolbars down the hierarchy. Moving the
+        // state up instead would have meant reimplementing the search field's behaviour —
+        // metadata filtering live, `text:` waiting for Return, `/` to focus — around a
+        // binding, and that behaviour is the useful part.
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $mode) {
+                    ForEach(ViewMode.allCases) { mode in
+                        Label(mode.label, systemImage: mode.icon).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.iconOnly)
+                .labelsHidden()
+                .fixedSize()
+                .tip("Which view of the same files", key: "⌘1 to ⌘4")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                searchField
+            }
+        }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
                 commands: Self.performable.filter { $0 != .palette },
@@ -1042,7 +1064,6 @@ struct ResultsPane: View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal) {
               HStack(spacing: 10) {
-                searchField
                 if let folderScope {
                     Button {
                         self.folderScope = nil
@@ -1052,14 +1073,6 @@ struct ResultsPane: View {
                     .controlSize(.small)
                     .tip("Showing only this folder's files. Click to show everything again.")
                 }
-                Picker("View", selection: $mode) {
-                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .tip("Which view of the same files", key: "⌘1 to ⌘4")
-
                 ForEach(runner.statusCounts, id: \.0) { status, count in
                     StatusPill(status: status, count: count)
                 }
