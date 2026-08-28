@@ -8,7 +8,7 @@ import PDFHammerCore
 /// looking at" and "what is my API key" at the same level and gave the sidebar two jobs.
 /// These are the things you set once and rarely return to; the sidebar is where you are.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, files, bibtex, highlighters, keyboard, ai, integrations
+    case general, files, naming, bibtex, highlighters, keyboard, ai, integrations
 
     var id: String { rawValue }
 
@@ -16,6 +16,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "General"
         case .files: return "Files & passwords"
+        case .naming: return "Name rules"
         case .bibtex: return "BibTeX"
         case .highlighters: return "Highlighters"
         case .keyboard: return "Keyboard"
@@ -28,6 +29,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .files: return "folder"
+        case .naming: return "textformat"
         case .bibtex: return "text.quote"
         case .highlighters: return "highlighter"
         case .keyboard: return "keyboard"
@@ -55,6 +57,7 @@ struct SettingsWindowView: View {
                 switch pane {
                 case .general: GeneralSettings()
                 case .files: FileSettings()
+                case .naming: NameRulesSettings()
                 case .bibtex: BibtexSettings()
                 case .highlighters: HighlighterSettings(palette: palette)
                 case .keyboard: KeyboardSettings()
