@@ -17,7 +17,6 @@ struct ContentView: View {
     @AppStorage("backupCustomPath") private var backupCustomPath = ""
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
     @State private var choosingBackupFolder = false
-    @State private var savingLog = false
     @State private var watcher: FolderWatcher?
     @StateObject private var palette = Palette()
     @AppStorage("useFolderNames") private var useFolderNames = true
@@ -324,8 +323,7 @@ struct ContentView: View {
                 runner: runner,
                 watching: watchSources && !selection.isEmpty,
                 sources: selection.count,
-                spend: sessionSpendLabel,
-                showActivity: { sidebarTab = .log; chrome.columnVisibility = .all }
+                spend: sessionSpendLabel
             )
         }
         // The rail, the panel's own floor (matching the min above), plus the detail pane's.
@@ -371,10 +369,6 @@ struct ContentView: View {
         } message: {
             Text(applyWarnings.joined(separator: "\n\n"))
         }
-        .fileExporter(isPresented: $savingLog,
-                      document: TextDocument(text: logText(runner.log)),
-                      contentType: .plainText,
-                      defaultFilename: "pdf-hammer-log.txt") { _ in }
         .fileImporter(
             isPresented: $choosingBackupFolder,
             allowedContentTypes: [.folder],
@@ -437,7 +431,6 @@ struct ContentView: View {
             case .explorer: explorerPanel
             case .tags: tagsPanel
             case .library: libraryPanel
-            case .log: logPanel
             }
         }
         .formStyle(.grouped)
@@ -728,68 +721,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var logPanel: some View {
-        Section {
-            if runner.log.isEmpty {
-                Text("Nothing yet").foregroundStyle(.secondary)
-            } else {
-                // Newest first: the last thing that happened is what you came to check.
-                ForEach(runner.log.reversed().prefix(200)) { entry in
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
-                            Text(entry.kind.rawValue)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(logColour(entry.kind))
-                            Text(entry.at, style: .time)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Text(entry.subject)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                        if !entry.detail.isEmpty {
-                            Text(entry.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    .padding(.vertical, 1)
-                }
-            }
-        } header: {
-            Text("Activity")
-        } footer: {
-            HStack {
-                Button("Copy log") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(logText(runner.log), forType: .string)
-                }
-                .buttonStyle(.link)
-                .disabled(runner.log.isEmpty)
-                Spacer()
-                Button("Save…") { savingLog = true }
-                    .buttonStyle(.link)
-                    .disabled(runner.log.isEmpty)
-            }
-        }
-    }
-
-    private func logColour(_ kind: LogEntry.Kind) -> Color {
-        switch kind {
-        case .failed: return Ink.red
-        case .trashed: return Ink.red
-        case .moved: return Ink.purple
-        case .decrypted, .renamed, .applied: return Ink.green
-        case .skipped: return .secondary
-        default: return Ink.blue
-        }
-    }
-
     // MARK: Toolbar
 
     @ToolbarContentBuilder
@@ -1045,7 +976,7 @@ struct Note: View {
 // MARK: - Results
 
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, tags, library, log
+    case sources, explorer, tags, library
 
     var id: String { rawValue }
 
@@ -1055,7 +986,6 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .explorer: return "list.bullet.indent"
         case .tags: return "tag"
         case .library: return "books.vertical"
-        case .log: return "list.bullet.rectangle"
         }
     }
 
@@ -1065,7 +995,6 @@ enum SidebarTab: String, CaseIterable, Identifiable {
         case .explorer: return "Explorer"
         case .tags: return "Tags"
         case .library: return "Library"
-        case .log: return "Activity"
         }
     }
 }

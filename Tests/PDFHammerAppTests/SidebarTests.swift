@@ -30,7 +30,7 @@ final class SidebarTests: XCTestCase {
     /// where you are, and what just happened.
     func testRailTabsAreAllStillThere() {
         let expected: [SidebarTab] = [
-            .sources, .explorer, .tags, .library, .log,
+            .sources, .explorer, .tags, .library,
         ]
         XCTAssertEqual(SidebarTab.allCases, expected)
     }
@@ -39,7 +39,7 @@ final class SidebarTests: XCTestCase {
     /// settings window has to be gone from the rail, or the two copies drift.
     func testSettingsAreNotAlsoATab() {
         let titles = Set(SidebarTab.allCases.map(\.title))
-        for moved in ["Passwords", "Files", "AI", "BibTeX", "Reading", "Settings", "Name rules"] {
+        for moved in ["Passwords", "Files", "AI", "BibTeX", "Reading", "Settings", "Name rules", "Activity"] {
             XCTAssertFalse(titles.contains(moved), "\(moved) is still a rail tab as well")
         }
     }

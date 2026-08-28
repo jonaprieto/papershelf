@@ -14,7 +14,7 @@ struct StatusBar: View {
     /// Already formatted by the caller: money carries its currency and is never coerced
     /// into a Double on the way to a label.
     let spend: String?
-    let showActivity: () -> Void
+    @State private var showingActivity = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -77,7 +77,7 @@ struct StatusBar: View {
                     .monospacedDigit()
             }
         case .idle:
-            Button(action: showActivity) {
+            Button { showingActivity.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.arrow.circlepath")
                     Text(idleLabel)
@@ -85,6 +85,9 @@ struct StatusBar: View {
             }
             .buttonStyle(.plain)
             .help("Everything that has happened, newest first")
+            .popover(isPresented: $showingActivity, arrowEdge: .top) {
+                ActivityLog(entries: runner.log)
+            }
         }
     }
 
