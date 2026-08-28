@@ -22,6 +22,11 @@ final class Annotator: ObservableObject {
     @Published var selectedMark: UUID?
     /// The document's own table of contents, if it has one.
     @Published private(set) var contents: [Chapter] = []
+    /// The page on screen, one-based, and how many there are. Published so the Info panel
+    /// can say where you are, and written to the library so the shelf can say which books
+    /// are open.
+    @Published private(set) var page = 1
+    @Published private(set) var pageCount = 0
 
     /// One outline entry, flattened with its depth. A table of contents is read top to
     /// bottom far more often than it is folded, and indentation carries the structure
@@ -60,14 +65,26 @@ final class Annotator: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var unsaved = false
 
+    /// The last position written to the library, and the write waiting out a scroll. A
+    /// page turn is cheap; a database write per scroll tick is not.
+    private var positionTask: Task<Void, Never>?
+    private var writtenPage: Int?
+
     func attach(_ view: PDFView, url: URL) {
         // Whatever the previous document still owed the disk, it owes now: the debounce
         // must never outlive the file it was waiting for.
         flush()
+        NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         self.view = view
         self.url = url
         generation &+= 1
         marks = []
+        writtenPage = nil
+        pageCount = view.document?.pageCount ?? 0
+        page = 1
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
+        restorePosition()
         // Cheap: a couple of milliseconds even on a long book, and the rail beside the
         // page would look broken without it.
         readContents()
@@ -109,6 +126,59 @@ final class Annotator: ObservableObject {
                         note: annotation.contents ?? "",
                         colour: annotation.color,
                         annotation: annotation)
+        }
+    }
+
+    /// The page turned to, remembered.
+    ///
+    /// Debounced: scrolling a long document walks through pages several a second, and a
+    /// write for each of them is a database transaction per scroll tick. What is
+    /// published moves immediately; only the trip to the library waits.
+    @objc private func pageChanged() {
+        guard let view, let document = view.document, let current = view.currentPage else { return }
+        page = document.index(for: current) + 1
+        pageCount = document.pageCount
+        positionTask?.cancel()
+        let mine = generation
+        positionTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            await self?.writePosition(generation: mine)
+        }
+    }
+
+    private func writePosition(generation mine: Int) async {
+        guard mine == generation, let url, page != writtenPage,
+              let library = Library.shared else { return }
+        let path = url.resolvingSymlinksInPath().path
+        let here = page
+        let total = pageCount > 0 ? pageCount : nil
+        writtenPage = here
+        guard let record = try? await library.document(atPath: path) else { return }
+        try? await library.rememberReadingPosition(documentID: record.id, page: here,
+                                                   pageCount: total)
+    }
+
+    /// Opens a book where it was left, which is what makes remembering the page worth
+    /// anything. A document the library has never seen simply opens at the top.
+    private func restorePosition() {
+        guard let url, let library = Library.shared else { return }
+        let path = url.resolvingSymlinksInPath().path
+        let mine = generation
+        Task { [weak self] in
+            guard let record = try? await library.document(atPath: path),
+                  let position = try? await library.readingPosition(forDocument: record.id),
+                  position.isInProgress
+            else { return }
+            await MainActor.run {
+                guard let self, mine == self.generation, let view = self.view,
+                      let document = view.document,
+                      let page = document.page(at: min(position.page, document.pageCount) - 1)
+                else { return }
+                view.go(to: PDFDestination(page: page, at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
+                self.page = position.page
+                self.writtenPage = position.page
+            }
         }
     }
 

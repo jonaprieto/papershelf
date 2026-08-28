@@ -118,7 +118,8 @@ public actor Library {
     /// followed by bumping `PRAGMA user_version` to match. Adding the spend ledger or the
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
-    fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4]
+    fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4,
+                                                   schemaV5]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -252,6 +253,21 @@ public actor Library {
     /// has to stay possible or adding one would become a two-step decision.
     fileprivate static let schemaV4 = """
         ALTER TABLE project_members ADD COLUMN section TEXT;
+        """
+
+    /// How far into a document a person has read.
+    ///
+    /// The app knew which page was on screen and forgot it the moment the window closed,
+    /// which is why "Reading Now" could not exist and the Info panel had nothing to say
+    /// about progress. Keyed on the document rather than the path, like everything else
+    /// here, so a book renamed halfway through is still the book you were reading.
+    fileprivate static let schemaV5 = """
+        CREATE TABLE reading_positions (
+            document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+            page        INTEGER NOT NULL,
+            page_count  INTEGER,
+            updated_at  TEXT NOT NULL
+        );
         """
 
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
@@ -840,7 +856,7 @@ func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String?) {
     sqlite3_bind_text(statement, index, value, -1, SQLITE_TRANSIENT)
 }
 
-private func bindInt(_ statement: OpaquePointer, _ index: Int32, _ value: Int?) {
+func bindInt(_ statement: OpaquePointer, _ index: Int32, _ value: Int?) {
     guard let value else {
         sqlite3_bind_null(statement, index)
         return
@@ -853,7 +869,7 @@ func columnText(_ statement: OpaquePointer, _ index: Int32) -> String? {
     return String(cString: cString)
 }
 
-private func columnInt(_ statement: OpaquePointer, _ index: Int32) -> Int? {
+func columnInt(_ statement: OpaquePointer, _ index: Int32) -> Int? {
     sqlite3_column_type(statement, index) == SQLITE_NULL ? nil : Int(sqlite3_column_int64(statement, index))
 }
 

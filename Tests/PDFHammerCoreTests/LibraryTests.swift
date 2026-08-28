@@ -804,3 +804,86 @@ final class DocumentIDsByPathTests: XCTestCase {
         XCTAssertTrue(byPath.isEmpty)
     }
 }
+
+/// Where the reader got to. The app knew which page was on screen and forgot it on
+/// close, which is why the shelf had no way to say which books are open.
+final class ReadingPositionTests: XCTestCase {
+
+    private func scratch() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("reading-position-tests"), isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("library.sqlite")
+    }
+
+    func testAPositionSurvivesAndUpdatesInPlace() async throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let library = try Library(url: url)
+        let id = try await library.indexDocument(path: "/books/pearl.pdf", contentHash: "a",
+                                                 byteCount: 10, pageCount: 248).id
+        try await library.rememberReadingPosition(documentID: id, page: 12, pageCount: 248)
+        try await library.rememberReadingPosition(documentID: id, page: 40, pageCount: 248)
+        let position = try await library.readingPosition(forDocument: id)
+        XCTAssertEqual(position?.page, 40)
+        XCTAssertEqual(position?.pageCount, 248)
+    }
+
+    /// A book opened and a book finished are both not "reading now".
+    func testOnlyAPartReadDocumentCountsAsBeingRead() {
+        let opened = ReadingPosition(documentID: "a", page: 1, pageCount: 248, updatedAt: Date())
+        let midway = ReadingPosition(documentID: "b", page: 12, pageCount: 248, updatedAt: Date())
+        let finished = ReadingPosition(documentID: "c", page: 248, pageCount: 248, updatedAt: Date())
+        XCTAssertFalse(opened.isInProgress)
+        XCTAssertTrue(midway.isInProgress)
+        XCTAssertFalse(finished.isInProgress)
+    }
+
+    func testProgressIsMeasuredFromThePageTurnedTo() {
+        XCTAssertEqual(ReadingPosition(documentID: "a", page: 1, pageCount: 101,
+                                       updatedAt: Date()).fraction, 0)
+        XCTAssertEqual(ReadingPosition(documentID: "a", page: 51, pageCount: 101,
+                                       updatedAt: Date()).fraction, 0.5)
+        XCTAssertNil(ReadingPosition(documentID: "a", page: 3, pageCount: nil,
+                                     updatedAt: Date()).fraction)
+    }
+
+    /// A renamed book is still the book you were reading, so every path it is known at
+    /// answers.
+    func testEveryPathOfAPartReadDocumentAnswers() async throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let library = try Library(url: url)
+        let id = try await library.indexDocument(path: "/in/old.pdf", contentHash: "a",
+                                                 byteCount: 10, pageCount: 100).id
+        // What a rename does: the new path is attached to the document that was already
+        // known under the old one, rather than a second document being invented.
+        try await library.recordLocation("/in/2009-new.pdf", forDocument: id)
+        try await library.rememberReadingPosition(documentID: id, page: 12, pageCount: 100)
+        let paths = try await library.pathsBeingRead()
+        XCTAssertTrue(paths.contains("/in/old.pdf"))
+        XCTAssertTrue(paths.contains("/in/2009-new.pdf"))
+    }
+
+    func testAFinishedBookIsNotOfferedAsBeingRead() async throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let library = try Library(url: url)
+        let id = try await library.indexDocument(path: "/in/done.pdf", contentHash: "z",
+                                                 byteCount: 10, pageCount: 100).id
+        try await library.rememberReadingPosition(documentID: id, page: 100, pageCount: 100)
+        let reading = try await library.pathsBeingRead()
+        XCTAssertTrue(reading.isEmpty)
+    }
+
+    func testRecentlyAddedIsAboutWhenTheLibraryMetTheFile() async throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let library = try Library(url: url)
+        _ = try await library.indexDocument(path: "/in/new.pdf", contentHash: "n", byteCount: 1)
+        let recent = try await library.pathsFirstSeen(since: Date().addingTimeInterval(-3600))
+        XCTAssertEqual(recent, ["/in/new.pdf"])
+        let future = try await library.pathsFirstSeen(since: Date().addingTimeInterval(3600))
+        XCTAssertTrue(future.isEmpty)
+    }
+}

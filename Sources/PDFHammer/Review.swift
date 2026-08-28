@@ -761,6 +761,10 @@ struct MetadataPanel: View {
     /// Opens this document in the reader. The shelf shows no page, so this is the way in.
     var read: (() -> Void)?
 
+    /// How far in the reader got last time, read from the library rather than from the
+    /// page, since the shelf has no page open.
+    @State private var position: ReadingPosition?
+
     private var facts: [(String, String)] {
         var rows: [(String, String)] = []
         for key in ["Title", "Author", "Subject", "Keywords", "Creator", "Producer"] {
@@ -772,6 +776,24 @@ struct MetadataPanel: View {
         return rows
     }
 
+    /// Where the reader left off. Absent for a book nobody has opened, rather than a row
+    /// saying so.
+    @ViewBuilder
+    private var progress: some View {
+        if let position, position.isInProgress {
+            HStack(spacing: 7) {
+                if let fraction = position.fraction {
+                    ProgressView(value: fraction).frame(width: 70)
+                    Text("page \(position.page) of \(position.pageCount ?? 0) · \(Int(fraction * 100))%")
+                } else {
+                    Text("page \(position.page)")
+                }
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+    }
+
     private var physical: String {
         [
             item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
@@ -781,6 +803,18 @@ struct MetadataPanel: View {
     }
 
     var body: some View {
+        panel.task(id: item.key) { await loadPosition() }
+    }
+
+    private func loadPosition() async {
+        position = nil
+        guard let library = Library.shared else { return }
+        let path = item.currentURL.resolvingSymlinksInPath().path
+        guard let record = try? await library.document(atPath: path) else { return }
+        position = try? await library.readingPosition(forDocument: record.id)
+    }
+
+    private var panel: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let read {
                 Button(action: read) {
@@ -795,6 +829,8 @@ struct MetadataPanel: View {
             Text(physical)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+
+            progress
 
             TagStrip(actions: tags)
 
