@@ -18,10 +18,16 @@ final class Chrome: ObservableObject {
     @AppStorage("notesShown") var notesShown = false
     @AppStorage("contentsShown") var contentsShown = false
 
+    /// Not animated, and neither are the notes and contents rails.
+    ///
+    /// Every one of these changes the width of the pane the PDF view sits in, and the view
+    /// refits the page to its new width on each layout pass, re-rendering what is on screen
+    /// each time. Animating the change turned one re-render into one per frame for the
+    /// length of the animation, which is why opening or closing a rail felt slow on a long
+    /// document. They snap now, and the panel is there before the click is over.
     func toggleSidebar() {
-        withAnimation(.easeOut(duration: 0.18)) {
-            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-        }
+        // Not animated: see `Chrome.toggleSidebar`'s note.
+        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
     }
 }
 

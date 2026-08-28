@@ -49,11 +49,58 @@ final class Annotator: ObservableObject {
     weak var view: PDFView?
     private(set) var url: URL?
 
+    /// Bumped on every attach, so a scan still walking the file you just left stops
+    /// instead of publishing its marks over the one you are looking at now.
+    private var generation = 0
+    private var scan: Task<Void, Never>?
+
     func attach(_ view: PDFView, url: URL) {
         self.view = view
         self.url = url
-        refresh()
+        generation &+= 1
+        marks = []
+        // Cheap: a couple of milliseconds even on a long book, and the rail beside the
+        // page would look broken without it.
         readContents()
+        startScanningForMarks()
+    }
+
+    /// Walks the pages for marks a slice at a time, giving the run loop a turn between
+    /// slices.
+    ///
+    /// Reading one page's annotations costs a fraction of a millisecond and a thesis has
+    /// two hundred pages, so doing the whole walk at once held the main thread for about a
+    /// tenth of a second every time the selection moved. The pages belong to the view's
+    /// own document, which is the main thread's, so this cannot be moved off it: it is
+    /// broken up instead, and abandoned the moment another file is attached.
+    private func startScanningForMarks() {
+        scan?.cancel()
+        let mine = generation
+        scan = Task { @MainActor [weak self] in
+            guard let self, let document = self.view?.document else { return }
+            var found: [Mark] = []
+            for index in 0..<document.pageCount {
+                if index % 16 == 15 { await Task.yield() }
+                guard !Task.isCancelled, mine == self.generation else { return }
+                guard let page = document.page(at: index) else { continue }
+                found.append(contentsOf: self.marks(on: page, page: index + 1))
+            }
+            guard !Task.isCancelled, mine == self.generation else { return }
+            self.marks = found
+        }
+    }
+
+    /// One page's marks. Shared by the slice-at-a-time scan and the whole-document
+    /// `refresh` an edit triggers, so the two cannot disagree about what a mark is.
+    private func marks(on page: PDFPage, page number: Int) -> [Mark] {
+        page.annotations.compactMap { annotation in
+            let type = annotation.type ?? "Note"
+            guard type != "Popup" else { return nil }   // the tail of a text note, not a mark
+            return Mark(page: number, kind: type, quoted: quotedText(of: annotation, on: page),
+                        note: annotation.contents ?? "",
+                        colour: annotation.color,
+                        annotation: annotation)
+        }
     }
 
     private func readContents() {
@@ -116,20 +163,17 @@ final class Annotator: ObservableObject {
         return (quoted: quoted, page: document.index(for: page) + 1, title: title)
     }
 
+    /// The whole document at once, for the moment right after an edit, where waiting a
+    /// turn of the run loop would show the mark appearing late.
     func refresh() {
         guard let document = view?.document else { marks = []; return }
+        // An edit lands on the file already open, so anything the slice-at-a-time scan is
+        // still doing is about to be redundant.
+        scan?.cancel()
         var found: [Mark] = []
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
-            for annotation in page.annotations {
-                let type = annotation.type ?? "Note"
-                guard type != "Popup" else { continue }   // the tail of a text note, not a mark
-                let quoted = quotedText(of: annotation, on: page)
-                found.append(Mark(page: index + 1, kind: type, quoted: quoted,
-                                  note: annotation.contents ?? "",
-                                  colour: annotation.color,
-                                  annotation: annotation))
-            }
+            found.append(contentsOf: marks(on: page, page: index + 1))
         }
         marks = found
     }

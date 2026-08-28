@@ -332,11 +332,11 @@ conversation you already have open. The app registers only a `codex://` scheme a
 address a new thread but not an existing one, which is why copying is offered as well.
 Neither sends anything on its own: the text lands in the composer and you decide.
 
-## Preview, review, apply
+## Plan, review, apply
 
-Nothing on disk moves until you have looked at every file. **Preview** is read-only
-and produces a plan; the reviewer then walks it one file at a time, showing the PDF
-next to an editable name.
+Nothing on disk moves until you have looked at every file. **Plan** is read-only
+and works out the new names; the reviewer then walks the plan one file at a time,
+showing the PDF next to an editable name.
 
 | key | |
 |---|---|

@@ -101,8 +101,7 @@ struct ReviewInspector: View {
                 HStack(spacing: 0) {
                     if contentsShown && !annotator.contents.isEmpty {
                         ContentsRail(annotator: annotator,
-                                     close: { withAnimation(.easeOut(duration: 0.15)) {
-                                         contentsShown = false } })
+                                     close: { contentsShown = false })
                             .frame(width: SplitLayout.contentsRailWidth(
                                 inspectorWidth: inspector.size.width))
                         Divider()
@@ -174,7 +173,7 @@ struct ReviewInspector: View {
 
             if !annotator.contents.isEmpty {
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { contentsShown.toggle() }
+                    contentsShown.toggle()
                 } label: {
                     Image(systemName: "list.bullet.indent")
                 }
@@ -191,7 +190,7 @@ struct ReviewInspector: View {
                 .tip("Open in the default PDF viewer", key: "O")
 
             Button {
-                withAnimation(.easeOut(duration: 0.15)) { notesShown.toggle() }
+                notesShown.toggle()
             } label: {
                 if reading {
                     Label(notesShown ? "Hide notes" : "Notes",
@@ -214,7 +213,7 @@ struct ReviewInspector: View {
 
             if !reading {
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { collapsed.toggle() }
+                    collapsed.toggle()
                 } label: {
                     Image(systemName: collapsed ? "chevron.up" : "chevron.down")
                 }
@@ -578,21 +577,50 @@ struct PDFPreview: NSViewRepresentable {
 
     func updateNSView(_ view: FitWidthPDFView, context: Context) {
         guard view.document?.documentURL != url else { return }
-        let document = PDFDocument(url: url)
-        if document?.isLocked == true {
-            for password in passwords {
-                if document?.unlock(withPassword: password) == true { break }
+
+        // Parsing a document is not free: a two-hundred-page thesis takes the better part
+        // of a tenth of a second, and doing it here held the main thread for exactly that
+        // long on every move through the list. It is read off the main thread instead, and
+        // a load that lands after the selection has moved on is dropped rather than drawn
+        // over the file now selected.
+        let coordinator = context.coordinator
+        let wanted = url
+        coordinator.wanted = wanted
+        let passwords = passwords
+        let annotator = annotator
+
+        Task { @MainActor in
+            let loaded = await PDFPreview.load(url: wanted, passwords: passwords)
+            guard coordinator.wanted == wanted else { return }
+            view.document = loaded.document
+            view.showFromTop()
+            annotator?.attach(view, url: wanted)
+        }
+    }
+
+    /// Carries a document back from the thread that parsed it. `PDFDocument` is not
+    /// `Sendable`, and nothing else touches this one until the hop is done.
+    private struct Loaded: @unchecked Sendable {
+        let document: PDFDocument?
+    }
+
+    private static func load(url: URL, passwords: [String]) async -> Loaded {
+        await Task.detached(priority: .userInitiated) {
+            let document = PDFDocument(url: url)
+            if document?.isLocked == true {
+                for password in passwords where document?.unlock(withPassword: password) == true {
+                    break
+                }
             }
-        }
-        view.document = document
-        view.showFromTop()
-        if let annotator {
-            Task { @MainActor in annotator.attach(view, url: url) }
-        }
+            return Loaded(document: document)
+        }.value
     }
 
     final class Coordinator: NSObject {
         let annotator: Annotator?
+        /// The file the view should end up showing, so a slower load of the file before it
+        /// can tell that it is no longer wanted.
+        @MainActor var wanted: URL?
         init(annotator: Annotator?) { self.annotator = annotator }
 
         @objc func selectionChanged() {

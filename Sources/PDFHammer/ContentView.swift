@@ -463,7 +463,7 @@ struct ContentView: View {
             return selection.isEmpty ? "No sources" : "\(selection.count) source\(selection.count == 1 ? "" : "s")"
         }
         if !runner.lastRunWasDry { return "Applied to \(runner.results.count) files" }
-        guard previewIsCurrent else { return "Preview is out of date" }
+        guard previewIsCurrent else { return "The plan is out of date" }
         return runner.pendingCount == 0
             ? "All \(runner.results.count) reviewed, ready to apply"
             : "\(runner.reviewed) of \(runner.results.count) reviewed"
@@ -505,7 +505,7 @@ struct ContentView: View {
     private func selectTab(_ tab: SidebarTab) {
         sidebarTab = tab
         if chrome.columnVisibility == .detailOnly {
-            withAnimation(.easeOut(duration: 0.18)) { chrome.columnVisibility = .all }
+            chrome.columnVisibility = .all
         }
     }
 
@@ -802,7 +802,7 @@ struct ContentView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Note(icon: "info.circle.fill", tint: .secondary,
-                         text: "Preview only for now: Preview and Apply still use Name rules below.",
+                         text: "Not used yet: Plan and Apply still use Name rules below.",
                          size: .caption)
                     namingPreviewFooter
                 }
@@ -1021,7 +1021,7 @@ struct ContentView: View {
         let samples = Array(runner.results.prefix(5))
         VStack(alignment: .leading, spacing: 3) {
             if samples.isEmpty {
-                Text("Preview appears once files are found.")
+                Text("The plan appears once files are found.")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(samples) { item in
@@ -1278,8 +1278,8 @@ struct ContentView: View {
                 Picker("Default view", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
-                Toggle("Preview as soon as a source is added", isOn: $autoPreview)
-                    .help("Preview is read-only, so this changes nothing on disk")
+                Toggle("Plan as soon as a source is added", isOn: $autoPreview)
+                    .help("Planning is read-only, so this changes nothing on disk")
             }
     }
 
@@ -1490,7 +1490,7 @@ struct ContentView: View {
 
         ToolbarItem(placement: .primaryAction) {
             Button {
-                withAnimation(.easeOut(duration: 0.18)) { chrome.reading.toggle() }
+                chrome.reading.toggle()
             } label: {
                 Label("Reading", systemImage: chrome.reading ? "book.fill" : "book")
             }
@@ -1510,13 +1510,13 @@ struct ContentView: View {
             }
 
             Button(action: preview) {
-                Label("Preview", systemImage: "eye")
+                Label("Plan", systemImage: "list.bullet.rectangle")
             }
             .labelStyle(.titleAndIcon)
-            .tip("Read-only: builds the plan, touches nothing", key: "⌘P")
+            .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
             .disabled(selection.isEmpty || runner.busy)
             .keyboardShortcut("p", modifiers: .command)
-            .help("Read-only. Builds the plan without touching a file.")
+            .help("Read-only. Works out the new names without touching a file.")
 
             Button(action: confirmApply) {
                 Label(canApply ? "Apply to \(runner.actionable) files" : "Apply",
@@ -2008,7 +2008,7 @@ struct ShortcutsSheet: View {
         ]),
         ("Everything else", [
             ("⌘1 … ⌘4", "list, catalogue, BibTeX, duplicates"),
-            ("⌘P", "preview"),
+            ("⌘P", "plan"),
             ("⌘Return", "apply the reviewed plan"),
             ("⌘⇧Return", "confirm everything still pending"),
             ("⌘D", "find duplicates"),

@@ -96,7 +96,7 @@ extension ReviewInspector {
                 }
             } else {
                 Text("No entry yet. The bibliography is built from the plan, so run a "
-                     + "preview first.")
+                     + "plan first.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -118,7 +118,8 @@ struct ResultsPane: View {
         }
         if let folderScope {
             let base = current ?? runner.results
-            current = base.filter { isUnder(folderScope, $0) }
+            let scope = FolderScope(folderScope)
+            current = base.filter { scope.contains($0) }
         }
         return current.map { Set($0.map(\.key)) }
     }
@@ -144,10 +145,35 @@ struct ResultsPane: View {
         queryText(for: Query(text).terms.filter { $0.field != "tag" })
     }
 
-    private func isUnder(_ folder: URL, _ item: Item) -> Bool {
-        let folderPath = folder.resolvingSymlinksInPath().path
-        let itemPath = item.currentURL.resolvingSymlinksInPath().path
-        return itemPath == folderPath || itemPath.hasPrefix(folderPath + "/")
+    /// One folder, prepared once for a whole pass over the files.
+    ///
+    /// This used to resolve symlinks for the folder and then again for every file, on
+    /// every pass. Resolving a path is a filesystem call: about nine milliseconds per
+    /// thousand files, twice over, on a pass a view body could trigger several times a
+    /// frame. Now the plain paths are compared first, and the filesystem is only asked
+    /// about a file when the folder itself is reached through a symlink and the plain
+    /// comparison came up empty.
+    struct FolderScope {
+        let plain: String
+        let resolved: String
+        let symlinked: Bool
+
+        init(_ folder: URL) {
+            plain = folder.path
+            resolved = folder.resolvingSymlinksInPath().path
+            symlinked = plain != resolved
+        }
+
+        func contains(_ item: Item) -> Bool {
+            let path = item.currentURL.path
+            if under(plain, path) || under(resolved, path) { return true }
+            guard symlinked else { return false }
+            return under(resolved, item.currentURL.resolvingSymlinksInPath().path)
+        }
+
+        private func under(_ folder: String, _ path: String) -> Bool {
+            path == folder || path.hasPrefix(folder + "/")
+        }
     }
 
     /// Scopes the catalogue to one folder's files, switching to the view that shows them
@@ -820,7 +846,7 @@ struct ResultsPane: View {
                               lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
                               title: selectedItem?.destinationName ?? "Notes",
                               source: selectedItem?.currentURL.path ?? "",
-                              close: { withAnimation(.easeOut(duration: 0.15)) { notesShown = false } })
+                              close: { notesShown = false })
                         .frame(width: 240)
                 }
             }
@@ -1124,7 +1150,7 @@ struct ResultsPane: View {
                 .font(.callout)
                 .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
         } else if !previewIsCurrent {
-            Label("Settings changed, preview again", systemImage: "exclamationmark.triangle.fill")
+            Label("Settings changed, plan again", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout)
                 .foregroundStyle(Color(light: srgb(163, 88, 8), dark: srgb(251, 191, 60)))
         } else if runner.showingCached {
@@ -1132,12 +1158,12 @@ struct ResultsPane: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if runner.appliedCount > 0 {
-            Label("\(runner.appliedCount) applied so far, the rest is still a preview",
+            Label("\(runner.appliedCount) applied so far, the rest is still only planned",
                   systemImage: "checkmark.seal")
                 .font(.callout)
                 .foregroundStyle(Color(light: srgb(21, 111, 58), dark: srgb(104, 219, 140)))
         } else {
-            Label("Preview only, nothing has changed on disk", systemImage: "eye")
+            Label("A plan only, nothing has changed on disk", systemImage: "list.bullet.rectangle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -1170,11 +1196,11 @@ struct ResultsPane: View {
                   systemImage: hasSources ? "wand.and.sparkles" : "tray.and.arrow.down")
         } description: {
             Text(hasSources
-                 ? "\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Preview first, then apply."
+                 ? "\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Plan first, then apply."
                  : "Drop folders or PDFs anywhere in this window.")
         } actions: {
             if hasSources {
-                Button("Preview", action: preview).buttonStyle(.borderedProminent)
+                Button("Plan", action: preview).buttonStyle(.borderedProminent)
             } else {
                 Button("Choose Files or Folders…", action: chooseFiles)
                     .buttonStyle(.borderedProminent)
