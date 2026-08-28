@@ -59,7 +59,6 @@ struct ContentView: View {
     @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
     @AppStorage("bibOmitFile") private var bibOmitFile = true
     @AppStorage("bibType") private var bibType: BibType = .book
-    @AppStorage("sidebarTab") private var sidebarTab: SidebarTab = .sources
     @State private var availableModels: [String] = []
     @ObservedObject private var priceBook: PriceBook = .shared
     @ObservedObject private var spendSignal: SpendSignal = .shared
@@ -278,11 +277,9 @@ struct ContentView: View {
         // should, while the rail stays put.
         VStack(spacing: 0) {
         HStack(spacing: 0) {
-            rail
-            Divider()
             NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
                 sidebarPanel
-                    .navigationSplitViewColumnWidth(min: 244, ideal: 264, max: 354)
+                    .navigationSplitViewColumnWidth(min: Metric.sidebarMin, ideal: Metric.sidebarIdeal, max: Metric.sidebarMax)
             } detail: {
             ResultsPane(
                 runner: runner,
@@ -326,8 +323,9 @@ struct ContentView: View {
                 spend: sessionSpendLabel
             )
         }
-        // The rail, the panel's own floor (matching the min above), plus the detail pane's.
-        .frame(minWidth: railWidth + 244 + SplitLayout.minWidth(
+        // The panel's own floor (matching the min above) plus the detail pane's. Forty-six
+        // points narrower than it was, now that nothing sits outside the split view.
+        .frame(minWidth: Metric.sidebarMin + SplitLayout.minWidth(
             notesShown: chrome.notesShown), minHeight: 560)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
@@ -424,43 +422,26 @@ struct ContentView: View {
     /// The panel behind the rail. Everything used to be one long scroll of nine sections;
     /// this shows one job at a time. The rail that switches between them is a sibling of
     /// this in `body`, not a parent of it.
+    /// One list, in sections, rather than twelve tabs behind a rail.
+    ///
+    /// The rail existed because nine sections in a single scroll was too much to read;
+    /// with everything you set once moved into the settings window, what is left is four
+    /// things that are all navigation, and they belong on screen together. Sources first
+    /// because it is where the files come from, the folder tree under it because that is
+    /// the same question one level down.
     private var sidebarPanel: some View {
         Form {
-            switch sidebarTab {
-            case .sources: sourcesPanel
-            case .explorer: explorerPanel
-            case .tags: tagsPanel
-            case .library: libraryPanel
-            }
+            sourcesPanel
+            explorerPanel
+            tagsPanel
+            libraryPanel
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity)
     }
 
-    /// Picking a tab is also a request to see it: a narrow window may have hidden the panel
-    /// behind the automatic sidebar toggle, and clicking a tab while it is hidden should
-    /// not look like nothing happened.
-    private func selectTab(_ tab: SidebarTab) {
-        sidebarTab = tab
-        if chrome.columnVisibility == .detailOnly {
-            chrome.columnVisibility = .all
-        }
-    }
-
     // Not private: SidebarTests renders this on its own, squeezed, to check that it holds
     // its width rather than being compressed away.
-    var rail: some View {
-        VStack(spacing: 2) {
-            ForEach(SidebarTab.allCases) { tab in
-                RailButton(tab: tab, isSelected: sidebarTab == tab) { selectTab(tab) }
-            }
-            Spacer()
-        }
-        .padding(.vertical, 8)
-        .frame(width: railWidth)
-        .background(.quaternary.opacity(0.25))
-    }
-
     // MARK: Tags
 
     @ViewBuilder
@@ -975,30 +956,6 @@ struct Note: View {
 
 // MARK: - Results
 
-enum SidebarTab: String, CaseIterable, Identifiable {
-    case sources, explorer, tags, library
-
-    var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .sources: return "folder"
-        case .explorer: return "list.bullet.indent"
-        case .tags: return "tag"
-        case .library: return "books.vertical"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .sources: return "Sources"
-        case .explorer: return "Explorer"
-        case .tags: return "Tags"
-        case .library: return "Library"
-        }
-    }
-}
-
 // MARK: - Explorer tree
 
 /// A folder or file in the current results, for the Explorer tab. Keyed by a real URL
@@ -1174,40 +1131,6 @@ func filterExplorerTree(_ nodes: [ExplorerNode], matching query: String) -> [Exp
 
 /// The rail's width, shared by the rail itself and the window's minimum, so the two cannot
 /// drift apart. Fixed rather than flexible: it holds while the panel beside it collapses.
-let railWidth: CGFloat = 46
-
-struct RailButton: View {
-    let tab: SidebarTab
-    let isSelected: Bool
-    let select: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: select) {
-            Image(systemName: tab.icon)
-                .font(.system(size: 15))
-                .frame(width: 34, height: 32)
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Color.accentColor.opacity(0.15)
-                              : hovering ? Color.secondary.opacity(0.12) : .clear)
-                )
-                // The marker an editor puts on the active tab.
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(isSelected ? Color.accentColor : .clear)
-                        .frame(width: 2, height: 18)
-                        .offset(x: -6)
-                }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .tip(tab.title)
-        .accessibilityLabel(tab.title)
-    }
-}
 
 // MARK: - Shortcuts
 
