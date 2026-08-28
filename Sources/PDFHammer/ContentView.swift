@@ -289,6 +289,15 @@ struct ContentView: View {
                 sidebarPanel
                     .navigationSplitViewColumnWidth(min: Metric.sidebarMin, ideal: Metric.sidebarIdeal, max: Metric.sidebarMax)
             } detail: {
+            if let openProject, let library = Library.shared {
+                ProjectWorkspace(
+                    project: openProject,
+                    env: liveProjectsEnvironment(library: library, client: aiClient,
+                                                 endpoint: aiBaseURL, model: aiModel),
+                    close: { self.openProject = nil }
+                )
+                .frame(minWidth: SplitLayout.detailMinWidth())
+            } else {
             ResultsPane(
                 runner: runner,
                 covers: covers,
@@ -319,6 +328,7 @@ struct ContentView: View {
                 // The title is the place and its counts, set by the pane that knows
                 // which place that is.
                 .toolbar { toolbar }
+            }
             }
             .navigationSplitViewStyle(.balanced)
         }

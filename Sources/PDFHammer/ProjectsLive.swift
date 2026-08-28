@@ -9,7 +9,7 @@ import PDFHammerCore
 /// fills it in for real.
 @MainActor
 func liveProjectsEnvironment(library: Library, client: AIClient,
-                             endpoint: String) -> ProjectsEnvironment {
+                             endpoint: String, model: String = "") -> ProjectsEnvironment {
     // The library's own document id, not a hash of the bytes: this app rewrites PDFs, so
     // the bytes change and the id does not. The field is named contentHash for historical
     // reasons; what travels through it is whatever identity the store uses.
@@ -81,6 +81,7 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             try await client.ask(system: system, user: user, feature: .readingProject)
         },
         endpoint: { endpoint },
+        model: { model },
         openAtPage: { documentID, page in
             Task {
                 guard let places = try? await library.locations(forDocument: documentID),

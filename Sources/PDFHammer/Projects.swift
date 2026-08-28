@@ -100,6 +100,9 @@ struct ProjectsEnvironment {
     var ask: (_ system: String, _ user: String) async throws -> String
     /// The endpoint currently configured, by name, for the privacy preview to show.
     var endpoint: () -> String
+    /// The model a question would be answered by, named in the same line as the endpoint:
+    /// what is sent and who answers it are one fact, not two.
+    var model: () -> String = { "" }
     var openAtPage: (_ contentHash: String, _ page: Int) -> Void
 }
 
@@ -519,7 +522,7 @@ private struct TagRow: View {
 /// Reachable only from inside a project: adding from the catalogue itself, while a file is
 /// still where it actually is, belongs to whichever screen owns that context menu, not
 /// here.
-private struct AddDocumentsSheet: View {
+struct AddDocumentsSheet: View {
     let candidates: [ProjectMember]
     let knownSections: [String]
     let onAdd: (_ hashes: Set<String>, _ section: String?) -> Void
@@ -641,6 +644,9 @@ final class ProjectConversationModel: ObservableObject {
     private var confirmedQuestion: String?
     private var confirmedExcerpts: [Excerpt] = []
 
+    var endpointName: String { env.endpoint() }
+    var modelName: String { env.model() }
+
     init(project: ProjectSummary, env: ProjectsEnvironment) {
         self.project = project
         self.env = env
@@ -659,7 +665,17 @@ final class ProjectConversationModel: ObservableObject {
             }
             confirmedQuestion = question
             confirmedExcerpts = excerpts
-            pendingPreview = outboundPreview(excerpts: excerpts, endpoint: env.endpoint())
+            let preview = outboundPreview(excerpts: excerpts, endpoint: env.endpoint())
+            // What is about to be sent is on screen above the composer the whole time it
+            // is being typed, so the default endpoint no longer gets a dialog restating
+            // it after the fact. An endpoint that is not the default, or one reached in
+            // the clear, still does: that is a different promise, and it is the moment to
+            // say so.
+            guard preview.isDefaultEndpoint, !preview.isPlaintext else {
+                pendingPreview = preview
+                return
+            }
+            await confirmAndAsk()
         } catch {
             self.error = error.localizedDescription
         }
@@ -725,8 +741,9 @@ struct ProjectConversationView: View {
                 .padding()
             }
             Divider()
+            outbound
             HStack(alignment: .bottom) {
-                TextField("Ask this project a question", text: $model.pendingQuestion, axis: .vertical)
+                TextField("Ask across this project…", text: $model.pendingQuestion, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
                     .onSubmit { Task { await model.prepareToAsk(documents: documents) } }
@@ -735,6 +752,8 @@ struct ProjectConversationView: View {
                 } label: {
                     if model.isPreparing { ProgressView().controlSize(.small) } else { Text("Ask") }
                 }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
                 .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           || model.isPreparing)
             }
@@ -752,6 +771,39 @@ struct ProjectConversationView: View {
         } message: {
             Text(model.error ?? "")
         }
+    }
+
+    /// What would be sent, on screen the whole time a question is being typed.
+    ///
+    /// It was a dialog after the fact, which is the wrong moment: by then the decision
+    /// has been made and the dialog is something to dismiss. Here it is a sentence a
+    /// person reads while deciding what to ask, and it says the same three things the
+    /// dialog did -- how much text, to which host, answered by which model.
+    private var outbound: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.up.forward.square")
+            Text(outboundLine)
+            Spacer(minLength: 6)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+    }
+
+    private var outboundLine: String {
+        let indexed = documents.filter { !$0.markdown.isEmpty }
+        guard !indexed.isEmpty else {
+            return "None of these documents has text yet, so there is nothing to ask across."
+        }
+        // Words, not characters: nobody has an intuition for 190,000 characters, and the
+        // number is approximate either way.
+        let words = indexed.reduce(0) { $0 + $1.markdown.count } / 5
+        let host = URL(string: model.endpointName)?.host ?? model.endpointName
+        let named = model.modelName.isEmpty ? "" : " as \(model.modelName)"
+        return "\(indexed.count) of \(documents.count) documents · roughly "
+            + "\(words.formatted(.number.notation(.compactName))) words would be sent to \(host)\(named)"
     }
 
     private var confirmationShown: Binding<Bool> {

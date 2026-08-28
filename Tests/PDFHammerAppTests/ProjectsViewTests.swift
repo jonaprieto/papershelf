@@ -24,6 +24,9 @@ final class ProjectsEnvironmentStub {
     private(set) var setSectionCalls: [(id: Int64, hash: String, section: String?)] = []
     private(set) var removeMemberCalls: [(id: Int64, hash: String)] = []
     private(set) var addTagCalls: [(hash: String, name: String)] = []
+    private(set) var askCalls: [(system: String, user: String)] = []
+    var reply = "An answer."
+    var endpoint = "https://api.openai.com/v1"
 
     func environment() -> ProjectsEnvironment {
         ProjectsEnvironment(
@@ -81,8 +84,13 @@ final class ProjectsEnvironmentStub {
                 self.tagsByHash[hash]?.removeAll { $0 == name }
             },
             rankedDocuments: { _, hashes in hashes },
-            ask: { _, _ in "" },
-            endpoint: { "https://api.openai.com/v1" },
+            ask: { system, user in
+                self.askCalls.append((system, user))
+                if self.shouldThrow { throw Failure() }
+                return self.reply
+            },
+            endpoint: { self.endpoint },
+            model: { "gpt-4o-mini" },
             openAtPage: { _, _ in }
         )
     }
@@ -448,5 +456,61 @@ final class RecognitionDetailTests: XCTestCase {
 
     func testAuthorAloneWithNoPageCount() {
         XCTAssertEqual(recognitionDetail(author: "Jane Doe", pageCount: nil), "Jane Doe")
+    }
+}
+
+
+// MARK: - Asking: what is sent, and when a dialog is worth raising
+
+/// The privacy preview moved from a dialog raised after the decision to a line on screen
+/// while it is being made. A dialog that appears every time is a dialog people dismiss
+/// without reading, which is the opposite of informed consent -- so the one that survives
+/// is the one that says something new.
+@MainActor
+final class ProjectAskTests: XCTestCase {
+
+    private func model(_ stub: ProjectsEnvironmentStub) -> ProjectConversationModel {
+        ProjectConversationModel(project: ProjectSummary(id: 1, name: "Thesis", documentCount: 1),
+                                 env: stub.environment())
+    }
+
+    private var documents: [ProjectDocument] {
+        [ProjectDocument(contentHash: "a", title: "Causality",
+                         markdown: "<!-- page:1 -->\nA directed path is composed of arrows.")]
+    }
+
+    func testTheDefaultEndpointSendsWithoutADialog() async {
+        let stub = ProjectsEnvironmentStub()
+        let subject = model(stub)
+        subject.pendingQuestion = "What is a collider?"
+        await subject.prepareToAsk(documents: documents)
+
+        XCTAssertNil(subject.pendingPreview, "no dialog for the endpoint already on screen")
+        XCTAssertEqual(stub.askCalls.count, 1)
+        XCTAssertEqual(subject.turns.count, 1)
+        XCTAssertEqual(subject.turns.first?.reply, "An answer.")
+    }
+
+    func testAnEndpointThatIsNotTheDefaultStillAsksFirst() async {
+        let stub = ProjectsEnvironmentStub()
+        stub.endpoint = "https://llm.example.com/v1"
+        let subject = model(stub)
+        subject.pendingQuestion = "What is a collider?"
+        await subject.prepareToAsk(documents: documents)
+
+        XCTAssertNotNil(subject.pendingPreview)
+        XCTAssertEqual(subject.pendingPreview?.endpointHost, "llm.example.com")
+        XCTAssertTrue(stub.askCalls.isEmpty, "nothing leaves until it is confirmed")
+    }
+
+    func testAnEndpointInTheClearStillAsksFirst() async {
+        let stub = ProjectsEnvironmentStub()
+        stub.endpoint = "http://api.openai.com/v1"
+        let subject = model(stub)
+        subject.pendingQuestion = "What is a collider?"
+        await subject.prepareToAsk(documents: documents)
+
+        XCTAssertEqual(subject.pendingPreview?.isPlaintext, true)
+        XCTAssertTrue(stub.askCalls.isEmpty)
     }
 }
