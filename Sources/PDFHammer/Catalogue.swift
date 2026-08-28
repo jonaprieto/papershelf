@@ -100,6 +100,7 @@ struct ResultsPane: View {
     @FocusState private var paneFocused: Bool
     @FocusState private var listFocused: Bool
     @State private var keyMonitor: Any?
+    @State private var showingPalette = false
 
     private var selectedItem: Item? {
         runner.results.first { $0.key == selected }
@@ -349,6 +350,14 @@ struct ResultsPane: View {
         } message: {
             Text(runner.aiError ?? "")
         }
+        .sheet(isPresented: $showingPalette) {
+            CommandPalette(
+                commands: Self.performable.filter { $0 != .palette },
+                documents: runner.results,
+                run: { perform($0) },
+                open: { selected = $0.key }
+            )
+        }
     }
 
     /// Hoisted out of the modifier chain: an inline Binding there pushed the whole body
@@ -374,30 +383,28 @@ struct ResultsPane: View {
         keyMonitor = nil
     }
 
-    private func handle(_ event: NSEvent) -> Bool {
-        guard !runner.busy, !runner.results.isEmpty, selectedItem != nil else { return false }
-        // Command combinations first: these are app-level and must work wherever focus is,
-        // including while a name is being typed.
-        if event.modifierFlags.contains(.command) {
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "1": mode = .list; return true
-            case "2": mode = .catalogue; return true
-            case "3": mode = .bibliography; return true
-            case "4": mode = .duplicates; return true
-            case "r": revealInFinder(); return true
-            case "d": runner.findDuplicates(passwords: passwords); return true
-            case "\r" where event.modifierFlags.contains(.shift):
-                runner.confirmAllPending()
-                ensureSelection()
-                return true
-            default: return false
-            }
-        }
-        guard event.modifierFlags.intersection([.option, .control]).isEmpty else { return false }
+    /// Which commands can be heard here. This pane is where a plan is decided, so the
+    /// reviewing keys are live along with everything scoped anywhere or to the library.
+    private var activeScope: Command.Scope { .reviewing }
 
-        // Anything being typed into, or any control that has its own idea of what a key
-        // means, keeps the event. A table view does not: its type-select is what we are
-        // deliberately replacing.
+    /// The commands that do not need a file in front of them, and so must still work on
+    /// an empty shelf — which is exactly when someone reaches for the palette.
+    private static let alwaysAvailable: Set<Command> = [.palette, .focusSearch, .shortcuts]
+
+    private func handle(_ event: NSEvent) -> Bool {
+        guard !runner.busy else { return false }
+        let match = Keymap.shared.command(for: event, in: activeScope)
+        if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
+        guard !runner.results.isEmpty, selectedItem != nil else { return false }
+        let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
+
+        // Anything carrying a modifier is app-level and must work wherever focus is,
+        // including while a name is being typed.
+        if let match, !bare { return perform(match) }
+
+        // Past here every binding is a bare key, which belongs to whatever is being typed
+        // into. A table view is the exception: its type-select is exactly what this
+        // monitor exists to replace.
         if searchFocused { return false }
         if let responder = event.window?.firstResponder,
            responder is NSTextView || (responder is NSControl && !(responder is NSTableView)) {
@@ -407,6 +414,7 @@ struct ResultsPane: View {
         // The lists are table views and move themselves; the catalogue is a grid and has
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
+        let arrows: Set<UInt16> = [123, 124, 125, 126]
         if !onATable {
             // In a grid a row is a row: up and down cross `gridColumns` items, while left
             // and right move to the neighbour.
@@ -418,24 +426,66 @@ struct ResultsPane: View {
             case 123: step(by: -1); return true     // left
             default: break
             }
+        } else if arrows.contains(event.keyCode) {
+            // Leave them to the table, the way they always were, rather than letting the
+            // arrow alternates on next/previous file take them away from it.
+            return false
         }
 
-        switch event.charactersIgnoringModifiers?.lowercased() {
-        case "\r", "c": confirm()
-        case "e": editingName = true
-        case "s": skip()
-        case "f": skipFolder()
-        case "a": applyNow()
-        case "g": identifySelected()
-        case "m": choosingMoveTarget = true
-        case "o": openInViewer()
-        case "b": copyCitation()
-        case "?": showingShortcuts = true
-        case "/": searchFocused = true
-        case "d": markDeleted()
-        case "r": reopenSelected()
-        case "j", "n": step(by: 1)
-        case "k", "p": step(by: -1)
+        guard let match else { return false }
+        return perform(match)
+    }
+
+    /// Exactly the commands `perform` carries out, in the order the palette lists them.
+    ///
+    /// Kept beside the switch below and used to build the palette, so a line can never be
+    /// offered that would do nothing. Anything absent here is still reachable — it simply
+    /// belongs to a different surface, and its key event falls through to whoever owns it.
+    static let performable: [Command] = [
+        .confirm, .editName, .askAI, .copyCitation, .applyOne,
+        .skip, .skipFolder, .moveTo, .trash, .reopen,
+        .nextFile, .previousFile, .confirmAllPending,
+        .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
+        .findDuplicates, .revealInFinder, .openExternally,
+        .focusSearch, .shortcuts, .palette,
+    ]
+
+    /// Carries out one command, whatever asked for it.
+    ///
+    /// The monitor above and the command palette both come through here, which is what
+    /// makes a rebound key and a palette entry do the same thing — and what stops the
+    /// palette from growing its own quietly different copy of `confirm()`.
+    ///
+    /// Returning false means "not mine": the key event carries on to whatever else might
+    /// want it, which is how ⌘↩ still reaches the Apply button in the toolbar.
+    @discardableResult
+    func perform(_ command: Command) -> Bool {
+        switch command {
+        case .viewList: mode = .list
+        case .viewCatalogue: mode = .catalogue
+        case .viewBibliography: mode = .bibliography
+        case .viewDuplicates: mode = .duplicates
+        case .revealInFinder: revealInFinder()
+        case .findDuplicates: runner.findDuplicates(passwords: passwords)
+        case .confirmAllPending:
+            runner.confirmAllPending()
+            ensureSelection()
+        case .confirm: confirm()
+        case .editName: editingName = true
+        case .skip: skip()
+        case .skipFolder: skipFolder()
+        case .applyOne: applyNow()
+        case .askAI: identifySelected()
+        case .moveTo: choosingMoveTarget = true
+        case .openExternally: openInViewer()
+        case .copyCitation: copyCitation()
+        case .shortcuts: showingShortcuts = true
+        case .palette: showingPalette = true
+        case .focusSearch: searchFocused = true
+        case .trash: markDeleted()
+        case .reopen: reopenSelected()
+        case .nextFile: step(by: 1)
+        case .previousFile: step(by: -1)
         default: return false
         }
         return true
