@@ -7,7 +7,7 @@ final class DuplicatesTests: XCTestCase {
 
     private func scratchRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("duplicates-tests-\(UUID().uuidString)")
+            .appendingPathComponent(scratchName("duplicates-tests"))
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }

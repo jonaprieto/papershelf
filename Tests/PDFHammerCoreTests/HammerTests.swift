@@ -53,7 +53,7 @@ final class HammerTests: XCTestCase {
 
     func testBackupTreeMirrorsSubfolders() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let nested = root.appendingPathComponent("bank/2024")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -75,7 +75,7 @@ final class HammerTests: XCTestCase {
 
     func testPasswordIsRemoved() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -96,7 +96,7 @@ final class HammerTests: XCTestCase {
 
     func testWrongPasswordStillRenamesAndStaysLocked() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -115,7 +115,7 @@ final class HammerTests: XCTestCase {
 
     func testDryRunTouchesNothing() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -131,7 +131,7 @@ final class HammerTests: XCTestCase {
 
     func testCollidingNamesGetSuffixes() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -147,7 +147,7 @@ final class HammerTests: XCTestCase {
 
     func testBackupDirectoryIsNeverReprocessed() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Extracto_2024-06.pdf"), password: nil)
@@ -184,7 +184,7 @@ final class HammerTests: XCTestCase {
 
     func testMetadataDateOnlyFillsAGap() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Extracto_1999-01.pdf"), password: nil)
@@ -207,7 +207,7 @@ final class HammerTests: XCTestCase {
 
     func testFolderDateFillsAMissingFilenameDate() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let nested = root.appendingPathComponent("bank/2024")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -220,7 +220,7 @@ final class HammerTests: XCTestCase {
 
     func testFolderNameReplacesAnUninformativeStem() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let nested = root.appendingPathComponent("2025-acme66")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -245,7 +245,7 @@ final class HammerTests: XCTestCase {
 
     func testFolderContextIsOffByRequest() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let nested = root.appendingPathComponent("2024")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -267,7 +267,7 @@ final class HammerTests: XCTestCase {
 
     func testWithoutBackupTheOriginalIsReplacedInPlace() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let pdf = root.appendingPathComponent("Secret_2023-01.pdf")
@@ -289,7 +289,7 @@ final class HammerTests: XCTestCase {
 
     func testRelativePathTracksSubfolder() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let nested = root.appendingPathComponent("bank/2024")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -418,7 +418,7 @@ final class HammerTests: XCTestCase {
 
     private func jobKeyRoundTrip() -> Bool {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         let pdf = root.appendingPathComponent("x.pdf")
@@ -429,7 +429,7 @@ final class HammerTests: XCTestCase {
 
     func testOverrideReplacesTheSuggestedName() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let pdf = root.appendingPathComponent("Secret_2023-01.pdf")
@@ -446,7 +446,7 @@ final class HammerTests: XCTestCase {
 
     func testOverrideStillGetsACollisionSuffix() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("a.pdf"), password: nil)
@@ -464,7 +464,7 @@ final class HammerTests: XCTestCase {
 
     func testTrashedFileGoesToTheTrashNotOblivion() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("junk_2024-01.pdf"), password: nil)
@@ -491,7 +491,7 @@ final class HammerTests: XCTestCase {
 
     func testDryRunNeverTrashesAnything() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let pdf = root.appendingPathComponent("junk_2024-01.pdf")
@@ -573,7 +573,7 @@ final class HammerTests: XCTestCase {
 
     func testRestyleFollowsTheRulesWithoutOpeningAnything() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Extracto Señor (1) 2024-06.pdf"), password: nil)
@@ -599,7 +599,7 @@ final class HammerTests: XCTestCase {
 
     func testRestyleReusesTheCapturedDatesForGapFilling() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Sin Fecha.pdf"), password: nil)
@@ -640,7 +640,7 @@ final class HammerTests: XCTestCase {
 
     func testIdenticalBytesAreFoundAndTheBiggestCopyIsKept() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root.appendingPathComponent("shelf"), withIntermediateDirectories: true)
 
@@ -665,7 +665,7 @@ final class HammerTests: XCTestCase {
 
     func testDifferentContentIsNotADuplicateEvenAtTheSameSize() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -682,7 +682,7 @@ final class HammerTests: XCTestCase {
 
     func testLikelyDuplicatesAreFoundByName() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -702,7 +702,7 @@ final class HammerTests: XCTestCase {
 
     func testAFileIsNeverInTwoGroups() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -724,7 +724,7 @@ final class HammerTests: XCTestCase {
 
     func testSourcesStayANonOverlappingSet() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let shelf = root.appendingPathComponent("shelf")
         let scifi = shelf.appendingPathComponent("scifi")
@@ -753,7 +753,7 @@ final class HammerTests: XCTestCase {
 
     func testOverlappingSourcesWouldOtherwiseSplitTheBackupLocation() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         let inner = root.appendingPathComponent("inner")
         try fm.createDirectory(at: inner, withIntermediateDirectories: true)
@@ -771,7 +771,7 @@ final class HammerTests: XCTestCase {
 
     func testBackupFolderCanBeRenamed() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root.appendingPathComponent("bank"), withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("bank/Extracto_2024-06.pdf"), password: nil)
@@ -790,7 +790,7 @@ final class HammerTests: XCTestCase {
 
     func testCustomBackupLocationKeepsRootsApart() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let base = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: base) }
         let one = base.appendingPathComponent("one")
         let two = base.appendingPathComponent("two")
@@ -817,13 +817,35 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual(BackupSettings(folderName: " originales ").safeFolderName, "originales")
     }
 
+    // MARK: - The scratch folders these tests build fixtures in
+
+    /// The folder a fixture sits in is one of the places the naming rules look for a date,
+    /// so a scratch folder that reads as dated silently changes what the test under it is
+    /// asserting. A raw UUID does read that way about one time in a hundred, which is how
+    /// a release build ended up red on `bus-oslo-airport.pdf` becoming
+    /// `1974-bus-oslo-airport.pdf`.
+    func testAScratchNameHasNothingTheNamingRulesWillReadAsADate() {
+        for _ in 0..<500 {
+            let name = scratchName("pdfnorm")
+            XCTAssertFalse(name.contains(where: \.isNumber), "\(name) has digits in it")
+            XCTAssertNil(findDate(in: name), "\(name) reads as dated")
+        }
+    }
+
+    /// And the mechanism itself, so this stays honest about what it is guarding against:
+    /// a folder that does carry a year still supplies one, which is the behaviour the
+    /// scratch names are steering clear of rather than a bug.
+    func testAFolderNameThatReallyIsADateIsStillReadAsOne() {
+        XCTAssertEqual(findDate(in: "pdfnorm-DDBB-1974-BEEF")?.prefix, "1974")
+    }
+
     // MARK: - Case-only renames
 
     /// On a case-insensitive volume the old and new names are the same file, so nothing
     /// has collided and no suffix belongs on the result.
     func testLoweringTheCaseIsNotACollision() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Bus-Oslo-Airport.pdf"), password: nil)
@@ -841,7 +863,7 @@ final class HammerTests: XCTestCase {
 
     func testARealCollisionStillGetsASuffix() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Report A 2024.pdf"), password: nil)
@@ -860,7 +882,7 @@ extension HammerTests {
 
     func testMoveSendsTheFileUnderItsNewName() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let base = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: base) }
         let root = base.appendingPathComponent("inbox")
         let shelf = base.appendingPathComponent("shelf/scifi")
@@ -884,7 +906,7 @@ extension HammerTests {
 
     func testMoveHonoursATypedNameAndAvoidsCollisions() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let base = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: base) }
         let root = base.appendingPathComponent("inbox")
         let shelf = base.appendingPathComponent("shelf")
@@ -909,7 +931,7 @@ extension HammerTests {
 
     func testDryRunMovesNothing() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let base = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: base) }
         let root = base.appendingPathComponent("inbox")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -991,7 +1013,7 @@ extension HammerTests {
 
     func testItemsCarryTheirSizeAndLength() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Plain 2024.pdf"), password: nil)
@@ -1025,7 +1047,7 @@ extension HammerTests {
 
     func testSameOpeningPagesAreFoundEvenWhenTheBytesDiffer() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1051,7 +1073,7 @@ extension HammerTests {
     /// fingerprint the same and the whole shelf would be one giant group.
     func testTextlessScansAreNotAllDuplicatesOfEachOther() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1068,7 +1090,7 @@ extension HammerTests {
 
     func testIdenticalBytesWinOverContent() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makeTextPDF(at: root.appendingPathComponent("a.pdf"), text: chapter)
@@ -1133,7 +1155,7 @@ extension HammerTests {
 
     func testDocumentInfoIsCapturedWhenReadable() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1154,7 +1176,7 @@ extension HammerTests {
     /// if they were facts.
     func testUnreadableOrBlankInfoIsNotInvented() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Sealed 2024.pdf"), password: "shut")
@@ -1173,7 +1195,7 @@ extension HammerTests {
     /// file has to follow it. `source` stays put because identity is derived from it.
     func testCurrentURLFollowsTheFileAfterItMoves() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Extracto 2024-06.pdf"), password: nil)
@@ -1194,7 +1216,7 @@ extension HammerTests {
 
     func testMovedAndTrashedFilesAlsoFollow() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let base = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: base) }
         let root = base.appendingPathComponent("in")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1224,7 +1246,7 @@ extension HammerTests {
     /// are refused. No password is needed to strip it, and none is asked for.
     func testOwnerOnlyRestrictionsAreLifted() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1258,7 +1280,7 @@ extension HammerTests {
     /// to be carried over deliberately, or a book loses its table of contents.
     func testDecryptingKeepsTheOutlineAndAnnotations() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1312,7 +1334,7 @@ extension HammerTests {
     /// that is where marks would be dropped if they were not carried deliberately.
     func testHighlightsSurviveDecrypting() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1345,7 +1367,7 @@ extension HammerTests {
     /// lost, marks included.
     func testAPlainRenameCopiesTheFileExactly() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
@@ -1411,7 +1433,7 @@ extension HammerTests {
     /// that the error message did not name and nothing cleaned up.
     func testDecryptingInPlaceLeavesNoTemporaryFileBehind() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("2024-06-locked.pdf"), password: "one")
@@ -1431,7 +1453,7 @@ extension HammerTests {
     /// Renaming while decrypting: the new file exists before the old one is removed.
     func testDecryptingUnderANewNameKeepsExactlyOneCopy() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Sealed 2024-06.pdf"), password: "one")
@@ -1446,7 +1468,7 @@ extension HammerTests {
     /// A folder that cannot be written to must cost the user nothing.
     func testAFailedRewriteLeavesTheOriginalWhereItWas() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer {
             try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
             try? fm.removeItem(at: root)
@@ -1475,7 +1497,7 @@ extension HammerTests {
 
     func testOutputCanBeLockedWithADifferentPassword() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Locked 2024-06.pdf"), password: "old-one")
@@ -1498,7 +1520,7 @@ extension HammerTests {
 
     func testLockingWithoutAPasswordIsIgnored() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Plain 2024-07.pdf"), password: nil)
@@ -1517,7 +1539,7 @@ extension HammerTests {
     /// which would strand it behind a password it never had.
     func testAFileNoPasswordOpensIsNotReLocked() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("Sealed 2024-06.pdf"), password: "unknown")
@@ -1535,7 +1557,7 @@ extension HammerTests {
     /// failure cannot leave the only copy in a hidden temporary file.
     func testLockingInPlaceLeavesNoTemporaryFileBehind() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try makePDF(at: root.appendingPathComponent("2024-07-plain.pdf"), password: nil)
@@ -1555,7 +1577,7 @@ extension HammerTests {
     /// The outline is what a book's table of contents is, and a rebuild must not drop it.
     func testLockingKeepsTheOutline() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("pdfnorm-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let document = try XCTUnwrap(PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: 3))))

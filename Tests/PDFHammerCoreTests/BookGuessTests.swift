@@ -73,7 +73,7 @@ final class BookGuessTests: XCTestCase {
     /// exactly like one read off the filesystem, and follows them when they change.
     func testAGuessedNameObeysTheRules() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("guess-\(UUID().uuidString)")
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("guess"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         let file = root.appendingPathComponent("scan001.pdf")

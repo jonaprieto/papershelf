@@ -84,3 +84,15 @@ func makeScratchPDF(pages: Int = 1) throws -> URL {
     try (raw as Data).write(to: url)
     return url
 }
+
+/// A unique name for a scratch directory, with no digits in it.
+///
+/// A UUID is written in blocks separated by dashes, so one containing a block like `1974`
+/// reads as a year to `findDate` -- and the folder a fixture sits in is one of the places
+/// the naming rules look for a date. Naming temp folders after a raw UUID therefore failed
+/// about one run in a hundred, which is what took down a release build: a test asserting
+/// `bus-oslo-airport.pdf` got `1974-bus-oslo-airport.pdf` because the folder it made the
+/// file in happened to be called `pdfnorm-...-1974-...`.
+func scratchName(_ label: String) -> String {
+    "\(label)-" + UUID().uuidString.filter { !$0.isNumber }
+}

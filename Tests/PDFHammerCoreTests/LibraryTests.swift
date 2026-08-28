@@ -9,7 +9,7 @@ final class LibraryTests: XCTestCase {
     /// A database file under a throwaway directory, never the real Application Support one.
     private func makeDatabaseURL() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("library-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(scratchName("library-tests"), isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("library.sqlite")
     }
@@ -493,7 +493,7 @@ final class LibraryTests: XCTestCase {
         // A plain file where a directory needs to go: creating the parent necessarily
         // fails, which is the shape "cannot be opened" actually takes in practice.
         let blocker = FileManager.default.temporaryDirectory
-            .appendingPathComponent("library-blocker-\(UUID().uuidString)")
+            .appendingPathComponent(scratchName("library-blocker"))
         try? Data("not a directory".utf8).write(to: blocker)
         defer { try? FileManager.default.removeItem(at: blocker) }
 
@@ -761,7 +761,7 @@ final class DocumentIDsByPathTests: XCTestCase {
 
     private func makeLibrary() throws -> (Library, URL) {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ids-by-path-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(scratchName("ids-by-path"), isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("library.sqlite")
         return (try Library(url: url), directory)
