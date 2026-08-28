@@ -888,15 +888,19 @@ struct ResultsPane: View {
             // not a sibling here, so it only needs to widen the inspector's own floor,
             // not the outer reservation `inspectorMaximum` makes for the browser.
             let contentsOpen = contentsShown && !annotator.contents.isEmpty
+            // Asked for, and there is room: otherwise the rail folds away rather than
+            // pushing the panes beside it off the edge of the window.
+            let notesOpen = notesShown && SplitLayout.roomForNotes(
+                available: geometry.size.width, contentsShown: contentsOpen)
             let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
             let maximum = SplitLayout.inspectorMaximum(
-                available: geometry.size.width, notesShown: notesShown, contentsShown: contentsOpen)
+                available: geometry.size.width, notesShown: notesOpen, contentsShown: contentsOpen)
             // Not `min(max(inspectorWidth, minimum), maximum)`: that returns the floor even
             // when the window is narrower than the floor, and the pane is then drawn at a
             // width the window cannot show.
             let width = SplitLayout.inspectorWidth(
                 preferred: inspectorWidth, available: geometry.size.width,
-                notesShown: notesShown, contentsShown: contentsOpen)
+                notesShown: notesOpen, contentsShown: contentsOpen)
             HStack(spacing: 0) {
                 // Reading gives the whole window to the page.
                 if !reading {
@@ -906,7 +910,7 @@ struct ResultsPane: View {
                 inspector
                     .frame(width: reading ? nil : width)
                     .frame(maxWidth: reading ? .infinity : nil, maxHeight: .infinity)
-                if notesShown {
+                if notesOpen {
                     Divider()
                     NotesRail(annotator: annotator, palette: palette,
                               addingNote: $addingNote, noteText: $noteText,

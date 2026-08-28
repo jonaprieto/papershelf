@@ -64,11 +64,13 @@ final class LayoutTests: XCTestCase {
     // MARK: minWidth matches what the panes actually add up to
 
     func testMinWidthMatchesTheEstablishedConstantsWithNeitherRailOpen() {
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: false), 721)
+        XCTAssertEqual(SplitLayout.minWidth(), 721)
     }
 
     func testMinWidthMatchesTheEstablishedConstantsWithNotesRailOpen() {
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: true), 962)
+        // The notes rail no longer buys itself 241 points of window. It folds instead.
+        XCTAssertFalse(SplitLayout.roomForNotes(available: 721, contentsShown: false))
+        XCTAssertTrue(SplitLayout.roomForNotes(available: 962, contentsShown: false))
     }
 
     // MARK: The window's floor does not move when the contents rail opens
@@ -78,8 +80,10 @@ final class LayoutTests: XCTestCase {
     /// small display, was asked for room it did not have and drew the inspector past its
     /// own edge. The rail comes out of the inspector's existing share now.
     func testOpeningTheContentsRailDoesNotMoveTheWindowsFloor() {
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: false), 721)
-        XCTAssertEqual(SplitLayout.minWidth(notesShown: true), 962)
+        XCTAssertEqual(SplitLayout.minWidth(), 721)
+        // The notes rail no longer buys itself 241 points of window. It folds instead.
+        XCTAssertFalse(SplitLayout.roomForNotes(available: 721, contentsShown: false))
+        XCTAssertTrue(SplitLayout.roomForNotes(available: 962, contentsShown: false))
     }
 
     // MARK: inspectorWidth never asks for room that is not there
@@ -105,7 +109,7 @@ final class LayoutTests: XCTestCase {
     /// with the contents rail open. The old clamp returned the inspector's floor of 557,
     /// which with the divider is more than the 721 window minus the browser's own 360.
     func testAWindowAtItsFloorWithTheContentsRailOpenStillFits() {
-        let available = SplitLayout.minWidth(notesShown: false)
+        let available = SplitLayout.minWidth()
         let old = max(SplitLayout.inspectorMinimum(contentsShown: true), 0)
         XCTAssertGreaterThan(old + SplitLayout.dividerBeforeInspector + SplitLayout.contentFloor,
                              available, "if this stops overflowing, the reproduction is stale")
@@ -145,7 +149,7 @@ final class LayoutTests: XCTestCase {
     func testMaximumNeverFallsBelowMinimumAtTheWindowsOwnFloor() {
         for notes in [false, true] {
             for contents in [false, true] {
-                let available = SplitLayout.minWidth(notesShown: notes)
+                let available = SplitLayout.minWidth() + (notes ? SplitLayout.notesReserved : 0)
                 let maximum = SplitLayout.inspectorMaximum(
                     available: available, notesShown: notes, contentsShown: contents)
                 let minimum = SplitLayout.inspectorMinimum(contentsShown: contents)
@@ -153,5 +157,36 @@ final class LayoutTests: XCTestCase {
                     "notesShown=\(notes) contentsShown=\(contents)")
             }
         }
+    }
+
+    // MARK: The notes rail folds rather than widening the window
+
+    /// The bug this closes: opening the notes rail raised the window's minimum width by
+    /// 241 points. A window that could grow jumped; a window that could not — tiled, or
+    /// filling a small display — was asked for a width it had no way to give, and the
+    /// panes beyond the rail were cut off. The rail is a preference now, not a claim on
+    /// the window.
+    func testOpeningNotesNoLongerMovesTheWindowFloor() {
+        XCTAssertEqual(SplitLayout.minWidth(), 721)
+        XCTAssertEqual(SplitLayout.minWidth(), SplitLayout.contentFloor
+                       + SplitLayout.dividerBeforeInspector + SplitLayout.contentFloor)
+    }
+
+    func testTheRailFoldsExactlyWhenItWouldNotFit() {
+        // One point short of room for it, and one point past.
+        let needed = SplitLayout.minWidth() + SplitLayout.notesReserved
+        XCTAssertFalse(SplitLayout.roomForNotes(available: needed - 1, contentsShown: false))
+        XCTAssertTrue(SplitLayout.roomForNotes(available: needed, contentsShown: false))
+    }
+
+    /// An open contents rail widens the inspector's own floor, so it takes room the notes
+    /// rail was counting on. The two must agree about that, or they both draw and the
+    /// window overflows.
+    func testContentsRailIsCountedWhenDecidingWhetherNotesFit() {
+        let withoutContents = SplitLayout.minWidth() + SplitLayout.notesReserved
+        XCTAssertTrue(SplitLayout.roomForNotes(available: withoutContents, contentsShown: false))
+        XCTAssertFalse(SplitLayout.roomForNotes(available: withoutContents, contentsShown: true))
+        XCTAssertTrue(SplitLayout.roomForNotes(
+            available: withoutContents + SplitLayout.contentsReserved, contentsShown: true))
     }
 }

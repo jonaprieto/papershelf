@@ -49,20 +49,29 @@ public enum SplitLayout {
     }
 
     /// What the window has to be at least this wide for: the browser's floor, the divider
-    /// ahead of the inspector, the inspector's own floor, and the notes rail when it is
-    /// open. The window's own `.frame(minWidth:)` is derived from this so it can no longer
-    /// drift out of step with what the panes inside it actually add up to.
+    /// ahead of the inspector, and the inspector's own floor. The window's own
+    /// `.frame(minWidth:)` is derived from this so it can no longer drift out of step with
+    /// what the panes inside it actually add up to.
     ///
-    /// Deliberately not counting the contents rail. It used to, and opening a table of
-    /// contents then raised the window's minimum by nearly 200 points: a window that could
-    /// grow jumped, and a window that could not -- one tiled or filling a small display --
-    /// was asked for a width it had no way to give, so the inspector's right-hand side and
-    /// the notes rail beyond it were simply cut off. The rail now comes out of the room the
-    /// inspector already has (see `inspectorWidth` and `contentsRailWidth`), which is a
-    /// narrower page rather than a broken window.
-    public static func minWidth(notesShown: Bool) -> CGFloat {
+    /// Neither optional rail counts towards it. The contents rail never did, and the
+    /// comment explaining why applies word for word to the notes rail, which until now
+    /// did: opening it raised the window's minimum by 241 points, so a window that could
+    /// grow jumped, and a window that could not -- one tiled, or filling a small display
+    /// -- was asked for a width it had no way to give. Both rails now come out of the room
+    /// that exists (see `roomForNotes`), which is a rail that folds away rather than a
+    /// window that breaks.
+    public static func minWidth() -> CGFloat {
         contentFloor + dividerBeforeInspector + contentFloor
-            + (notesShown ? notesReserved : 0)
+    }
+
+    /// Whether an open notes rail actually fits beside everything else.
+    ///
+    /// This is the whole of the change: the rail is a preference, not a reservation. Asked
+    /// for on a window too narrow to hold it, it simply is not drawn, and comes back the
+    /// moment there is room — the same bargain the contents rail already made.
+    public static func roomForNotes(available: CGFloat, contentsShown: Bool) -> Bool {
+        available - notesReserved
+            >= contentFloor + dividerBeforeInspector + inspectorMinimum(contentsShown: contentsShown)
     }
 
     /// A page still worth looking at beside an open contents rail. Less than the browser's

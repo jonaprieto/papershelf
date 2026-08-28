@@ -57,8 +57,8 @@ final class SidebarTests: XCTestCase {
     /// collapsed, on top of both columns' own floors. Removing it is what buys the window
     /// its narrower minimum back, so the arithmetic should not quietly grow again.
     func testTheWindowFloorNoLongerPaysForARail() {
-        let floor = Metric.sidebarMin + SplitLayout.minWidth(notesShown: false)
-        XCTAssertEqual(floor, 220 + SplitLayout.minWidth(notesShown: false))
+        let floor = Metric.sidebarMin + SplitLayout.minWidth()
+        XCTAssertEqual(floor, 220 + SplitLayout.minWidth())
         XCTAssertLessThan(floor, 1011, "the window got no narrower than it was with the rail")
     }
 }
