@@ -630,3 +630,37 @@ final class MetadataTests: XCTestCase {
         XCTAssertEqual(book?.title, "Concrete mathematics")
     }
 }
+
+/// The opening shown under a file's details. It used to be produced by squeezing the whole
+/// of whatever text had been extracted, which for a book took about eighty milliseconds,
+/// on every pass of the view body that showed three lines of it.
+final class SqueezedOpeningTests: XCTestCase {
+
+    func testRunsOfWhitespaceBecomeSingleSpaces() {
+        XCTAssertEqual(squeezedOpening(of: "one   two\n\nthree\t four"), "one two three four")
+    }
+
+    func testLeadingAndTrailingWhitespaceGoes() {
+        XCTAssertEqual(squeezedOpening(of: "\n  hello  \n"), "hello")
+    }
+
+    func testNothingInNothingOut() {
+        XCTAssertEqual(squeezedOpening(of: "   \n\t "), "")
+    }
+
+    /// The bound is what keeps this cheap. A book's worth of text must not be walked to
+    /// fill three lines.
+    func testOnlyTheOpeningIsRead() {
+        let text = String(repeating: "word ", count: 100_000)
+        let opening = squeezedOpening(of: text, limit: 100)
+        XCTAssertLessThanOrEqual(opening.count, 100)
+        XCTAssertTrue(opening.hasPrefix("word word"))
+    }
+
+    /// The bound counts characters of the source, so a partial word at the end is kept
+    /// rather than dropped: three lines of text should not end mid-word for the sake of
+    /// tidiness nobody asked for.
+    func testTheCutIsNotPaddedOrTrimmedBeyondWhitespace() {
+        XCTAssertEqual(squeezedOpening(of: "abcdefgh", limit: 5), "abcde")
+    }
+}

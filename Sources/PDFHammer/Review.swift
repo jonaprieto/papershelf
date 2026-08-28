@@ -576,14 +576,18 @@ struct PDFPreview: NSViewRepresentable {
     }
 
     func updateNSView(_ view: FitWidthPDFView, context: Context) {
-        guard view.document?.documentURL != url else { return }
+        // What the view is showing is not the whole answer any more: a load can be in
+        // flight, and SwiftUI calls this again for reasons that have nothing to do with
+        // the file. The coordinator remembers what was asked for, so the same file is
+        // never read twice over and A -> B -> A does not end up showing B.
+        let coordinator = context.coordinator
+        guard coordinator.wanted != url else { return }
 
         // Parsing a document is not free: a two-hundred-page thesis takes the better part
         // of a tenth of a second, and doing it here held the main thread for exactly that
         // long on every move through the list. It is read off the main thread instead, and
         // a load that lands after the selection has moved on is dropped rather than drawn
         // over the file now selected.
-        let coordinator = context.coordinator
         let wanted = url
         coordinator.wanted = wanted
         let passwords = passwords
@@ -592,7 +596,13 @@ struct PDFPreview: NSViewRepresentable {
         Task { @MainActor in
             let loaded = await PDFPreview.load(url: wanted, passwords: passwords)
             guard coordinator.wanted == wanted else { return }
-            view.document = loaded.document
+            guard let document = loaded.document else {
+                // Nothing to show and nothing to remember: a later pass should be free to
+                // try this file again rather than treat it as already handled.
+                coordinator.wanted = nil
+                return
+            }
+            view.document = document
             view.showFromTop()
             annotator?.attach(view, url: wanted)
         }

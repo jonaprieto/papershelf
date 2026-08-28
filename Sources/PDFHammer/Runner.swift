@@ -281,6 +281,7 @@ final class Runner: ObservableObject {
         // The file may have moved, so anything read from the old path is now stale.
         excerpts[key] = nil
         textCache[key] = nil
+        openings[key] = nil
         let previous = results[index].status
         results[index] = item
         // The row now describes a different file on disk, so the copy the duplicate index
@@ -403,13 +404,21 @@ final class Runner: ObservableObject {
         }
     }
 
+    /// Squeezed once and kept. Deliberately not `@Published`: this is filled in from a
+    /// view body asking for it, and publishing there would invalidate the very view that
+    /// asked and have it ask again.
+    private var openings: [String: String] = [:]
+
     func excerpt(for item: Item) -> String? {
         if let ready = excerpts[item.key] { return ready.isEmpty ? nil : ready }
-        if let cached = textCache[item.key] {
-            let squeezed = cached.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-            return squeezed.isEmpty ? nil : squeezed
-        }
-        return nil
+        if let ready = openings[item.key] { return ready.isEmpty ? nil : ready }
+        guard let cached = textCache[item.key] else { return nil }
+        // A text search fills this cache with whole documents. Squeezing all of one, on
+        // every pass of the body that shows three lines of it, was the single most
+        // expensive thing on the path between two files in the list.
+        let squeezed = squeezedOpening(of: cached)
+        openings[item.key] = squeezed
+        return squeezed.isEmpty ? nil : squeezed
     }
 
     /// Re-orders in place. Everything derived hangs off the results, so the tree, the
@@ -752,6 +761,7 @@ final class Runner: ObservableObject {
         searchText = ""
         textCache = [:]
         excerpts = [:]
+        openings = [:]
         projections = []
         projectionsIncludeText = false
         decisions = [:]

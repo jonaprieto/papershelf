@@ -635,3 +635,15 @@ public func mergeMetadata(_ records: [NormalizedMetadata]) -> NormalizedMetadata
                                 ?? record(for: .arxiv)?.type ?? .misc)
     )
 }
+
+/// The opening of a piece of extracted text, with runs of whitespace squeezed to single
+/// spaces.
+///
+/// Bounded on purpose. The panel that shows this displays three lines, while the text
+/// behind it can be a whole book: squeezing all of it took about eighty milliseconds for a
+/// thesis, and it was being done again on every pass of the view body that showed it.
+/// Twenty times the room three lines can hold is enough to fill them and cheap enough not
+/// to matter.
+public func squeezedOpening(of text: String, limit: Int = 2000) -> String {
+    text.prefix(limit).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+}
