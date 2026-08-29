@@ -701,6 +701,12 @@ struct ResultsPane: View {
     /// Returning false hands ⎋ on to whoever else wants it -- a sheet, a popover, the
     /// menu bar -- which is what keeps the last rung from swallowing a dismissal.
     private func escape() -> Bool {
+        // A sheet gets its own ⎋ first. This monitor runs ahead of the responder chain
+        // for the whole app, so swallowing the key here would leave the palette with no
+        // way to close but the mouse.
+        guard !showingPalette, !showingShortcuts, !showingMarkdown, taggingItem == nil,
+              !confirmingBatchAI, !choosingMoveTarget
+        else { return false }
         switch Regions.escape(editingField: editingName,
                               rowFocused: regions.rowFocused,
                               filtering: !query.isEmpty || folderScope != nil
