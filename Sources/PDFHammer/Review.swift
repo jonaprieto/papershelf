@@ -235,7 +235,10 @@ struct ReviewInspector: View {
                 VStack(alignment: .leading, spacing: 10) {
                     switch panel {
                     case .rename: renamePanel
-                    case .details: MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read)
+                    case .details:
+                        MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
+                                      livePage: showsPage ? annotator.page : nil,
+                                      livePageCount: showsPage ? annotator.pageCount : nil)
                     case .notes: notesPanel
                     case .bibtex: bibtexPanel
                     }
@@ -815,6 +818,8 @@ struct MetadataPanel: View {
     /// How far in the reader got last time, read from the library rather than from the
     /// page, since the shelf has no page open.
     @State private var position: ReadingPosition?
+    var livePage: Int? = nil
+    var livePageCount: Int? = nil
     /// Which reading projects this document is filed under.
     @State private var projects: [String] = []
 
@@ -946,7 +951,13 @@ struct MetadataPanel: View {
 
     private var readingRows: [(String, String)] {
         var rows: [(String, String)] = []
-        if let position, position.isInProgress {
+        // While the page is visible, the PDF view is the source of truth. The library
+        // position is intentionally debounced, so reading it here made the inspector
+        // lag behind the page by up to a second.
+        if let livePage, let livePageCount, livePage > 1, livePage < livePageCount {
+            let percent = (livePage - 1) * 100 / (livePageCount - 1)
+            rows.append(("Progress", "page \(livePage) of \(livePageCount) · \(percent)%"))
+        } else if let position, position.isInProgress {
             let percent = position.fraction.map { " · \(Int($0 * 100))%" } ?? ""
             let total = position.pageCount.map { " of \($0)" } ?? ""
             rows.append(("Progress", "page \(position.page)\(total)\(percent)"))
@@ -969,6 +980,11 @@ struct MetadataPanel: View {
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.control))
+                // Keep stale/oversized text from painting over the actions below it.
+                // `lineLimit` controls layout, but hosted inspector content still needs a
+                // hard visual bound when SwiftUI receives a very long PDF text layer.
+                .frame(maxHeight: 88, alignment: .top)
+                .clipped()
         } else if item.status == .locked {
             Label("Locked, so nothing inside can be read", systemImage: "lock.fill")
                 .font(Face.caption)
