@@ -13,6 +13,9 @@ struct ResultsPane: View {
     let previewIsCurrent: Bool
     let passwords: [String]
     let reading: Bool
+    /// Reading mode belongs to the window, not to this pane, but the button belongs in
+    /// this pane's toolbar group so the order reads views · search · actions · chrome.
+    var toggleReading: () -> Void = {}
     let watching: Bool
     @ObservedObject var palette: Palette
     let rules: NameRules
@@ -47,7 +50,17 @@ struct ResultsPane: View {
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
-    @AppStorage("inspectorWidth") private var inspectorWidth: Double = 460
+    /// How wide the document region is: the page and the inspector panel together.
+    ///
+    /// A new key, because the number means something else than it did. It used to be the
+    /// width of a panel; the region it names now also holds the page, and the old 460
+    /// left the page 140 points once the panel had taken its 320. The default is the
+    /// design's own proportion — a page you can read a paragraph across, and the panel.
+    @AppStorage("documentRegionWidth") private var inspectorWidth: Double = 840
+    /// How wide the inspector is where there is no page beside it — the shelf, the
+    /// bibliography, the duplicates view. Its own preference, because the region it names
+    /// holds one column of controls rather than a page and a column.
+    @AppStorage("inspectorPanelWidth") private var panelOnlyWidth: Double = 340
     @AppStorage("contentsShown") private var contentsShown = false
     @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
     @StateObject private var annotator = Annotator()
@@ -306,15 +319,8 @@ struct ResultsPane: View {
             } else if runner.results.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 0) {
-                    if !reading {
-                        filterBar
-                        Divider()
-                    }
-                    split
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                split
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
     }
@@ -447,6 +453,14 @@ struct ResultsPane: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 contextualActions
+                Button { toggleReading() } label: {
+                    Label("Reading", systemImage: reading ? "book.fill" : "book")
+                }
+                .tip("Hide everything but the page", key: "⌘⇧R")
+                Button { inspectorCollapsed.toggle() } label: {
+                    Label("Inspector", systemImage: "sidebar.right")
+                }
+                .tip("Info, rename, notes and the citation", key: "⌥⌘I")
             }
         }
         .sheet(isPresented: $showingPalette) {
@@ -771,7 +785,14 @@ struct ResultsPane: View {
         case .confirmAllPending:
             runner.confirmAllPending()
             ensureSelection()
-        case .confirm: confirm()
+        case .confirm:
+            // On the shelf ⏎ opens the book: a shelf is for reading, and the name is
+            // decided in the list, where the page is beside it.
+            if mode == .catalogue, reader == nil, let item = selectedItem {
+                openReader(item.key)
+            } else {
+                confirm()
+            }
         case .editName: editingName = true
         case .skip: skip()
         case .skipFolder: skipFolder()
@@ -1286,7 +1307,7 @@ struct ResultsPane: View {
             preferred: inspectorWidth, available: available, contentsShown: contentsOpen)
         return HStack(spacing: 0) {
             if showsBrowser {
-                browser.frame(maxWidth: .infinity, maxHeight: .infinity).region(.document)
+                collection.region(.document)
                 divider(width: width, minimum: minimum, maximum: maximum)
             }
             documentRegion(paneWidth: showsBrowser ? width : available)
@@ -1304,11 +1325,11 @@ struct ResultsPane: View {
         // metadata does not.
         let floor = selectedDuplicateGroup == nil ? Metric.inspectorMin : 420
         let maximum = max(floor, available - SplitLayout.contentFloor)
-        let width = min(max(inspectorWidth, floor), maximum)
+        let width = min(max(panelOnlyWidth, floor), maximum)
         return HStack(spacing: 0) {
-            browser.frame(maxWidth: .infinity, maxHeight: .infinity).region(.document)
+            collection.region(.document)
             if !inspectorCollapsed && !overlays {
-                divider(width: width, minimum: floor, maximum: maximum)
+                divider(width: width, minimum: floor, maximum: maximum, store: $panelOnlyWidth)
                 documentRegion(paneWidth: width)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
@@ -1321,6 +1342,22 @@ struct ResultsPane: View {
         }
     }
 
+    /// The collection, under the bar that says what is filtering it.
+    ///
+    /// The bar sits over the browser and not over the whole window: the inspector is
+    /// about one file and has nothing to do with what is filtering the collection, and a
+    /// bar running across both put "4 of 4 shown" above a panel of metadata.
+    private var collection: some View {
+        VStack(spacing: 0) {
+            if !reading {
+                filterBar
+                Divider()
+            }
+            browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// The inspector over the browser, on a window with no room to put it beside one.
     private func floatingPanel(width: CGFloat) -> some View {
         documentRegion(paneWidth: width)
@@ -1330,7 +1367,14 @@ struct ResultsPane: View {
             .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
     }
 
-    private func divider(width: CGFloat, minimum: CGFloat, maximum: CGFloat) -> some View {
+    private func divider(width: CGFloat, minimum: CGFloat, maximum: CGFloat,
+                         store: Binding<Double>? = nil) -> some View {
+        let target = store ?? $inspectorWidth
+        return dividerBody(width: width, minimum: minimum, maximum: maximum, store: target)
+    }
+
+    private func dividerBody(width: CGFloat, minimum: CGFloat, maximum: CGFloat,
+                             store: Binding<Double>) -> some View {
         Divider()
             .background(.separator)
             .frame(width: 1)
@@ -1351,8 +1395,8 @@ struct ResultsPane: View {
                                 // and landed at widths nobody asked for.
                                 let anchor = dragAnchor ?? width
                                 if dragAnchor == nil { dragAnchor = anchor }
-                                inspectorWidth = min(max(anchor - value.translation.width,
-                                                         minimum), maximum)
+                                store.wrappedValue = min(max(anchor - value.translation.width,
+                                                             minimum), maximum)
                             }
                             .onEnded { _ in dragAnchor = nil }
                     )
@@ -1971,80 +2015,75 @@ struct ResultRow: View {
     var duplicate: DuplicateGroup.Kind?
     var tags: [String] = []
 
+    /// Two lines and one pill.
+    ///
+    /// The old name small and grey above, what it becomes at full weight below, and the
+    /// state on the right. Size, pages and dates are in the inspector: a plan is read down
+    /// the column of names, and anything else on the row is something to read past.
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            reviewMark
-                .frame(width: 15)
-                .padding(.top, 2)
-            StatusPill(status: item.status, count: nil)
-                .frame(width: 108, alignment: .leading)
-                .padding(.top, 1)
+        HStack(alignment: .top, spacing: 9) {
+            reviewMark.frame(width: 15).padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(decision == .deleted ? item.sourceName : shownName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .strikethrough(decision == .deleted)
-                stats
-                if decision == .deleted {
-                    Label("will be moved to the Trash", systemImage: "trash")
-                        .font(.caption)
-                        .foregroundStyle(Ink.red)
-                } else if shownName != item.sourceName {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text(item.sourceName)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text("already normalized")
-                        .font(.caption)
+            VStack(alignment: .leading, spacing: 1) {
+                if isRenamed {
+                    Text(item.sourceName)
+                        .font(Face.caption)
                         .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(shownName)
+                        .font(Face.mono)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .strikethrough(decision == .deleted)
+                } else {
+                    Text(item.sourceName)
+                        .font(Face.mono)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .strikethrough(decision == .deleted)
+                    Text(outcome)
+                        .font(Face.caption)
+                        .foregroundStyle(item.status == .failed
+                                         ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.tertiary))
+                        .lineLimit(1)
                 }
-                if !item.message.isEmpty {
-                    Text(item.message)
-                        .font(.caption)
-                        .foregroundStyle(item.status == .failed ? .red : .orange)
-                }
-                if !tags.isEmpty {
-                    tagChips
-                }
+                // On their own line: a row of chips beside the names would take the room
+                // the names need, and the names are what a plan is read down.
+                if !tags.isEmpty { tagChips }
             }
-            Spacer(minLength: 0)
+
+            Spacer(minLength: 8)
+
             if let duplicate {
                 Image(systemName: duplicateIcon(duplicate))
                     .foregroundStyle(duplicateColour(duplicate))
                     .help(duplicateExplanation(duplicate))
             }
+            StatusPill(status: item.status, count: nil)
         }
         .padding(.vertical, 3)
         .opacity(decision == .skipped ? 0.45 : 1)
     }
 
+    private var isRenamed: Bool {
+        decision != .deleted && shownName != item.sourceName
+    }
+
+    /// What happens to a file that is not being renamed, in the words the plan uses.
+    private var outcome: String {
+        if decision == .deleted { return "moving to the Trash" }
+        if !item.message.isEmpty { return item.message }
+        switch decision {
+        case .skipped: return "left alone"
+        case .applied: return "applied"
+        default: return "already named correctly"
+        }
+    }
+
     private var shownName: String {
         if case .confirmed(let name) = decision { return name }
         return item.destinationName
-    }
-
-    /// Size, length and age, which is what tells two similar-looking files apart.
-    @ViewBuilder
-    private var stats: some View {
-        let parts = [
-            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
-            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
-            item.modifiedDate.map { $0.formatted(date: .abbreviated, time: .omitted) },
-        ].compactMap { $0 }
-        if !parts.isEmpty {
-            Text(parts.joined(separator: "  ·  "))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .monospacedDigit()
-        }
     }
 
     /// What this file is tagged, read from the tag index rather than a query of its own

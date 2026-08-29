@@ -815,43 +815,8 @@ struct MetadataPanel: View {
     /// How far in the reader got last time, read from the library rather than from the
     /// page, since the shelf has no page open.
     @State private var position: ReadingPosition?
-
-    private var facts: [(String, String)] {
-        var rows: [(String, String)] = []
-        for key in ["Title", "Author", "Subject", "Keywords", "Creator", "Producer"] {
-            if let value = item.documentInfo[key] { rows.append((key.lowercased(), value)) }
-        }
-        if let date = item.metadataDate {
-            rows.append(("created", date.formatted(date: .abbreviated, time: .omitted)))
-        }
-        return rows
-    }
-
-    /// Where the reader left off. Absent for a book nobody has opened, rather than a row
-    /// saying so.
-    @ViewBuilder
-    private var progress: some View {
-        if let position, position.isInProgress {
-            HStack(spacing: 7) {
-                if let fraction = position.fraction {
-                    ProgressView(value: fraction).frame(width: 70)
-                    Text("page \(position.page) of \(position.pageCount ?? 0) · \(Int(fraction * 100))%")
-                } else {
-                    Text("page \(position.page)")
-                }
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-        }
-    }
-
-    private var physical: String {
-        [
-            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
-            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
-            item.modifiedDate.map { "modified \($0.formatted(date: .abbreviated, time: .omitted))" },
-        ].compactMap { $0 }.joined(separator: "   ·   ")
-    }
+    /// Which reading projects this document is filed under.
+    @State private var projects: [String] = []
 
     var body: some View {
         panel.task(id: item.key) { await loadPosition() }
@@ -859,14 +824,164 @@ struct MetadataPanel: View {
 
     private func loadPosition() async {
         position = nil
+        projects = []
         guard let library = Library.shared else { return }
         let path = item.currentURL.resolvingSymlinksInPath().path
         guard let record = try? await library.document(atPath: path) else { return }
         position = try? await library.readingPosition(forDocument: record.id)
+        var filed: [String] = []
+        for project in (try? await library.projects()) ?? [] {
+            let members = (try? await library.members(ofProject: project.id)) ?? []
+            if members.contains(where: { $0.id == record.id }) { filed.append(project.name) }
+        }
+        projects = filed
     }
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            heading
+            group("File", rows: fileRows)
+            suggested
+            group("Reading", rows: readingRows)
+            opening
+            actions
+        }
+        .padding(.top, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What the book calls itself, in its own voice, with the tags under it.
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(Face.page)
+                .fontWeight(.semibold)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            if let author = item.documentInfo["Author"], !author.isEmpty {
+                Text(author)
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            TagStrip(actions: tags)
+        }
+    }
+
+    private var title: String {
+        let stated = item.documentInfo["Title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let stated, !stated.isEmpty { return stated }
+        return (item.destinationName as NSString).deletingPathExtension
+    }
+
+    /// One labelled group, drawn only when it has something to say. An absent field is
+    /// not worth a row saying so.
+    @ViewBuilder
+    private func group(_ label: String, rows: [(String, String)]) -> some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(label)
+                    .font(Face.section)
+                    .foregroundStyle(.tertiary)
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
+                    ForEach(rows, id: \.0) { name, value in
+                        GridRow {
+                            Text(name)
+                                .font(Face.caption)
+                                .foregroundStyle(.tertiary)
+                                .gridColumnAlignment(.trailing)
+                            Text(value)
+                                .font(Face.caption)
+                                .lineLimit(3)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var fileRows: [(String, String)] {
+        var rows: [(String, String)] = [("Name", item.currentURL.lastPathComponent)]
+        let folder = (item.relativePath as NSString).deletingLastPathComponent
+        rows.append(("Where", folder.isEmpty
+                     ? item.root.lastPathComponent
+                     : item.root.lastPathComponent + " / " + folder.replacingOccurrences(of: "/", with: " / ")))
+        let size = [
+            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
+        ].compactMap { $0 }.joined(separator: " · ")
+        if !size.isEmpty { rows.append(("Size", size)) }
+        if let modified = item.modifiedDate {
+            rows.append(("Added", modified.formatted(date: .abbreviated, time: .omitted)))
+        }
+        rows.append(("Status", item.status.rawValue.capitalized))
+        return rows
+    }
+
+    /// The rename this file is part of, and why it came out that way. Only for a file the
+    /// plan actually changes: a row saying a name is unchanged is a row about nothing.
+    @ViewBuilder
+    private var suggested: some View {
+        if item.destinationName != item.sourceName {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Suggested name")
+                    .font(Face.section)
+                    .foregroundStyle(.tertiary)
+                Text(item.sourceName)
+                    .font(Face.mono)
+                    .foregroundStyle(.tertiary)
+                    .strikethrough()
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                Text(item.destinationName)
+                    .font(Face.mono)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                if !item.message.isEmpty {
+                    Text(item.message)
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var readingRows: [(String, String)] {
+        var rows: [(String, String)] = []
+        if let position, position.isInProgress {
+            let percent = position.fraction.map { " · \(Int($0 * 100))%" } ?? ""
+            let total = position.pageCount.map { " of \($0)" } ?? ""
+            rows.append(("Progress", "page \(position.page)\(total)\(percent)"))
+        }
+        if !projects.isEmpty {
+            rows.append(("Projects", projects.joined(separator: ", ")))
+        }
+        return rows
+    }
+
+    /// The first words of the document, or the reason there are none.
+    @ViewBuilder
+    private var opening: some View {
+        if let excerpt, !excerpt.isEmpty {
+            Text(excerpt)
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(4)
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.control))
+        } else if item.status == .locked {
+            Label("Locked, so nothing inside can be read", systemImage: "lock.fill")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var actions: some View {
+        VStack(spacing: 6) {
             if let read {
                 Button(action: read) {
                     Label("Read", systemImage: "book")
@@ -876,49 +991,16 @@ struct MetadataPanel: View {
                 .controlSize(.large)
                 .tip("Open the page, its outline and your marks on it", key: "⏎")
             }
-
-            Text(physical)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-
-            progress
-
-            TagStrip(actions: tags)
-
-            if !facts.isEmpty {
-                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
-                    ForEach(facts, id: \.0) { label, value in
-                        GridRow {
-                            Text(label)
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .gridColumnAlignment(.trailing)
-                            Text(value)
-                                .font(.caption)
-                                .lineLimit(2)
-                                .textSelection(.enabled)
-                        }
-                    }
+            HStack(spacing: 6) {
+                Button("Reveal") {
+                    NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
                 }
+                .frame(maxWidth: .infinity)
+                Button("Quick Look") { QuickLook.show(item.currentURL) }
+                    .frame(maxWidth: .infinity)
             }
-
-            if let excerpt, !excerpt.isEmpty {
-                Text(excerpt)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
-            } else if item.status == .locked {
-                Label("Locked, so nothing inside can be read", systemImage: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .controlSize(.small)
         }
-        .padding(.top, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
