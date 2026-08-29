@@ -926,3 +926,47 @@ final class ReadingPositionTests: XCTestCase {
         XCTAssertTrue(future.isEmpty)
     }
 }
+
+/// A small on-disk shelf, not synthetic database rows: catches regressions where a
+/// real multi-file scan reports the wrong document or text-search counts.
+final class PDFShelfFixtureTests: XCTestCase {
+    func testSeveralPDFsStaySearchableAndScansStayUnindexed() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("pdf-shelf-fixtures"), isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = try Library(url: root.appendingPathComponent("library.sqlite"))
+
+        let textFixtures = [
+            ("papers/consistency.pdf", "strong eventual consistency and replication"),
+            ("papers/notes.pdf", "reading notes and semantic highlights"),
+            ("copies/consistency-copy.pdf", "strong eventual consistency and replication"),
+        ]
+        for (relative, text) in textFixtures {
+            let file = root.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try makeTextPDF(at: file, text: text)
+            let record = try await library.indexDocument(
+                path: file.path, contentHash: relative,
+                byteCount: try Data(contentsOf: file).count, pageCount: 1)
+            try await library.setExtractedText(text, forDocument: record.id)
+        }
+
+        let scan = root.appendingPathComponent("scans/invoice.pdf")
+        try FileManager.default.createDirectory(at: scan.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try makePDF(at: scan, password: nil)
+        _ = try await library.indexDocument(path: scan.path, contentHash: "scan",
+                                            byteCount: try Data(contentsOf: scan).count,
+                                            pageCount: 1)
+
+        let summary = try await library.summary()
+        XCTAssertEqual(summary.documents, 4)
+        XCTAssertEqual(summary.withText, 3)
+        let consistency = try await library.fullTextSearch("eventual consistency")
+        let invoices = try await library.fullTextSearch("invoice")
+        XCTAssertEqual(consistency.count, 2)
+        XCTAssertTrue(invoices.isEmpty)
+    }
+}

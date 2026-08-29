@@ -98,6 +98,12 @@ final class Runner: ObservableObject {
     @Published private(set) var duplicatesChecked = false
 
     private var jobs: [Job] = []
+    /// The current scan/apply task. A new source or run replaces it instead of letting two
+    /// detached walks compete for the same SSD.
+    private var workTask: Task<Void, Never>?
+    private var workGeneration = 0
+    private var searchTask: Task<Void, Never>?
+    private var searchGeneration = 0
 
 
     var busy: Bool { phase != .idle }
@@ -382,6 +388,10 @@ final class Runner: ObservableObject {
     }
 
     func search(_ text: String, passwords: [String]) {
+        searchGeneration &+= 1
+        searchTask?.cancel()
+        searchTask = nil
+        searching = false
         searchText = text
         let query = Query(text)
         guard !query.isEmpty else {
@@ -403,12 +413,14 @@ final class Runner: ObservableObject {
         searching = true
         let snapshot = results
         let cached = textCache
-        Task.detached(priority: .userInitiated) { [self] in
+        let generation = searchGeneration
+        searchTask = Task.detached(priority: .userInitiated) { [self] in
             var fresh: [String: String] = [:]
             let lock = NSLock()
             let missing = snapshot.filter { cached[$0.key] == nil }
             if !missing.isEmpty {
                 DispatchQueue.concurrentPerform(iterations: missing.count) { index in
+                    guard !Task.isCancelled else { return }
                     let item = missing[index]
                     let text = openingText(of: item.currentURL, passwords: passwords, pages: 6)
                     lock.lock()
@@ -416,15 +428,18 @@ final class Runner: ObservableObject {
                     lock.unlock()
                 }
             }
+            let foundText = fresh
+            guard !Task.isCancelled else { return }
             await MainActor.run {
-                self.textCache.merge(fresh) { _, new in new }
-                guard self.searchText == text else { return }
+                self.textCache.merge(foundText) { _, new in new }
+                guard self.searchGeneration == generation, self.searchText == text else { return }
                 self.buildProjections(includingText: true)
                 let prepared = PreparedQuery(query)
                 self.matchingKeys = Set(zip(self.results, self.projections)
                     .filter { matches($0.1, prepared) }
                     .map(\.0.key))
                 self.searching = false
+                self.searchTask = nil
             }
         }
     }
@@ -687,32 +702,88 @@ final class Runner: ObservableObject {
     func preview(roots: [URL], options: Options, fingerprint: String) {
         let wasCached = showingCached
         begin(fingerprint: fingerprint, dry: true)
+        let generation = workGeneration
         // Keep the old rows visible while the new ones are being worked out, so a refresh
         // does not blank the window.
         showingCached = wasCached
 
-        Task.detached(priority: .userInitiated) { [self] in
+        workTask = Task.detached(priority: .userInitiated) { [self] in
             let throttle = Throttle(milliseconds: 80)
-            let found = collectJobs(roots: roots, recursive: options.recursive) { directory, count in
-                guard throttle.allow() else { return }
-                Task { @MainActor in
-                    self.current = directory
-                    self.found = count
-                }
-            }
+            let found = collectJobs(
+                roots: roots,
+                recursive: options.recursive,
+                progress: { directory, count in
+                    guard throttle.allow() else { return }
+                    Task { @MainActor in
+                        guard self.workGeneration == generation else { return }
+                        self.current = directory
+                        self.found = count
+                    }
+                },
+                cancelled: { Task.isCancelled }
+            )
+            guard !Task.isCancelled else { return }
+            let current = await MainActor.run { self.workGeneration == generation }
+            guard current else { return }
             await MainActor.run {
+                guard self.workGeneration == generation else { return }
                 self.jobs = found
                 self.phase = .processing
                 self.total = found.count
                 self.found = found.count
                 self.current = ""
             }
-            let out = process(jobs: found, options: options, progress: self.report)
+            let out = process(jobs: found, options: options,
+                              progress: { done, total, name in
+                                  self.report(done: done, total: total, name: name,
+                                              generation: generation)
+                              }, cancelled: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
             let derived = Runner.derive(out)
             saveRunCache(RunCache(fingerprint: fingerprint, items: out))
             await MainActor.run {
+                guard self.workGeneration == generation else { return }
                 self.showingCached = false
                 self.finish(out, derived: derived)
+                self.workTask = nil
+            }
+        }
+    }
+
+    /// A shelf only needs paths and names to become useful. PDF metadata is deliberately
+    /// deferred to the explicit Review names action, which keeps a first import of a large
+    /// external volume bounded by its directory walk rather than its PDF contents.
+    func libraryPreview(roots: [URL], options: Options, fingerprint: String,
+                        preservingVisibleResults: Bool = false) {
+        if preservingVisibleResults {
+            cancelWork()
+            cancelSearch()
+            // Keep the cached shelf interactive while the cheap filesystem refresh runs.
+            // `showingCached` is the honest status marker; a full `begin` would blank the
+            // shelf and make a fast refresh feel slower than it is.
+            self.fingerprint = fingerprint
+            showingCached = true
+            phase = .idle
+        } else {
+            begin(fingerprint: fingerprint, dry: true)
+        }
+        let generation = workGeneration
+        workTask = Task.detached(priority: .utility) { [self] in
+            let found = collectJobs(roots: roots, recursive: options.recursive,
+                                    cancelled: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
+            let out = found.map { libraryItem(for: $0, options: options) }
+            let derived = Runner.derive(out)
+            await MainActor.run {
+                guard self.workGeneration == generation else { return }
+                self.jobs = found
+                self.finish(out, derived: derived, syncLibrary: false)
+                self.showingCached = false
+                // Register paths immediately, but keep it off the first-render path. The
+                // shelf can open before this batch is indexed; the library catches up in
+                // one SQLite write so notes, tags and reading positions have an owner.
+                Task { await self.syncLibrary(with: out) }
+                self.workTask = nil
             }
         }
     }
@@ -734,22 +805,30 @@ final class Runner: ObservableObject {
             case .confirmed(let name): overrides[key] = name
             case .deleted: trashed.insert(key)
             case .moveTo(let folder): moves[key] = folder
-            case .skipped, .applied, nil: break
+            case .skipped, .applied: break
             }
         }
 
         begin(fingerprint: fingerprint, dry: false)
+        let generation = workGeneration
         total = queue.count
 
-        Task.detached(priority: .userInitiated) { [self] in
+        workTask = Task.detached(priority: .userInitiated) { [self] in
             await MainActor.run { self.phase = .processing }
             let out = process(jobs: queue, options: options, overrides: overrides,
-                              trashed: trashed, moves: moves, progress: self.report)
+                              trashed: trashed, moves: moves,
+                              progress: { done, total, name in
+                                  self.report(done: done, total: total, name: name,
+                                              generation: generation)
+                              }, cancelled: { Task.isCancelled })
+            guard !Task.isCancelled else { return }
             let derived = Runner.derive(out)
             await MainActor.run {
+                guard self.workGeneration == generation else { return }
                 for item in out { self.note(self.kind(for: item.status), for: item,
                                             detail: "-> \(item.destinationName)") }
                 self.finish(out, derived: derived)
+                self.workTask = nil
             }
         }
     }
@@ -767,7 +846,22 @@ final class Runner: ObservableObject {
         }
     }
 
+    private func cancelWork() {
+        workGeneration &+= 1
+        workTask?.cancel()
+        workTask = nil
+    }
+
+    private func cancelSearch() {
+        searchGeneration &+= 1
+        searchTask?.cancel()
+        searchTask = nil
+        searching = false
+    }
+
     private func begin(fingerprint: String, dry: Bool) {
+        cancelWork()
+        cancelSearch()
         phase = dry ? .scanning : .processing
         showingCached = false
         results = []
@@ -805,8 +899,9 @@ final class Runner: ObservableObject {
         self.fingerprint = fingerprint
     }
 
-    private nonisolated func report(done: Int, total: Int, name: String) {
+    private nonisolated func report(done: Int, total: Int, name: String, generation: Int) {
         Task { @MainActor in
+            guard self.workGeneration == generation else { return }
             self.done = done
             self.total = total
             self.current = name
@@ -860,7 +955,7 @@ final class Runner: ObservableObject {
     }
 
     private func finish(_ out: [Item], keepingDecisions: Bool = false,
-                        derived: Derived? = nil) {
+                        derived: Derived? = nil, syncLibrary: Bool = true) {
         if !keepingDecisions { cursor = 0 }
         results = out
         let parts = derived ?? Runner.derive(out)
@@ -880,7 +975,7 @@ final class Runner: ObservableObject {
         // watcher absorbing what changed on disk. One call covers all three, and it is the
         // call that keeps a renamed document's tags, notes and project membership attached
         // to it rather than orphaned at a path that no longer exists.
-        Task { await self.syncLibrary(with: out) }
+        if syncLibrary { Task { await self.syncLibrary(with: out) } }
     }
 }
 

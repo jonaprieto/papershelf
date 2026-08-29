@@ -73,6 +73,22 @@ final class HammerTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: pdf.path))
     }
 
+    func testCancelledWorkDoesNotWalkOrOpenPDFs() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm-cancel"))
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let pdf = root.appendingPathComponent("2024-paper.pdf")
+        try makePDF(at: pdf, password: nil)
+
+        XCTAssertTrue(collectJobs(roots: [root], recursive: true, cancelled: { true }).isEmpty)
+        let jobs = collectJobs(roots: [root], recursive: true)
+        XCTAssertTrue(process(jobs: jobs,
+                              options: Options(passwords: [], recursive: true, dryRun: true),
+                              cancelled: { true }).isEmpty)
+        XCTAssertTrue(fm.fileExists(atPath: pdf.path))
+    }
+
     func testPasswordIsRemoved() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))

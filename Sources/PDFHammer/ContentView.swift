@@ -251,6 +251,16 @@ struct ContentView: View {
         runner.preview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
     }
 
+    private func libraryPreview() {
+        runner.libraryPreview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
+    }
+
+    private func libraryPreview(preservingVisibleResults: Bool) {
+        runner.libraryPreview(roots: selection, options: options(dryRun: true),
+                              fingerprint: fingerprint,
+                              preservingVisibleResults: preservingVisibleResults)
+    }
+
     private func apply() {
         runner.apply(options: options(dryRun: false))
     }
@@ -370,7 +380,7 @@ struct ContentView: View {
             selection = wanted.filter { FileManager.default.fileExists(atPath: $0.path) }
             startWatching()
             ensureSelectionAfterSourceChange()
-            if !selection.isEmpty { preview() }
+            if !selection.isEmpty { mode == .catalogue ? libraryPreview() : preview() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openProject), perform: revealProject)
         // The pattern editor lives in the settings window now and has no scanner of its
@@ -390,7 +400,13 @@ struct ContentView: View {
             if !selection.isEmpty {
                 // Show last time's answer at once, then check the disk behind it.
                 let hadCache = runner.showCached(fingerprint: fingerprint)
-                if autoPreview || hadCache { preview() }
+                if autoPreview || hadCache {
+                    if mode == .catalogue {
+                        libraryPreview(preservingVisibleResults: hadCache)
+                    } else {
+                        preview()
+                    }
+                }
             }
             if aiReady && availableModels.isEmpty { loadModels() }
         }
@@ -906,7 +922,7 @@ struct ContentView: View {
         guard selection.map(\.path) != before.map(\.path) else { return }
         persistSources()
         startWatching()
-        if autoPreview { preview() }
+        if autoPreview { mode == .catalogue ? libraryPreview() : preview() }
     }
 
     /// Removing a source takes its files with it, straight away.

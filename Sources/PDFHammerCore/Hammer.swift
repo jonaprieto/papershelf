@@ -690,6 +690,16 @@ public struct Job: Identifiable, Sendable {
     public var id: String { key }
 }
 
+/// Makes the library shelf useful before PDF metadata has been inspected. Names, folders,
+/// dates and sizes come from the filesystem; page counts and document attributes are left
+/// for the explicit rename review, so adding a volume does not open every PDF up front.
+public func libraryItem(for job: Job, options: Options) -> Item {
+    let source = job.file
+    let item = Item(root: job.root, source: source, destination: source, status: .renamed,
+                    modifiedDate: modificationDate(source), byteCount: byteCount(source))
+    return restyled(item, options: options)
+}
+
 private let fm = FileManager.default
 
 private func isDirectory(_ url: URL) -> Bool {
@@ -725,7 +735,8 @@ public func collectJobs(
     roots: [URL],
     recursive: Bool,
     backup: BackupSettings = .standard,
-    progress: (@Sendable (String, Int) -> Void)? = nil
+    progress: (@Sendable (String, Int) -> Void)? = nil,
+    cancelled: @Sendable () -> Bool = { false }
 ) -> [Job] {
     let skipName = backup.safeFolderName
     let skipPath = backup.customLocation?.resolvingSymlinksInPath().path
@@ -744,6 +755,7 @@ public func collectJobs(
 
     var frontier: [PendingDirectory] = []
     for selection in roots {
+        guard !cancelled() else { return [] }
         if isDirectory(selection) {
             frontier.append(PendingDirectory(root: selection, url: selection))
         } else {
@@ -757,10 +769,12 @@ public func collectJobs(
 
     let keys: [URLResourceKey] = [.isDirectoryKey]
     while !frontier.isEmpty {
+        guard !cancelled() else { return [] }
         let level = frontier
         var next: [PendingDirectory] = []
 
         DispatchQueue.concurrentPerform(iterations: level.count) { index in
+            guard !cancelled() else { return }
             let pending = level[index]
             let entries = (try? fm.contentsOfDirectory(
                 at: pending.url,
@@ -771,6 +785,7 @@ public func collectJobs(
             var files: [URL] = []
             var directories: [PendingDirectory] = []
             for url in entries {
+                if cancelled() { return }
                 let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 if isDir {
                     guard recursive, url.lastPathComponent != skipName else { continue }
@@ -1171,7 +1186,8 @@ public func process(
     overrides: [String: String] = [:],
     trashed: Set<String> = [],
     moves: [String: URL] = [:],
-    progress: ((Int, Int, String) -> Void)? = nil
+    progress: ((Int, Int, String) -> Void)? = nil,
+    cancelled: @Sendable () -> Bool = { false }
 ) -> [Item] {
     func run(_ job: Job) -> Item {
         if trashed.contains(job.key) { return moveToTrash(job, dryRun: options.dryRun) }
@@ -1195,6 +1211,7 @@ public func process(
         var items: [Item] = []
         items.reserveCapacity(jobs.count)
         for (index, job) in jobs.enumerated() {
+            if cancelled() { return items }
             items.append(run(job))
             progress?(index + 1, jobs.count, job.file.lastPathComponent)
         }
@@ -1206,6 +1223,7 @@ public func process(
     var completed = 0
     slots.withUnsafeMutableBufferPointer { buffer in
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
+            guard !cancelled() else { return }
             let item = run(jobs[index])
             buffer[index] = item
             lock.lock()

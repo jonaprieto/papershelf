@@ -67,6 +67,19 @@ final class PatternPipelineTests: XCTestCase {
         XCTAssertEqual(result.destinationName, "causality-reviewed.pdf")
     }
 
+    func testLibraryItemDefersPDFMetadata() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("library-item"), isDirectory: true)
+        let file = directory.appendingPathComponent("Reading Notes.pdf")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try makeTextPDF(at: file, text: "Reading Notes")
+
+        let result = libraryItem(for: Job(root: directory, file: file), options: options())
+        XCTAssertNil(result.pageCount)
+        XCTAssertEqual(result.destinationName, "reading-notes.pdf")
+    }
+
     /// The regression guard. With no pattern set, every file must be named exactly the way
     /// it was before any of this existed.
     func testNoPatternMeansTheOrdinaryRename() {
