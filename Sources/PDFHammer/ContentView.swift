@@ -5,6 +5,16 @@ import UniformTypeIdentifiers
 import PDFHammerCore
 
 struct ContentView: View {
+    private enum SidebarTarget: Hashable {
+        case shelf(SmartList)
+        case source(String)
+        case folder(String)
+        case document(String)
+        case project(Int64)
+        case tag(String)
+        case addSource
+    }
+
     // Seeded empty on purpose: a real password does not belong in source. The sidebar
     // warns while the list is empty, and what you type is kept in UserDefaults.
     @AppStorage("passwords") private var passwordsText = ""
@@ -81,6 +91,7 @@ struct ContentView: View {
     @StateObject var runner = Runner()
     @StateObject private var covers = Covers()
     @State private var selection: [URL] = []
+    @State private var sidebarTarget: SidebarTarget?
     @State private var importing = false
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
@@ -100,6 +111,7 @@ struct ContentView: View {
     @State private var confirmingApply = false
     @State private var reviewing: String?
     @FocusState private var focusedPassword: Int?
+    @FocusState private var sidebarFocused: Bool
     @ObservedObject var chrome: Chrome
 
     private var passwords: [String] { PasswordList.active(passwordsText) }
@@ -302,6 +314,9 @@ struct ContentView: View {
             NavigationSplitView(columnVisibility: $chrome.columnVisibility) {
                 sidebarPanel
                     .region(.sidebar)
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($sidebarFocused)
                     .navigationSplitViewColumnWidth(min: Metric.sidebarMin, ideal: Metric.sidebarIdeal, max: Metric.sidebarMax)
             } detail: {
             if let openProject, let library = Library.shared {
@@ -309,7 +324,10 @@ struct ContentView: View {
                     project: openProject,
                     env: liveProjectsEnvironment(library: library, client: aiClient,
                                                  endpoint: aiBaseURL, model: aiModel),
-                    close: { self.openProject = nil }
+                    close: {
+                        self.openProject = nil
+                        sidebarTarget = .shelf(shelves.current)
+                    }
                 )
                 .frame(minWidth: SplitLayout.detailMinWidth())
             } else {
@@ -328,6 +346,12 @@ struct ContentView: View {
                 palette: palette,
                 rules: rules,
                 chooseFiles: { importing = true },
+                focusSidebar: {
+                    chrome.columnVisibility = .all
+                    sidebarFocused = true
+                    sidebarTarget = .shelf(shelves.current)
+                },
+                handleSidebarKey: handleSidebarKey,
                 preview: preview,
                 apply: confirmApply,
                 applyOne: { item, name in
@@ -481,12 +505,141 @@ struct ContentView: View {
         // dense and close together.
         List {
             shelvesPanel
+            sidebarSectionDivider
             sourcesPanel
+            sidebarSectionDivider
             projectsPanel
+            sidebarSectionDivider
             tagsPanel
         }
         .listStyle(.sidebar)
+        .listRowSeparator(.hidden)
         .frame(maxWidth: .infinity)
+    }
+
+    /// One quiet rule between the four kinds of place. The sidebar list's automatic rules
+    /// are too easy to mistake for document rows, so the grouping gets exactly three of its
+    /// own instead.
+    private var sidebarSectionDivider: some View {
+        Divider()
+            .opacity(0.45)
+            .padding(.horizontal, 10)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+            .listRowBackground(Color.clear)
+            .accessibilityHidden(true)
+    }
+
+    private var sidebarTargets: [SidebarTarget] {
+        var targets = SmartList.allCases.map(SidebarTarget.shelf)
+        for source in selection {
+            targets.append(.source(source.path))
+            if let root = explorerTree.first(where: { $0.url == source }),
+               let children = root.children, explorerExpanded.contains(root.id) {
+                appendSidebarTargets(children, to: &targets)
+            }
+        }
+        targets += projects.map { .project($0.id) }
+        targets += tagCounts.map { .tag($0.name) }
+        targets.append(.addSource)
+        return targets
+    }
+
+    private var focusedSidebarPath: String? {
+        switch sidebarTarget {
+        case .source(let path), .folder(let path): return path
+        case .document(let key): return runner.item(key)?.currentURL.path ?? key
+        default: return nil
+        }
+    }
+
+    private func appendSidebarTargets(_ nodes: [ExplorerNode], to targets: inout [SidebarTarget]) {
+        for node in nodes {
+            if let key = node.itemKey {
+                targets.append(.document(key))
+            } else {
+                targets.append(.folder(node.url.path))
+                if let children = node.children, explorerExpanded.contains(node.id) {
+                    appendSidebarTargets(children, to: &targets)
+                }
+            }
+        }
+    }
+
+    /// The sidebar's rows are SwiftUI buttons and outline labels, not one native table
+    /// selection. Keep a small model for arrows/Return so keyboard focus never falls
+    /// through to the document list behind it.
+    private func handleSidebarKey(_ keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case 125: return moveSidebar(by: 1)
+        case 126: return moveSidebar(by: -1)
+        case 124: return expandSidebarTarget()
+        case 123: return collapseSidebarTarget()
+        case 36, 76: return activateSidebarTarget()
+        default: return false
+        }
+    }
+
+    private func moveSidebar(by delta: Int) -> Bool {
+        let targets = sidebarTargets
+        guard !targets.isEmpty else { return true }
+        let current = sidebarTarget ?? .shelf(shelves.current)
+        let index = targets.firstIndex(of: current) ?? 0
+        let next = index + delta
+        guard targets.indices.contains(next) else { return true }
+        let target = targets[next]
+        sidebarTarget = target
+        if case .shelf(let list) = target { shelves.current = list }
+        if case .document(let key) = target { reviewing = key }
+        return true
+    }
+
+    private func activateSidebarTarget() -> Bool {
+        let target = sidebarTarget ?? .shelf(shelves.current)
+        switch target {
+        case .shelf(let list):
+            chrome.reading = false
+            openProject = nil
+            shelves.current = list
+        case .source(let path): explorerExpanded.insert(path)
+        case .folder(let path):
+            chrome.reading = false
+            openProject = nil
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .openFolderInCatalogue, object: nil,
+                                                userInfo: ["path": path])
+            }
+        case .document(let key): reviewing = key
+        case .project(let id):
+            chrome.reading = false
+            openProject = projects.first { $0.id == id }
+        case .tag(let name):
+            chrome.reading = false
+            openProject = nil
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .showTagInCatalogue, object: nil,
+                                                userInfo: ["tag": name])
+            }
+        case .addSource: importing = true
+        }
+        return true
+    }
+
+    private func expandSidebarTarget() -> Bool {
+        guard let target = sidebarTarget else { return true }
+        switch target {
+        case .source(let path), .folder(let path): explorerExpanded.insert(path)
+        default: break
+        }
+        return true
+    }
+
+    private func collapseSidebarTarget() -> Bool {
+        guard let target = sidebarTarget else { return true }
+        switch target {
+        case .source(let path), .folder(let path): explorerExpanded.remove(path)
+        default: break
+        }
+        return true
     }
 
     // Not private: SidebarTests renders this on its own, squeezed, to check that it holds
@@ -501,7 +654,15 @@ struct ContentView: View {
         Section("Library") {
             ForEach(SmartList.allCases) { list in
                 Button {
+                    chrome.reading = false
+                    openProject = nil
                     shelves.current = list
+                    sidebarTarget = .shelf(list)
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(
+                            name: .showShelfInCatalogue, object: nil,
+                            userInfo: ["shelf": list.rawValue])
+                    }
                 } label: {
                     HStack {
                         Label(list.title, systemImage: list.icon)
@@ -514,6 +675,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(shelves.current == list ? Color.accentColor : .primary)
+                .accessibilityAddTraits(shelves.current == list ? .isSelected : [])
                 .tip(list.explanation)
             }
         }
@@ -537,7 +699,9 @@ struct ContentView: View {
             } else {
                 ForEach(projects) { project in
                     Button {
+                        chrome.reading = false
                         openProject = openProject?.id == project.id ? nil : project
+                        sidebarTarget = .project(project.id)
                     } label: {
                         HStack {
                             Label(project.name, systemImage: "books.vertical.fill")
@@ -551,6 +715,10 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(openProject?.id == project.id ? Color.accentColor : .primary)
+                    .accessibilityAddTraits(sidebarTarget == .project(project.id) ? .isSelected : [])
+                    .background(sidebarTarget == .project(project.id)
+                                ? Color.accentColor.opacity(0.12)
+                                : .clear, in: RoundedRectangle(cornerRadius: 5))
                     .tip("Ask a question across these \(project.documentCount) documents")
                 }
             }
@@ -633,8 +801,13 @@ struct ContentView: View {
 
     private func tagRow(_ tag: TagCount) -> some View {
         Button {
-            NotificationCenter.default.post(
-                name: .showTagInCatalogue, object: nil, userInfo: ["tag": tag.name])
+            chrome.reading = false
+            openProject = nil
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .showTagInCatalogue, object: nil, userInfo: ["tag": tag.name])
+            }
+            sidebarTarget = .tag(tag.name)
         } label: {
             HStack {
                 Label(tag.name, systemImage: "tag")
@@ -643,8 +816,13 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(sidebarTarget == .tag(tag.name) ? .isSelected : [])
+        .background(sidebarTarget == .tag(tag.name)
+                    ? Color.accentColor.opacity(0.12)
+                    : .clear, in: RoundedRectangle(cornerRadius: 5))
         .tip("Show the \(tag.documents) document\(tag.documents == 1 ? "" : "s") carrying this tag")
         .contextMenu {
             Button("Rename…") {
@@ -709,7 +887,7 @@ struct ContentView: View {
                     // handed back once the box is empty again.
                     forceExpanded: !explorerFilter.isEmpty,
                     selected: reviewing,
-                    select: { reviewing = $0 }
+                    select: { reviewing = $0; sidebarTarget = .document($0) }
                 )
             }
         }
@@ -781,7 +959,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.link)
             }
-            .task(id: runner.results.count) {
+            .task(id: runner.resultsToken) {
                 explorerTree = buildExplorerTree(runner.results)
                 // The roots open on their own: a tree that arrives entirely folded says
                 // nothing about what was just scanned. Anything folded by hand below
@@ -798,7 +976,9 @@ struct ContentView: View {
             DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
                 ExplorerOutline(nodes: children, expanded: $explorerExpanded,
                                 forceExpanded: false, selected: reviewing,
-                                select: { reviewing = $0 })
+                                select: { reviewing = $0; sidebarTarget = .document($0) },
+                                focusPath: { sidebarTarget = .folder($0) },
+                                focusedPath: focusedSidebarPath)
             } label: {
                 sourceLabel(url, count: countOfFiles(in: root))
             }
@@ -809,43 +989,16 @@ struct ContentView: View {
 
     private func sourceLabel(_ url: URL, count: Int) -> some View {
         let reachable = isReachable(url)
-        return HStack(spacing: 6) {
-            Image(systemName: reachable ? "folder.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(reachable ? AnyShapeStyle(.tint) : AnyShapeStyle(Ink.amber))
-            Text(url.lastPathComponent)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(reachable ? .primary : .secondary)
-            Spacer(minLength: 6)
-            if !reachable {
-                Text("cannot be read")
-                    .font(Face.caption)
-                    .foregroundStyle(Ink.amber)
-            } else if count > 0 {
-                Text("\(count)")
-                    .font(Face.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            // Under the pointer only: a row of remove buttons down the sidebar is a
-            // column of ways to lose something, sitting where a count should be.
-            if hoveredSource == url {
-                Button {
-                    removeSource(url)
-                } label: {
-                    Image(systemName: "minus.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .tip("Stop watching this source. Nothing on disk is touched.")
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) }
-        .help(reachable
-              ? url.path
-              : url.path + " — not reachable right now. The volume may be unmounted, or "
-                + "this build may not have been granted access to the folder yet. It is "
-                + "kept, and comes back on its own.")
+        return SidebarSourceLabel(
+            url: url,
+            count: count,
+            reachable: reachable,
+            focused: sidebarTarget == .source(url.path),
+            hovered: hoveredSource == url,
+            focus: { sidebarTarget = .source(url.path) },
+            setHovered: { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) },
+            remove: { removeSource(url) }
+        )
     }
 
     private func sourceExpansion(_ id: String) -> Binding<Bool> {
@@ -1033,6 +1186,57 @@ struct ContentView: View {
 }
 
 // MARK: - Sidebar pieces
+
+private struct SidebarSourceLabel: View {
+    let url: URL
+    let count: Int
+    let reachable: Bool
+    let focused: Bool
+    let hovered: Bool
+    let focus: () -> Void
+    let setHovered: (Bool) -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: reachable ? "folder.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(reachable ? AnyShapeStyle(.tint) : AnyShapeStyle(Ink.amber))
+            Text(url.lastPathComponent)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(reachable ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            Spacer(minLength: 6)
+            if !reachable {
+                Text("cannot be read")
+                    .font(Face.caption)
+                    .foregroundStyle(Ink.amber)
+            } else if count > 0 {
+                Text("\(count)")
+                    .font(Face.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            if hovered {
+                Button(action: remove) {
+                    Image(systemName: "minus.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .tip("Stop watching this source. Nothing on disk is touched.")
+            }
+        }
+        .contentShape(Rectangle())
+        .background(focused ? Color.accentColor.opacity(0.12) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 5))
+        .accessibilityAddTraits(focused ? .isSelected : [])
+        .onTapGesture(perform: focus)
+        .onHover(perform: setHovered)
+        .help(reachable
+              ? url.path
+              : url.path + " — not reachable right now. The volume may be unmounted, or "
+                + "this build may not have been granted access to the folder yet. It is "
+                + "kept, and comes back on its own.")
+    }
+}
 
 struct SourceRow: View {
     let url: URL
@@ -1229,6 +1433,8 @@ struct ExplorerOutline: View {
     let forceExpanded: Bool
     let selected: String?
     let select: (String) -> Void
+    var focusPath: (String) -> Void = { _ in }
+    var focusedPath: String? = nil
 
     var body: some View {
         ForEach(nodes) { node in
@@ -1236,7 +1442,8 @@ struct ExplorerOutline: View {
                 DisclosureGroup(isExpanded: binding(for: node)) {
                     ExplorerOutline(nodes: children, expanded: $expanded,
                                     forceExpanded: forceExpanded,
-                                    selected: selected, select: select)
+                                    selected: selected, select: select, focusPath: focusPath,
+                                    focusedPath: focusedPath)
                 } label: {
                     row(node)
                 }
@@ -1270,9 +1477,13 @@ struct ExplorerOutline: View {
             node.itemKey != nil && node.itemKey == selected
                 ? Color.accentColor.opacity(0.15) : .clear
         )
+        .background(node.url.path == focusedPath
+                    ? Color.accentColor.opacity(0.12)
+                    : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .accessibilityAddTraits((node.itemKey == selected || node.url.path == focusedPath)
+                                ? .isSelected : [])
         .onTapGesture {
-            guard let key = node.itemKey else { return }
-            select(key)
+            if let key = node.itemKey { select(key) } else { focusPath(node.url.path) }
         }
         .contextMenu {
             if node.itemKey == nil {

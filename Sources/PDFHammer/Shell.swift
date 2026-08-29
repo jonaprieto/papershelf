@@ -170,7 +170,7 @@ final class Covers: ObservableObject {
     }
 }
 
-enum ViewMode: String, CaseIterable, Identifiable {
+enum ViewMode: String, CaseIterable, Identifiable, Equatable {
     case list, catalogue, bibliography, duplicates
     var id: String { rawValue }
 

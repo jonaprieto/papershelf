@@ -21,6 +21,8 @@ struct ResultsPane: View {
     @ObservedObject var palette: Palette
     let rules: NameRules
     let chooseFiles: () -> Void
+    let focusSidebar: () -> Void
+    let handleSidebarKey: (UInt16) -> Bool
     let preview: () -> Void
     let apply: () -> Void
     let applyOne: (Item, String) -> Void
@@ -84,6 +86,26 @@ struct ResultsPane: View {
     /// `.openFolderInCatalogue`: narrows what the catalogue shows to files under one
     /// folder, on top of whatever the search box is doing.
     @State private var folderScope: URL?
+
+    /// Places are the navigable state, not each selected row. This keeps ⌘[ / ⌘] useful
+    /// without turning ordinary arrow-key browsing into a history entry per document.
+    private struct Place: Equatable {
+        let mode: ViewMode
+        let shelf: SmartList
+        let folderPath: String?
+        let query: String
+        let reader: String?
+
+        func replacing(mode: ViewMode? = nil, shelf: SmartList? = nil,
+                       query: String? = nil, reader: String? = nil) -> Place {
+            Place(mode: mode ?? self.mode, shelf: shelf ?? self.shelf,
+                  folderPath: self.folderPath, query: query ?? self.query,
+                  reader: reader ?? self.reader)
+        }
+    }
+
+    @State private var backPlaces: [Place] = []
+    @State private var forwardPlaces: [Place] = []
 
     @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
     @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
@@ -151,13 +173,52 @@ struct ResultsPane: View {
 
     private func openReader(_ key: String?) {
         guard let key else { return }
+        if reader != key {
+            navigate(to: Place(mode: mode, shelf: shelves.current,
+                               folderPath: folderScope?.path, query: query, reader: key))
+        }
         selected = key
-        reader = key
     }
 
     /// One rung of the ⎋ ladder: out of the reader, back into the collection.
     private func closeReader() {
+        if reader != nil, !backPlaces.isEmpty { goBack(); return }
         reader = nil
+    }
+
+    private var currentPlace: Place {
+        Place(mode: mode, shelf: shelves.current, folderPath: folderScope?.path,
+              query: query, reader: reader)
+    }
+
+    private func navigate(to destination: Place) {
+        guard destination != currentPlace else { return }
+        backPlaces.append(currentPlace)
+        if backPlaces.count > 64 { backPlaces.removeFirst() }
+        forwardPlaces.removeAll()
+        show(destination)
+    }
+
+    private func show(_ destination: Place) {
+        mode = destination.mode
+        shelves.current = destination.shelf
+        folderScope = destination.folderPath.map { URL(fileURLWithPath: $0) }
+        query = destination.query
+        reader = destination.reader
+        if let reader = destination.reader { selected = reader }
+        runner.search(strippingTagTerms(destination.query), passwords: passwords)
+    }
+
+    private func goBack() {
+        guard let destination = backPlaces.popLast() else { return }
+        forwardPlaces.append(currentPlace)
+        show(destination)
+    }
+
+    private func goForward() {
+        guard let destination = forwardPlaces.popLast() else { return }
+        backPlaces.append(currentPlace)
+        show(destination)
     }
 
     private var selectedItem: Item? {
@@ -268,8 +329,8 @@ struct ResultsPane: View {
     /// as a shelf. The one function both the local right-click and the notification from
     /// the file explorer (`.openFolderInCatalogue`) call, so the two stay in step.
     private func openFolder(_ url: URL) {
-        folderScope = url
-        mode = .catalogue
+        navigate(to: Place(mode: .catalogue, shelf: shelves.current, folderPath: url.path,
+                           query: query, reader: nil))
     }
 
     /// Shows only what carries one tag, by writing the search the search box already
@@ -277,9 +338,16 @@ struct ResultsPane: View {
     /// is dropped: a tag spans the shelf, and leaving a folder filter on top of it would
     /// silently show a fraction of the tag.
     private func showTag(_ name: String) {
-        folderScope = nil
-        query = Query.tagSearch(name)
-        mode = .catalogue
+        navigate(to: Place(mode: .catalogue, shelf: shelves.current, folderPath: nil,
+                           query: Query.tagSearch(name), reader: nil))
+    }
+
+    /// A sidebar shelf is a place in the collection, not a filter applied to the page the
+    /// reader happens to be showing. The sidebar lives outside this view, so this notification
+    /// is the small bridge that lets a click close the reader even when the chosen shelf was
+    /// already active.
+    private func showShelf(_ shelf: SmartList) {
+        navigate(to: currentPlace.replacing(shelf: shelf, reader: nil))
     }
 
     private var aiClient: AIClient {
@@ -300,7 +368,19 @@ struct ResultsPane: View {
     }
 
     var body: some View {
-        withDialogs(withKeys(core))
+        withShelfNavigation(withDialogs(withKeys(core)))
+    }
+
+    private func withShelfNavigation<V: View>(_ view: V) -> some View {
+        view
+            .onChange(of: shelves.current) { _, _ in
+                if reader != nil { reader = nil }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showShelfInCatalogue)) { note in
+                guard let raw = note.userInfo?["shelf"] as? String,
+                      let shelf = SmartList(rawValue: raw) else { return }
+                showShelf(shelf)
+            }
     }
 
     private var core: some View {
@@ -438,12 +518,19 @@ struct ResultsPane: View {
         // binding, and that behaviour is the useful part.
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("View", selection: $mode) {
+                Menu {
                     ForEach(ViewMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.icon).tag(mode)
+                        Button {
+                            navigate(to: currentPlace.replacing(mode: mode))
+                        } label: {
+                            Label(mode.label, systemImage: mode.icon)
+                        }
                     }
+                } label: {
+                    Text(mode.label)
                 }
-                .pickerStyle(.menu)
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("View: \(mode.label)")
                 .fixedSize()
                 .tip("Which view of the same files", key: "⌘1 to ⌘4")
             }
@@ -570,8 +657,8 @@ struct ResultsPane: View {
         var places: [PalettePlace] = SmartList.allCases.map { list in
             PalettePlace(id: "list:" + list.rawValue, title: list.title,
                          detail: list.explanation, kind: .list) {
-                shelves.current = list
-                folderScope = nil
+                navigate(to: Place(mode: mode, shelf: list, folderPath: nil,
+                                   query: query, reader: nil))
             }
         }
         places += runner.tree.filter { $0.children != nil }.prefix(40).map { node in
@@ -651,21 +738,29 @@ struct ResultsPane: View {
 
     /// Which commands can be heard here. This pane is where a plan is decided, so the
     /// reviewing keys are live along with everything scoped anywhere or to the library.
-    private var activeScope: Command.Scope { .reviewing }
+    private var activeScope: Command.Scope { reading || reader != nil ? .reader : .reviewing }
 
     /// The commands that do not need a file in front of them, and so must still work on
     /// an empty shelf — which is exactly when someone reaches for the palette.
     private static let alwaysAvailable: Set<Command> = [
         .palette, .focusSearch, .shortcuts,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
-        .nextRegion, .previousRegion,
+        .nextRegion, .previousRegion, .back, .forward,
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
         guard !runner.busy else { return false }
         if event.keyCode == 53 { return escape() }   // ⎋
         let match = Keymap.shared.command(for: event, in: activeScope)
+            ?? defaultRegionCommand(for: event)
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
+        if (reading || reader != nil), handleReaderNavigation(event) { return true }
+
+        if regions.focused == .sidebar, handleSidebarKey(event.keyCode) {
+            regions.rowFocused = true
+            return true
+        }
+
         guard !runner.results.isEmpty, selectedItem != nil else { return false }
         let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
 
@@ -686,6 +781,12 @@ struct ResultsPane: View {
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
         let arrows: Set<UInt16> = [123, 124, 125, 126]
+        if reading || reader != nil {
+            // PDFView owns the page, but its AppKit responder is not reliable when the
+            // reader was opened from the keyboard. Keep the common navigation keys here;
+            // this also means opening a book never leaves arrows moving the hidden shelf.
+            return false
+        }
         if !onATable {
             // In a grid a row is a row: up and down cross `gridColumns` items, while left
             // and right move to the neighbour.
@@ -705,6 +806,28 @@ struct ResultsPane: View {
 
         guard let match else { return false }
         return perform(match)
+    }
+
+    private func handleReaderNavigation(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Arrow keys carry .numericPad; it is an input-source flag, not a user modifier.
+        guard modifiers.intersection([.command, .option, .shift, .control]).isEmpty else {
+            return false
+        }
+        let delta: Int?
+        switch event.keyCode {
+        case 123, 126, 116: delta = -1       // ← ↑ Page Up
+        case 49, 124, 125, 121: delta = 1 // Space, → ↓ Page Down
+        case 115:
+            annotator.go(toPage: 1)
+            return true
+        case 119:
+            annotator.go(toPage: annotator.pageCount)
+            return true
+        default: return false
+        }
+        annotator.go(toPage: annotator.page + (delta ?? 0))
+        return true
     }
 
     /// Everything that decides which regions exist right now.
@@ -763,7 +886,7 @@ struct ResultsPane: View {
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
-        .nextRegion, .previousRegion, .newTag,
+        .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette,
     ]
 
@@ -778,10 +901,12 @@ struct ResultsPane: View {
     @discardableResult
     func perform(_ command: Command) -> Bool {
         switch command {
-        case .viewList: mode = .list
-        case .viewCatalogue: mode = .catalogue
-        case .viewBibliography: mode = .bibliography
-        case .viewDuplicates: mode = .duplicates
+        case .viewList: navigate(to: currentPlace.replacing(mode: .list))
+        case .viewCatalogue: navigate(to: currentPlace.replacing(mode: .catalogue))
+        case .viewBibliography: navigate(to: currentPlace.replacing(mode: .bibliography))
+        case .viewDuplicates: navigate(to: currentPlace.replacing(mode: .duplicates))
+        case .back: goBack()
+        case .forward: goForward()
         case .revealInFinder: revealInFinder()
         case .findDuplicates: runner.findDuplicates(passwords: passwords)
         case .confirmAllPending:
@@ -822,7 +947,9 @@ struct ResultsPane: View {
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)
 
-        case .focusSidebar: regions.focus(.sidebar)
+        case .focusSidebar:
+            focusSidebar()
+            regions.focus(.sidebar)
         case .focusContents:
             guard !annotator.contents.isEmpty else { return false }
             contentsShown = true
@@ -834,8 +961,8 @@ struct ResultsPane: View {
             inspectorCollapsed = false
             regions.focus(.inspector)
         case .focusStatus: regions.focus(.status)
-        case .nextRegion: regions.step(1)
-        case .previousRegion: regions.step(-1)
+        case .nextRegion: focusRegion(by: 1)
+        case .previousRegion: focusRegion(by: -1)
         case .newTag:
             guard let item = selectedItem else { return false }
             newTagName = ""
@@ -844,6 +971,41 @@ struct ResultsPane: View {
         default: return false
         }
         return true
+    }
+
+    private func focusRegion(by delta: Int) {
+        let next = Regions.next(from: regions.focused, by: delta, available: regions.available)
+        switch next {
+        case .sidebar: focusSidebar()
+        case .contents: contentsShown = true
+        case .document: listFocused = true
+        case .inspector: inspectorCollapsed = false
+        case .status: break
+        }
+        regions.focus(next)
+    }
+
+    /// Control-number events can arrive with a control character rather than the visible
+    /// digit in `charactersIgnoringModifiers` (notably 3–5 on macOS layouts). Key codes
+    /// are stable for the ANSI number row; only use this fallback while the command still
+    /// has its default binding, so a user's custom keymap remains authoritative.
+    private func defaultRegionCommand(for event: NSEvent) -> Command? {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let mapping: [UInt16: Command]
+        if flags.contains(.control), flags.intersection([.command, .option, .shift]).isEmpty {
+            mapping = [18: .focusSidebar, 19: .focusContents, 20: .focusDocument,
+                       21: .focusInspector, 23: .focusStatus]
+        } else if flags.contains(.command), flags.intersection([.option, .shift, .control]).isEmpty {
+            // Some keyboard layouts deliver command-number events without a usable
+            // `charactersIgnoringModifiers`; key codes are stable for the number row.
+            mapping = [18: .viewList, 19: .viewCatalogue, 20: .viewBibliography,
+                       21: .viewDuplicates]
+        } else {
+            return nil
+        }
+        guard let command = mapping[event.keyCode], !Keymap.shared.isCustomised(command)
+        else { return nil }
+        return command
     }
 
     /// Paints the selection in the nth highlighter, or recolours the mark you are on when
@@ -1574,16 +1736,20 @@ struct ResultsPane: View {
 
     /// What the window is looking at, in the title where the platform puts it.
     ///
-    /// It said "PDF Hammer" on every screen, which is the one thing a person looking at
+    /// It said the internal product name on every screen, which is the one thing a person looking at
     /// the window already knows.
     private var placeTitle: String {
         if let item = readerItem ?? (reading ? selectedItem : nil) {
             return runner.ai.guesses[item.key]?.title ?? item.destinationName
         }
+        let terms = Query(query).terms
         switch mode {
         case .bibliography: return "Bibliography"
         case .duplicates: return "Duplicates"
         default:
+            if terms.count == 1, let term = terms.first, term.field == "tag" {
+                return "Tag: \(term.value)"
+            }
             return folderScope?.lastPathComponent ?? shelves.current.title
         }
     }
@@ -1905,6 +2071,10 @@ extension Notification.Name {
     static let openFolderInCatalogue = Notification.Name("PDFHammer.openFolderInCatalogue")
     /// Posted with the tag's name in `userInfo["tag"]` by the sidebar's Tags panel.
     static let showTagInCatalogue = Notification.Name("PDFHammer.showTagInCatalogue")
+    /// Posted with a `SmartList.rawValue` in `userInfo["shelf"]` by the sidebar's Library
+    /// section. The catalogue owns the reader state, so it must receive the click to leave
+    /// the page even when the shelf was already selected.
+    static let showShelfInCatalogue = Notification.Name("PDFHammer.showShelfInCatalogue")
     /// Posted with a project's `Int64` id in `userInfo["id"]` by the palette, which can
     /// reach a project the sidebar would have to be scrolled to.
     static let openProject = Notification.Name("PDFHammer.openProject")

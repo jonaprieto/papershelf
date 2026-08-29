@@ -13,6 +13,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case palette
     case focusSidebar, focusContents, focusDocument, focusInspector, focusStatus
     case nextRegion, previousRegion
+    case back, forward
     case focusSearch, toggleSidebar, toggleInspector
 
     // Views
@@ -76,6 +77,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .palette, .focusSidebar, .focusContents, .focusDocument, .focusInspector,
              .focusStatus, .nextRegion, .previousRegion,
+             .back, .forward,
              .focusSearch, .toggleSidebar, .toggleInspector:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
@@ -121,6 +123,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .focusStatus: return "Jump to the status bar"
         case .nextRegion: return "Move to the next region"
         case .previousRegion: return "Move to the previous region"
+        case .back: return "Go back to the previous place"
+        case .forward: return "Go forward to the next place"
         case .focusSearch: return "Focus the search field"
         case .toggleSidebar: return "Show or hide the sidebar"
         case .toggleInspector: return "Show or hide the inspector"
@@ -175,6 +179,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .focusStatus: return Shortcut("5", .control)
         case .nextRegion: return Shortcut("\t", .control)
         case .previousRegion: return Shortcut("\t", [.control, .shift])
+        case .back: return Shortcut("[", .command)
+        case .forward: return Shortcut("]", .command)
         case .focusSearch: return Shortcut("/", [])
         case .toggleSidebar: return Shortcut("b", .command)
         case .toggleInspector: return Shortcut("i", [.command, .option])

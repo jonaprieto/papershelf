@@ -7,7 +7,7 @@ import PDFHammerCore
 /// They are not searches. `Unfiled` cannot be typed into a search box because "has no
 /// tags" is not a term the query language has, and "opened but not finished" is a fact
 /// about the reader rather than about the file.
-enum SmartList: String, CaseIterable, Identifiable, Codable {
+enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
     case all, reading, recent, unfiled
     var id: String { rawValue }
 

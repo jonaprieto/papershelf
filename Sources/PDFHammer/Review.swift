@@ -658,6 +658,8 @@ struct KeyLabel: View {
 final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func layout() {
         super.layout()
         fitToWidth()
@@ -753,6 +755,10 @@ struct PDFPreview: NSViewRepresentable {
             view.document = document
             view.showFromTop()
             annotator?.attach(view, url: wanted)
+            // The reader's local key monitor deliberately lets arrows continue down the
+            // responder chain. Make the PDF canvas that responder so scrolling and text
+            // selection work from the keyboard without first clicking the page.
+            view.window?.makeFirstResponder(view)
         }
     }
 

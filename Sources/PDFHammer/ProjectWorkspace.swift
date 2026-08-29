@@ -39,6 +39,7 @@ struct ProjectWorkspace: View {
         .navigationTitle(project.name)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .onExitCommand(perform: close)
         .task { await model.load() }
         .sheet(isPresented: $showingAddDocuments) {
             AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
@@ -60,6 +61,7 @@ struct ProjectWorkspace: View {
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             Button(action: close) { Image(systemName: "chevron.left") }
+                .keyboardShortcut(.cancelAction)
                 .tip("Back to the shelf", key: "⎋")
         }
         ToolbarItemGroup(placement: .primaryAction) {

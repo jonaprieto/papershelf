@@ -196,6 +196,11 @@ struct CommandPalette: View {
                 .font(.title3)
                 .focused($fieldFocused)
                 .onSubmit(runSelected)
+                // The field owns first responder while the palette is open, so the
+                // ancestor never receives arrow keys on macOS.
+                .onKeyPress(.downArrow) { move(1) }
+                .onKeyPress(.upArrow) { move(-1) }
+                .onKeyPress(.escape) { dismiss(); return .handled }
             Text("\(documents.count) documents · \(commands.count) commands")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
