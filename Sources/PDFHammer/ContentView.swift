@@ -66,6 +66,9 @@ struct ContentView: View {
     @ObservedObject private var libraryStatus: LibraryStatus = .shared
     @State private var projects: [ProjectSummary] = []
     @State private var namingProject = false
+    /// The source row under the pointer, so its remove button is only there when it is
+    /// being looked at.
+    @State private var hoveredSource: URL?
     @State private var newProjectName = ""
     /// The project being read, if any. It takes the middle of the window, the way a
     /// document does.
@@ -308,6 +311,7 @@ struct ContentView: View {
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
                 reading: chrome.reading,
+                toggleReading: { chrome.reading.toggle() },
                 watching: watchSources && !selection.isEmpty,
                 palette: palette,
                 rules: rules,
@@ -326,9 +330,9 @@ struct ContentView: View {
                 // this region now, so the detail side no longer has to be wide enough for
                 // panes that may not be drawn.
                 .frame(minWidth: SplitLayout.detailMinWidth())
-                // The title is the place and its counts, set by the pane that knows
-                // which place that is.
-                .toolbar { toolbar }
+                // The toolbar belongs to the pane that knows what is in it: the views,
+                // the search, the actions for this view, and the two chrome toggles, in
+                // that order. The title is the place and its counts, set there too.
             }
             }
             .navigationSplitViewStyle(.balanced)
@@ -734,38 +738,28 @@ struct ContentView: View {
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
     }
 
+    /// Where the files come from, with what is inside them.
+    ///
+    /// The folder tree was a section of its own, which put "which folders are these files
+    /// in" one level away from "where do the files come from" — the same question, one
+    /// level down. Each source is the root of its own tree now, and unfolds into it.
     @ViewBuilder
     private var sourcesPanel: some View {
-            Section {
+            Section("Sources") {
                 if selection.isEmpty {
-                    Text("Nothing selected")
+                    Text("Nothing added yet")
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 2)
-                } else {
-                    ForEach(selection, id: \.self) { url in
-                        SourceRow(url: url) { removeSource(url) }
-                    }
+                }
+                ForEach(selection, id: \.self) { url in
+                    sourceRow(url)
                 }
                 Button {
                     importing = true
                 } label: {
-                    Label("Add folder or PDF", systemImage: "plus.circle")
+                    Label("Add a folder or a PDF", systemImage: "plus.circle")
                 }
                 .buttonStyle(.link)
-                if !selection.isEmpty || !runner.results.isEmpty {
-                    Button(role: .destructive, action: forgetEverything) {
-                        Label("Forget sources and cached covers", systemImage: "trash")
-                    }
-                    .buttonStyle(.link)
-                    .tip("Clears the selection, the results and the thumbnails")
-                }
-                explorerTreeRows
-            } header: {
-                HStack(spacing: 4) {
-                    Text("Sources")
-                    Spacer()
-                    explorerFolding
-                }
             }
             .task(id: runner.results.count) {
                 explorerTree = buildExplorerTree(runner.results)
@@ -776,8 +770,77 @@ struct ContentView: View {
             }
     }
 
+    /// One source: its name, how many files it holds, and its folders underneath.
+    @ViewBuilder
+    private func sourceRow(_ url: URL) -> some View {
+        let root = explorerTree.first { $0.url == url }
+        if let root, let children = root.children, !children.isEmpty {
+            DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
+                ExplorerOutline(nodes: children, expanded: $explorerExpanded,
+                                forceExpanded: false, selected: reviewing,
+                                select: { reviewing = $0 })
+            } label: {
+                sourceLabel(url, count: countOfFiles(in: root))
+            }
+        } else {
+            sourceLabel(url, count: 0)
+        }
+    }
 
+    private func sourceLabel(_ url: URL, count: Int) -> some View {
+        let reachable = isReachable(url)
+        return HStack(spacing: 6) {
+            Image(systemName: reachable ? "folder.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(reachable ? AnyShapeStyle(.tint) : AnyShapeStyle(Ink.amber))
+            Text(url.lastPathComponent)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(reachable ? .primary : .secondary)
+            Spacer(minLength: 6)
+            if !reachable {
+                Text("cannot be read")
+                    .font(Face.caption)
+                    .foregroundStyle(Ink.amber)
+            } else if count > 0 {
+                Text("\(count)")
+                    .font(Face.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            // Under the pointer only: a row of remove buttons down the sidebar is a
+            // column of ways to lose something, sitting where a count should be.
+            if hoveredSource == url {
+                Button {
+                    removeSource(url)
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .tip("Stop watching this source. Nothing on disk is touched.")
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) }
+        .help(reachable
+              ? url.path
+              : url.path + " — not reachable right now. The volume may be unmounted, or "
+                + "this build may not have been granted access to the folder yet. It is "
+                + "kept, and comes back on its own.")
+    }
 
+    private func sourceExpansion(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { explorerExpanded.contains(id) },
+            set: { open in
+                if open { explorerExpanded.insert(id) } else { explorerExpanded.remove(id) }
+            }
+        )
+    }
+
+    private func countOfFiles(in node: ExplorerNode) -> Int {
+        guard let children = node.children else { return 1 }
+        return children.reduce(0) { $0 + countOfFiles(in: $1) }
+    }
 
     @ViewBuilder
     private func refreshSessionSpend() async {
@@ -833,30 +896,6 @@ struct ContentView: View {
             }
             .tip("What this run of the app has spent. Settings has the whole ledger.")
         }
-    }
-
-    // MARK: Toolbar
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                chrome.reading.toggle()
-            } label: {
-                Label("Reading", systemImage: chrome.reading ? "book.fill" : "book")
-            }
-            .tip("Hide everything but the page", key: "⌘⇧R")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                chrome.inspectorCollapsed.toggle()
-            } label: {
-                Label("Inspector", systemImage: "sidebar.right")
-            }
-            .tip("Info, rename, notes and the citation", key: "⌥⌘I")
-        }
-
     }
 
     /// The selection is a set of non-overlapping roots: a folder absorbs anything already
@@ -916,11 +955,22 @@ struct ContentView: View {
     /// rather than kept as a broken row.
     private func restoreSources() {
         guard selection.isEmpty else { return }
-        let paths = storedSources.split(separator: "\n").map(String.init)
-        selection = paths
-            .map { URL(fileURLWithPath: $0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-        if selection.map(\.path) != paths { persistSources() }
+        // Restored exactly as they were written. A source that cannot be reached right now
+        // is not a source that has been removed: an external volume may not be mounted, and
+        // a locally rebuilt app has a new signature, which is a new identity to the
+        // system's privacy database — so ~/Desktop and ~/Documents read as missing until
+        // access is granted again. Dropping them here, and writing the shortened list back,
+        // deleted a person's configuration for a condition that clears on its own. The
+        // sidebar says which ones it cannot see; nothing is forgotten without being asked.
+        selection = storedSources
+            .split(separator: "\n")
+            .map { URL(fileURLWithPath: String($0)) }
+    }
+
+    /// Whether a source can be read at all right now. Nil-safe and cheap enough for a
+    /// sidebar row: `fileExists` is one stat call.
+    func isReachable(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
     }
 
     /// Everything the app remembers between launches.
