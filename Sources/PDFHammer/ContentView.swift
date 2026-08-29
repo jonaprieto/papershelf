@@ -76,6 +76,7 @@ struct ContentView: View {
     @State private var sessionSpend: SpendTotals?
     @State private var loadingModels = false
     @State private var modelsError: String?
+    @State private var sourceAvailability: [String: Bool] = [:]
 
     @StateObject var runner = Runner()
     @StateObject private var covers = Covers()
@@ -318,6 +319,7 @@ struct ContentView: View {
                 expanded: $expanded,
                 selected: $reviewing,
                 sourceCount: selection.count,
+                unavailableSourceCount: selection.filter { !isReachable($0) }.count,
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
                 reading: chrome.reading,
@@ -354,11 +356,12 @@ struct ContentView: View {
             StatusBar(
                 runner: runner,
                 activity: runner.activity,
-                watching: watchSources && !selection.isEmpty,
-                sources: selection.count,
+                watching: watchSources && selection.contains(where: isReachable),
+                sources: selection.filter(isReachable).count,
+                unavailableSources: selection.filter { !isReachable($0) }.count,
                 spend: sessionSpendLabel,
                 planIsCurrent: previewIsCurrent,
-                library: libraryStatus.label
+                library: runner.results.isEmpty ? nil : "\(runner.results.count) loaded here"
             )
         }
         // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
@@ -411,6 +414,7 @@ struct ContentView: View {
             if aiReady && availableModels.isEmpty { loadModels() }
         }
         .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
+        .task { await watchSourceAvailability() }
         // Restyling is cheap but not free, so let a run of toggles settle first.
         .task(id: namingFingerprint) {
             guard !runner.results.isEmpty, runner.lastRunWasDry else { return }
@@ -955,6 +959,24 @@ struct ContentView: View {
         let created = FolderWatcher { Task { @MainActor in await absorbChanges() } }
         created.watch(selection)
         watcher = created
+    }
+
+    /// A missing external volume cannot receive an FSEvents stream. Check only the
+    /// selected roots, not their contents, so plugging `brain` back in can resume the
+    /// library without polling fourteen thousand files.
+    private func watchSourceAvailability() async {
+        while !Task.isCancelled {
+            let current = Dictionary(uniqueKeysWithValues: selection.map { ($0.path, isReachable($0)) })
+            let remounted = !sourceAvailability.isEmpty && current.contains { path, reachable in
+                reachable && sourceAvailability[path] == false
+            }
+            sourceAvailability = current
+            if remounted, watchSources {
+                startWatching()
+                if autoPreview { mode == .catalogue ? libraryPreview() : preview() }
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
     }
 
     private func absorbChanges() async {

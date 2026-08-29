@@ -14,6 +14,7 @@ struct StatusBar: View {
     @ObservedObject var activity: Activity
     let watching: Bool
     let sources: Int
+    let unavailableSources: Int
     /// Already formatted by the caller: money carries its currency and is never coerced
     /// into a Double on the way to a label.
     let spend: String?
@@ -62,7 +63,7 @@ struct StatusBar: View {
 
             HStack(spacing: 5) {
                 Circle()
-                    .fill(watching ? Color.green : Color.secondary.opacity(0.5))
+                    .fill(watching ? Color.green : unavailableSources > 0 ? Ink.amber : Color.secondary.opacity(0.5))
                     .frame(width: 6, height: 6)
                 Text(watchingLabel)
             }
@@ -106,10 +107,17 @@ struct StatusBar: View {
     /// What the watcher is doing, including the thing it last did — a file arriving while
     /// you are looking at something else is worth one line of acknowledgement.
     private var watchingLabel: String {
-        guard watching else { return "Not watching" }
+        if !watching {
+            return unavailableSources > 0
+                ? "\(unavailableSources) source\(unavailableSources == 1 ? "" : "s") unavailable"
+                : "Not watching"
+        }
         let taken = activity.lastAbsorbed
         guard taken > 0 else {
-            return "Watching \(sources) source\(sources == 1 ? "" : "s")"
+            let missing = unavailableSources > 0
+                ? " · \(unavailableSources) unavailable"
+                : ""
+            return "Watching \(sources) source\(sources == 1 ? "" : "s")\(missing)"
         }
         return "Took in \(taken) new file\(taken == 1 ? "" : "s")"
     }

@@ -10,6 +10,7 @@ struct ResultsPane: View {
     @Binding var expanded: Set<String>
     @Binding var selected: String?
     let sourceCount: Int
+    let unavailableSourceCount: Int
     let previewIsCurrent: Bool
     let passwords: [String]
     let reading: Bool
@@ -1607,7 +1608,12 @@ struct ResultsPane: View {
             return "\(runner.bib.count) entr\(runner.bib.count == 1 ? "y" : "ies")"
         default:
             let shown = visibleKeys?.count ?? runner.results.count
-            return "\(shown) shown · \(sourceCount) source\(sourceCount == 1 ? "" : "s")"
+            let reachable = max(0, sourceCount - unavailableSourceCount)
+            let sources = "\(reachable) source\(reachable == 1 ? "" : "s")"
+            let missing = unavailableSourceCount > 0
+                ? " · \(unavailableSourceCount) unavailable"
+                : ""
+            return "\(shown) shown · \(sources)\(missing)"
         }
     }
 
@@ -1734,11 +1740,22 @@ struct ResultsPane: View {
         // Two different empty screens. "No sources" is the first thing a person ever sees
         // and has to explain what the app is for; "sources but nothing scanned" is a
         // button away from a shelf and needs no introduction.
-        if hasSources {
+        if hasSources && unavailableSourceCount == sourceCount {
+            ContentUnavailableView {
+                Label("Source unavailable", systemImage: "externaldrive.badge.exclamationmark")
+            } description: {
+                Text("Mount the source volume, then try again. Its location is kept here.")
+            } actions: {
+                Button("Try again", action: preview)
+            }
+        } else if hasSources {
             ContentUnavailableView {
                 Label("Ready to run", systemImage: "wand.and.sparkles")
             } description: {
-                Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Plan first, then apply.")
+                let missing = unavailableSourceCount > 0
+                    ? " \(unavailableSourceCount) currently unavailable."
+                    : ""
+                Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued.\(missing) Plan first, then apply.")
             } actions: {
                 Button("Review names", action: preview).buttonStyle(.borderedProminent)
             }
