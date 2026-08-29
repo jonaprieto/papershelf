@@ -542,8 +542,10 @@ struct ResultsPane: View {
                 copyText(markdownCatalogue(runner.results, known: runner.ai.guesses))
             }
             Button("Copy the bibliography as Markdown") {
-                runner.ensureBib()
-                copyText(markdownBibliography(runner.bib))
+                Task {
+                    await runner.ensureBibReady()
+                    copyText(markdownBibliography(runner.bib))
+                }
             }
         } label: {
             Label("More", systemImage: "ellipsis.circle")
@@ -1012,11 +1014,11 @@ struct ResultsPane: View {
     private func copyCitation() {
         guard let item = selectedItem else { return }
         Task {
-            runner.ensureBib()
+            await runner.ensureBibReady()
             if let entry = runner.bibByItem[item.key], !entry.isComplete,
                aiReady, runner.ai.guesses[item.key] == nil {
                 await runner.identify(item, client: aiClient, passwords: passwords, rules: rules)
-                runner.ensureBib()
+                await runner.ensureBibReady()
             }
             guard let entry = runner.bibByItem[item.key] else { return }
             NSPasteboard.general.clearContents()

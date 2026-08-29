@@ -11,7 +11,11 @@ extension ReviewInspector {
 
     @ViewBuilder var bibtexPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if runner.bibByItem[item.key] != nil {
+            if runner.bibLoading {
+                ProgressView("Preparing citation…")
+                    .controlSize(.small)
+                    .foregroundStyle(.secondary)
+            } else if runner.bibByItem[item.key] != nil {
                 // Judged from the text on the screen, not from the entry the app would
                 // have generated: the moment anyone edits it or keeps a fetched one, the
                 // generated entry stops describing what is actually there. Recomputed on
@@ -175,7 +179,7 @@ extension ReviewInspector {
         // A new file starts with no history, or the last file's improvement would be
         // recorded as the provenance of this one's entry.
         citationImprovedByAI = false
-        runner.ensureBib()
+        await runner.ensureBibReady()
 
         // A kept entry wins over a generated one: it is the answer someone already
         // decided on, and regenerating would quietly throw that away.

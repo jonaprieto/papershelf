@@ -67,7 +67,10 @@ final class Runner: ObservableObject {
     @Published private(set) var statusCounts: [(Status, Int)] = []
     @Published private(set) var bib: [BibEntry] = []
     @Published private(set) var bibByItem: [String: BibEntry] = [:]
+    @Published private(set) var bibLoading = false
     private var bibStale = true
+    private var bibGeneration = 0
+    private var bibTask: Task<Void, Never>?
     /// One entry per undoable step. A step can touch many files, so each holds the
     /// decisions exactly as they were before it ran.
     private var undoStack: [[(key: String, decision: Decision?)]] = []
@@ -360,7 +363,10 @@ final class Runner: ObservableObject {
     /// Marks the entries out of date. They are not rebuilt here: most runs never open
     /// the bibliography, and building them for a large collection on every rename is
     /// work nobody asked for.
-    private func refreshBib() { bibStale = true }
+    private func refreshBib() {
+        bibStale = true
+        bibGeneration &+= 1
+    }
 
     /// Builds the entries if anything has moved since they were last needed.
     @Published private(set) var searchText = ""
@@ -487,14 +493,40 @@ final class Runner: ObservableObject {
 
     /// The entry type the next rebuild should use.
     var bibType: BibType = .book {
-        didSet { if bibType != oldValue { bibStale = true } }
+        didSet { if bibType != oldValue { refreshBib() } }
     }
 
     func ensureBib() {
-        guard bibStale else { return }
+        guard bibStale, !bibLoading else { return }
         bibStale = false
-        bib = bibEntries(for: results, known: guesses, type: bibType)
-        bibByItem = Dictionary(uniqueKeysWithValues: bib.map { ($0.itemKey, $0) })
+        bibLoading = true
+        bib = []
+        bibByItem = [:]
+        let generation = bibGeneration
+        let snapshot = results
+        let known = guesses
+        let type = bibType
+        bibTask = Task { [weak self] in
+            let entries = await Task.detached(priority: .utility) {
+                bibEntries(for: snapshot, known: known, type: type)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            self.bibLoading = false
+            self.bibTask = nil
+            guard generation == self.bibGeneration else {
+                self.ensureBib()
+                return
+            }
+            self.bib = entries
+            self.bibByItem = Dictionary(uniqueKeysWithValues: entries.map { ($0.itemKey, $0) })
+        }
+    }
+
+    /// Waits for the background bibliography build when an action needs a complete
+    /// answer immediately, such as Copy citation. The view itself stays responsive.
+    func ensureBibReady() async {
+        ensureBib()
+        while bibLoading { await Task.yield() }
     }
 
     func findDuplicates(passwords: [String] = []) {
