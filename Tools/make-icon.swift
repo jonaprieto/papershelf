@@ -16,8 +16,8 @@ let paper = color(252, 252, 254)
 let paperEdge = color(206, 212, 230)
 let fold = color(196, 205, 232)
 let ruleInk = color(176, 185, 208)
-let brass = color(255, 197, 61)
-let brassShade = color(226, 158, 22)
+let bookmark = color(255, 197, 61)
+let bookmarkShade = color(226, 158, 22)
 
 func draw(into ctx: CGContext, side: CGFloat) {
     ctx.scaleBy(x: side / 1024, y: side / 1024)
@@ -35,6 +35,16 @@ func draw(into ctx: CGContext, side: CGFloat) {
     ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 914),
                            end: CGPoint(x: 0, y: 90), options: [])
     ctx.restoreGState()
+
+    // A small stack of papers: the app is a library first, not a PDF unlocker.
+    for (offset, fill) in [(CGFloat(-42), color(174, 188, 231)),
+                           (CGFloat(-21), color(219, 225, 245))] {
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 250 + offset, y: 238 + offset,
+                                               width: 470, height: 540),
+                           cornerWidth: 30, cornerHeight: 30, transform: nil))
+        ctx.setFillColor(fill)
+        ctx.fillPath()
+    }
 
     // Page with a folded top-right corner.
     let pageLeft: CGFloat = 286, pageRight: CGFloat = 686
@@ -86,40 +96,30 @@ func draw(into ctx: CGContext, side: CGFloat) {
     }
     ctx.fillPath()
 
-    // Open padlock, overlapping the lower right corner of the page.
-    let bodyRect = CGRect(x: 546, y: 200, width: 254, height: 206)
-
+    // Bookmark and a few semantic marks: the visual language is reading, notes and
+    // highlights rather than passwords and file rewriting.
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 26,
+    ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 24,
                   color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.32))
-
-    // Shackle first, so the body covers the one leg that enters it. Only the right leg
-    // reaches down; the left one stops well clear of the body, which is what makes the
-    // padlock read as open rather than shut.
-    let shackle = CGMutablePath()
-    shackle.move(to: CGPoint(x: 762, y: 300))
-    shackle.addLine(to: CGPoint(x: 762, y: 496))
-    shackle.addArc(center: CGPoint(x: 674, y: 496), radius: 88,
-                   startAngle: 0, endAngle: .pi, clockwise: false)
-    ctx.addPath(shackle)
-    ctx.setStrokeColor(brassShade)
-    ctx.setLineWidth(42)
-    ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.strokePath()
-
-    ctx.addPath(CGPath(roundedRect: bodyRect, cornerWidth: 40, cornerHeight: 40, transform: nil))
-    ctx.setFillColor(brass)
+    let ribbon = CGMutablePath()
+    ribbon.move(to: CGPoint(x: 620, y: 520))
+    ribbon.addLine(to: CGPoint(x: 770, y: 520))
+    ribbon.addLine(to: CGPoint(x: 770, y: 206))
+    ribbon.addLine(to: CGPoint(x: 695, y: 250))
+    ribbon.addLine(to: CGPoint(x: 620, y: 206))
+    ribbon.closeSubpath()
+    ctx.addPath(ribbon)
+    ctx.setFillColor(bookmark)
     ctx.fillPath()
     ctx.restoreGState()
 
-    // Keyhole.
-    ctx.setFillColor(plateBottom)
-    ctx.addEllipse(in: CGRect(x: bodyRect.midX - 27, y: bodyRect.midY - 8, width: 54, height: 54))
-    ctx.addPath(CGPath(roundedRect: CGRect(x: bodyRect.midX - 15, y: bodyRect.midY - 54,
-                                           width: 30, height: 62),
-                       cornerWidth: 15, cornerHeight: 15, transform: nil))
-    ctx.fillPath()
+    // A warm underline makes the icon read as annotated at 16pt.
+    ctx.setStrokeColor(bookmarkShade)
+    ctx.setLineWidth(22)
+    ctx.setLineCap(.round)
+    ctx.move(to: CGPoint(x: 342, y: 332))
+    ctx.addLine(to: CGPoint(x: 520, y: 332))
+    ctx.strokePath()
 }
 
 func render(side: Int) -> Data {

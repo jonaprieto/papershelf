@@ -1,9 +1,10 @@
-<img src="docs/icon.png" width="128" alt="PDF Hammer">
+<img src="docs/icon.png" width="128" alt="Paper Shelf">
 
-# PDF Hammer
+# Paper Shelf
 
-A macOS app that strips passwords from PDFs and beats their filenames into
-`YYYY-MM-name.pdf`. Built on PDFKit and SwiftUI. No third-party dependencies.
+A macOS library for keeping PDFs named, searchable, annotated, and easy to read.
+It can also safely normalize filenames, preserve originals, and work with local AI.
+Built on PDFKit and SwiftUI. No third-party dependencies.
 
 ```bash
 ./build.sh --install

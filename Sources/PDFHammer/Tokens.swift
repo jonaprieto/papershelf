@@ -63,6 +63,13 @@ enum Metric {
     static let coverWidth: CGFloat = 176
     static let coverAspect: CGFloat = 1.32
 
+    /// The grid's 18pt outer padding is part of its width budget. Keeping it here makes
+    /// the shelf stop claiming a second card until two ideal cards actually fit.
+    static func catalogueColumns(for width: CGFloat) -> Int {
+        let usable = max(0, width - 2 * gridSpacing)
+        return max(1, Int((usable + gridSpacing) / (coverWidth + gridSpacing)))
+    }
+
     /// How tall a cover is at a given width.
     ///
     /// It used to be 168 points whatever the width, which is why a tall book sat in a

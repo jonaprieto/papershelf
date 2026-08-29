@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>PDF Hammer</string>
+	<string>Paper Shelf</string>
 	<key>CFBundleExecutable</key>
 	<string>PDFHammer</string>
 	<key>CFBundleIconFile</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>PDF Hammer</string>
+	<string>Paper Shelf</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,11 +25,11 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>PDF Hammer reads and rewrites the PDFs you select on your Desktop.</string>
+	<string>Paper Shelf reads and rewrites the PDFs you select on your Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>PDF Hammer reads and rewrites the PDFs you select in your Documents folder.</string>
+	<string>Paper Shelf reads and rewrites the PDFs you select in your Documents folder.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>PDF Hammer reads and rewrites the PDFs you select in your Downloads folder.</string>
+	<string>Paper Shelf reads and rewrites the PDFs you select in your Downloads folder.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -37,6 +37,6 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>PDF Hammer reads and rewrites the PDFs you select on removable volumes.</string>
+	<string>Paper Shelf reads and rewrites the PDFs you select on removable volumes.</string>
 </dict>
 </plist>

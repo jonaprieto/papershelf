@@ -28,6 +28,7 @@ final class LibraryStatus: ObservableObject {
         let documents = summary.documents.formatted()
         guard summary.documents > 0 else { return "Library empty" }
         let indexed = Int((Double(summary.withText) / Double(summary.documents) * 100).rounded())
-        return "Library · \(documents) document\(summary.documents == 1 ? "" : "s") · \(indexed)% indexed"
+        let search = indexed == 0 ? "text search not ready" : "\(indexed)% text searchable"
+        return "Library · \(documents) document\(summary.documents == 1 ? "" : "s") · \(search)"
     }
 }

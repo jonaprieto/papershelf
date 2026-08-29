@@ -526,7 +526,7 @@ struct ReviewInspector: View {
         if !item.message.isEmpty {
             Text(item.message)
                 .font(.caption)
-                .foregroundStyle(item.status == .failed ? .red : .orange)
+                .foregroundStyle(item.status == .failed ? Ink.red : Ink.amber)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -643,7 +643,7 @@ struct KeyLabel: View {
         HStack(spacing: 5) {
             Text(key)
                 .font(.caption2.weight(.bold).monospaced())
-                .frame(width: 14, height: 14)
+                .frame(minWidth: 14, minHeight: 14)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
             Text(title)
         }

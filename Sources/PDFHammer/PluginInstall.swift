@@ -216,17 +216,17 @@ enum ChatGPTPlugin {
     /// name with an empty line under it, next to entries that say what they do.
     static func pluginManifestData(hasLogo: Bool, installedAt: Date = Date()) throws -> Data {
         var interface: [String: Any] = [
-            "displayName": "PDF Hammer",
+            "displayName": "Paper Shelf",
             "shortDescription": "Search and cite your own PDFs",
             "longDescription":
-                "PDF Hammer keeps a local index of the papers and books on your Mac. This "
+                "Paper Shelf keeps a local index of the papers and books on your Mac. This "
                 + "plugin lets ChatGPT read it: search by title, author or full text, open a "
                 + "document or a single page as Markdown, list what you highlighted and the "
                 + "notes you left, pull a BibTeX entry, find duplicate copies of the same "
                 + "work, and browse your tags and reading projects. Everything runs against "
                 + "the app's own MCP server on your machine, so the files never leave it and "
-                + "nothing is uploaded. Requires PDF Hammer to be installed.",
-            "developerName": "PDF Hammer",
+                + "nothing is uploaded. Requires Paper Shelf to be installed.",
+            "developerName": "Paper Shelf",
             "category": "Education & Research",
             "capabilities": ["Read", "Research", "Local processing"],
             "websiteURL": "https://github.com/jonaprieto/pdf-hammer",
@@ -245,7 +245,7 @@ enum ChatGPTPlugin {
             "name": "pdf-hammer",
             "version": cachebustedVersion(installedAt: installedAt),
             "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
-            "author": ["name": "PDF Hammer"],
+            "author": ["name": "Paper Shelf"],
             "homepage": "https://github.com/jonaprieto/pdf-hammer",
             "repository": "https://github.com/jonaprieto/pdf-hammer",
             "keywords": ["pdf", "research", "papers", "books", "bibliography",

@@ -83,6 +83,12 @@ final class CatalogueLayoutTests: XCTestCase {
 /// constant and a book is not.
 extension CatalogueLayoutTests {
 
+    func testShelfColumnsIncludeTheGridPadding() {
+        XCTAssertEqual(Metric.catalogueColumns(for: 390), 1)
+        XCTAssertEqual(Metric.catalogueColumns(for: 406), 2)
+        XCTAssertEqual(Metric.catalogueColumns(for: 800), 4)
+    }
+
     func testCoverHeightFollowsTheWidth() {
         XCTAssertEqual(Metric.coverHeight(forWidth: 100), 132)
         XCTAssertEqual(Metric.coverHeight(forWidth: 176), 232)

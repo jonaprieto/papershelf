@@ -442,9 +442,7 @@ struct ResultsPane: View {
                         Label(mode.label, systemImage: mode.icon).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelStyle(.iconOnly)
-                .labelsHidden()
+                .pickerStyle(.menu)
                 .fixedSize()
                 .tip("Which view of the same files", key: "⌘1 to ⌘4")
             }
@@ -503,7 +501,7 @@ struct ResultsPane: View {
             .tip("Only files that are identical byte for byte. A likely match is never batched.")
         default:
             Button(action: preview) {
-                Label("Plan", systemImage: "list.bullet.rectangle")
+                Label("Review names", systemImage: "textformat.abc")
             }
             .labelStyle(.titleAndIcon)
             .disabled(!hasSources || runner.busy)
@@ -511,7 +509,7 @@ struct ResultsPane: View {
             .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
 
             Button(action: apply) {
-                Label(canApply ? "Apply \(runner.actionable)" : "Apply",
+                Label(canApply ? "Apply changes \(runner.actionable)" : "Apply changes",
                       systemImage: "checkmark.circle")
             }
             .labelStyle(.titleAndIcon)
@@ -1238,7 +1236,7 @@ struct ResultsPane: View {
     private func catalogueColumns(for width: CGFloat) -> Int {
         let spacing: CGFloat = 18
         let ideal: CGFloat = 168
-        return max(1, Int((width - spacing + spacing) / (ideal + spacing)))
+            return Metric.catalogueColumns(for: width)
     }
 
     private func catalogueGrid(columns: Int) -> some View {
@@ -1349,7 +1347,10 @@ struct ResultsPane: View {
     /// bar running across both put "4 of 4 shown" above a panel of metadata.
     private var collection: some View {
         VStack(spacing: 0) {
-            if !reading {
+            // Only over the views the bar is about. The bibliography and the duplicates
+            // view carry their own bars, and a second one asking whether to show only
+            // undecided files is a row about a question those views do not have.
+            if !reading && (mode == .list || mode == .catalogue) {
                 filterBar
                 Divider()
             }
@@ -1551,6 +1552,9 @@ struct ResultsPane: View {
                 .padding(.vertical, 1)
             }
             .scrollIndicators(.hidden)
+            // The chips give way, never the counts and the order: a scroll view takes
+            // every point it is offered, and what it took here was the word "Date".
+            .layoutPriority(-1)
 
             Spacer(minLength: 6)
 
@@ -1733,7 +1737,7 @@ struct ResultsPane: View {
             } description: {
                 Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued. Plan first, then apply.")
             } actions: {
-                Button("Plan", action: preview).buttonStyle(.borderedProminent)
+                Button("Review names", action: preview).buttonStyle(.borderedProminent)
             }
         } else {
             FirstRun(chooseFiles: chooseFiles)

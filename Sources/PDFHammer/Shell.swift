@@ -48,7 +48,7 @@ struct PDFHammerApp: App {
     @StateObject private var chrome = Chrome()
 
     var body: some Scene {
-        Window("PDF Hammer", id: "main") {
+        Window("Paper Shelf", id: "main") {
             ContentView(chrome: chrome)
         }
         .commands {
@@ -177,7 +177,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .list: return "List"
-        case .catalogue: return "Catalogue"
+        case .catalogue: return "Shelf"
         case .bibliography: return "BibTeX"
         case .duplicates: return "Duplicates"
         }

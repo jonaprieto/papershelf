@@ -17,10 +17,10 @@ struct FirstRun: View {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.tint)
-                Text("A shelf for the papers you actually read")
+                Text("A calm home for your PDFs")
                     .font(.title2.weight(.semibold))
-                Text("Point it at the folders your PDFs are already in. Nothing is copied "
-                     + "anywhere, and nothing is moved until you say so.")
+                Text("Keep papers named, searchable, and annotated. Point Paper Shelf at the "
+                     + "folders your PDFs already live in; nothing moves until you say so.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -29,25 +29,27 @@ struct FirstRun: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                point("folder", "Add a source",
-                      "A folder, or a single PDF. Sources are kept as a set of "
-                      + "non-overlapping roots, so picking a parent absorbs what is inside it.")
-                point("eye", "Look before anything happens",
-                      "Plan works out every new name and touches nothing. You confirm file "
-                      + "by file, or all at once, and originals are kept unless you turn "
-                      + "that off. Delete always means the Trash.")
-                point("puzzlepiece.extension", "Readable by your assistant",
+                point("books.vertical.fill", "One home for every paper",
+                      "Browse the folders you already use, or add one PDF. Sources stay "
+                      + "separate, searchable, and easy to revisit.")
+                point("textformat.abc", "Names you can trust",
+                      "Review suggested names before anything changes. Originals stay safe "
+                      + "by default, and Trash is always recoverable.")
+                point("highlighter", "Highlights that mean something",
+                      "Use a small personal palette for definitions, evidence, questions, "
+                      + "and follow-ups, then attach notes to the passage.")
+                point("sparkles", "AI when it helps",
                       "An MCP server ships inside the app, so Claude Code or Codex can "
                       + "search and read your library. It runs here; nothing leaves the "
-                      + "machine. Settings › Integrations has the one line to paste.")
+                      + "machine. Turn on AI only when you need it.")
             }
             .frame(maxWidth: 520, alignment: .leading)
 
             VStack(spacing: 6) {
-                Button("Choose Files or Folders…", action: chooseFiles)
+                Button("Add a folder or PDF…", action: chooseFiles)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                Text("or drop them anywhere in this window")
+                Text("or drop folders and PDFs anywhere in this window")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }

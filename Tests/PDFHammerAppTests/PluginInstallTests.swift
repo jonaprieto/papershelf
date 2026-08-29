@@ -207,7 +207,7 @@ final class PluginInstallTests: XCTestCase {
             let value = interface[field] as? String
             XCTAssertFalse(value?.isEmpty ?? true, "interface.\(field) is what the listing reads")
         }
-        XCTAssertEqual(interface["displayName"] as? String, "PDF Hammer",
+        XCTAssertEqual(interface["displayName"] as? String, "Paper Shelf",
                        "the row should say the app's name, not the folder's")
         XCTAssertFalse((interface["capabilities"] as? [String] ?? []).isEmpty)
         let prompts = try XCTUnwrap(interface["defaultPrompt"] as? [String])
