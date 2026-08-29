@@ -110,6 +110,28 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(survivingTags, ["distributed-systems", "to-read"], "tags must survive a content change")
     }
 
+    func testAPartialRescanDoesNotEraseKnownMetadata() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+
+        let original = try await library.indexDocument(
+            path: "/shelf/known.pdf", contentHash: "hash", byteCount: 100,
+            pageCount: 12, title: "Known title", author: "Known author",
+            documentInfo: ["Producer": "Quartz"]
+        )
+        let rescanned = try await library.indexDocument(
+            path: "/shelf/known.pdf", contentHash: nil, byteCount: 120
+        )
+
+        XCTAssertEqual(rescanned.id, original.id)
+        XCTAssertEqual(rescanned.byteCount, 120)
+        XCTAssertEqual(rescanned.pageCount, 12)
+        XCTAssertEqual(rescanned.title, "Known title")
+        XCTAssertEqual(rescanned.author, "Known author")
+        XCTAssertEqual(rescanned.documentInfo, ["Producer": "Quartz"])
+    }
+
     func testRecordLocationAddsAPathToAnExistingDocumentWithoutDuplicating() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

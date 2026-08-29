@@ -356,8 +356,13 @@ public actor Library {
             id = existingID
             try run("""
                 UPDATE documents
-                SET content_hash = ?, byte_count = ?, page_count = ?, title = ?, author = ?,
-                    document_info = ?, last_seen_at = ?
+                SET content_hash = COALESCE(?, content_hash),
+                    byte_count = COALESCE(?, byte_count),
+                    page_count = COALESCE(?, page_count),
+                    title = COALESCE(?, title),
+                    author = COALESCE(?, author),
+                    document_info = CASE WHEN ? = '{}' THEN document_info ELSE ? END,
+                    last_seen_at = ?
                 WHERE id = ?;
                 """) { statement in
                 bindText(statement, 1, file.contentHash)
@@ -366,8 +371,9 @@ public actor Library {
                 bindText(statement, 4, file.title)
                 bindText(statement, 5, file.author)
                 bindText(statement, 6, info)
-                bindText(statement, 7, seenAtText)
-                bindText(statement, 8, id)
+                bindText(statement, 7, info)
+                bindText(statement, 8, seenAtText)
+                bindText(statement, 9, id)
             }
         } else {
             id = UUID().uuidString
