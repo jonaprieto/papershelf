@@ -488,12 +488,15 @@ run opens PDFs across all cores since it mutates nothing; a real run stays seria
 collision suffixes (`-2`, `-3`) stay deterministic.
 
 ```
-Sources/PDFHammerCore/Hammer.swift   naming, file operations, scanning
-Sources/PDFHammer/App.swift          SwiftUI window and reviewer
-Tools/make-icon.sh                   regenerates the icon
+Sources/PDFHammerCore/Hammer.swift        naming, file operations, scanning
+Sources/PDFHammer/ContentView.swift       window, library sidebar and source lifecycle
+Sources/PDFHammer/Catalogue.swift         shelf, list, reader and keyboard commands
+Sources/PDFHammer/Review.swift             PDF preview, notes, highlights and inspector
+Tools/make-icon.sh                        regenerates the icon
 ```
 
-`swift test` runs 50 tests, including real encrypted PDFs through the full pipeline.
+`swift test` runs the full suite, including real encrypted PDFs, library persistence,
+search, responsive layout arithmetic and the end-to-end naming pipeline.
 
 The app is unsandboxed and ad-hoc signed, which is enough for local use. macOS asks
 once for access to Desktop, Documents and Downloads.
