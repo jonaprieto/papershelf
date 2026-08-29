@@ -1330,12 +1330,24 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
     if options.useMetadataDate, let metadataDate { fallbacks.append(monthPrefix(metadataDate)) }
     if options.useFileDate, let modified = facts.modified { fallbacks.append(monthPrefix(modified)) }
 
-    let newName = overrideName.map(sanitizedFilename) ?? normalizedName(
+    let ordinaryName = normalizedName(
         for: source.lastPathComponent,
         fallbackPrefixes: fallbacks,
         folderSlug: context.slug,
         rules: options.rules
     )
+    let plannedName: String
+    if let pattern = options.pattern, !pattern.elements.isEmpty {
+        // Plan already renders the pattern from the scanned metadata. Apply must use the
+        // same answer, or the preview can promise one filename and write another.
+        let scanned = item(source, status)
+        plannedName = rendered(pattern, for: scanned, folder: context,
+                               rules: options.rules, fallbacks: options.dateFallbacks)
+            ?? ordinaryName
+    } else {
+        plannedName = ordinaryName
+    }
+    let newName = overrideName.map(sanitizedFilename) ?? plannedName
 
     if options.dryRun {
         let planned = availableURL(directory.appendingPathComponent(newName), ignoring: source)

@@ -51,6 +51,22 @@ final class PatternPipelineTests: XCTestCase {
         XCTAssertEqual(renamed.destinationName, "pearl-2009-causality.pdf")
     }
 
+    func testProcessUsesTheSamePatternAsPlan() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("pattern-process"), isDirectory: true)
+        let file = directory.appendingPathComponent("Causality.pdf")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try makeTextPDF(at: file, text: "Causality")
+
+        let pattern = NamePattern(parsing: "[title]-reviewed")
+        let result = try XCTUnwrap(process(
+            jobs: [Job(root: directory, file: file)],
+            options: options(pattern: pattern)
+        ).first)
+        XCTAssertEqual(result.destinationName, "causality-reviewed.pdf")
+    }
+
     /// The regression guard. With no pattern set, every file must be named exactly the way
     /// it was before any of this existed.
     func testNoPatternMeansTheOrdinaryRename() {
