@@ -76,30 +76,61 @@ single PDF.
 
 ## The window
 
-A sidebar, the document, an inspector beside it, and a status bar along the bottom.
+A sidebar, one thing in the middle, an inspector beside it, and a status bar along the
+bottom.
 
-The inspector has four tabs — Info, Rename, Notes, Cite — and sits next to the page rather
-than under it. The notes used to be a column of their own, 240 fixed points that the
-window's minimum width had to reserve for whether or not anyone had opened them; they are
-a tab now. Neither the inspector nor the contents rail widens the window: asked for where
-there is no room, they fold, and come back the moment there is.
+The middle is either the collection or a document, never both. The shelf, the
+bibliography and the duplicates view are about a collection and show no page; the list is
+the reviewer, where a name is decided against the page it belongs to; and opening a
+document — ⏎, a double-click, or **Read** in the Info tab — gives the page the middle with
+its outline beside it. A page sitting next to every view was half a window spent on a file
+nobody had asked to open.
 
-The sidebar is one sectioned list — sources and their folders, tags, the library — and
-nothing else. Everything you set once lives in a settings window instead of sharing that
-column: General, Files and passwords, Name rules, Highlighters, BibTeX, Keyboard, AI and
-spend, Integrations. That is the rule the two obey — a setting reachable from two places
-is a setting that can disagree with itself.
+The inspector has four tabs — Info, Rename, Notes, Cite. The notes used to be a column of
+their own, 240 fixed points that the window's minimum width had to reserve for whether or
+not anyone had opened them; they are a tab now.
 
-Anything transient is in the status bar and only there: what is being scanned, how far
-through a plan you are, how many files no password opened, what the session has cost,
-whether the watcher is on. Clicking it opens the activity log. Nothing about a running
-job changes the shape of the toolbar any more.
+Nothing widens the window. Under 1100 points the contents rail becomes a popover under the
+button it already had; under 1000 the inspector takes what is left above the page's own
+floor, and where there is no room for both, the page folds rather than the window growing.
+Under 900 the sidebar is an overlay. The floor is 640 × 480, down from 1011 × 560 — and
+1252 wide the moment the notes were open.
+
+The sidebar is one sectioned list and nothing else: four library lists (All Documents,
+Reading Now, Recently Added, Unfiled), the sources with their folder tree, the reading
+projects, and the tags. Everything you set once lives in a settings window instead of
+sharing that column: General, Files and passwords, Name rules, Highlighters, BibTeX,
+Keyboard, AI and spend, Integrations, with a search over the lot. That is the rule the two
+obey — a setting reachable from two places is a setting that can disagree with itself.
+
+The filter bar under the toolbar is one row: where you are, the query as chips you can
+take back one at a time, how much of the collection is shown, and the order. Anything
+transient is in the status bar and only there: what is being scanned, how far through a
+plan you are, how many files no password opened, what the session has cost, what the
+library holds, whether the watcher is on. Clicking it opens the activity log. Nothing about
+a running job changes the shape of the toolbar any more.
+
+## Everything from the keyboard
+
+Five regions — sidebar, contents, document, inspector, status bar — with a 2pt ring on
+whichever has the keys. ⌃1 to ⌃5 jump straight to one, opening it first if it is
+collapsed; ⌃⇥ cycles, skipping anything not drawn. ⎋ is a ladder with one rung per press:
+out of the field keeping what you typed, out of the row into its region, then the filters,
+then the place.
+
+⌘K reaches everything else: the four library lists, the folders in the results, the
+projects and the tags, the documents themselves, the passages inside them, and every
+command — including the ones with no shortcut. Six prefixes narrow it: `>` commands,
+`#` tags, `@` projects, `/` in the document on screen, `:` a page number, `?` the shortcut
+list. Every shortcut is rebindable in Settings › Keyboard, which reports a conflict rather
+than quietly taking a key from something else.
 
 ## Two views
 
-**Catalogue** is the default: covers laid out as a shelf. Thumbnails render lazily and
-are cached, so the cost follows the window rather than the size of the collection.
-**List** groups the same results by folder instead.
+**Catalogue** is the default: covers laid out as a shelf, each keeping the book's own
+proportions, with its title, author, filename and size under it. Thumbnails render lazily
+and are cached, so the cost follows the window rather than the size of the collection.
+**List** groups the same results by folder instead, and is where a plan is reviewed.
 
 The last run is written to Application Support and shown the instant the window opens,
 labelled "From last time, rechecking the disk", while a real scan runs behind it and
@@ -215,14 +246,19 @@ name of the site, and without that step a pattern would copy all of it through.
 
 ## Reading projects
 
-A project is a named subset of the shelf, tagged, that you can open and ask questions
-about with its documents as context. The extracted Markdown is chunked, selected against
-your question through the library's own full-text index, and each chunk keeps its
-document and page so an answer can cite where it came from and you can click through.
+A project is a named subset of the shelf, filed into sections, that you can ask questions
+about with its documents as context. It is a place in the window, listed in the sidebar
+and opened into it: the conversation in the middle, the documents it asks across beside
+it, grouped the way they are filed and honest about the ones with no text yet. The
+extracted Markdown is chunked, selected against your question through the library's own
+full-text index, and each chunk keeps its document and page so an answer can cite where it
+came from and you can click through.
 
-Before anything is sent you are shown what: how many documents, roughly how much text,
-and which endpoint by name, with a clearer warning when it is not the default one.
-Sending a whole project is a different act from sending three pages of one file.
+What would be sent is a line above the composer the whole time a question is being typed —
+how many documents, roughly how much text, to which host, answered by which model — rather
+than a dialog restating it after the decision is made. The dialog survives for the case
+that is actually different: an endpoint that is not the default, or one reached in the
+clear.
 
 ## What it costs
 
@@ -240,8 +276,14 @@ rather than as zero, and the price table says when each rate was written down.
 ## The library
 
 Everything the app has seen is kept in a small SQLite database under Application Support:
-what the document is, every path it has been seen at, its tags, its notes, and its
-extracted text with a full-text index over it. The filesystem watcher keeps it current.
+what the document is, every path it has been seen at, its tags, its notes, how far into it
+you have read, and its extracted text with a full-text index over it. The filesystem
+watcher keeps it current.
+
+A reading position is keyed on the document rather than the path, so a book renamed
+halfway through is still the book you were reading. Opening one goes back to where you
+left off, Info says how far in you are, and **Reading Now** in the sidebar is every book
+opened past its first page and not yet finished.
 
 A document's identity is its own, not a hash of its bytes. This app decrypts, renames and
 writes highlights into PDFs, so the bytes change under ordinary use; keying on them would
