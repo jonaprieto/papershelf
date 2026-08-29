@@ -614,10 +614,11 @@ struct ResultsPane: View {
         guard showingPalette, let library = Library.shared else { return }
         paletteTags = (try? await library.tagCounts()) ?? []
         let projects = (try? await library.projects()) ?? []
+        let counts = (try? await library.projectMemberCounts()) ?? [:]
         var summaries: [ProjectSummary] = []
         for project in projects {
-            let count = ((try? await library.members(ofProject: project.id)) ?? []).count
-            summaries.append(ProjectSummary(id: project.id, name: project.name, documentCount: count))
+            summaries.append(ProjectSummary(id: project.id, name: project.name,
+                                            documentCount: counts[project.id] ?? 0))
         }
         paletteProjects = summaries
     }

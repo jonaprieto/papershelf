@@ -578,6 +578,46 @@ public actor Library {
         }
     }
 
+    /// Projects containing one document, in one query. The details panel used to load
+    /// every project and then fetch every project's members just to answer this question.
+    public func projects(containingDocument documentID: String) throws -> [Project] {
+        try withStatement("""
+            SELECT p.id, p.name, p.created_at
+            FROM projects p
+            JOIN project_members m ON m.project_id = p.id
+            WHERE m.document_id = ?
+            ORDER BY p.created_at;
+            """, bind: { statement in
+            bindText(statement, 1, documentID)
+        }) { statement in
+            var results: [Project] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Project(
+                    id: sqlite3_column_int64(statement, 0),
+                    name: columnText(statement, 1) ?? "",
+                    createdAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast
+                ))
+            }
+            return results
+        }
+    }
+
+    /// Counts all project memberships in one query, including only projects that have
+    /// members. Callers use a zero default for an empty project.
+    public func projectMemberCounts() throws -> [Int64: Int] {
+        try withStatement("""
+            SELECT project_id, COUNT(*)
+            FROM project_members
+            GROUP BY project_id;
+            """) { statement in
+            var counts: [Int64: Int] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                counts[sqlite3_column_int64(statement, 0)] = Int(sqlite3_column_int64(statement, 1))
+            }
+            return counts
+        }
+    }
+
     public func addMember(_ documentID: String, toProject projectID: Int64, addedAt: Date = Date()) throws {
         try run("""
             INSERT INTO project_members(project_id, document_id, added_at) VALUES (?, ?, ?)

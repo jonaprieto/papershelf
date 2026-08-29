@@ -353,6 +353,23 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(remaining.map(\.id), [bookB.id])
     }
 
+    func testProjectQueriesAnswerMembershipAndCountsInOneResult() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let first = try await library.createProject(name: "First")
+        let second = try await library.createProject(name: "Second")
+        let book = try await library.indexDocument(path: "/shelf/a.pdf", contentHash: "a")
+
+        try await library.addMember(book.id, toProject: first.id)
+        try await library.addMember(book.id, toProject: second.id)
+
+        let memberships = try await library.projects(containingDocument: book.id)
+        let counts = try await library.projectMemberCounts()
+        XCTAssertEqual(memberships.map(\.name), ["First", "Second"])
+        XCTAssertEqual(counts, [first.id: 1, second.id: 1])
+    }
+
     func testAddingAnUnknownDocumentAsAProjectMemberFails() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

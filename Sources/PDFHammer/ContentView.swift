@@ -567,11 +567,11 @@ struct ContentView: View {
             return
         }
         let found = (try? await library.projects()) ?? []
+        let counts = (try? await library.projectMemberCounts()) ?? [:]
         var summaries: [ProjectSummary] = []
         for project in found {
-            let count = ((try? await library.members(ofProject: project.id)) ?? []).count
             summaries.append(ProjectSummary(id: project.id, name: project.name,
-                                            documentCount: count))
+                                            documentCount: counts[project.id] ?? 0))
         }
         projects = summaries
     }

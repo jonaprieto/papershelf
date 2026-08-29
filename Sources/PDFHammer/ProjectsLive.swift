@@ -26,11 +26,11 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
     return ProjectsEnvironment(
         listProjects: {
             let projects = try await library.projects()
+            let counts = try await library.projectMemberCounts()
             var summaries: [ProjectSummary] = []
             for project in projects {
-                let members = try await library.members(ofProject: project.id)
                 summaries.append(ProjectSummary(id: project.id, name: project.name,
-                                                documentCount: members.count))
+                                                documentCount: counts[project.id] ?? 0))
             }
             return summaries
         },

@@ -829,12 +829,8 @@ struct MetadataPanel: View {
         let path = item.currentURL.resolvingSymlinksInPath().path
         guard let record = try? await library.document(atPath: path) else { return }
         position = try? await library.readingPosition(forDocument: record.id)
-        var filed: [String] = []
-        for project in (try? await library.projects()) ?? [] {
-            let members = (try? await library.members(ofProject: project.id)) ?? []
-            if members.contains(where: { $0.id == record.id }) { filed.append(project.name) }
-        }
-        projects = filed
+        projects = ((try? await library.projects(containingDocument: record.id)) ?? [])
+            .map(\.name)
     }
 
     private var panel: some View {
