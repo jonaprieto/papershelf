@@ -1310,7 +1310,7 @@ struct ResultsPane: View {
         }
         .overlay(alignment: .trailing) {
             if !inspectorCollapsed && overlays {
-                floatingPanel(width: SplitLayout.overlayPanelWidth(paneWidth: available))
+                floatingPanel(width: SplitLayout.panelWidth(paneWidth: available))
             }
         }
     }
@@ -1319,7 +1319,7 @@ struct ResultsPane: View {
     private func floatingPanel(width: CGFloat) -> some View {
         documentRegion(paneWidth: width)
             .frame(width: width)
-            .background(.regularMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
             .overlay(alignment: .leading) { Divider() }
             .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
     }

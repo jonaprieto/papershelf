@@ -165,22 +165,24 @@ struct ReviewInspector: View {
     /// window's minimum width had to reserve for whether or not anyone opened it.
     private var pageAndPanel: some View {
         HStack(spacing: 0) {
-            pageRegion
-            if showBottom && !panelOverlays {
-                Divider()
-                panelColumn.frame(width: Metric.inspectorIdeal)
+            // Wide: the page and the panel side by side. Narrow: the panel keeps its
+            // floor and the page folds away, which costs no horizontal room -- ⏎ opens
+            // the reader, where the page has the whole region to itself.
+            if pageFits {
+                pageRegion
+                if showBottom { Divider() }
+            }
+            if showBottom {
+                panelColumn.frame(width: SplitLayout.panelWidth(paneWidth: paneWidth))
             }
         }
-        .overlay(alignment: .trailing) {
-            if showBottom && panelOverlays {
-                panelColumn
-                    .frame(width: SplitLayout.overlayPanelWidth(paneWidth: paneWidth))
-                    .background(.regularMaterial)
-                    .overlay(alignment: .leading) { Divider() }
-                    .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
-                    .transition(.move(edge: .trailing))
-            }
-        }
+    }
+
+    /// Whether there is room for the page beside the panel. The panel does not shrink
+    /// below `SplitLayout.panelFloor`: asked to, its controls overflow the frame they
+    /// were given and paint over whatever is beside them.
+    private var pageFits: Bool {
+        !showBottom || SplitLayout.showsPageBesidePanel(paneWidth: paneWidth)
     }
 
     /// The page, with the outline beside it where the window is wide enough to hold both.
@@ -200,16 +202,29 @@ struct ReviewInspector: View {
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The page is an AppKit view hosted in SwiftUI, and a hosted view does
+                // not honour the frame it was given while it is being resized: squeezed
+                // narrow, it kept drawing at its old width, straight over the panel
+                // beside it. Clipping is what actually holds it to its pane.
+                .clipped()
                 .background(.quaternary.opacity(0.35))
                 .overlay { nightTint }
                 .overlay(alignment: .topTrailing) { lockedOverlay }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
             }
+            .clipped()
         }
     }
 
     private var panelColumn: some View {
-        panelStack.region(.inspector)
+        panelStack
+            // A frame is not a clip in SwiftUI: without this a panel narrower than its
+            // own controls draws straight over the page beside it.
+            .clipped()
+            // Opaque on purpose: this sits against a page, and a panel of controls with
+            // paragraphs showing through it is unreadable in both directions.
+            .background(Color(nsColor: .windowBackgroundColor))
+            .region(.inspector)
     }
 
     private var panelStack: some View {
@@ -686,6 +701,11 @@ struct PDFPreview: NSViewRepresentable {
 
     func makeNSView(context: Context) -> FitWidthPDFView {
         let view = FitWidthPDFView()
+        // An NSView does not clip its content to its own bounds, so a PDF squeezed by the
+        // pane beside it went on drawing at the width it had a moment ago -- straight over
+        // the inspector. SwiftUI's own `.clipped()` cannot fix that: the page is a real
+        // AppKit view, not something SwiftUI rasterises.
+        view.clipsToBounds = true
         // autoScales fits the whole page and centres it, which is the opposite of what a
         // page of text wants.
         view.autoScales = false

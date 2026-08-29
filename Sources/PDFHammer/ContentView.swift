@@ -840,13 +840,6 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            SettingsLink {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .tip("Everything you set once, in a window of its own", key: "⌘,")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
             Button {
                 chrome.reading.toggle()
             } label: {

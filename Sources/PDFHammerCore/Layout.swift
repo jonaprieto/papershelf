@@ -127,11 +127,26 @@ public extension SplitLayout {
         paneWidth < inspectorOverlaysBelow
     }
 
-    /// How wide the inspector panel is drawn when it overlays the page. Its ideal width
-    /// where that leaves a readable page behind it, and never more than the pane has.
-    static func overlayPanelWidth(paneWidth: CGFloat) -> CGFloat {
+    /// The narrowest the inspector panel is still worth drawing: a name field, a row of
+    /// keyed buttons and a tab bar. Squeezed below this it does not shrink -- its contents
+    /// overflow the frame they were given and paint over whatever is beside them, which is
+    /// how a panel laid out at 151 points came to draw 280 points wide across the page.
+    static let panelFloor: CGFloat = 260
+
+    /// Whether a pane this wide can hold the page and the panel at once.
+    static func showsPageBesidePanel(paneWidth: CGFloat) -> Bool {
+        paneWidth >= panelFloor + previewFloorBesideContents + dividerBeforeInspector
+    }
+
+    /// How wide the inspector panel is drawn in a pane of this width.
+    ///
+    /// Its ideal where there is room, never less than its floor, and the whole pane when
+    /// there is not room for both -- at which point the page is the thing that folds. It
+    /// costs no horizontal room to fold: the reader opens it across the whole region.
+    static func panelWidth(paneWidth: CGFloat) -> CGFloat {
         let ideal = panelReserved - dividerBeforeInspector
-        return max(0, min(ideal, paneWidth - previewFloorBesideContents))
+        guard showsPageBesidePanel(paneWidth: paneWidth) else { return max(0, paneWidth) }
+        return max(panelFloor, min(ideal, paneWidth - previewFloorBesideContents))
     }
 
     /// What the detail side of the window has to be at least. Two panes and a divider

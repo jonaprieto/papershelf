@@ -91,8 +91,9 @@ final class LayoutTests: XCTestCase {
         // Neither optional pane buys itself any window: both fold instead. Where the
         // panel would not fit beside the page it is drawn over it, at a width that still
         // leaves a page behind it.
-        XCTAssertLessThan(SplitLayout.overlayPanelWidth(paneWidth: SplitLayout.contentFloor),
-                          SplitLayout.contentFloor)
+        // At the page's own floor there is no room for both, so the panel takes the pane
+        // and the page folds rather than the window growing to fit them.
+        XCTAssertFalse(SplitLayout.showsPageBesidePanel(paneWidth: SplitLayout.contentFloor))
         XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: SplitLayout.contentFloor))
     }
 
@@ -214,17 +215,40 @@ final class FoldingTests: XCTestCase {
         XCTAssertGreaterThan(SplitLayout.inspectorOverlaysBelow, SplitLayout.sidebarOverlaysBelow)
     }
 
-    func testAnOverlaidPanelNeverCoversThePageEntirely() {
-        for width in stride(from: 200.0, through: 1000.0, by: 11.0) {
-            let panel = SplitLayout.overlayPanelWidth(paneWidth: width)
+    /// Where both are drawn, the panel never eats the page's floor.
+    func testThePageKeepsItsFloorWhereverBothAreDrawn() {
+        for width in stride(from: 200.0, through: 1600.0, by: 11.0) {
+            let panel = SplitLayout.panelWidth(paneWidth: width)
             XCTAssertGreaterThanOrEqual(panel, 0, "width=\(width)")
-            XCTAssertLessThanOrEqual(panel, max(0, width - SplitLayout.previewFloorBesideContents),
+            guard SplitLayout.showsPageBesidePanel(paneWidth: width) else {
+                XCTAssertEqual(panel, width, "the panel takes the pane when the page folds")
+                continue
+            }
+            XCTAssertLessThanOrEqual(panel, width - SplitLayout.previewFloorBesideContents,
                                      "width=\(width)")
         }
     }
 
-    func testAnOverlaidPanelKeepsItsIdealWidthWhenThereIsRoom() {
-        XCTAssertEqual(SplitLayout.overlayPanelWidth(paneWidth: 960),
+    /// The bug this rule exists for: a panel laid out at 151 points drew 280 points wide,
+    /// because its own controls do not shrink, and painted over the page beside it.
+    func testThePanelIsNeverSqueezedBelowWhatItsControlsNeed() {
+        for width in stride(from: 200.0, through: 1600.0, by: 7.0) {
+            let panel = SplitLayout.panelWidth(paneWidth: width)
+            XCTAssertTrue(panel >= SplitLayout.panelFloor || panel == width,
+                          "width=\(width) panel=\(panel)")
+        }
+    }
+
+    func testThePanelKeepsItsIdealWidthWhenThereIsRoom() {
+        XCTAssertEqual(SplitLayout.panelWidth(paneWidth: 960),
                        SplitLayout.panelReserved - SplitLayout.dividerBeforeInspector)
+    }
+
+    /// Under the width that holds both, the page is the one that folds -- it costs no
+    /// horizontal room to fold, because the reader opens it across the whole region.
+    func testThePageFoldsBeforeThePanelDoes() {
+        XCTAssertFalse(SplitLayout.showsPageBesidePanel(paneWidth: 291))
+        XCTAssertEqual(SplitLayout.panelWidth(paneWidth: 291), 291)
+        XCTAssertTrue(SplitLayout.showsPageBesidePanel(paneWidth: 401))
     }
 }
