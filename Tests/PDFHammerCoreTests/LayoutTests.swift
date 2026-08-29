@@ -140,8 +140,8 @@ final class LayoutTests: XCTestCase {
     }
 
     func testTheContentsRailNarrowsRatherThanSqueezingThePageAway() {
-        let width = SplitLayout.contentsRailWidth(inspectorWidth: 300)
-        XCTAssertEqual(width, 300 - SplitLayout.previewFloorBesideContents)
+        let width = SplitLayout.contentsRailWidth(inspectorWidth: 400)
+        XCTAssertEqual(width, 400 - SplitLayout.previewFloorBesideContents)
         XCTAssertGreaterThan(width, 0, "a rail with no width is not a table of contents")
     }
 
@@ -244,11 +244,17 @@ final class FoldingTests: XCTestCase {
                        SplitLayout.panelReserved - SplitLayout.dividerBeforeInspector)
     }
 
+    func testTheInspectorDoesNotCoverTheShelfWhenBothFit() {
+        XCTAssertFalse(SplitLayout.inspectorOverlays(paneWidth: 890))
+        XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: 500))
+        XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: 400))
+    }
+
     /// Under the width that holds both, the page is the one that folds -- it costs no
     /// horizontal room to fold, because the reader opens it across the whole region.
     func testThePageFoldsBeforeThePanelDoes() {
-        XCTAssertFalse(SplitLayout.showsPageBesidePanel(paneWidth: 291))
-        XCTAssertEqual(SplitLayout.panelWidth(paneWidth: 291), 291)
-        XCTAssertTrue(SplitLayout.showsPageBesidePanel(paneWidth: 401))
+        XCTAssertFalse(SplitLayout.showsPageBesidePanel(paneWidth: 560))
+        XCTAssertEqual(SplitLayout.panelWidth(paneWidth: 560), 560)
+        XCTAssertTrue(SplitLayout.showsPageBesidePanel(paneWidth: 561))
     }
 }

@@ -63,10 +63,9 @@ public enum SplitLayout {
         contentFloor + dividerBeforeInspector + contentFloor
     }
 
-    /// A page still worth looking at beside an open contents rail. Less than the browser's
-    /// floor on purpose: this is the case where the window is already short of room, and a
-    /// page squeezed to this is better than a pane hanging off the edge of the window.
-    public static let previewFloorBesideContents: CGFloat = 140
+    /// The smallest readable PDF preview beside an inspector. Below this, the inspector
+    /// overlays the page rather than turning a document into an unreadable thumbnail.
+    public static let previewFloorBesideContents: CGFloat = 300
 
     /// The rail's drawn width inside an inspector this wide.
     ///
@@ -110,10 +109,11 @@ public extension SplitLayout {
     /// Below this the contents rail folds into a popover under its toolbar button.
     static let contentsFoldsBelow: CGFloat = 1100
     /// Below this the inspector panel is drawn over the page rather than beside it.
-    static let inspectorOverlaysBelow: CGFloat = 1000
+    static let inspectorOverlaysBelow: CGFloat = panelFloor + previewFloorBesideContents
+        + dividerBeforeInspector
     /// Below this the sidebar is an overlay. The platform's split view does this itself;
     /// the number is here so the rest of the app can agree about when it happens.
-    static let sidebarOverlaysBelow: CGFloat = 900
+    static let sidebarOverlaysBelow: CGFloat = 360
 
     /// The smallest window the app will open at, and the smallest it can be dragged to.
     static let windowFloorWidth: CGFloat = 640
