@@ -18,6 +18,7 @@ struct MarkRow: View {
     var documentTitle: String = ""
 
     @State private var editing = false
+    @State private var hovering = false
     @State private var text = ""
     @AppStorage("offerChatGPT") private var offerChatGPT = true
     @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
@@ -78,7 +79,7 @@ struct MarkRow: View {
                 }
                 Spacer(minLength: 0)
 
-                if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
+                if hovering, ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
                    !mark.quoted.isEmpty || !mark.note.isEmpty {
                     Menu {
                         if offerChatGPT {
@@ -100,19 +101,24 @@ struct MarkRow: View {
                     .tip("Send this passage to ChatGPT. Open starts a new conversation; "
                          + "copy is for one you already have going.")
                 }
-                Button {
-                    text = mark.note
-                    editing.toggle()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.tertiary)
-                .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
-                Button(action: remove) { Image(systemName: "trash") }
+                // Only under the pointer. Three icons on every mark turned a column of
+                // quotations into a column of buttons, and none of them is needed until
+                // you are looking at the mark they belong to.
+                if hovering || editing {
+                    Button {
+                        text = mark.note
+                        editing.toggle()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.tertiary)
-                    .tip("Remove this mark from the file")
+                    .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
+                    Button(action: remove) { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.tertiary)
+                        .tip("Remove this mark from the file")
+                }
             }
 
             if editing {
@@ -136,6 +142,7 @@ struct MarkRow: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.14) : .clear)
         )
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .onTapGesture(perform: jump)
     }
 }

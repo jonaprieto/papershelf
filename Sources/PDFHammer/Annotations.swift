@@ -118,10 +118,20 @@ final class Annotator: ObservableObject {
 
     /// One page's marks. Shared by the slice-at-a-time scan and the whole-document
     /// `refresh` an edit triggers, so the two cannot disagree about what a mark is.
+    /// What counts as a mark: something a reader put on the page.
+    ///
+    /// Not every annotation is one. A paper built by LaTeX carries a Link annotation for
+    /// every citation and cross-reference, and a form carries a Widget for every field;
+    /// listing those in the notes rail buried four real highlights under forty
+    /// hyperlinks. Popup is the tail of a text note rather than a mark of its own.
+    private static let markTypes: Set<String> = [
+        "Highlight", "Underline", "StrikeOut", "Squiggly", "Text", "FreeText", "Ink",
+    ]
+
     private func marks(on page: PDFPage, page number: Int) -> [Mark] {
         page.annotations.compactMap { annotation in
             let type = annotation.type ?? "Note"
-            guard type != "Popup" else { return nil }   // the tail of a text note, not a mark
+            guard Annotator.markTypes.contains(type) else { return nil }
             return Mark(page: number, kind: type, quoted: quotedText(of: annotation, on: page),
                         note: annotation.contents ?? "",
                         colour: annotation.color,
