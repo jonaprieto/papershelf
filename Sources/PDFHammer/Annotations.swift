@@ -40,7 +40,7 @@ final class Annotator: ObservableObject {
     }
 
     struct Mark: Identifiable {
-        let id = UUID()
+        let id: UUID
         let page: Int
         let kind: String
         /// What the mark sits on, read off the page.
@@ -49,6 +49,17 @@ final class Annotator: ObservableObject {
         /// What it was painted with, read back off the annotation.
         let colour: NSColor
         let annotation: PDFAnnotation
+
+        init(id: UUID = UUID(), page: Int, kind: String, quoted: String, note: String,
+             colour: NSColor, annotation: PDFAnnotation) {
+            self.id = id
+            self.page = page
+            self.kind = kind
+            self.quoted = quoted
+            self.note = note
+            self.colour = colour
+            self.annotation = annotation
+        }
     }
 
     weak var view: PDFView?
@@ -63,6 +74,7 @@ final class Annotator: ObservableObject {
     /// write. Recolouring a mark or typing a note used to serialize the whole document on
     /// every keystroke; now a burst of edits costs one write.
     private var saveTask: Task<Void, Never>?
+    private var writeTask: Task<Void, Never>?
     private var unsaved = false
 
     /// The last position written to the library, and the write waiting out a scroll. A
@@ -79,16 +91,22 @@ final class Annotator: ObservableObject {
         self.url = url
         generation &+= 1
         marks = []
+        contents = []
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
         page = 1
         NotificationCenter.default.addObserver(
             self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
         restorePosition()
-        // Cheap: a couple of milliseconds even on a long book, and the rail beside the
-        // page would look broken without it.
-        readContents()
-        startScanningForMarks()
+        // Outline and annotation walks are deferred one run-loop turn. The PDF page can
+        // paint and accept keyboard input before a long book's notes have been indexed.
+        let mine = generation
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, mine == self.generation else { return }
+            self.readContents()
+            self.startScanningForMarks()
+        }
     }
 
     /// Walks the pages for marks a slice at a time, giving the run loop a turn between
@@ -104,20 +122,27 @@ final class Annotator: ObservableObject {
         let mine = generation
         scan = Task { @MainActor [weak self] in
             guard let self, let document = self.view?.document else { return }
+            await Task.yield()
             var found: [Mark] = []
             for index in 0..<document.pageCount {
-                if index % 16 == 15 { await Task.yield() }
+                if index % 4 == 3 { await Task.yield() }
                 guard !Task.isCancelled, mine == self.generation else { return }
                 guard let page = document.page(at: index) else { continue }
                 found.append(contentsOf: self.marks(on: page, page: index + 1))
             }
             guard !Task.isCancelled, mine == self.generation else { return }
             self.marks = found
+            self.scan = nil
         }
     }
 
-    /// One page's marks. Shared by the slice-at-a-time scan and the whole-document
-    /// `refresh` an edit triggers, so the two cannot disagree about what a mark is.
+    private func rescanIfNeeded() {
+        guard scan != nil else { return }
+        startScanningForMarks()
+    }
+
+    /// One page's marks. Keeping this as the single annotation projection means the
+    /// initial scan and any future rescan cannot disagree about what a mark is.
     /// What counts as a mark: something a reader put on the page.
     ///
     /// Not every annotation is one. A paper built by LaTeX carries a Link annotation for
@@ -132,9 +157,10 @@ final class Annotator: ObservableObject {
         page.annotations.compactMap { annotation in
             let type = annotation.type ?? "Note"
             guard Annotator.markTypes.contains(type) else { return nil }
-            return Mark(page: number, kind: type, quoted: quotedText(of: annotation, on: page),
-                        note: annotation.contents ?? "",
-                        colour: annotation.color,
+            let id = marks.first { $0.annotation === annotation }?.id ?? UUID()
+            return Mark(id: id, page: number, kind: type,
+                        quoted: quotedText(of: annotation, on: page),
+                        note: annotation.contents ?? "", colour: annotation.color,
                         annotation: annotation)
         }
     }
@@ -279,21 +305,6 @@ final class Annotator: ObservableObject {
         return (quoted: quoted, page: document.index(for: page) + 1, title: title)
     }
 
-    /// The whole document at once, for the moment right after an edit, where waiting a
-    /// turn of the run loop would show the mark appearing late.
-    func refresh() {
-        guard let document = view?.document else { marks = []; return }
-        // An edit lands on the file already open, so anything the slice-at-a-time scan is
-        // still doing is about to be redundant.
-        scan?.cancel()
-        var found: [Mark] = []
-        for index in 0..<document.pageCount {
-            guard let page = document.page(at: index) else { continue }
-            found.append(contentsOf: marks(on: page, page: index + 1))
-        }
-        marks = found
-    }
-
     /// The text a mark covers, from PDFHammerCore, which is also what the MCP server
     /// reads so that both see the same thing.
     private func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String {
@@ -311,8 +322,8 @@ final class Annotator: ObservableObject {
     /// annotation belongs to a page and cannot span two.
     @discardableResult
     func highlightSelection(colour: NSColor, note: String = "") -> Int {
-        guard let view, let selection = view.currentSelection else { return 0 }
-        var made = 0
+        guard let view, let document = view.document, let selection = view.currentSelection else { return 0 }
+        var madeMarks: [Mark] = []
 
         for page in selection.pages {
             let lines = selection.selectionsByLine()
@@ -336,34 +347,42 @@ final class Annotator: ObservableObject {
                 ]
             }
             page.addAnnotation(mark)
-            made += 1
+            madeMarks.append(Mark(page: document.index(for: page) + 1, kind: "Highlight",
+                                  quoted: PDFHammerCore.quotedText(of: mark, on: page),
+                                  note: mark.contents ?? "", colour: colour,
+                                  annotation: mark))
         }
 
-        guard made > 0 else { return 0 }
+        guard !madeMarks.isEmpty else { return 0 }
+        let wasScanning = scan != nil
+        scan?.cancel()
+        marks.append(contentsOf: madeMarks)
+        if wasScanning { startScanningForMarks() }
         save()
         view.clearSelection()
         hasSelection = false
-        // Force a redraw: the annotations were added to the document, and the view does
-        // not always notice on its own.
-        view.layoutDocumentView()
-        refresh()
-        selectedMark = marks.last?.id
-        return made
+        // Adding an annotation does not require PDFView to lay out every page again.
+        view.setNeedsDisplay(view.bounds)
+        selectedMark = madeMarks.last?.id
+        return madeMarks.count
     }
 
     /// Repaints an existing mark.
     func setColour(_ colour: NSColor, on mark: Mark) {
         mark.annotation.color = colour
         save()
-        view?.layoutDocumentView()
-        refresh()
+        replace(mark, colour: colour)
+        rescanIfNeeded()
+        if let view { view.setNeedsDisplay(view.bounds) }
     }
 
     func remove(_ mark: Mark) {
         mark.annotation.page?.removeAnnotation(mark.annotation)
         if selectedMark == mark.id { selectedMark = nil }
+        marks.removeAll { $0.id == mark.id }
         save()
-        refresh()
+        rescanIfNeeded()
+        if let view { view.setNeedsDisplay(view.bounds) }
     }
 
     /// Clears every mark from the document. Destructive and not undoable, so the caller
@@ -372,18 +391,25 @@ final class Annotator: ObservableObject {
         guard let document = view?.document else { return }
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
-            for annotation in page.annotations { page.removeAnnotation(annotation) }
+            for annotation in page.annotations
+            where Annotator.markTypes.contains(annotation.type ?? "Note") {
+                page.removeAnnotation(annotation)
+            }
         }
         selectedMark = nil
+        scan?.cancel()
+        scan = nil
+        marks.removeAll()
         save()
-        refresh()
+        if let view { view.setNeedsDisplay(view.bounds) }
     }
 
     /// Rewrites the note on an existing mark.
     func setNote(_ text: String, on mark: Mark) {
         mark.annotation.contents = text
         save()
-        refresh()
+        replace(mark, note: text)
+        rescanIfNeeded()
     }
 
     /// Scrolls to a mark and selects the text under it, which is what makes it findable:
@@ -435,10 +461,20 @@ final class Annotator: ObservableObject {
             return
         }
         unsaved = false
-        Task { [weak self] in
+        let previous = writeTask
+        writeTask = Task { [weak self] in
+            _ = await previous?.value
             let failure = await Annotator.persist(data, to: url)
-            await MainActor.run { self?.lastError = failure }
+            self?.lastError = failure
         }
+    }
+
+    private func replace(_ mark: Mark, colour: NSColor? = nil, note: String? = nil) {
+        guard let index = marks.firstIndex(where: { $0.id == mark.id }) else { return }
+        let current = marks[index]
+        marks[index] = Mark(id: current.id, page: current.page, kind: current.kind,
+                            quoted: current.quoted, note: note ?? current.note,
+                            colour: colour ?? current.colour, annotation: current.annotation)
     }
 
     /// Writing through a temporary file means an interrupted save cannot leave a

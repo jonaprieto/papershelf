@@ -59,4 +59,53 @@ final class SelectionHandoffTests: XCTestCase {
         XCTAssertEqual(handoff.page, 2, "page numbers are one-based on the page")
         XCTAssertEqual(handoff.title, "A Book")
     }
+
+    func testHighlightEditsUpdateTheRailWithoutRescanningTheDocument() throws {
+        let document = try makeDocument(["alpha"])
+        let view = PDFView()
+        view.document = document
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("annotator-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(document.write(to: url))
+
+        let annotator = Annotator()
+        annotator.attach(view, url: url)
+        view.currentSelection = try XCTUnwrap(
+            document.findString("alpha", withOptions: []).first)
+
+        XCTAssertEqual(annotator.highlightSelection(colour: .yellow, note: "keep"), 1)
+        XCTAssertEqual(annotator.marks.count, 1)
+        let mark = try XCTUnwrap(annotator.marks.first)
+
+        annotator.setNote("revisit", on: mark)
+        XCTAssertEqual(annotator.marks.first?.note, "revisit")
+        annotator.setColour(.green, on: mark)
+        XCTAssertEqual(annotator.marks.first?.colour, .green)
+        XCTAssertEqual(annotator.marks.first?.note, "revisit")
+
+        annotator.remove(mark)
+        XCTAssertTrue(annotator.marks.isEmpty)
+        annotator.flush()
+    }
+
+    func testRemoveAllMarksLeavesLinksAlone() throws {
+        let document = try makeDocument(["alpha"])
+        let page = try XCTUnwrap(document.page(at: 0))
+        let link = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 40, height: 20),
+                                 forType: .link, withProperties: nil)
+        page.addAnnotation(link)
+        let view = PDFView()
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: URL(fileURLWithPath: "/tmp/annotator-links.pdf"))
+        view.currentSelection = try XCTUnwrap(
+            document.findString("alpha", withOptions: []).first)
+        XCTAssertEqual(annotator.highlightSelection(colour: .yellow), 1)
+
+        annotator.removeAll()
+
+        XCTAssertTrue(page.annotations.contains { $0.type == "Link" })
+        XCTAssertFalse(page.annotations.contains { $0.type == "Highlight" })
+    }
 }

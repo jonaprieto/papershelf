@@ -24,7 +24,7 @@ struct MarkRow: View {
     @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
 
     /// The colour it was actually painted with, whatever palette that came from.
-    private var colour: Color { Color(nsColor: mark.colour ?? .systemYellow) }
+    private var colour: Color { Color(nsColor: mark.colour) }
 
     private var handoffPrompt: String {
         ChatGPTHandoff.prompt(quoted: mark.quoted, note: mark.note, page: mark.page,
@@ -210,7 +210,7 @@ struct NotesRail: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     if addingNote {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Note on the selection")
