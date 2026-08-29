@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Build "PDF Hammer.app" into dist/, ad-hoc signed.
+# Build "PaperShelf.app" into dist/, ad-hoc signed.
 # Pass --install to also copy it into /Applications.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="PDF Hammer"
+APP_NAME="PaperShelf"
 APP="dist/${APP_NAME}.app"
 
 swift build -c release

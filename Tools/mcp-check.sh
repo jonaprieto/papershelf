@@ -11,7 +11,7 @@ FOLDER="$(mktemp -d)"
 trap 'rm -rf "$FOLDER"' EXIT
 
 # A library-shaped scratch database, built straight with sqlite3 rather than through the app,
-# so this script owns every row in it and does not depend on PDF Hammer having been run on
+# so this script owns every row in it and does not depend on PaperShelf having been run on
 # this machine. The schema mirrors Library.swift's own schemaV1 (documents, locations, tags,
 # document_tags, projects, project_members with its section, extracted_text/_fts); a
 # change to that schema is
@@ -110,7 +110,7 @@ printf '%s\n' \
   | "$BIN" 2>/dev/null
 
 # The library-aware tools, with nothing indexed: pointed at a path guaranteed not to exist,
-# independent of whatever real library.sqlite this machine's own copy of PDF Hammer may or
+# independent of whatever real library.sqlite this machine's own copy of PaperShelf may or
 # may not have built. Every one of them must answer politely (isError, not a crash or a
 # JSON-RPC error) rather than trying to create a database of its own.
 printf '%s\n' \

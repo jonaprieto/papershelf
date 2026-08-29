@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Install PDF Hammer as a local plugin for the ChatGPT desktop app.
+# Install PaperShelf as a local plugin for the ChatGPT desktop app.
 #
 # The app reads plugins from a personal marketplace at ~/.agents/plugins/marketplace.json.
 # A plugin may declare an MCP server, and that server may be a local one spoken to over
-# stdio, which is exactly what PDF Hammer already ships inside its bundle. Nothing is
+# stdio, which is exactly what PaperShelf already ships inside its bundle. Nothing is
 # published, nothing is reviewed, and nothing leaves this machine.
 set -euo pipefail
 
@@ -14,9 +14,9 @@ AGENTS="$HOME/.agents/plugins"
 DESTINATION="$HOME/plugins/pdf-hammer"
 LEGACY_DESTINATION="$AGENTS/pdf-hammer"
 MARKETPLACE="$AGENTS/marketplace.json"
-SERVER="/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
+SERVER="/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
 
-[[ -x "$SERVER" ]] || { echo "PDF Hammer is not installed in /Applications. Run ./build.sh --install first." >&2; exit 1; }
+[[ -x "$SERVER" ]] || { echo "PaperShelf is not installed in /Applications. Run ./build.sh --install first." >&2; exit 1; }
 
 mkdir -p "$AGENTS" "$(dirname "$DESTINATION")"
 rm -rf "$DESTINATION" "$LEGACY_DESTINATION"
@@ -59,4 +59,4 @@ PY
 
 echo "Installed to $DESTINATION"
 echo
-echo "Restart the ChatGPT app, then add PDF Hammer from its plugin list."
+echo "Restart the ChatGPT app, then add PaperShelf from its plugin list."

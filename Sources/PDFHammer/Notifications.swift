@@ -73,7 +73,7 @@ enum DuplicateNotifications {
 
     /// Without this delegate opting in, `UNUserNotificationCenter` suppresses a notification
     /// whenever the posting app is already frontmost -- exactly the ordinary case here, since
-    /// the watcher only runs while PDF Hammer is open. Moot everywhere this was tested (see
+    /// the watcher only runs while PaperShelf is open. Moot everywhere this was tested (see
     /// the file-level note), kept for the one real Mac where authorization is ever granted.
     private final class BannerDelegate: NSObject, UNUserNotificationCenterDelegate {
         func userNotificationCenter(

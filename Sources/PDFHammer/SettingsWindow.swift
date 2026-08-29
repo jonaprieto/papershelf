@@ -643,7 +643,7 @@ struct IntegrationSettings: View {
                         }
                     }
                 } else {
-                    Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
+                    Label("No pdf-hammer-mcp next to this build. Install PaperShelf first.",
                           systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Ink.amber)
                         .fixedSize(horizontal: false, vertical: true)

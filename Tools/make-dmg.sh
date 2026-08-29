@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a distributable disk image at dist/PDF-Hammer-<version>.dmg.
+# Builds a distributable disk image at dist/PaperShelf-<version>.dmg.
 #
 # Signing is layered, and each layer changes what someone downloading it sees:
 #
@@ -20,10 +20,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="PDF Hammer"
+APP_NAME="PaperShelf"
 APP="dist/${APP_NAME}.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
-DMG="dist/PDF-Hammer-${VERSION}.dmg"
+DMG="dist/PaperShelf-${VERSION}.dmg"
 
 ./build.sh
 

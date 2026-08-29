@@ -376,11 +376,11 @@ struct SettingsPanel: View {
 
         // Missing a server only blocks (re)install, which needs one to point the plugin
         // at. Removal does not: it must stay reachable even when the plugin was installed
-        // from a build (or a copy of PDF Hammer.app) that is no longer around, otherwise
+        // from a build (or a copy of PaperShelf.app) that is no longer around, otherwise
         // there would be no way out of Settings short of deleting files by hand.
         let serverFound = ChatGPTPlugin.serverExecutableURL() != nil
         if !serverFound {
-            Label("No pdf-hammer-mcp next to this build. Install PDF Hammer.app first.",
+            Label("No pdf-hammer-mcp next to this build. Install PaperShelf first.",
                   systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(Ink.amber)
                 .fixedSize(horizontal: false, vertical: true)

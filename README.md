@@ -1,6 +1,6 @@
-<img src="docs/icon.png" width="128" alt="Paper Shelf">
+<img src="docs/icon.png" width="128" alt="PaperShelf">
 
-# Paper Shelf
+# PaperShelf
 
 A macOS library for keeping PDFs named, searchable, annotated, and easy to read.
 It can also safely normalize filenames, preserve originals, and work with local AI.
@@ -10,7 +10,7 @@ Built on PDFKit and SwiftUI. No third-party dependencies.
 ./build.sh --install
 ```
 
-Builds `dist/PDF Hammer.app`, ad-hoc signs it, and copies it to `/Applications`.
+Builds `dist/PaperShelf.app`, ad-hoc signs it, and copies it to `/Applications`.
 
 ## Distributing it
 
@@ -18,7 +18,7 @@ Builds `dist/PDF Hammer.app`, ad-hoc signs it, and copies it to `/Applications`.
 ./Tools/make-dmg.sh
 ```
 
-Produces `dist/PDF-Hammer-<version>.dmg` with the app and a drag-to-`/Applications`
+Produces `dist/PaperShelf-<version>.dmg` with the app and a drag-to-`/Applications`
 symlink, and prints its SHA-256.
 
 Signing is layered, and each layer changes what someone who downloads it sees:
@@ -339,23 +339,23 @@ composed first, so an accent written as one code point still matches one written
 
 ## Talking to it from an editor
 
-PDF Hammer ships an MCP server, so Claude Code, Codex and anything else that speaks the
+PaperShelf ships an MCP server, so Claude Code, Codex and anything else that speaks the
 Model Context Protocol can search your library, read a document as Markdown, build a
 bibliography and find duplicates. It is a separate binary inside the app bundle at
-`/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp`, and it holds no state: the
+`/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp`, and it holds no state: the
 protocol has no sessions, so every call names the folder it works on.
 
 Claude Code:
 
 ```
-claude mcp add pdf-hammer -- "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
+claude mcp add pdf-hammer -- "/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
 ```
 
 Codex, in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.pdf-hammer]
-command = "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp"
+command = "/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
 ```
 
 The tools are `list_documents`, `search_documents`, `read_document`, `bibliography` and
@@ -382,7 +382,7 @@ given again each launch.
 ## ChatGPT
 
 The ChatGPT desktop app reads plugins from a personal marketplace on this machine, and a
-plugin may declare an MCP server spoken to over stdio. PDF Hammer already ships one, so it
+plugin may declare an MCP server spoken to over stdio. PaperShelf already ships one, so it
 can be installed as a local plugin: nothing is published, nothing is reviewed, and nothing
 leaves the machine.
 
@@ -390,7 +390,7 @@ leaves the machine.
 Tools/install-chatgpt-plugin.sh
 ```
 
-Then restart ChatGPT and add PDF Hammer from its plugin list. It can search the library,
+Then restart ChatGPT and add PaperShelf from its plugin list. It can search the library,
 read a document or a single page, list what you highlighted, and build a bibliography.
 
 Note that this is the desktop app's own plugin system. ChatGPT on the web connects to MCP

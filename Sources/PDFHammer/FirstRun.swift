@@ -19,7 +19,7 @@ struct FirstRun: View {
                     .foregroundStyle(.tint)
                 Text("A calm home for your PDFs")
                     .font(.title2.weight(.semibold))
-                Text("Keep papers named, searchable, and annotated. Point Paper Shelf at the "
+                Text("Keep papers named, searchable, and annotated. Point PaperShelf at the "
                      + "folders your PDFs already live in; nothing moves until you say so.")
                     .font(.callout)
                     .foregroundStyle(.secondary)

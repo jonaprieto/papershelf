@@ -1,6 +1,6 @@
 import Foundation
 
-/// Installing PDF Hammer as a local plugin for the ChatGPT desktop app, in Swift, so
+/// Installing PaperShelf as a local plugin for the ChatGPT desktop app, in Swift, so
 /// Settings can do it without shelling out to `Tools/install-chatgpt-plugin.sh`.
 ///
 /// The app reads plugins from a personal marketplace at `~/.agents/plugins/marketplace.json`.
@@ -58,7 +58,7 @@ enum ChatGPTPlugin {
                      + "Fix or remove that file, then try again."
             case .serverNotFound:
                 return "No pdf-hammer-mcp was found next to this build, so there is nothing "
-                     + "for the plugin to point at. Build and install PDF Hammer.app first."
+                     + "for the plugin to point at. Build and install PaperShelf first."
             }
         }
     }
@@ -216,17 +216,17 @@ enum ChatGPTPlugin {
     /// name with an empty line under it, next to entries that say what they do.
     static func pluginManifestData(hasLogo: Bool, installedAt: Date = Date()) throws -> Data {
         var interface: [String: Any] = [
-            "displayName": "Paper Shelf",
+            "displayName": "PaperShelf",
             "shortDescription": "Search and cite your own PDFs",
             "longDescription":
-                "Paper Shelf keeps a local index of the papers and books on your Mac. This "
+                "PaperShelf keeps a local index of the papers and books on your Mac. This "
                 + "plugin lets ChatGPT read it: search by title, author or full text, open a "
                 + "document or a single page as Markdown, list what you highlighted and the "
                 + "notes you left, pull a BibTeX entry, find duplicate copies of the same "
                 + "work, and browse your tags and reading projects. Everything runs against "
                 + "the app's own MCP server on your machine, so the files never leave it and "
-                + "nothing is uploaded. Requires Paper Shelf to be installed.",
-            "developerName": "Paper Shelf",
+                + "nothing is uploaded. Requires PaperShelf to be installed.",
+            "developerName": "PaperShelf",
             "category": "Education & Research",
             "capabilities": ["Read", "Research", "Local processing"],
             "websiteURL": "https://github.com/jonaprieto/pdf-hammer",
@@ -245,7 +245,7 @@ enum ChatGPTPlugin {
             "name": "pdf-hammer",
             "version": cachebustedVersion(installedAt: installedAt),
             "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
-            "author": ["name": "Paper Shelf"],
+            "author": ["name": "PaperShelf"],
             "homepage": "https://github.com/jonaprieto/pdf-hammer",
             "repository": "https://github.com/jonaprieto/pdf-hammer",
             "keywords": ["pdf", "research", "papers", "books", "bibliography",

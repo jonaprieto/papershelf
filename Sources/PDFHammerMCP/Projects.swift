@@ -36,7 +36,7 @@ final class LibraryReader {
 
     /// `PDFHAMMER_LIBRARY_PATH` overrides the location, for `Tools/mcp-check.sh`: a check
     /// script needs a scratch database it controls, not whatever real library this machine's
-    /// copy of PDF Hammer may or may not have built. Production callers never set it, so they
+/// copy of PaperShelf may or may not have built. Production callers never set it, so they
     /// get exactly the path `Library.swift` itself resolves to.
     private static func databaseURL() -> URL? {
         if let overridden = ProcessInfo.processInfo.environment["PDFHAMMER_LIBRARY_PATH"] {
@@ -310,7 +310,7 @@ private func columnInt(_ statement: OpaquePointer, _ index: Int32) -> Int? {
 /// agent reading it knows what to do next.
 func openLibraryOrFail() throws -> LibraryReader {
     guard let reader = try LibraryReader.open() else {
-        throw ToolFailure("No library has been indexed yet. Open PDF Hammer and add a folder "
+        throw ToolFailure("No library has been indexed yet. Open PaperShelf and add a folder "
             + "to the library, or use list_documents / search_documents on a folder path "
             + "directly.")
     }

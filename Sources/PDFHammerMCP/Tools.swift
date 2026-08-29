@@ -44,7 +44,7 @@ let libraryTools: [Tool] = [
         name: "list_documents",
         title: "List documents",
         description: "List the PDFs in a folder with their page count, size, embedded "
-            + "metadata, and the name PDF Hammer would give each one.",
+            + "metadata, and the name PaperShelf would give each one.",
         inputSchema: folderSchema,
         run: { arguments in
             let items = try scan(root: try requireString(arguments, "folder"),
@@ -276,7 +276,7 @@ let libraryTools: [Tool] = [
     ),
 
     // The tools above scan a folder fresh on every call, which is all that is possible
-    // before anything has been indexed. The ones below read the library PDF Hammer itself
+    // before anything has been indexed. The ones below read the library PaperShelf itself
     // builds while indexing (projects, tags), through a read-only connection opened in
     // Projects.swift; each one reports a missing library politely (isError, not a crash)
     // rather than assuming one exists.
@@ -351,7 +351,7 @@ let libraryTools: [Tool] = [
         name: "search_project",
         title: "Search within a project",
         description: "Full-text search the extracted text of the documents in one reading "
-            + "project. Only documents PDF Hammer has already extracted text for can match.",
+            + "project. Only documents PaperShelf has already extracted text for can match.",
         inputSchema: [
             "type": "object",
             "properties": [

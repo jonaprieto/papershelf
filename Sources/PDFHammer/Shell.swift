@@ -48,7 +48,7 @@ struct PDFHammerApp: App {
     @StateObject private var chrome = Chrome()
 
     var body: some Scene {
-        Window("Paper Shelf", id: "main") {
+        Window("PaperShelf", id: "main") {
             ContentView(chrome: chrome)
         }
         .commands {
