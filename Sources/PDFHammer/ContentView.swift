@@ -858,11 +858,9 @@ struct ContentView: View {
     }
 
     private func countOfFiles(in node: ExplorerNode) -> Int {
-        guard let children = node.children else { return 1 }
-        return children.reduce(0) { $0 + countOfFiles(in: $1) }
+        node.documentCount
     }
 
-    @ViewBuilder
     private func refreshSessionSpend() async {
         guard let library = Library.shared else { return }
         guard let entries = try? await library.spendEntries(since: sessionStart) else { return }
@@ -1159,6 +1157,7 @@ struct ExplorerNode: Identifiable {
     let url: URL
     /// `Item.key`, or nil for a folder.
     let itemKey: String?
+    let documentCount: Int
     var children: [ExplorerNode]?
 }
 
@@ -1186,15 +1185,18 @@ func buildExplorerTree(_ items: [Item]) -> [ExplorerNode] {
 
         func node() -> ExplorerNode {
             guard itemKey == nil else {
-                return ExplorerNode(id: itemKey!, name: name, url: url, itemKey: itemKey, children: nil)
+                return ExplorerNode(id: itemKey!, name: name, url: url, itemKey: itemKey,
+                                   documentCount: 1, children: nil)
             }
             // Folders first, then alphabetical, the way Finder lists a folder.
             let sortedChildren = order.map { children[$0]! }.sorted { lhs, rhs in
                 if (lhs.itemKey == nil) != (rhs.itemKey == nil) { return lhs.itemKey == nil }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
+            let builtChildren = sortedChildren.map { $0.node() }
             return ExplorerNode(id: url.path, name: name, url: url, itemKey: nil,
-                                children: sortedChildren.map { $0.node() })
+                                documentCount: builtChildren.reduce(0) { $0 + $1.documentCount },
+                                children: builtChildren)
         }
     }
 

@@ -1238,15 +1238,13 @@ struct ResultsPane: View {
     }
 
     private func catalogueColumns(for width: CGFloat) -> Int {
-        let spacing: CGFloat = 18
-        let ideal: CGFloat = 168
-            return Metric.catalogueColumns(for: width)
+        Metric.catalogueColumns(for: width)
     }
 
     private func catalogueGrid(columns: Int) -> some View {
         let layout = Array(repeating: GridItem(.flexible(), spacing: 18), count: columns)
         let keys = visibleKeys
-        let shown = keys.map { visible in runner.results.filter { visible.contains($0.key) } } ?? runner.results
+        let shown = runner.results.filter { keys?.contains($0.key) ?? true }
         return ScrollViewReader { scroll in
             ScrollView {
                 LazyVGrid(columns: layout, alignment: .leading, spacing: 18) {
@@ -1431,7 +1429,6 @@ struct ResultsPane: View {
 
     // MARK: Review inspector
 
-    @ViewBuilder
     /// The group the selected file belongs to, if it is one of a set of copies.
     private var selectedDuplicateGroup: DuplicateGroup? {
         guard mode == .duplicates, let selected else { return nil }
