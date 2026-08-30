@@ -674,8 +674,9 @@ struct IntegrationSettings: View {
 
             Section {
                 Picker("Converter", selection: $defaultConverter) {
-                    Text("Automatic (best installed)").tag("")
+                    Text("Automatic (best for the document)").tag("")
                     Text("Built-in reader").tag(builtInReaderName)
+                    Text("Built-in OCR").tag(builtInOCRName)
                     ForEach(markdownConverters, id: \.name) { converter in
                         Text(installed.contains(converter.name)
                              ? converter.name
@@ -686,11 +687,15 @@ struct IntegrationSettings: View {
             } header: {
                 Text("Converting to Markdown")
             } footer: {
-                Text("The built-in reader never leaves the app and needs nothing "
-                     + "installed; the others are found on your PATH and are better on "
-                     + "scanned pages and equations. Automatic takes the best one you "
-                     + "have. This is what the conversion sheet starts on, and what a "
-                     + "reading project reads its own documents with.")
+                Text("Two of these need nothing installed. The reader takes the "
+                     + "document's own text layer, which is exact and instant; the OCR "
+                     + "reads the pages as pictures with the recognition built into "
+                     + "macOS, which is the only one here that can read a scan. The rest "
+                     + "are found on your PATH and keep more of the layout. Automatic "
+                     + "picks per document: an installed converter, then the text layer, "
+                     + "then OCR for a document that has none. This is what the "
+                     + "conversion sheet starts on, and what a reading project reads its "
+                     + "own documents with.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }

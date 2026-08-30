@@ -69,7 +69,7 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             }
             guard !work.isEmpty else { return 0 }
             let read = await readTextForProject(work, passwords: passwords(),
-                                                using: converter(named: converterName()))
+                                                using: engine(named: converterName()))
             guard !read.isEmpty else { return 0 }
             try await library.setExtractedText(read)
             return read.count
@@ -137,13 +137,13 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
 /// empty means "opened, and has no text to quote", which is a permanent answer, and a
 /// file that was unreadable today should be tried again.
 func readTextForProject(_ work: [(id: String, url: URL)], passwords: [String],
-                        using converter: MarkdownConverter?) async
+                        using engine: MarkdownEngine) async
     -> [(documentID: String, markdown: String)] {
     await Task.detached(priority: .userInitiated) {
         var stored: [(documentID: String, markdown: String)] = []
         for job in work {
             guard PDFDocument(url: job.url) != nil else { continue }
-            let text = markdown(for: job.url, passwords: passwords, using: converter).text
+            let text = markdown(for: job.url, passwords: passwords, using: engine).text
             stored.append((documentID: job.id, markdown: text))
         }
         return stored

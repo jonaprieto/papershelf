@@ -406,7 +406,7 @@ final class ProjectCorpusTests: XCTestCase {
         let library = try library()
         let record = try await library.indexDocuments([indexInput(for: file)]).first!
 
-        let read = await readTextForProject([(record.id, file)], passwords: [], using: nil)
+        let read = await readTextForProject([(record.id, file)], passwords: [], using: .reader)
 
         let text = try XCTUnwrap(read.first?.markdown)
         XCTAssertTrue(text.contains("Replicas converge"), "the document's own words survive")

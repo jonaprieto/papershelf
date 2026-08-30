@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import Vision
 
 /// An external tool that turns a PDF into Markdown.
 ///
@@ -74,43 +75,124 @@ public func availableConverters() -> [(MarkdownConverter, URL)] {
 /// string, which means "whatever is best installed right now".
 public let builtInReaderName = "built-in"
 
-/// The converter a stored preference names, or nil for the built-in reader.
+/// The name for reading the pages as pictures, with the OCR that ships with macOS.
+public let builtInOCRName = "built-in-ocr"
+
+/// How a document is turned into Markdown.
 ///
-/// Three answers, not two: a name picks that tool if it is installed, `builtInReaderName`
-/// picks the reader inside the app on purpose, and an empty preference, which is what
-/// every install starts with, means take the best tool that happens to be installed. The
-/// last one is why installing MarkItDown is enough to get better Markdown out of a
-/// project without first going to find a setting.
-public func converter(named name: String) -> MarkdownConverter? {
-    if name == builtInReaderName { return nil }
-    let installed = availableConverters()
-    guard !name.isEmpty else { return installed.first?.0 }
-    return installed.first { $0.0.name == name }?.0
+/// Two of these need nothing installed. `reader` is the document's own text layer, which
+/// is exact and instant and is what most PDFs have; `ocr` reads the pages as pictures
+/// with Vision, which is the only thing in this list that can read a scan, and it ships
+/// with the operating system rather than being a Python program someone has to find. That
+/// is what makes the app useful on a scanned shelf out of the box.
+public enum MarkdownEngine: Sendable, Equatable {
+    /// The best answer available for this particular document: an installed converter if
+    /// there is one, then the text layer, then OCR for a page that has no text layer.
+    case automatic
+    case reader
+    case ocr
+    case external(MarkdownConverter)
+
+    public var label: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .reader: return "the built-in reader"
+        case .ocr: return "the built-in OCR"
+        case .external(let converter): return converter.name
+        }
+    }
+}
+
+/// The engine a stored preference names.
+///
+/// An empty preference, which is what every install starts with, means automatic: take
+/// the best tool installed, and where none is, read the document here. The two built-in
+/// names pick one of those on purpose, and any other name picks that external tool when
+/// it is installed, falling back to automatic when it is not, since a preference naming
+/// a tool somebody has since uninstalled should not turn into a worse answer silently.
+public func engine(named name: String) -> MarkdownEngine {
+    switch name {
+    case "": return .automatic
+    case builtInReaderName: return .reader
+    case builtInOCRName: return .ocr
+    default:
+        guard let found = availableConverters().first(where: { $0.0.name == name })?.0
+        else { return .automatic }
+        return .external(found)
+    }
 }
 
 /// One PDF as Markdown, and the name of whatever produced it.
 ///
-/// Runs the external tool when there is one, since a layout-aware converter keeps the
-/// headings and tables the built-in reader cannot recover, and falls back to reading the
-/// document directly when the tool is missing, fails, or answers with nothing. The
-/// fallback is the point: it needs nothing installed and works on every file the app can
-/// open, so a caller never has to decide what to do about a converter that is not there.
+/// Every path here ends in an answer. An external tool is used when it is installed, since
+/// a layout-aware converter keeps headings and tables the text layer cannot describe; a
+/// document with a text layer is read from it, which is exact and costs nothing; and a
+/// document without one is read as pictures, which is the only way a scan becomes text at
+/// all. A caller never has to decide what to do about a tool that is not there.
 ///
-/// Blocking: it waits on another process. Call it off the main actor.
-public func markdown(for url: URL, passwords: [String], using converter: MarkdownConverter?,
+/// Blocking: it waits on another process, or on OCR. Call it off the main actor.
+public func markdown(for url: URL, passwords: [String], using engine: MarkdownEngine,
                      title: String? = nil) -> (text: String, tool: String) {
     let fallbackTitle = title ?? (url.lastPathComponent as NSString).deletingPathExtension
-    guard let converter, let tool = locate(converter.executable) else {
-        return (markdownFromPDF(url: url, passwords: passwords, title: fallbackTitle),
-                "the built-in reader")
+
+    func read() -> (String, String) {
+        (markdownFromPDF(url: url, passwords: passwords, title: fallbackTitle),
+         "the built-in reader")
     }
-    if let text = runConverter(tool: tool, converter: converter, source: url), !text.isEmpty {
-        return (text, converter.name)
+    func recognise(after note: String = "") -> (String, String) {
+        let text = markdownFromScan(url: url, passwords: passwords, title: fallbackTitle)
+        return (text, note.isEmpty ? "the built-in OCR" : "the built-in OCR, \(note)")
     }
-    // A tool that is installed can still fail on a particular file, and an empty answer is
-    // worse than the one that always works.
-    return (markdownFromPDF(url: url, passwords: passwords, title: fallbackTitle),
-            "the built-in reader, after \(converter.name) returned nothing")
+
+    switch engine {
+    case .reader:
+        return read()
+    case .ocr:
+        return recognise()
+    case .external(let converter):
+        guard let tool = locate(converter.executable) else { return read() }
+        if let text = runConverter(tool: tool, converter: converter, source: url), !text.isEmpty {
+            return (text, converter.name)
+        }
+        // A tool that is installed can still fail on a particular file, and an empty
+        // answer is worse than the one that always works.
+        let fallback = read()
+        return (fallback.0, "the built-in reader, after \(converter.name) returned nothing")
+    case .automatic:
+        if let converter = availableConverters().first?.0 {
+            return markdown(for: url, passwords: passwords, using: .external(converter),
+                            title: fallbackTitle)
+        }
+        // The text layer where there is one: it is the document's own words, exactly, and
+        // it takes no time. OCR only for what has none, which is what a scan is.
+        let direct = read()
+        guard !hasReadableText(url: url, passwords: passwords) else { return direct }
+        let recognised = recognise(after: "since this document has no text layer")
+        return recognised.0.count > direct.0.count ? recognised : direct
+    }
+}
+
+/// Whether the document carries its own text, which decides whether reading it is a
+/// matter of asking or a matter of looking.
+///
+/// Judged on the first few pages: a scan is a scan from its first page, and opening every
+/// page of a long book to find out costs more than the answer is worth.
+public func hasReadableText(url: URL, passwords: [String], pages: Int = 3) -> Bool {
+    guard let document = PDFDocument(url: url) else { return false }
+    if document.isLocked {
+        for password in passwords where document.unlock(withPassword: password) { break }
+    }
+    guard !document.isLocked else { return false }
+    var found = 0
+    for index in 0..<min(pages, document.pageCount) {
+        found += document.page(at: index)?.string?
+            .trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0
+        // A page of a scanned book often carries a stray character or two from a stamp or
+        // a page number, so "has text" has to mean more than "is not empty". A short
+        // sentence is text; a page number is not.
+        if found > 20 { return true }
+    }
+    return false
 }
 
 /// Runs one converter over one file, in a scratch directory of its own.
@@ -144,6 +226,77 @@ public func runConverter(tool: URL, converter: MarkdownConverter, source: URL) -
                                   encoding: .utf8) { return text }
     }
     return nil
+}
+
+/// How many pages OCR reads before it stops.
+///
+/// Recognition is a second or so a page, so a four-hundred-page scan would be several
+/// minutes of somebody waiting. Thirty pages is more than enough to search, to quote and
+/// to tell what a document is, which is what this text is for.
+public let ocrPageLimit = 30
+
+/// The pages read as pictures, with the text recognition that ships with macOS.
+///
+/// This is the engine that makes a scanned shelf useful without installing anything: a
+/// PDF with no text layer is invisible to every other reader here, and to search, and to
+/// a project's questions. Vision is on every Mac this app runs on, so it is always
+/// available, unlike the Python converters, and it is good enough on printed pages to be
+/// worth the wait.
+///
+/// Blocking, and slow by nature. Call it off the main actor.
+public func markdownFromScan(url: URL, passwords: [String], title: String? = nil,
+                             pageLimit: Int = ocrPageLimit) -> String {
+    guard let document = PDFDocument(url: url) else { return "" }
+    if document.isLocked {
+        for password in passwords where document.unlock(withPassword: password) { break }
+    }
+    guard !document.isLocked else { return "" }
+
+    let name = title ?? (url.lastPathComponent as NSString).deletingPathExtension
+    var out = "# \(markdownEscape(name))\n\n"
+    for index in 0..<min(pageLimit, document.pageCount) {
+        guard let page = document.page(at: index) else { continue }
+        let lines = recognisedLines(on: page)
+        guard !lines.isEmpty else { continue }
+        out += "## Page \(index + 1)\n\n"
+        // One paragraph per run of lines, joined the way the reader joins them: OCR
+        // returns a line per line of print, and a page of those is not a paragraph.
+        out += markdownEscape(lines.joined(separator: " ")) + "\n\n"
+    }
+    if document.pageCount > pageLimit {
+        out += "_Read the first \(pageLimit) of \(document.pageCount) pages._\n\n"
+    }
+    return out
+}
+
+/// One page's text, recognised. Nil results are pages Vision could not read, which are
+/// left out rather than reported as empty ones.
+func recognisedLines(on page: PDFPage) -> [String] {
+    let bounds = page.bounds(for: .mediaBox)
+    // Twice the page size: recognition on a page rendered at its own points misses small
+    // print, and this is the cheapest way to give it something to work with.
+    let scale: CGFloat = 2
+    let width = Int(bounds.width * scale)
+    let height = Int(bounds.height * scale)
+    guard width > 0, height > 0,
+          let context = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { return [] }
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.scaleBy(x: scale, y: scale)
+    context.translateBy(x: -bounds.origin.x, y: -bounds.origin.y)
+    page.draw(with: .mediaBox, to: context)
+    guard let image = context.makeImage() else { return [] }
+
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = true
+    let handler = VNImageRequestHandler(cgImage: image, options: [:])
+    guard (try? handler.perform([request])) != nil else { return [] }
+    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
 }
 
 /// True for a line that stands on its own: a contents entry, an index entry, anything

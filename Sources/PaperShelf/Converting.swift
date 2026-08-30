@@ -18,7 +18,7 @@ final class Converting: ObservableObject {
     /// Recomputed on demand rather than cached: someone can install one while the app runs.
     var installed: [(MarkdownConverter, URL)] { availableConverters() }
 
-    func convert(_ item: Item, passwords: [String], using converter: MarkdownConverter?) async {
+    func convert(_ item: Item, passwords: [String], using engine: MarkdownEngine) async {
         guard !working else { return }
         working = true
         defer { working = false }
@@ -29,7 +29,7 @@ final class Converting: ObservableObject {
         // `readTextForProject`), so what a person sees in this sheet and what a question
         // is answered from cannot be produced two different ways.
         let produced = await Task.detached(priority: .userInitiated) {
-            markdown(for: source, passwords: passwords, using: converter, title: title)
+            markdown(for: source, passwords: passwords, using: engine, title: title)
         }.value
         result = produced.text
         usedTool = produced.tool
@@ -72,10 +72,24 @@ struct MarkdownSheet: View {
     @State private var kept = false
 
     private var installed: [(MarkdownConverter, URL)] { converting.installed }
-    /// The same resolution a project uses (see `converter(named:)`): a name picks that
-    /// tool, "built-in" picks the reader here on purpose, and an empty preference takes
-    /// the best tool installed.
-    private var picked: MarkdownConverter? { converter(named: chosen) }
+    /// The same resolution a project uses (see `engine(named:)`): a name picks that
+    /// tool, the two built-in names pick one of those on purpose, and an empty preference
+    /// means take the best answer available for the document in front of you.
+    private var picked: MarkdownEngine { engine(named: chosen) }
+
+    /// What the chosen engine is for, said where it is chosen.
+    private var engineNote: String {
+        switch picked {
+        case .automatic:
+            return "The best answer for this document: an installed converter, its own "
+                 + "text layer, or OCR for a scan that has none."
+        case .reader: return "Reads the document's own text. Needs nothing installed."
+        case .ocr:
+            return "Reads the pages as pictures, with the recognition that ships with "
+                 + "macOS. The only one of these that can read a scan."
+        case .external(let converter): return converter.note
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -87,15 +101,15 @@ struct MarkdownSheet: View {
 
             HStack(spacing: 8) {
                 Picker("Converter", selection: $chosen) {
-                    Text("Automatic (best installed)").tag("")
+                    Text("Automatic (best for the document)").tag("")
                     Text("Built-in reader").tag(builtInReaderName)
+                    Text("Built-in OCR").tag(builtInOCRName)
                     ForEach(installed, id: \.0.name) { converter, _ in
                         Text(converter.name).tag(converter.name)
                     }
                 }
                 .frame(width: 260)
-                .tip(picked?.note ?? "Reads the document's own text. Needs nothing installed.",
-                     key: nil)
+                .tip(engineNote, key: nil)
 
                 Button("Convert") {
                     Task { await converting.convert(item, passwords: passwords, using: picked) }

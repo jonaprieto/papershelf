@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import PDFKit
 @testable import PaperShelfCore
 
 final class ConvertTests: XCTestCase {
@@ -108,26 +110,133 @@ extension ConvertTests {
 
         let missing = MarkdownConverter(name: "Nowhere", executable: "papershelf-not-installed",
                                         note: "", arguments: { input, _ in [input.path] })
-        let produced = markdown(for: file, passwords: [], using: missing, title: "Paper")
+        let produced = markdown(for: file, passwords: [], using: .external(missing), title: "Paper")
 
         XCTAssertEqual(produced.tool, "the built-in reader")
         XCTAssertTrue(produced.text.hasPrefix("# Paper"))
         XCTAssertTrue(produced.text.contains("Replicas converge"))
     }
 
-    /// Three answers from one stored name: a tool by name when it is installed, the
-    /// built-in reader when that was chosen on purpose, and the best installed tool for
-    /// the empty preference every install starts with.
-    func testAStoredNameResolvesToAToolTheBuiltInReaderOrTheBestInstalled() {
-        XCTAssertNil(converter(named: builtInReaderName), "chosen on purpose")
-        XCTAssertNil(converter(named: "A Converter Nobody Has"), "named but not installed")
+    /// What a stored preference resolves to: the two built-in engines by name, an
+    /// external tool by name when it is installed, and automatic for everything else,
+    /// including a name whose tool has since been uninstalled.
+    func testAStoredNameResolvesToAnEngine() {
+        XCTAssertEqual(engine(named: ""), .automatic)
+        XCTAssertEqual(engine(named: builtInReaderName), .reader)
+        XCTAssertEqual(engine(named: builtInOCRName), .ocr)
+        XCTAssertEqual(engine(named: "A Converter Nobody Has"), .automatic,
+                       "a tool that is gone is not a worse answer, it is no answer")
 
-        let installed = availableConverters()
-        if let best = installed.first?.0 {
-            XCTAssertEqual(converter(named: ""), best, "automatic takes the best installed")
-            XCTAssertEqual(converter(named: best.name), best)
-        } else {
-            XCTAssertNil(converter(named: ""), "automatic with nothing installed reads it here")
+        if let best = availableConverters().first?.0 {
+            XCTAssertEqual(engine(named: best.name), .external(best))
         }
+    }
+
+    /// A scanned page: the words are a picture, so there is no text layer to read. This is
+    /// the case every other engine here answers with nothing, and the one the app has to
+    /// be able to answer without anything installed.
+    private func makeScannedPDF(at url: URL, text: String) throws {
+        let size = CGSize(width: 612, height: 792)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        (text as NSString).draw(
+            in: NSRect(x: 60, y: 520, width: 500, height: 220),
+            withAttributes: [.font: NSFont.systemFont(ofSize: 34),
+                             .foregroundColor: NSColor.black])
+        image.unlockFocus()
+
+        let raw = NSMutableData()
+        var box = CGRect(origin: .zero, size: size)
+        let context = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        var rect = box
+        guard let drawn = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+            throw NSError(domain: "ConvertTests", code: 1)
+        }
+        context.draw(drawn, in: box)
+        context.endPDFPage()
+        context.closePDF()
+        try (raw as Data).write(to: url)
+    }
+
+    private func scratchFolder(_ label: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName(label), isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func testAScannedPageHasNoTextLayerAndIsReadAnyway() throws {
+        let folder = try scratchFolder("scan")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("scan.pdf")
+        try makeScannedPDF(at: file, text: "Convergence of replicas")
+
+        XCTAssertFalse(hasReadableText(url: file, passwords: []),
+                       "a picture of words carries no text layer")
+        XCTAssertFalse(markdownFromPDF(url: file, passwords: [], title: "Scan")
+                        .contains("Convergence"),
+                       "which is why the reader has nothing to say about it")
+
+        let recognised = markdownFromScan(url: file, passwords: [], title: "Scan")
+        XCTAssertTrue(recognised.localizedCaseInsensitiveContains("convergence"),
+                      "OCR read: \(recognised)")
+        XCTAssertTrue(recognised.hasPrefix("# Scan"))
+    }
+
+    /// Automatic is the promise that a document gets the best answer available for it: the
+    /// text layer where there is one, recognition where there is not.
+    func testAutomaticReadsTheTextLayerAndFallsBackToOCR() throws {
+        let folder = try scratchFolder("automatic")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let typed = folder.appendingPathComponent("typed.pdf")
+        try makeTextPDF(at: typed, text: "Replicas converge once they agree.")
+        let scanned = folder.appendingPathComponent("scanned.pdf")
+        try makeScannedPDF(at: scanned, text: "Convergence of replicas")
+
+        // With a converter installed, automatic is that converter; the fallback below is
+        // what this test is about, so it asks the two built-in engines directly.
+        XCTAssertTrue(hasReadableText(url: typed, passwords: []))
+        let read = markdown(for: typed, passwords: [], using: .reader)
+        XCTAssertTrue(read.text.contains("Replicas converge"))
+        XCTAssertEqual(read.tool, "the built-in reader")
+
+        let recognised = markdown(for: scanned, passwords: [], using: .ocr)
+        XCTAssertTrue(recognised.text.localizedCaseInsensitiveContains("convergence"))
+        XCTAssertEqual(recognised.tool, "the built-in OCR")
+    }
+
+    /// A document with a text layer is never sent through recognition: it would be slower
+    /// and worse than the words the document already carries.
+    func testATypedDocumentIsNotSentThroughOCR() throws {
+        let folder = try scratchFolder("typed-only")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("typed.pdf")
+        try makeTextPDF(at: file, text: String(repeating: "Convergence and replication. ", count: 8))
+
+        XCTAssertTrue(hasReadableText(url: file, passwords: []))
+    }
+
+    /// OCR stops rather than working through a book, and says that it did.
+    func testOCRStopsAtItsPageLimitAndSaysSo() throws {
+        let folder = try scratchFolder("ocr-limit")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("long.pdf")
+        try makeScannedPDF(at: file, text: "Convergence of replicas")
+        guard let document = PDFDocument(url: file), let page = document.page(at: 0) else {
+            return XCTFail("no page")
+        }
+        for _ in 0..<3 { document.insert(page.copy() as! PDFPage, at: document.pageCount) }
+        document.write(to: file)
+
+        let recognised = markdownFromScan(url: file, passwords: [], title: "Long", pageLimit: 2)
+
+        XCTAssertTrue(recognised.contains("## Page 1"))
+        XCTAssertTrue(recognised.contains("## Page 2"))
+        XCTAssertFalse(recognised.contains("## Page 3"), "it stopped where it said it would")
+        XCTAssertTrue(recognised.contains("Read the first 2 of 4 pages"))
     }
 }
