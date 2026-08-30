@@ -39,6 +39,22 @@ extension Runner {
     func syncLibrary(with items: [Item]) async {
         guard let library = Library.shared else { return }
 
+        // `document(atPath:)` below and the `recordLocation` it feeds are two separate
+        // awaits on the `Library` actor, not one atomic call, so two `syncLibrary` calls
+        // racing each other -- a real run finishing while the watcher's own sync for an
+        // earlier batch is still in flight, say -- can interleave: the second call's
+        // lookup lands in the gap before the first call's write, finds the document still
+        // on record at its old path, and folds the new path into `indexDocuments` as a
+        // second document, while the first call goes on to attach the original row's tags
+        // and notes to a path that no longer exists. A `Library` method cannot fix this by
+        // itself, since the race is between two awaits, not inside either one; `syncLibrary`
+        // has to serialize its own callers instead. `syncGate` below does exactly that: it
+        // is held for the whole body, so a second call's lookup can only start once the first
+        // call's write has already landed. Released explicitly at the bottom rather than
+        // through `defer`: this function never throws and has no other early return, so
+        // there is only the one path out, and `defer` cannot itself `await` the release.
+        await Runner.syncGate.acquire()
+
         var moved: [(item: Item, newPath: String)] = []
         var seen: [Library.IndexInput] = []
         for item in items where item.status != .failed {
@@ -82,12 +98,44 @@ extension Runner {
         if !seen.isEmpty {
             _ = try? await library.indexDocuments(seen)
         }
+        await Runner.syncGate.release()
     }
 
     private static func logSyncFailure(_ error: Error, path: String) {
         Logger(subsystem: "com.jonaprieto.pdfhammer", category: "library")
             .error("library sync failed for \(path, privacy: .public), leaving it for the next sync: \(String(describing: error), privacy: .public)")
     }
+
+    /// A minimal mutual-exclusion lock for `syncLibrary`, above. Not an `AsyncSemaphore`
+    /// from a library, and not built to be reused elsewhere: it exists solely so that
+    /// method's body runs one call at a time, and an `actor` is already exactly that --
+    /// its own isolation serializes access to the two `var`s below, which is all a queue
+    /// of waiters needs.
+    private actor SyncGate {
+        private var locked = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        /// Returns immediately if nothing else holds the gate; otherwise waits until
+        /// whoever does calls `release()`.
+        func acquire() async {
+            guard locked else {
+                locked = true
+                return
+            }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        /// Hands the gate to the next waiter, if any, or opens it back up.
+        func release() {
+            guard waiters.isEmpty else {
+                waiters.removeFirst().resume()
+                return
+            }
+            locked = false
+        }
+    }
+
+    private static let syncGate = SyncGate()
 }
 
 /// Files into a project, wherever they were dragged from.
