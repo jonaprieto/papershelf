@@ -1669,7 +1669,8 @@ struct ResultsPane: View {
                             isSelected: selection.isEmpty
                                 ? selected == item.key
                                 : selection.contains(item.key),
-                            tags: tagIndex.tags(for: item)
+                            tags: tagIndex.tags(for: item),
+                            open: { openReader(item.key) }
                         )
                         .id(item.key)
                         .onTapGesture(count: 2) { openReader(item.key) }
@@ -2789,6 +2790,10 @@ struct CoverCard: View {
     /// What this file is tagged with. Shown on the card so a shelf can be read by tag at a
     /// glance rather than one right-click at a time.
     var tags: [String] = []
+    /// Opens this document in the reader. Wired at the grid call site to `openReader`, so
+    /// the shelf's default view -- otherwise colour-only for its selection ring, and
+    /// silent about what a card even is -- is reachable and actionable without a mouse.
+    var open: () -> Void = {}
     /// This card's own cover. Held here rather than read out of a shared counter, so a
     /// render landing anywhere else on the shelf does not redraw this card.
     @State private var cover: NSImage?
@@ -2813,6 +2818,13 @@ struct CoverCard: View {
         let stated = item.documentInfo["Title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let stated, !stated.isEmpty { return stated }
         return (name as NSString).deletingPathExtension
+    }
+
+    /// What VoiceOver should say for this card: the title, then the decision and status
+    /// in the same words their own tooltips already use (see `Tooltips.swift`), so the
+    /// shelf does not invent a second vocabulary for what "confirmed" or "locked" means.
+    private var accessibilitySummary: String {
+        "\(bookTitle). \(decision?.explanation ?? undecidedExplanation). \(item.status.explanation)"
     }
 
     private var physical: String {
@@ -2914,6 +2926,14 @@ struct CoverCard: View {
         )
         .opacity(decision == .skipped ? 0.5 : 1)
         .contentShape(Rectangle())
+        // The shelf is the app's default view, and until now a card here had no
+        // accessibility exposure at all: no grouping, no label, no selected trait, no
+        // action -- the selection ring was colour only. `.combine` reads the card as one
+        // element instead of a pile of unlabeled text and images.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction { open() }
     }
 
     @ViewBuilder

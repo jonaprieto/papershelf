@@ -79,7 +79,7 @@ struct MarkRow: View {
                 }
                 Spacer(minLength: 0)
 
-                if hovering, ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
+                if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
                    !mark.quoted.isEmpty || !mark.note.isEmpty {
                     Menu {
                         if offerChatGPT {
@@ -98,27 +98,37 @@ struct MarkRow: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    // Kept in the tree and faded rather than removed by an `if`, so
+                    // keyboard focus and VoiceOver can still reach it when the pointer
+                    // is not over the row.
+                    .opacity(hovering ? 1 : 0)
+                    .accessibilityLabel("Send the mark on page \(mark.page) to ChatGPT")
                     .tip("Send this passage to ChatGPT. Open starts a new conversation; "
                          + "copy is for one you already have going.")
                 }
-                // Only under the pointer. Three icons on every mark turned a column of
-                // quotations into a column of buttons, and none of them is needed until
-                // you are looking at the mark they belong to.
-                if hovering || editing {
-                    Button {
-                        text = mark.note
-                        editing.toggle()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
+                // Always present so keyboard and VoiceOver can reach them; only their
+                // opacity is hover-gated. Three icons on every mark turned a column of
+                // quotations into a column of buttons, and none of them needs to be
+                // seen until you are looking at the mark they belong to.
+                Button {
+                    text = mark.note
+                    editing.toggle()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.tertiary)
+                .opacity(hovering || editing ? 1 : 0)
+                .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
+                .accessibilityLabel(mark.note.isEmpty
+                                     ? "Add a note to the mark on page \(mark.page)"
+                                     : "Edit the note on the mark on page \(mark.page)")
+                Button(action: remove) { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.tertiary)
-                    .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
-                    Button(action: remove) { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.tertiary)
-                        .tip("Remove this mark from the file")
-                }
+                    .opacity(hovering || editing ? 1 : 0)
+                    .tip("Remove this mark from the file")
+                    .accessibilityLabel("Delete the mark on page \(mark.page)")
             }
 
             if editing {

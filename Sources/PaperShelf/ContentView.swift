@@ -1536,10 +1536,14 @@ struct ExplorerOutline: View {
                     Image(systemName: expanded.contains(node.id) ? "chevron.down" : "chevron.right")
                         .font(.caption2)
                         .frame(width: 10)
-                        .contentShape(Rectangle())
+                        // Hit testing follows this shape rather than the glyph's own frame,
+                        // so folding a folder doesn't need a 20pt-wide column -- the glyph
+                        // and the rest of the row stay the size they were.
+                        .contentShape(Rectangle().inset(by: -5))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(expanded.contains(node.id) ? "Fold this folder" : "Unfold this folder")
             } else {
                 Color.clear.frame(width: 10, height: 1)
             }
@@ -1571,6 +1575,9 @@ struct ExplorerOutline: View {
         }
         .contextMenu {
             if node.itemKey == nil {
+                // A second way to fold a folder besides the 10pt-wide chevron, for a
+                // right-click or a keyboard context-menu invocation.
+                Button(expanded.contains(node.id) ? "Collapse" : "Expand") { toggle(node.id) }
                 // The catalogue is the only thing that can honour the first of these, and
                 // it owns its own state, so the intent is posted rather than reached for.
                 Button("Show only this folder") { openFolder(node.url.path) }

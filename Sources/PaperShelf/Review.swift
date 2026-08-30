@@ -453,6 +453,7 @@ struct ReviewInspector: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .onHover { hoveringChatGPT = $0 }
+                .accessibilityLabel("Send the selected passage to ChatGPT")
             }
         }
         .padding(.horizontal, 9)
