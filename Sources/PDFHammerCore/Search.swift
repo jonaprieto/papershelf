@@ -23,12 +23,24 @@ public struct Query: Sendable, Equatable {
 
     public let terms: [Term]
     public var isEmpty: Bool { terms.isEmpty }
-    /// True when anything here needs the document's text, which is expensive to get.
-    public var needsText: Bool { terms.contains { $0.field == "text" } }
+    /// True when anything here has to be answered from the document's own text, which
+    /// only the library holds and only for documents it has read.
+    public var needsText: Bool { !storedTerms.isEmpty }
 
     public init(_ text: String) {
         terms = Query.split(text).compactMap(Query.term(from:))
     }
+
+    /// A query made of terms already parsed, for splitting one query into the part a
+    /// projection can answer and the part the library has to.
+    public init(terms: [Term]) {
+        self.terms = terms
+    }
+
+    /// The terms this query has that only the store can answer.
+    public var storedTerms: [Term] { terms.filter { Query.storedFields.contains($0.field ?? "") } }
+    /// Everything else: what a `Searchable` can decide on its own.
+    public var localTerms: [Term] { terms.filter { !Query.storedFields.contains($0.field ?? "") } }
 
     /// The search text that shows one tag's documents. Always quoted: a tag is free text
     /// and "to read" unquoted would parse as a tag search for "to" plus a bare word.
@@ -56,7 +68,12 @@ public struct Query: Sendable, Equatable {
 
     private static let fields: Set<String> = [
         "name", "was", "folder", "text", "status", "size", "pages", "year", "tag",
+        "title", "author", "abstract",
     ]
+
+    /// The fields only the library can answer: they are about the inside of a document,
+    /// which lives in the store's extracted text rather than in anything an `Item` knows.
+    public static let storedFields: Set<String> = ["text", "abstract"]
 
     static func term(from piece: String) -> Term? {
         for comparison in [(">", Comparison.greater), ("<", Comparison.less), (":", .equals)] {
@@ -83,6 +100,10 @@ func byteValue(_ text: String) -> Int? {
     }
     return Int(lowered)
 }
+
+/// How much of a document counts as its opening for an `abstract:` search. A title page,
+/// an author list and an abstract fit inside this; a paper's introduction mostly does not.
+public let abstractCharacterLimit = 2_000
 
 /// The year of a date, as four digits. `Calendar.current` rather than a formatter: this
 /// runs once per file per search projection, and a formatter is the slower of the two.
@@ -125,6 +146,11 @@ public struct Searchable: Sendable {
     let name: [UInt8]
     let original: [UInt8]
     let folder: [UInt8]
+    /// What the document says it is called and who wrote it. Empty when nothing has read
+    /// the PDF and the library has nothing on record either, in which case a `title:` or
+    /// `author:` term fails rather than matching everything.
+    let title: [UInt8]
+    let author: [UInt8]
     let status: String
     /// Every year this file could reasonably be said to be from: the four digits a name
     /// starts with, the year the PDF says it was created, and the year the file was last
@@ -145,10 +171,12 @@ public struct Searchable: Sendable {
     /// `pageCount` is the library's own answer, for a file the shelf listed without
     /// opening: the item carries a page count only once something has read the PDF.
     public init(item: Item, text: String? = nil, tags: [String] = [],
-                pageCount: Int? = nil) {
+                pageCount: Int? = nil, title: String? = nil, author: String? = nil) {
         name = normalised(item.destinationName)
         original = normalised(item.sourceName)
         folder = normalised((item.relativePath as NSString).deletingLastPathComponent)
+        self.title = normalised(item.documentInfo["Title"] ?? title ?? "")
+        self.author = normalised(item.documentInfo["Author"] ?? author ?? "")
         status = item.status.rawValue
         years = [String(item.destinationName.prefix(4)),
                  item.metadataDate.map(yearText),
@@ -182,6 +210,12 @@ public func matches(_ subject: Searchable, _ query: PreparedQuery) -> Bool {
         case nil:
             return contains(subject.name, needle) || contains(subject.original, needle)
         case "name": return contains(subject.name, needle)
+        case "title": return contains(subject.title, needle)
+        case "author": return contains(subject.author, needle)
+        // What a paper opens with, which is where its abstract is. Only answerable once
+        // the document's text has been read; see `abstractCharacterLimit`.
+        case "abstract":
+            return subject.text.map { contains(Array($0.prefix(abstractCharacterLimit)), needle) } ?? false
         case "was": return contains(subject.original, needle)
         case "folder": return contains(subject.folder, needle)
         case "status": return subject.status.hasPrefix(term.value.lowercased())

@@ -417,6 +417,52 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), [read.id])
     }
 
+    /// The two questions the shelf asks the store once a query mentions the inside of a
+    /// document: which documents say this anywhere, and which say it where a paper puts
+    /// its abstract.
+    func testTextAndAbstractSearchesAnswerWithDocumentIDs() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let paper = try await library.indexDocument(path: "/shelf/paper.pdf", contentHash: "a")
+        let book = try await library.indexDocument(path: "/shelf/book.pdf", contentHash: "b")
+
+        let opening = "A survey of stochastic epidemic models. "
+        try await library.setExtractedText([
+            (documentID: paper.id, markdown: opening + String(repeating: "body ", count: 900) + "hapax"),
+            (documentID: book.id, markdown: "An introduction to choreographies."),
+        ])
+
+        let hapax = try await library.documentIDsMatchingText("hapax")
+        let choreographies = try await library.documentIDsMatchingText("choreographies")
+        let stochastic = try await library.documentIDsMatchingAbstract("stochastic")
+        XCTAssertEqual(hapax, [paper.id])
+        XCTAssertEqual(choreographies, [book.id])
+        XCTAssertEqual(stochastic, [paper.id])
+        let deepInAbstract = try await library.documentIDsMatchingAbstract("hapax")
+        XCTAssertTrue(deepInAbstract.isEmpty, "past the opening is not the abstract")
+        // A search box is not a place to escape SQL: a wildcard is a character to find.
+        let wildcard = try await library.documentIDsMatchingAbstract("%")
+        XCTAssertTrue(wildcard.isEmpty)
+    }
+
+    /// What a search needs about a file the shelf listed but never opened.
+    func testDocumentFactsComeBackByPath() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        _ = try await library.indexDocument(path: "/shelf/known.pdf", contentHash: "a",
+                                            pageCount: 240, title: "Causality",
+                                            author: "Judea Pearl")
+        _ = try await library.indexDocument(path: "/shelf/bare.pdf", contentHash: "b")
+
+        let facts = try await library.documentFactsByPath()
+        XCTAssertEqual(facts["/shelf/known.pdf"],
+                       DocumentFacts(pageCount: 240, title: "Causality", author: "Judea Pearl"))
+        XCTAssertEqual(facts["/shelf/bare.pdf"],
+                       DocumentFacts(pageCount: nil, title: nil, author: nil))
+    }
+
     func testDroppingPathsOnAProjectAddsOnlyTheOnesTheLibraryKnows() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

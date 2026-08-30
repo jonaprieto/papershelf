@@ -393,26 +393,33 @@ final class Runner: ObservableObject {
     /// per keystroke was most of what a metadata search cost.
     private var projections: [Searchable] = []
     private var projectionsIncludeText = false
-    /// What the library already knows about files this shelf listed without opening them.
-    /// A source added the cheap way has no page counts of its own until a plan runs.
-    private var libraryPageCounts: [String: Int] = [:]
+    /// What the library already knows about files this shelf listed without opening them:
+    /// page counts, titles, authors. A source added the cheap way has none of its own
+    /// until a plan runs, and a search should not be blind to what an earlier one read.
+    private var libraryFacts: [String: DocumentFacts] = [:]
 
     private func buildProjections(includingText: Bool) {
-        projections = results.map {
-            Searchable(item: $0, text: includingText ? textCache[$0.key] : nil,
-                       pageCount: libraryPageCounts[$0.key])
+        projections = results.map { item in
+            let known = libraryFacts[item.key]
+            return Searchable(item: item, text: includingText ? textCache[item.key] : nil,
+                              pageCount: known?.pageCount,
+                              title: known?.title, author: known?.author)
         }
         projectionsIncludeText = includingText
     }
 
-    /// Reads the library's page counts and drops the projections built without them, so
-    /// the next search sees what an earlier pass had already read out of the PDFs.
+    /// Reads what the library knows and drops the projections built without it, so the
+    /// next search sees what an earlier pass had already read out of the PDFs.
     func refreshLibraryFacts() async {
         guard let library = Library.shared else { return }
-        guard let counts = try? await library.pageCountsByPath() else { return }
-        libraryPageCounts = counts
+        guard let facts = try? await library.documentFactsByPath() else { return }
+        libraryFacts = facts
         projections = []
     }
+
+    /// How many of the files on screen the library has never read, for a search over the
+    /// inside of documents to be honest about what it could not look at.
+    @Published private(set) var unindexedInSearch = 0
 
     func search(_ text: String, passwords: [String]) {
         searchGeneration &+= 1
@@ -420,55 +427,77 @@ final class Runner: ObservableObject {
         searchTask = nil
         searching = false
         searchText = text
+        unindexedInSearch = 0
         let query = Query(text)
         guard !query.isEmpty else {
             matchingKeys = nil
             return
         }
 
-        guard query.needsText else {
-            if projections.count != results.count { buildProjections(includingText: projectionsIncludeText) }
-            let prepared = PreparedQuery(query)
-            matchingKeys = Set(zip(results, projections)
-                .filter { matches($0.1, prepared) }
-                .map(\.0.key))
+        // Two halves. What a file says about itself is answered here, from projections
+        // built once per result set; what a document says inside itself is answered by
+        // the library, which is the only thing that has read it.
+        let local = Query(terms: query.localTerms)
+        let stored = query.storedTerms
+        let localKeys = local.isEmpty ? nil : keysMatching(local)
+
+        guard !stored.isEmpty else {
+            matchingKeys = localKeys ?? Set(results.map(\.key))
             return
         }
 
-        // A text query has to read the documents. Cached, concurrent, and off the main
-        // thread, because this is the one search that costs real work.
         searching = true
-        let snapshot = results
-        let cached = textCache
         let generation = searchGeneration
-        searchTask = Task.detached(priority: .userInitiated) { [self] in
-            var fresh: [String: String] = [:]
-            let lock = NSLock()
-            let missing = snapshot.filter { cached[$0.key] == nil }
-            if !missing.isEmpty {
-                DispatchQueue.concurrentPerform(iterations: missing.count) { index in
-                    guard !Task.isCancelled else { return }
-                    let item = missing[index]
-                    let text = openingText(of: item.currentURL, passwords: passwords, pages: 6)
-                    lock.lock()
-                    fresh[item.key] = text
-                    lock.unlock()
-                }
-            }
-            let foundText = fresh
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self.textCache.merge(foundText) { _, new in new }
-                guard self.searchGeneration == generation, self.searchText == text else { return }
-                self.buildProjections(includingText: true)
-                let prepared = PreparedQuery(query)
-                self.matchingKeys = Set(zip(self.results, self.projections)
-                    .filter { matches($0.1, prepared) }
-                    .map(\.0.key))
-                self.searching = false
-                self.searchTask = nil
-            }
+        let snapshot = results
+        searchTask = Task { [weak self] in
+            let keys = await Runner.storedMatches(stored, among: snapshot)
+            guard let self, !Task.isCancelled, self.searchGeneration == generation else { return }
+            self.matchingKeys = localKeys.map { $0.intersection(keys.matched) } ?? keys.matched
+            self.unindexedInSearch = keys.unindexed
+            self.searching = false
+            self.searchTask = nil
         }
+    }
+
+    /// The keys a projection-answerable query matches.
+    private func keysMatching(_ query: Query) -> Set<String> {
+        if projections.count != results.count { buildProjections(includingText: projectionsIncludeText) }
+        let prepared = PreparedQuery(query)
+        return Set(zip(results, projections).filter { matches($0.1, prepared) }.map(\.0.key))
+    }
+
+    /// Asks the library which of these files match every stored term, and how many of them
+    /// it has never read. A term nobody could answer is not a term everybody passes: an
+    /// unindexed shelf answers nothing and says how much of itself it has not read.
+    private static func storedMatches(
+        _ terms: [Query.Term], among items: [Item]
+    ) async -> (matched: Set<String>, unindexed: Int) {
+        guard let library = Library.shared,
+              let idsByPath = try? await library.documentIDsByPath() else { return ([], items.count) }
+        let indexed = Set(((try? await library.textIndexRows()) ?? [])
+            .filter { $0.extractedAt != nil }
+            .map(\.documentID))
+
+        var matched: Set<String>?
+        for term in terms {
+            let ids: Set<String>
+            switch term.field {
+            case "abstract":
+                ids = Set((try? await library.documentIDsMatchingAbstract(term.value)) ?? [])
+            default:
+                ids = Set((try? await library.documentIDsMatchingText(term.value)) ?? [])
+            }
+            matched = matched.map { $0.intersection(ids) } ?? ids
+        }
+        let hits = matched ?? []
+        var keys: Set<String> = []
+        var unindexed = 0
+        for item in items {
+            guard let id = idsByPath[item.key] else { unindexed += 1; continue }
+            if !indexed.contains(id) { unindexed += 1 }
+            if hits.contains(id) { keys.insert(item.key) }
+        }
+        return (keys, unindexed)
     }
 
     @Published private(set) var excerpts: [String: String] = [:]

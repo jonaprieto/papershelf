@@ -436,22 +436,25 @@ public actor Library {
     /// For resolving a whole shelf at once. Asking file by file meant two statements and a
     /// round trip through this actor per file, a thousand times over on a thousand-file
     /// shelf, to end up with nothing but the ids.
-    /// Page counts by path, for a shelf that listed its files without opening them. The
-    /// library keeps what an earlier pass read; a `pages:` search would otherwise be dead
-    /// on a source added the cheap way.
-    public func pageCountsByPath() throws -> [String: Int] {
+    /// What an earlier pass read out of the PDFs, by path: enough for a search over a
+    /// shelf that listed its files without opening any of them. A `pages:`, `title:` or
+    /// `author:` term would otherwise be dead on a source added the cheap way.
+    public func documentFactsByPath() throws -> [String: DocumentFacts] {
         try withStatement("""
-            SELECT l.path, d.page_count
+            SELECT l.path, d.page_count, d.title, d.author
             FROM locations l
-            JOIN documents d ON d.id = l.document_id
-            WHERE d.page_count IS NOT NULL;
+            JOIN documents d ON d.id = l.document_id;
             """) { statement in
-            var counts: [String: Int] = [:]
+            var facts: [String: DocumentFacts] = [:]
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let path = columnText(statement, 0) else { continue }
-                counts[path] = Int(sqlite3_column_int64(statement, 1))
+                let pages = sqlite3_column_type(statement, 1) == SQLITE_NULL
+                    ? nil : Int(sqlite3_column_int64(statement, 1))
+                facts[path] = DocumentFacts(pageCount: pages,
+                                            title: columnText(statement, 2),
+                                            author: columnText(statement, 3))
             }
-            return counts
+            return facts
         }
     }
 
@@ -811,6 +814,61 @@ public actor Library {
         }
     }
 
+    /// Which documents' stored text matches, as ids, for a shelf search that then has to
+    /// intersect the answer with what is on screen. Ids rather than records: the caller
+    /// already holds everything it needs to draw a row, and fetching whole rows for
+    /// fourteen thousand matches to throw them away is a page of SQLite for nothing.
+    public func documentIDsMatchingText(_ phrase: String, limit: Int = 20_000) throws -> [String] {
+        let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let quoted = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return try withStatement("""
+            SELECT e.document_id
+            FROM extracted_text_fts
+            JOIN extracted_text e ON e.rowid = extracted_text_fts.rowid
+            WHERE extracted_text_fts MATCH ?
+            ORDER BY bm25(extracted_text_fts)
+            LIMIT ?;
+            """, bind: { statement in
+            bindText(statement, 1, quoted)
+            sqlite3_bind_int64(statement, 2, Int64(limit))
+        }) { statement in
+            var ids: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let id = columnText(statement, 0) { ids.append(id) }
+            }
+            return ids
+        }
+    }
+
+    /// Which documents open with this. What a paper's abstract is, the store cannot know;
+    /// what it opens with, it can, and the first two thousand characters of a paper are
+    /// its title, its authors and its abstract. Not FTS: a prefix is a substring question,
+    /// and the index is over the whole document rather than its opening.
+    public func documentIDsMatchingAbstract(_ needle: String,
+                                            characters: Int = abstractCharacterLimit,
+                                            limit: Int = 20_000) throws -> [String] {
+        let trimmed = needle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let pattern = "%" + trimmed.replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "%"
+        return try withStatement("""
+            SELECT document_id FROM extracted_text
+            WHERE substr(markdown, 1, ?) LIKE ? ESCAPE '\\'
+            LIMIT ?;
+            """, bind: { statement in
+            sqlite3_bind_int64(statement, 1, Int64(characters))
+            bindText(statement, 2, pattern)
+            sqlite3_bind_int64(statement, 3, Int64(limit))
+        }) { statement in
+            var ids: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let id = columnText(statement, 0) { ids.append(id) }
+            }
+            return ids
+        }
+    }
+
     public func fullTextSearch(_ text: String, limit: Int = 50) throws -> [DocumentRecord] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -1023,6 +1081,20 @@ public enum LibraryError: Error, CustomStringConvertible, Sendable {
 }
 
 // MARK: - Records
+
+/// The little of a document a search needs to know without opening the file: how long it
+/// is, what it says it is called, and who it says wrote it.
+public struct DocumentFacts: Sendable, Equatable {
+    public let pageCount: Int?
+    public let title: String?
+    public let author: String?
+
+    public init(pageCount: Int?, title: String?, author: String?) {
+        self.pageCount = pageCount
+        self.title = title
+        self.author = author
+    }
+}
 
 public struct DocumentRecord: Sendable, Equatable, Identifiable {
     public let id: String

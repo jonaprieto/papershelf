@@ -49,6 +49,55 @@ final class SearchTests: XCTestCase {
         XCTAssertFalse(matches(known, Query("pages<100")))
     }
 
+    func testTitleAndAuthorComeFromTheDocumentOrTheLibrary() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let source = root.appendingPathComponent("q3-final-v2.pdf")
+        var item = Item(root: root, source: source, destination: source, status: .renamed)
+        item.documentInfo = ["Title": "Causal Inference in Statistics",
+                             "Author": "Judea Pearl"]
+        let read = Searchable(item: item)
+
+        XCTAssertTrue(matches(read, Query("title:causal")))
+        XCTAssertTrue(matches(read, Query("author:pearl")))
+        XCTAssertFalse(matches(read, Query("author:hume")))
+        XCTAssertFalse(matches(read, Query("q3 author:hume")), "terms are still joined with and")
+
+        // Nothing has opened this one, so only what the library kept can answer.
+        let plain = Item(root: root, source: source, destination: source, status: .renamed)
+        let unread = Searchable(item: plain)
+        XCTAssertFalse(matches(unread, Query("title:causal")), "unknown is not a match")
+        let remembered = Searchable(item: plain, title: "Causal Inference in Statistics",
+                                    author: "Judea Pearl")
+        XCTAssertTrue(matches(remembered, Query("title:causal")))
+        XCTAssertTrue(matches(remembered, Query("author:judea")))
+    }
+
+    /// `abstract:` is the opening of a document, which is where a paper says what it is.
+    func testAbstractSearchesTheOpeningOnly() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let source = root.appendingPathComponent("paper.pdf")
+        let item = Item(root: root, source: source, destination: source, status: .renamed)
+        let opening = "A survey of stochastic epidemic models."
+        let deepInside = String(repeating: "body text. ", count: 400) + "hapax legomenon"
+        let file = Searchable(item: item, text: opening + " " + deepInside)
+
+        XCTAssertTrue(matches(file, Query("abstract:stochastic")))
+        XCTAssertTrue(matches(file, Query("text:\"hapax legomenon\"")))
+        XCTAssertFalse(matches(file, Query("abstract:\"hapax legomenon\"")),
+                       "past the opening is not the abstract")
+    }
+
+    /// The catalogue asks the projection for what a file says about itself and the library
+    /// for what the document says inside itself. The split has to be exact.
+    func testAQuerySplitsIntoWhatEachHalfCanAnswer() {
+        let query = Query("author:pearl text:\"do calculus\" abstract:causal pages>100")
+
+        XCTAssertEqual(query.storedTerms.map { $0.field }, ["text", "abstract"])
+        XCTAssertEqual(query.localTerms.map { $0.field }, ["author", "pages"])
+        XCTAssertTrue(query.needsText)
+        XCTAssertFalse(Query("author:pearl pages>100").needsText)
+    }
+
     func testBareWordsMatchEitherName() {
         let file = subject(name: "2024-06-extracto.pdf")
         XCTAssertTrue(matches(file, Query("extracto")))
