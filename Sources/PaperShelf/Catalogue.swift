@@ -1215,6 +1215,8 @@ struct ResultsPane: View {
               !runner.results.isEmpty else { return }
         let next = min(max(current + offset, 0), runner.results.count - 1)
         guard next != current else { return }
+        // A key moved this, whatever the last click left behind: scroll to it.
+        pickedByPointer = false
         selected = runner.results[next].key
     }
 
@@ -1394,6 +1396,7 @@ struct ResultsPane: View {
         if let next = nextWaiting(after: selected, in: order, waiting: { key in
             runner.item(key).map { runner.decision(for: $0) == nil } ?? false
         }) {
+            pickedByPointer = false
             selected = next
         }
         loadDraft()
