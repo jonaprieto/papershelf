@@ -50,6 +50,11 @@ struct ResultsPane: View {
     @AppStorage("onlyUndecided") private var onlyUndecided = false
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
+    /// Whether the row now selected was clicked. A click needs no scrolling: the row is
+    /// already under the pointer, and animating it to the middle of the pane pulls the
+    /// list out from under the hand that clicked it. Only a selection moved some other way
+    /// -- a key, a decision, a search landing somewhere else -- has to be scrolled to.
+    @State private var pickedByPointer = false
     @State private var showingShortcuts = false
     @StateObject private var converting = Converting()
     @State private var showingMarkdown = false
@@ -245,6 +250,7 @@ struct ResultsPane: View {
         Binding(
             get: { selection.isEmpty ? Set([selected].compactMap { $0 }) : selection },
             set: { picked in
+                pickedByPointer = true
                 selection = picked
                 if picked.count == 1 { selected = picked.first }
                 else if let selected, !picked.contains(selected) { self.selected = picked.first }
@@ -253,8 +259,17 @@ struct ResultsPane: View {
         )
     }
 
+    /// Whether this selection came from a click, clearing the flag as it answers: it says
+    /// something about one change, not about the state of the pane.
+    private func claimPointerPick() -> Bool {
+        guard pickedByPointer else { return false }
+        pickedByPointer = false
+        return true
+    }
+
     /// One file, and only that one.
     private func pick(_ key: String) {
+        pickedByPointer = true
         selected = key
         selection = [key]
     }
@@ -1479,7 +1494,9 @@ struct ResultsPane: View {
                 .focused($listFocused)
                 .onChange(of: selected) { _, new in
                     guard let new else { return }
-                    expanded.formUnion(runner.ancestors(of: new))
+                    let ancestors = runner.ancestors(of: new)
+                    if !ancestors.allSatisfy(expanded.contains) { expanded.formUnion(ancestors) }
+                    guard !claimPointerPick() else { return }
                     withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
                 }
             }
@@ -1656,7 +1673,7 @@ struct ResultsPane: View {
                 .padding(18)
             }
             .onChange(of: selected) { _, new in
-                guard let new else { return }
+                guard let new, !claimPointerPick() else { return }
                 withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
             }
         }
@@ -1828,7 +1845,9 @@ struct ResultsPane: View {
             .focused($listFocused)
             .onChange(of: selected) { _, new in
                 guard let new else { return }
-                expanded.formUnion(runner.ancestors(of: new))
+                let ancestors = runner.ancestors(of: new)
+                if !ancestors.allSatisfy(expanded.contains) { expanded.formUnion(ancestors) }
+                guard !claimPointerPick() else { return }
                 withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
             }
         }
