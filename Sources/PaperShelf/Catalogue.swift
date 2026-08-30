@@ -139,6 +139,14 @@ struct ResultsPane: View {
     // SettingsWindow.swift; all three must agree, since whichever view registers first
     // wins and a mismatch here would make BibTeX output disagree with the Settings toggle.
     @AppStorage("bibOmitFile") private var bibOmitFile = true
+    /// Shared with `BibFileView`, which draws the file these two decide the shape of.
+    @AppStorage("bibWrapped") private var bibWrapped = true
+    /// The file the bibliography pane has built, so the toolbar can copy or save it
+    /// without building the same text again.
+    @ObservedObject private var builtBib: BuiltBibliography = .shared
+    @State private var bibCopied = false
+    @State private var savingBib = false
+    @AppStorage("bibValidOnly") private var bibValidOnly = false
 
     private var bibStyle: BibStyle {
         BibStyle(lineWidth: bibLineWidth,
@@ -657,6 +665,10 @@ struct ResultsPane: View {
                 .tip("Naming rules, AI, integrations and shortcuts", key: "⌘,")
             }
         }
+        .fileExporter(isPresented: $savingBib,
+                      document: TextDocument(text: builtBib.text),
+                      contentType: .plainText,
+                      defaultFilename: "library.bib") { _ in }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
                 commands: Self.performable.filter { $0 != .palette },
@@ -680,6 +692,26 @@ struct ResultsPane: View {
     @ViewBuilder
     private var contextualActions: some View {
         switch mode {
+        case .bibliography:
+            // The two things anybody does with a bibliography, where the actions are,
+            // rather than inside the pane that happens to render the file.
+            Button {
+                copyText(builtBib.text)
+                bibCopied = true
+                Task { try? await Task.sleep(for: .seconds(2)); bibCopied = false }
+            } label: {
+                Label(bibCopied ? "Copied" : "Copy", systemImage: "doc.on.doc")
+            }
+            .labelStyle(.titleAndIcon)
+            .disabled(builtBib.isEmpty)
+            .tip("Copy the whole file as it stands")
+
+            Button { savingBib = true } label: {
+                Label("Save .bib", systemImage: "square.and.arrow.down")
+            }
+            .labelStyle(.titleAndIcon)
+            .disabled(builtBib.isEmpty)
+            .tip("Write the file somewhere")
         case .duplicates:
             Button {
                 runner.findDuplicates(passwords: passwords)
@@ -1602,30 +1634,70 @@ struct ResultsPane: View {
         bibtexDocument(runner.bib, includeIncomplete: !bibCompleteOnly, order: bibOrder)
     }
 
+    /// The bibliography's own bar: how the entries are ordered, what is filtered out,
+    /// and then the entries that are not ready yet, named rather than counted.
+    ///
+    /// The count on its own said how much was wrong and nothing about where, and the
+    /// controls that belong to the whole view were spread across two rows, one of them
+    /// inside the file pane. Everything that decides what is on screen is here; the file
+    /// pane keeps only what is about the file.
     private var bibBar: some View {
       ScrollView(.horizontal) {
         HStack(spacing: 10) {
-            // Counted the way the bibliography itself counts: an entry kept with its
-            // document is judged by its own text, not by the guess it replaced.
-            let incomplete = runner.bib.filter {
-                !bibGaps($0, kept: kept, standard: bibStandard).isEmpty
-            }.count
-            Text("\(runner.bib.count) entries").font(.callout).foregroundStyle(.secondary)
-            if incomplete > 0 {
-                Label("\(incomplete) incomplete", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(Ink.amber)
-                    .help("Ask AI on those files to fill in author and year")
-            }
-            Spacer()
-            Picker("", selection: $bibShowsFile) {
-                Text("Entries").tag(false)
-                Text("File").tag(true)
+            Picker("Order", selection: $bibOrder) {
+                ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .tip("Browse the entries, or read the generated file")
+            .tip("By citation key, or grouped the way the folders are")
+
+            Toggle("Complete only", isOn: $bibCompleteOnly)
+                .toggleStyle(.checkbox)
+                .tip("Leave out anything missing a title, author or year")
+            Toggle("Wrap", isOn: $bibWrapped)
+                .toggleStyle(.checkbox)
+                .tip("Fold long lines into the pane; the file itself is unchanged")
+            // Only when it has something to say. It is a second, stricter filter than
+            // "Complete only", and a bar carrying both at all times reads as two ways of
+            // saying the same thing.
+            if bibValidOnly || !bibShortfall.isEmpty {
+                Toggle("Valid only", isOn: $bibValidOnly)
+                    .toggleStyle(.checkbox)
+                    .tip("Leave out anything missing a field \(bibStandard.label) requires")
+            }
+
+            if !bibShortfall.isEmpty {
+                Text(bibShortfall.sentence)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Ink.amber)
+                    .fixedSize()
+                ForEach(bibShortfall.byEntry, id: \.itemKey) { gap in
+                    BibGapChip(key: gap.key, missing: gap.missing) {
+                        pick(gap.itemKey)
+                        expanded.formUnion(runner.ancestors(of: gap.itemKey))
+                    }
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            // Only where the two panes cannot be shown at once. Above that width the
+            // entries and the file they generate are side by side, and a switch between
+            // two things already on screen is a switch that does nothing.
+            if viewPaneWidth < 900 {
+                Picker("", selection: $bibShowsFile) {
+                    Text("Entries").tag(false)
+                    Text("File").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .tip("Browse the entries, or read the generated file")
+            }
+
+            FillGapsButton(entries: bibShortfallEntries, passwords: passwords,
+                           client: aiClient, standard: bibStandard, style: bibStyle)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1633,6 +1705,16 @@ struct ResultsPane: View {
       .scrollIndicators(.hidden)
       .fixedSize(horizontal: false, vertical: true)
       .background(.bar)
+    }
+
+    /// Every entry the standard is not satisfied by, and what each one is short of.
+    private var bibShortfall: BibGaps {
+        bibGaps(in: visibleBib, kept: kept, standard: bibStandard)
+    }
+
+    private var bibShortfallEntries: [BibEntry] {
+        let wanted = Set(bibShortfall.byEntry.map(\.itemKey))
+        return visibleBib.filter { wanted.contains($0.itemKey) }
     }
 
     /// A shelf of covers. `LazyVGrid` only builds what is on screen, and the cover store

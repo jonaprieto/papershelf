@@ -43,6 +43,10 @@ struct StatusBar: View {
     let selectedPath: String?
     /// When that file was last read, or nil for one nobody has opened.
     let lastOpened: Date?
+    /// What the bibliography holds, when that is what is on screen: how many entries, how
+    /// many are short of what the standard wants, and whether any two share a key. Nil in
+    /// every other view, which is the only way the bar says nothing about it.
+    var bibliography: String?
     @State private var showingActivity = false
     @ObservedObject private var regions: Regions = .shared
 
@@ -50,7 +54,10 @@ struct StatusBar: View {
         HStack(spacing: 10) {
             runningNow
 
-            if let counts = decisions {
+            if let bibliography {
+                separator
+                Text(bibliography)
+            } else if let counts = decisions {
                 separator
                 Text(counts)
             }

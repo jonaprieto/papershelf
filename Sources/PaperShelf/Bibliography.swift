@@ -255,44 +255,83 @@ struct BibRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: gaps.isEmpty ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(gaps.isEmpty ? bibGoodColor : bibWarnColor)
-                .padding(.top, 2)
-
+            // The key first and on its own line: a .bib is read and cited by key, and it
+            // is what every other view of this entry, the chips in the bar included,
+            // calls it.
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.key)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(gaps.isEmpty ? Ink.blue : Ink.amber)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(keptEntry?.value("title") ?? (merged.title.isEmpty ? "no title" : merged.title))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    if let author = keptEntry?.value("author") ?? merged.author {
-                        Text(author).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    if let year = keptEntry?.value("year") ?? merged.year {
-                        Text(year).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                    if keptText != nil {
-                        Text("kept")
-                            .foregroundStyle(bibGoodColor)
-                            .help("This entry was kept with the document, so it is used "
-                                  + "instead of one generated from the filename")
-                    }
-                    if !gaps.isEmpty {
-                        Text("missing " + gaps.joined(separator: ", ")).foregroundStyle(bibWarnColor)
-                    }
+
+                credit
+
+                // Said in the row that has the problem, in the words a person would use
+                // about it, rather than as a field list: what is missing, and what will
+                // go wrong because of it.
+                if !gaps.isEmpty {
+                    Text(shortfall)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .font(.caption)
 
                 lookupFooter
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            badge
             lookupButton
         }
         .padding(.vertical, 3)
+    }
+
+    /// Author and title on one line, the way a bibliography is read.
+    private var credit: some View {
+        let author = keptEntry?.value("author") ?? merged.author
+        let title = keptEntry?.value("title") ?? (merged.title.isEmpty ? "" : merged.title)
+        return HStack(spacing: 4) {
+            Text(author ?? "")
+                .lineLimit(1)
+            Text("—").foregroundStyle(.tertiary)
+            Text(title.isEmpty ? "no title" : title)
+                .italic()
+                .foregroundStyle(title.isEmpty ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.callout)
+    }
+
+    /// What the entry is, or what it is short of. One or the other: an entry that will
+    /// not compile is not worth telling somebody it is a book.
+    @ViewBuilder private var badge: some View {
+        if let missing = gaps.first {
+            Text("needs \(missing)")
+                .font(.caption)
+                .foregroundStyle(bibWarnColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .fittedBackground(bibWarnColor.opacity(0.16), in: Capsule())
+                .help("Missing \(gaps.joined(separator: ", ")), which \(standard.label) requires")
+        } else {
+            Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(bibGoodColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .fittedBackground(bibGoodColor.opacity(0.16), in: Capsule())
+                .help(keptText == nil
+                      ? "Complete for \(standard.label)"
+                      : "Kept with the document, and complete for \(standard.label)")
+        }
+    }
+
+    /// What is missing and what it costs, in one line.
+    private var shortfall: String {
+        let missing = gaps.joined(separator: ", ")
+        if gaps == ["a readable entry"] { return "the entry kept here does not parse" }
+        return "no \(missing) · \(standard.label) will complain"
     }
 
     @ViewBuilder private var lookupFooter: some View {
@@ -371,11 +410,7 @@ struct BibFileView: View {
     @ObservedObject private var kept: KeptBibtex = .shared
     @State private var blocks: [String] = []
     @State private var edited: String?
-    @State private var copied = false
-    @State private var saving = false
     @State private var confirmingLookup = false
-    @State private var confirmingImprove = false
-    @ObservedObject private var batch: BibtexBatch = .shared
 
     private var aiClient: AIClient {
         AIClient(baseURL: aiBaseURL, model: aiModel, apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
@@ -398,18 +433,6 @@ struct BibFileView: View {
     private var invalidCount: Int {
         merged.filter { !bibGaps($0, kept: kept, standard: standard).isEmpty }.count
     }
-    /// What the model would be asked about: every entry the standard is not satisfied by.
-    /// An entry that already validates is not worth paying for.
-    private var improvableEntries: [BibEntry] {
-        merged.filter { !bibGaps($0, kept: kept, standard: standard).isEmpty }
-    }
-
-    /// The text a batch run should start from: what was kept if anything was, otherwise
-    /// what the app would render.
-    private func currentText(for entry: BibEntry) -> String {
-        kept.text(for: entry) ?? bibtexBlock(entry, style: style)
-    }
-
     /// What a batch run would actually fetch: everything not already resolved by an
     /// earlier lookup or guess.
     private var pendingLookupCount: Int {
@@ -500,11 +523,10 @@ struct BibFileView: View {
             }.value
             guard !Task.isCancelled else { return }
             blocks = built
+            BuiltBibliography.shared.text = text
         }
-        .fileExporter(isPresented: $saving,
-                      document: TextDocument(text: text),
-                      contentType: .plainText,
-                      defaultFilename: "library.bib") { _ in }
+        .onChange(of: edited) { _, _ in BuiltBibliography.shared.text = text }
+        .onDisappear { BuiltBibliography.shared.text = "" }
         .alert("Look up \(pendingLookupCount) documents?", isPresented: $confirmingLookup) {
             Button("Cancel", role: .cancel) {}
             Button("Look Up") {
@@ -517,57 +539,41 @@ struct BibFileView: View {
                  + "pages go to your configured AI model instead, at its usual per-call cost. "
                  + "Cancel any time.")
         }
-        .alert("Improve \(improvableEntries.count) entries with AI?",
-               isPresented: $confirmingImprove) {
-            Button("Cancel", role: .cancel) {}
-            Button("Improve") {
-                batch.run(improvableEntries, client: aiClient, passwords: passwords,
-                          library: Library.shared, kept: kept, standard: standard,
-                          text: currentText)
-            }
-        } message: {
-            Text("One billed request per entry, sending the entry and the first pages of "
-                 + "the document to \(aiBaseURL). Each answer is kept with its document as "
-                 + "it arrives, so stopping partway keeps what it already did. A model can "
-                 + "be confidently wrong: check the entries afterwards.")
-        }
     }
 
+    /// What the pane is showing, said once along its top: the file it would write, how
+    /// much is in it, which standard decides what counts as complete, and how wide the
+    /// lines are set. The controls that decide what is on screen live in the bar above
+    /// both panes; what is left here is about this file.
     private var controls: some View {
       ScrollView(.horizontal) {
-        HStack(spacing: 10) {
-            Picker("Order", selection: $order) {
-                ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
+        HStack(spacing: 8) {
+            Text("library.bib")
+                .font(.system(.callout, design: .monospaced))
+                .foregroundStyle(.secondary)
+            dot
+            Text("\(shown.count) entries").foregroundStyle(.secondary)
+            dot
+            // A menu that reads as the label it is: the standard is a fact about this
+            // file, and also the one thing here worth changing from here.
+            Menu(standard.label) {
+                ForEach(BibStandard.allCases) { option in
+                    Button(option.label) { standard = option }
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .menuStyle(.borderlessButton)
             .fixedSize()
-            .disabled(edited != nil)
-
-            Picker("Standard", selection: $standard) {
-                ForEach(BibStandard.allCases) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            .foregroundStyle(.secondary)
             .tip("Which fields count as required: classic BibTeX or biblatex")
+            dot
+            Text("\(style.lineWidth) columns").foregroundStyle(.secondary)
 
-            Toggle("Wrap", isOn: $wrapped)
-                .toggleStyle(.checkbox)
-                .tip("Fold long lines into the pane; the file itself is unchanged")
-            Toggle("Complete only", isOn: $completeOnly)
-                .toggleStyle(.checkbox)
-                .disabled(edited != nil)
-                .tip("Leave out anything missing a title, author or year")
-            Toggle(invalidCount == 0 ? "Valid only" : "Valid only (\(invalidCount) hidden)",
-                   isOn: $validOnly)
-                .toggleStyle(.checkbox)
-                .disabled(edited != nil)
-                .tip("Leave out anything missing a field \(standard.label) requires to compile")
+            Spacer(minLength: 12)
+
+            lookupControl
 
             if edited != nil {
                 Label("Edited by hand", systemImage: "pencil")
-                    .font(.callout)
                     .foregroundStyle(bibWarnColor)
                 Button("Discard edits") { edited = nil }
                     .controlSize(.small)
@@ -577,28 +583,17 @@ struct BibFileView: View {
                     .controlSize(.small)
                     .tip("Take the text over by hand; ordering freezes")
             }
-
-            lookupControl
-            improveControl
-
-            Spacer()
-
-            Button(copied ? "Copied" : "Copy") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                copied = true
-                Task { try? await Task.sleep(for: .seconds(2)); copied = false }
-            }
-            .controlSize(.small)
-            Button("Save…") { saving = true }
-                .controlSize(.small)
-                .tip("Write the file somewhere")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
       }
       .scrollIndicators(.hidden)
       .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var dot: some View {
+        Text("·").foregroundStyle(.tertiary)
     }
 
     @ViewBuilder private var lookupControl: some View {
@@ -617,7 +612,93 @@ struct BibFileView: View {
         }
     }
 
-    @ViewBuilder private var improveControl: some View {
+}
+
+/// What the bar says about the entries that are not ready yet.
+///
+/// One sentence, and it names the field when the whole set is short of the same one,
+/// because "3 entries need an author" is a thing a person can act on and "3 incomplete"
+/// is a thing they have to go and investigate.
+struct BibGaps {
+    /// Entry keys, in the order they are drawn, each with what it is missing.
+    let byEntry: [(key: String, itemKey: String, missing: [String])]
+    let standard: BibStandard
+
+    var count: Int { byEntry.count }
+    var isEmpty: Bool { byEntry.isEmpty }
+
+    /// The one field everything is missing, when there is one.
+    var sharedField: String? {
+        let fields = Set(byEntry.flatMap(\.missing))
+        return fields.count == 1 ? fields.first : nil
+    }
+
+    var sentence: String {
+        let subject = count == 1 ? "entry needs" : "entries need"
+        if let field = sharedField { return "\(count) \(subject) \(article(for: field)) \(field)" }
+        return "\(count) \(count == 1 ? "entry is" : "entries are") missing fields "
+            + "\(standard.label) requires"
+    }
+
+    private func article(for field: String) -> String {
+        "aeiou".contains(field.lowercased().first ?? "x") ? "an" : "a"
+    }
+}
+
+@MainActor
+func bibGaps(in entries: [BibEntry], kept: KeptBibtex, standard: BibStandard) -> BibGaps {
+    BibGaps(byEntry: entries.compactMap { entry in
+        let missing = bibGaps(entry, kept: kept, standard: standard)
+        return missing.isEmpty ? nil : (entry.key, entry.itemKey, missing)
+    }, standard: standard)
+}
+
+/// One entry that is not ready, as a chip in the bar: the key, and a way into it.
+///
+/// A count on its own says how much is wrong and nothing about where. These are the
+/// entries themselves, so the way to the problem is the thing that reports it.
+struct BibGapChip: View {
+    let key: String
+    let missing: [String]
+    let select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 4) {
+                Text(key)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.right").font(.caption2)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .fittedBackground(Ink.amber.opacity(0.16), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Ink.amber)
+        .tip("Missing \(missing.joined(separator: ", ")). Go to this entry.")
+        .accessibilityLabel("\(key), missing \(missing.joined(separator: ", "))")
+    }
+}
+
+/// Asks the model to fill in what the standard is short of, for every entry that is short
+/// of something. The confirmation lives with the button rather than with whichever pane
+/// happens to draw it, so there is one description of what this costs.
+struct FillGapsButton: View {
+    let entries: [BibEntry]
+    let passwords: [String]
+    let client: AIClient
+    let standard: BibStandard
+    let style: BibStyle
+
+    @ObservedObject private var batch: BibtexBatch = .shared
+    @ObservedObject private var kept: KeptBibtex = .shared
+    @State private var confirming = false
+
+    private var ready: Bool { !client.apiKey.isEmpty }
+
+    var body: some View {
         if let running = batch.progress {
             HStack(spacing: 6) {
                 ProgressView(value: Double(running.done), total: Double(max(running.total, 1)))
@@ -626,20 +707,46 @@ struct BibFileView: View {
                 Button("Stop") { batch.cancel() }.controlSize(.small)
             }
         } else {
-            Button("Improve \(improvableEntries.count) with AI") { confirmingImprove = true }
-                .controlSize(.small)
-                .disabled(improvableEntries.isEmpty || !aiReady)
-                .tip(aiReady
-                     ? "Ask the model to correct every entry that does not yet validate. "
-                       + "One billed request each, kept as they arrive."
-                     : "Needs an API key, in Settings")
-            if let summary = batch.lastSummary {
-                Text(summary).font(.caption).foregroundStyle(.secondary)
+            Button { confirming = true } label: {
+                Label("Fill the \(entries.count) gap\(entries.count == 1 ? "" : "s") with AI",
+                      systemImage: "sparkles")
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .disabled(entries.isEmpty || !ready)
+            .tip(ready
+                 ? "Ask the model to fill in what \(standard.label) is missing. One billed "
+                   + "request per entry, kept as they arrive."
+                 : "Needs an API key, in Settings")
+            .confirmationDialog("Fill \(entries.count) gaps with AI?", isPresented: $confirming,
+                                titleVisibility: .visible) {
+                Button("Ask") {
+                    batch.run(entries, client: client, passwords: passwords,
+                              library: Library.shared, kept: kept, standard: standard,
+                              text: { kept.text(for: $0) ?? bibtexBlock($0, style: style) })
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("One billed request per entry, sending the entry and the first pages "
+                     + "of the document to \(client.baseURL). Each answer is kept with its "
+                     + "document as it arrives, so stopping partway keeps what it already "
+                     + "did. A model can be confidently wrong: check the entries after.")
             }
         }
     }
+}
 
-    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
+/// The bibliography as it currently stands, so the window's toolbar can copy or save it
+/// without building the same text a second time.
+///
+/// Published state rather than a binding threaded through four views: the file is built
+/// in one place, by the pane that draws it, and the toolbar is simply another reader of
+/// the same answer.
+@MainActor
+final class BuiltBibliography: ObservableObject {
+    static let shared = BuiltBibliography()
+    @Published var text = ""
+    var isEmpty: Bool { text.isEmpty }
 }
 
 /// Colours one block for reading. The tokens rebuild their input exactly, so what is

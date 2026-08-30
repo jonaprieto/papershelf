@@ -806,8 +806,23 @@ struct ContentView: View {
             spend: sessionSpendLabel,
             planIsCurrent: previewIsCurrent,
             selectedPath: selectedPath,
-            lastOpened: selectionOpenedAt
+            lastOpened: selectionOpenedAt,
+            bibliography: bibliographySummary
         )
+    }
+
+    /// What the bibliography holds, for the bar, and only while the bibliography is what
+    /// is on screen. Two keys that are the same is the one problem a .bib has that none of
+    /// the entries can see on their own, so it is counted where the file is described.
+    private var bibliographySummary: String? {
+        guard mode == .bibliography, !runner.bib.isEmpty else { return nil }
+        var parts = ["\(runner.bib.count) entries"]
+        let short = runner.bib.filter { !$0.isComplete }.count
+        if short > 0 { parts.append("\(short) incomplete") }
+        let keys = runner.bib.map(\.key)
+        let duplicates = keys.count - Set(keys).count
+        parts.append("\(duplicates) duplicate key\(duplicates == 1 ? "" : "s")")
+        return parts.joined(separator: " · ")
     }
 
     /// Where the selected file is. One string rather than a chain inside the status bar's
