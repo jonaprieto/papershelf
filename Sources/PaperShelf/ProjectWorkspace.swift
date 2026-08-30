@@ -18,8 +18,11 @@ struct ProjectWorkspace: View {
     let close: () -> Void
 
     @StateObject private var model: ProjectDetailModel
+    /// Held by the window rather than by the conversation under it, so the toolbar can
+    /// write the whole thread out.
+    @StateObject private var conversation: ProjectConversationModel
     @State private var showingAddDocuments = false
-    @State private var exported = false
+    @State private var exporting = false
     @State private var dropTargeted = false
 
     /// Told when this project gains or loses a document, so the window's own count of it,
@@ -40,13 +43,33 @@ struct ProjectWorkspace: View {
         self.close = close
         _model = StateObject(wrappedValue: ProjectDetailModel(
             project: project, env: env, membershipChanged: membershipChanged))
+        _conversation = StateObject(wrappedValue: ProjectConversationModel(
+            project: project, env: env))
+    }
+
+    /// Which documents this question goes across. Seeded with everything that has text,
+    /// because that is what asking across a project means; a checkbox is for the times it
+    /// does not -- one book pulling every answer towards itself, or a reading list you
+    /// want a chapter's worth of.
+    @State private var chosen: Set<String> = []
+
+    /// Only what was chosen and has text. A document with no text contributes a title and
+    /// nothing to quote, so it cannot be part of an answer whatever the box says.
+    private var asking: [ProjectDocument] {
+        model.members.map(\.document).filter { chosen.contains($0.contentHash) && !$0.markdown.isEmpty }
+    }
+
+    private var choosable: [ProjectMember] {
+        model.members.filter { !$0.document.markdown.isEmpty }
     }
 
     var body: some View {
         HStack(spacing: 0) {
             ProjectConversationView(project: project,
-                                    documents: model.members.map(\.document),
-                                    env: env)
+                                    documents: asking,
+                                    totalDocuments: model.members.count,
+                                    env: env,
+                                    model: conversation)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             documents.frame(width: Metric.inspectorIdeal)
@@ -55,16 +78,33 @@ struct ProjectWorkspace: View {
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
         .onExitCommand(perform: close)
-        .task { await model.load() }
+        .task {
+            await model.load()
+            seedChosen()
+        }
         .task(id: reloadToken) {
             guard reloadToken != 0 else { return }
             await model.load()
+            seedChosen()
         }
+        .fileExporter(isPresented: $exporting,
+                      document: TextDocument(text: conversation.threadMarkdown),
+                      contentType: .plainText,
+                      defaultFilename: project.name) { _ in }
         .sheet(isPresented: $showingAddDocuments) {
             AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
                 Task { await model.addBatch(hashes, section: section) }
             }
         }
+    }
+
+    /// Everything readable, ticked. A document added while the project is open joins the
+    /// question; one already unticked by hand stays unticked.
+    private func seedChosen() {
+        let readable = Set(choosable.map(\.document.contentHash))
+        let unticked = Set(model.members.map(\.document.contentHash)).subtracting(chosen)
+        chosen = readable.subtracting(unticked.intersection(readable))
+        if chosen.isEmpty { chosen = readable }
     }
 
     private var subtitle: String {
@@ -91,6 +131,12 @@ struct ProjectWorkspace: View {
                 Label("Add documents", systemImage: "doc.badge.plus")
             }
             .tip("Add documents from the library, several at once, filed under a section")
+
+            Button { exporting = true } label: {
+                Label("Export the thread", systemImage: "square.and.arrow.up")
+            }
+            .disabled(conversation.turns.isEmpty)
+            .tip("Write every question and answer in this project out as Markdown")
         }
     }
 
@@ -98,12 +144,20 @@ struct ProjectWorkspace: View {
     /// documents have no text yet -- those contribute nothing but a title to an answer.
     private var documents: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("In this project").font(.callout.weight(.semibold))
-                Spacer()
-                Text("\(model.members.count)")
-                    .font(.caption.monospacedDigit())
+            HStack(spacing: 8) {
+                Text("In this project").font(Face.headline)
+                Text("\(model.members.count) document\(model.members.count == 1 ? "" : "s")")
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
+                Spacer(minLength: 6)
+                if !choosable.isEmpty {
+                    Button(allChosen ? "Select none" : "Select all") {
+                        chosen = allChosen ? [] : Set(choosable.map(\.document.contentHash))
+                    }
+                    .buttonStyle(.link)
+                    .font(Face.caption)
+                    .tip("Which documents this question goes across")
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -117,27 +171,23 @@ struct ProjectWorkspace: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.groupedMembers) { group in
-                    Section("\(group.section ?? "Unfiled") · \(group.members.count)") {
-                        ForEach(group.members) { member in row(member) }
+                    let readable = group.members.filter { !$0.document.markdown.isEmpty }
+                    if !readable.isEmpty {
+                        Section("\(group.section ?? "Unfiled") \u{00B7} \(readable.count)") {
+                            ForEach(readable) { member in row(member) }
+                        }
                     }
                 }
                 if !notIndexed.isEmpty {
                     Section {
-                        ForEach(notIndexed) { member in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(member.document.title).lineLimit(1)
-                                Text("nothing to quote from yet")
-                                    .font(.caption)
-                                    .foregroundStyle(Ink.amber)
-                            }
-                        }
+                        ForEach(notIndexed) { member in unreadableRow(member) }
                     } header: {
                         // Reading them was only offered in the catalogue, over the whole
                         // shelf: for one paper dropped here that is a walk across every
                         // file the app knows about, which is why a project could sit with
                         // nothing to ask across and no way forward from this screen.
                         HStack {
-                            Text("Not read yet · \(notIndexed.count)")
+                            Text("Not yet indexed \u{00B7} \(notIndexed.count)")
                             Spacer(minLength: 6)
                             Button {
                                 Task { await model.readUnindexed() }
@@ -168,9 +218,14 @@ struct ProjectWorkspace: View {
                 let urls = await droppedFileURLs(from: providers)
                 guard !urls.isEmpty else { return }
                 await model.addFiles(urls.map(\.path))
+                seedChosen()
             }
             return true
         }
+    }
+
+    private var allChosen: Bool {
+        !choosable.isEmpty && chosen.count >= choosable.count
     }
 
     private var notIndexed: [ProjectMember] {
@@ -178,17 +233,56 @@ struct ProjectWorkspace: View {
     }
 
     private func row(_ member: ProjectMember) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(member.document.title).lineLimit(2)
-            Text([member.author, member.pageCount.map { "\($0) pp" }]
-                    .compactMap { $0 }.joined(separator: " · "))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        Toggle(isOn: Binding(
+            get: { chosen.contains(member.document.contentHash) },
+            set: { on in
+                if on { chosen.insert(member.document.contentHash) }
+                else { chosen.remove(member.document.contentHash) }
+            }
+        )) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(member.document.title).font(Face.body).lineLimit(2)
+                Text(detail(member))
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .toggleStyle(.checkbox)
         .contextMenu {
             Button("Remove from this project", role: .destructive) {
                 Task { await model.remove(member) }
             }
         }
+    }
+
+    /// A document with no text: shown, unticked and unturnable, with the reason it cannot
+    /// join a question. Hiding them is how a project came to sit with nothing to ask
+    /// across and no sign of why.
+    private func unreadableRow(_ member: ProjectMember) -> some View {
+        Toggle(isOn: .constant(false)) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(member.document.title)
+                    .font(Face.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Text("nothing to quote from yet \u{2014} read it first")
+                    .font(Face.caption)
+                    .foregroundStyle(Ink.amber)
+            }
+        }
+        .toggleStyle(.checkbox)
+        .disabled(true)
+        .contextMenu {
+            Button("Remove from this project", role: .destructive) {
+                Task { await model.remove(member) }
+            }
+        }
+    }
+
+    /// Who wrote it, how long it is, and whether it can be quoted. The last is the one
+    /// that decides whether ticking the box does anything.
+    private func detail(_ member: ProjectMember) -> String {
+        [member.author, member.pageCount.map { "\($0) pp" }, "indexed"]
+            .compactMap { $0 }.joined(separator: " \u{00B7} ")
     }
 }

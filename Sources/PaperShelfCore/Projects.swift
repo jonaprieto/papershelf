@@ -248,6 +248,87 @@ public struct Citation: Sendable, Equatable {
     }
 }
 
+/// One numbered source under an answer: the number the marks in the text carry, and the
+/// citation it points at.
+public struct NumberedCitation: Equatable, Sendable, Identifiable {
+    public let number: Int
+    public let citation: Citation
+    public var id: Int { number }
+
+    public init(number: Int, citation: Citation) {
+        self.number = number
+        self.citation = citation
+    }
+}
+
+/// A reply as it should be drawn: runs of text with numbered marks where the citations sit.
+public enum ReplyPiece: Equatable, Sendable {
+    case text(String)
+    case mark(Int)
+}
+
+/// The distinct sources an answer leans on, numbered in the order they are first referred
+/// to.
+///
+/// Distinct by document and page: the same page cited twice in one answer is one source
+/// with one number, not two entries saying the same thing.
+public func numberedCitations(_ citations: [Citation]) -> [NumberedCitation] {
+    var seen: [String: Int] = [:]
+    var out: [NumberedCitation] = []
+    for citation in citations.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
+        let key = "\(citation.documentTitle.lowercased())#\(citation.page)"
+        guard seen[key] == nil else { continue }
+        seen[key] = out.count + 1
+        out.append(NumberedCitation(number: out.count + 1, citation: citation))
+    }
+    return out
+}
+
+/// Breaks a reply into text and numbered marks, replacing each written-out "(Title, p. N)"
+/// with the number of the source it names.
+///
+/// A model writes its citations into the prose, which reads as clutter in the middle of a
+/// sentence and takes up the room an answer needs. The marks say the same thing in one
+/// character and point at the list underneath.
+///
+/// Concatenating the text pieces and the citation spans reproduces the reply exactly, so
+/// nothing an answer said can be dropped on the way to the screen.
+public func replyPieces(_ reply: String, citations: [Citation]) -> [ReplyPiece] {
+    let numbers = numberedCitations(citations)
+    guard !numbers.isEmpty else { return reply.isEmpty ? [] : [.text(reply)] }
+
+    var numberFor: [String: Int] = [:]
+    for entry in numbers {
+        numberFor["\(entry.citation.documentTitle.lowercased())#\(entry.citation.page)"] = entry.number
+    }
+
+    // Sorted and non-overlapping: a model can cite the same span twice, and two marks
+    // over one range would take a bite out of the text between them.
+    var spans: [(Range<String.Index>, Int)] = []
+    for citation in citations.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
+        let key = "\(citation.documentTitle.lowercased())#\(citation.page)"
+        guard let number = numberFor[key] else { continue }
+        if let last = spans.last, citation.range.lowerBound < last.0.upperBound { continue }
+        guard citation.range.lowerBound >= reply.startIndex,
+              citation.range.upperBound <= reply.endIndex else { continue }
+        spans.append((citation.range, number))
+    }
+
+    var pieces: [ReplyPiece] = []
+    var cursor = reply.startIndex
+    for (range, number) in spans {
+        if cursor < range.lowerBound {
+            pieces.append(.text(String(reply[cursor..<range.lowerBound])))
+        }
+        pieces.append(.mark(number))
+        cursor = range.upperBound
+    }
+    if cursor < reply.endIndex {
+        pieces.append(.text(String(reply[cursor...])))
+    }
+    return pieces
+}
+
 private let citationPattern = try! NSRegularExpression(pattern: "\\(([^()]+?),\\s*p\\.\\s*(\\d+)\\)")
 
 /// Pulls "(Title, p. N)" citations back out of a reply.

@@ -746,6 +746,24 @@ final class ProjectConversationModel: ObservableObject {
     var endpointName: String { env.endpoint() }
     var modelName: String { env.model() }
 
+    /// Every question and answer in this project, in the order they were asked. What the
+    /// window's Export button writes out.
+    var threadMarkdown: String {
+        var out = "# \(project.name)\n"
+        for turn in turns where !turn.isLoading && turn.error == nil {
+            out += "\n## \(turn.question)\n\n\(turn.reply)\n"
+            let sources = numberedCitations(turn.citations)
+            guard !sources.isEmpty else { continue }
+            out += "\nSources\n"
+            for source in sources {
+                out += "\n\(source.number). \(source.citation.documentTitle), "
+                    + "p. \(source.citation.page)"
+            }
+            out += "\n"
+        }
+        return out
+    }
+
     init(project: ProjectSummary, env: ProjectsEnvironment) {
         self.project = project
         self.env = env
@@ -823,13 +841,29 @@ final class ProjectConversationModel: ObservableObject {
 }
 
 struct ProjectConversationView: View {
-    @StateObject private var model: ProjectConversationModel
+    /// Owned here unless the window hands one in. The workspace's toolbar exports the
+    /// thread, and it cannot export turns held privately by the view under it.
+    @StateObject private var owned: ProjectConversationModel
+    private var supplied: ProjectConversationModel?
+    private var model: ProjectConversationModel { supplied ?? owned }
+    /// The documents this question goes across: what was ticked beside it, and readable.
     private let documents: [ProjectDocument]
+    /// How many the project holds altogether, so the line above the field can say "12 of
+    /// 14" rather than "12 of 12" -- the two numbers are the whole point of the choice.
+    private let totalDocuments: Int
 
-    init(project: ProjectSummary, documents: [ProjectDocument], env: ProjectsEnvironment) {
+    init(project: ProjectSummary, documents: [ProjectDocument],
+         totalDocuments: Int? = nil, env: ProjectsEnvironment,
+         model: ProjectConversationModel? = nil) {
         self.documents = documents
-        _model = StateObject(wrappedValue: ProjectConversationModel(project: project, env: env))
+        self.totalDocuments = totalDocuments ?? documents.count
+        self.supplied = model
+        _owned = StateObject(wrappedValue: model
+                             ?? ProjectConversationModel(project: project, env: env))
     }
+
+    /// The answer being written out to a file, when one is.
+    @State private var saving: ProjectTurn?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -840,30 +874,50 @@ struct ProjectConversationView: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(model.turns) { turn in
-                        TurnView(turn: turn, onOpen: model.open)
+                        TurnView(turn: turn,
+                                 onOpen: model.open,
+                                 footnote: footnote(for: turn),
+                                 copyWithCitations: { copy(turn) },
+                                 saveAsNote: { saving = turn })
                     }
                 }
                 .padding()
             }
             Divider()
-            outbound
-            HStack(alignment: .bottom) {
-                TextField("Ask across this project…", text: $model.pendingQuestion, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .onSubmit { Task { await model.prepareToAsk(documents: documents) } }
-                Button {
-                    Task { await model.prepareToAsk(documents: documents) }
-                } label: {
-                    if model.isPreparing { ProgressView().controlSize(.small) } else { Text("Ask") }
+            VStack(spacing: 10) {
+                outbound
+                HStack(alignment: .bottom, spacing: 10) {
+                    TextField("Ask across this project…",
+                              text: Binding(get: { model.pendingQuestion },
+                                            set: { model.pendingQuestion = $0 }),
+                              axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
+                        .onSubmit { Task { await model.prepareToAsk(documents: documents) } }
+                    Button {
+                        Task { await model.prepareToAsk(documents: documents) }
+                    } label: {
+                        if model.isPreparing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            HStack(spacing: 6) {
+                                Text("Ask")
+                                Text("\u{2318}\u{21A9}")
+                                    .font(.caption2.weight(.bold).monospaced())
+                                    .padding(.horizontal, 3)
+                                    .background(.white.opacity(0.22),
+                                                in: RoundedRectangle(cornerRadius: 3))
+                            }
+                        }
+                    }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || model.isPreparing
+                              || askReadiness(of: documents) != .ready)
                 }
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent)
-                .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          || model.isPreparing
-                          || askReadiness(of: documents) != .ready)
             }
-            .padding()
+            .padding(14)
         }
         .navigationTitle("Ask: \(model.project.name)")
         .confirmationDialog(confirmationTitle, isPresented: confirmationShown, titleVisibility: .visible) {
@@ -877,6 +931,52 @@ struct ProjectConversationView: View {
         } message: {
             Text(model.error ?? "")
         }
+        // A file rather than a note kept in the library: there is nowhere in the library
+        // that holds an answer, and a button that looked like it saved one would be
+        // saving it nowhere.
+        .fileExporter(isPresented: Binding(get: { saving != nil },
+                                           set: { if !$0 { saving = nil } }),
+                      document: TextDocument(text: saving.map(markdown) ?? ""),
+                      contentType: .plainText,
+                      defaultFilename: model.project.name) { _ in saving = nil }
+    }
+
+    /// What an answer was built from. Not what it cost: a price per answer is not
+    /// recorded anywhere, and a number invented here would be read as one that was.
+    private func footnote(for turn: ProjectTurn) -> String {
+        guard !turn.isLoading, turn.error == nil, !turn.excerpts.isEmpty else { return "" }
+        let documents = Set(turn.excerpts.map(\.contentHash)).count
+        var parts = ["\(turn.excerpts.count) chunk\(turn.excerpts.count == 1 ? "" : "s") "
+                     + "from \(documents) document\(documents == 1 ? "" : "s")"]
+        if !model.modelName.isEmpty { parts.append(model.modelName) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// The answer with its sources written out under it, which is the shape it takes
+    /// anywhere it is pasted.
+    ///
+    /// `threadMarkdown` on the model is the same thing for every turn at once.
+    private func markdown(_ turn: ProjectTurn) -> String {
+        var out = "## \(turn.question)\n\n\(turn.reply)\n"
+        let sources = numberedCitations(turn.citations)
+        guard !sources.isEmpty else { return out }
+        out += "\nSources\n"
+        for source in sources {
+            out += "\n\(source.number). \(source.citation.documentTitle), p. \(source.citation.page)"
+            if let quote = turn.excerpts.first(where: {
+                $0.contentHash == source.citation.contentHash && $0.page == source.citation.page
+            })?.body, !quote.isEmpty {
+                let flat = quote.replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                out += "\n   \u{201C}\(flat)\u{201D}"
+            }
+        }
+        return out + "\n"
+    }
+
+    private func copy(_ turn: ProjectTurn) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown(turn), forType: .string)
     }
 
     /// What would be sent, on screen the whole time a question is being typed.
@@ -886,16 +986,19 @@ struct ProjectConversationView: View {
     /// person reads while deciding what to ask, and it says the same three things the
     /// dialog did -- how much text, to which host, answered by which model.
     private var outbound: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "arrow.up.forward.square")
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(askReadiness(of: documents) == .ready
+                                 ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Ink.amber))
             Text(outboundLine)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
         }
-        .font(.caption)
+        .font(Face.caption)
         .foregroundStyle(.secondary)
-        .lineLimit(2)
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.card))
     }
 
     private var outboundLine: String {
@@ -905,7 +1008,10 @@ struct ProjectConversationView: View {
             return "No documents in this project yet. Drop PDFs on the list beside this, "
                  + "or add them from the library."
         case .noText:
-            return "None of these documents has text yet, so there is nothing to ask across."
+            return totalDocuments > 0
+                ? "None of the documents ticked beside this has text yet, so there is "
+                    + "nothing to ask across."
+                : "None of these documents has text yet, so there is nothing to ask across."
         case .ready:
             break
         }
@@ -914,8 +1020,8 @@ struct ProjectConversationView: View {
         let words = indexed.reduce(0) { $0 + $1.markdown.count } / 5
         let host = URL(string: model.endpointName)?.host ?? model.endpointName
         let named = model.modelName.isEmpty ? "" : " as \(model.modelName)"
-        return "\(indexed.count) of \(documents.count) documents · roughly "
-            + "\(words.formatted(.number.notation(.compactName))) words would be sent to \(host)\(named)"
+        return "\(indexed.count) of \(totalDocuments) documents · roughly "
+            + "\(words.formatted(.number.notation(.compactName))) words will be sent to \(host)\(named)"
     }
 
     private var confirmationShown: Binding<Bool> {
@@ -948,49 +1054,164 @@ struct ProjectConversationView: View {
 private struct TurnView: View {
     let turn: ProjectTurn
     let onOpen: (Citation) -> Void
+    /// What the answer cost and what it was built from, said once under it.
+    var footnote: String = ""
+    var copyWithCitations: () -> Void = {}
+    var saveAsNote: () -> Void = {}
+    var askWithAll: (() -> Void)?
+
+    private var sources: [NumberedCitation] { numberedCitations(turn.citations) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(turn.question)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                // Who asked. A conversation with no speakers on it reads as a document,
+                // and the question stops being a question you asked.
+                Text(initials)
+                    .font(Face.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(.quaternary.opacity(0.6), in: Circle())
+                Text(turn.question)
+                    .font(Face.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if turn.isLoading {
-                ProgressView().controlSize(.small)
+                ProgressView().controlSize(.small).padding(.leading, 32)
             } else if let error = turn.error {
-                Text(error).foregroundStyle(.red)
+                Text(error).foregroundStyle(Ink.red).padding(.leading, 32)
             } else {
-                Text(turn.reply)
-                if !turn.citations.isEmpty {
-                    citationList
+                VStack(alignment: .leading, spacing: 12) {
+                    answer
+                    if !sources.isEmpty { sourceList }
+                    actions
                 }
+                .padding(.leading, 32)
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.08)))
     }
 
-    private var citationList: some View {
-        // A distinct (title, page) pair per button: the same page can legitimately be
-        // cited more than once in one answer, and that should not draw two links.
-        let unique = Array(Set(turn.citations.map { CitationKey($0) })).sorted()
-        return HStack(spacing: 8) {
-            ForEach(unique, id: \.self) { key in
-                let citation = turn.citations.first { $0.documentTitle == key.title && $0.page == key.page }
-                if let citation, citation.contentHash != nil {
-                    Button("\(key.title), p. \(key.page)") { onOpen(citation) }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                } else {
-                    // contentHash is nil: the model cited a title never actually sent.
-                    // A plain link here would look identical to a real one and silently
-                    // do nothing when tapped; show it as unresolved instead.
-                    Text("\(key.title), p. \(key.page)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .strikethrough()
-                        .help("This citation doesn't match a document that was sent with this question.")
-                }
+    /// The reply, with each written-out "(Title, p. 17)" drawn as the number of the source
+    /// it names. The citations belong under the answer, not in the middle of its sentences.
+    private var answer: some View {
+        Text(attributed)
+            .font(Face.body)
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
+    private var attributed: AttributedString {
+        var out = AttributedString()
+        for piece in replyPieces(turn.reply, citations: turn.citations) {
+            switch piece {
+            case .text(let text):
+                out += AttributedString(text)
+            case .mark(let number):
+                var mark = AttributedString(" \(number) ")
+                mark.font = .caption2.weight(.semibold).monospacedDigit()
+                mark.foregroundColor = Ink.blue
+                mark.backgroundColor = Ink.blue.opacity(0.14)
+                out += mark
             }
         }
+        return out
+    }
+
+    /// What each number points at: the document, the page, and the passage the answer was
+    /// built from, so a claim can be checked without leaving the answer.
+    private var sourceList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(sources.enumerated()), id: \.element.id) { index, source in
+                if index > 0 { Divider().opacity(0.5) }
+                sourceRow(source)
+            }
+        }
+        .padding(.vertical, 4)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.card))
+    }
+
+    @ViewBuilder
+    private func sourceRow(_ source: NumberedCitation) -> some View {
+        let citation = source.citation
+        let resolved = citation.contentHash != nil
+        let quote = turn.excerpts.first {
+            $0.contentHash == citation.contentHash && $0.page == citation.page
+        }?.body
+        Button {
+            if resolved { onOpen(citation) }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Text("\(source.number)")
+                    .font(Face.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(resolved ? Ink.blue : Color.secondary)
+                    .frame(width: 18, height: 18)
+                    .background((resolved ? Ink.blue : Color.secondary).opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(citation.documentTitle) \u{00B7} p. \(citation.page)")
+                        .font(Face.caption.weight(.semibold))
+                        .strikethrough(!resolved)
+                    if let quote, !quote.isEmpty {
+                        Text("\u{201C}\(trimmed(quote))\u{201D}")
+                            .font(Face.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !resolved {
+                        // The model cited a title that was never sent. A plain link would
+                        // look identical to a real one and quietly do nothing.
+                        Text("This citation doesn't match a document that was sent.")
+                            .font(Face.caption)
+                            .foregroundStyle(Ink.amber)
+                    }
+                }
+                Spacer(minLength: 6)
+                if resolved {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!resolved)
+    }
+
+    /// A quotation is evidence, not an excerpt of the whole page: three lines of it is
+    /// enough to check a claim against, and more of it buries the next source.
+    private func trimmed(_ quote: String) -> String {
+        let flat = quote.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard flat.count > 240 else { return flat }
+        return String(flat.prefix(240)) + "\u{2026}"
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            Button("Copy with citations", action: copyWithCitations)
+            Button("Save as Markdown\u{2026}", action: saveAsNote)
+            if let askWithAll {
+                Button("Ask again with all", action: askWithAll)
+            }
+            Spacer(minLength: 8)
+            if !footnote.isEmpty {
+                Text(footnote)
+                    .font(Face.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .controlSize(.small)
+    }
+
+    /// The initials of whoever is at this machine, which is who asked.
+    private var initials: String {
+        let name = NSFullUserName()
+        let letters = name.split(separator: " ").compactMap(\.first).prefix(2)
+        return letters.isEmpty ? "?" : String(letters).uppercased()
     }
 }
 
