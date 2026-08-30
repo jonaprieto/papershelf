@@ -765,8 +765,13 @@ final class Runner: ObservableObject {
                 self.found = found.count
                 self.current = ""
             }
+            // Every core reports every file it finishes; without a throttle a plan over
+            // fourteen thousand of them queues that many main-actor hops, and the window
+            // spends the run redrawing a counter nobody can read that fast.
+            let reports = Throttle(milliseconds: 80)
             let out = process(jobs: found, options: options,
                               progress: { done, total, name in
+                                  guard reports.allow() else { return }
                                   self.report(done: done, total: total, name: name,
                                               generation: generation)
                               }, cancelled: { Task.isCancelled })
@@ -871,9 +876,11 @@ final class Runner: ObservableObject {
 
         workTask = Task.detached(priority: .userInitiated) { [self] in
             await MainActor.run { self.phase = .processing }
+            let reports = Throttle(milliseconds: 80)
             let out = process(jobs: queue, options: options, overrides: overrides,
                               trashed: trashed, moves: moves,
                               progress: { done, total, name in
+                                  guard reports.allow() else { return }
                                   self.report(done: done, total: total, name: name,
                                               generation: generation)
                               }, cancelled: { Task.isCancelled })

@@ -1300,10 +1300,17 @@ public func process(job: Job, options: Options, overrideName: String? = nil) -> 
              byteCount: size, pageCount: pages, documentInfo: info)
     }
 
-    // Read into memory: a real run moves the original out from under us part-way.
-    // Measured against `PDFDocument(url:)`, which pages the file in lazily: reading the
-    // bytes is the faster of the two even at 37KB, and only one file is held at a time.
-    guard let data = try? Data(contentsOf: source), let doc = PDFDocument(data: data) else {
+    // A real run reads the file into memory: it moves the original out from under itself
+    // part-way, and at the size of a single paper that read is the cheaper of the two.
+    //
+    // A plan does not move anything, and it wants the page count and the attributes, both
+    // of which `PDFDocument(url:)` pages in as it needs them. Slurping every file first is
+    // what made a plan over fourteen thousand books read the whole shelf off the disk to
+    // ask each book its title.
+    let opened = options.dryRun
+        ? PDFDocument(url: source)
+        : (try? Data(contentsOf: source)).flatMap(PDFDocument.init(data:))
+    guard let doc = opened else {
         return item(source, .failed, "cannot read PDF")
     }
 
