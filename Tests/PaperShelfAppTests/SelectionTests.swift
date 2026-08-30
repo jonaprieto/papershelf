@@ -20,4 +20,27 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(selectionRange(from: "gone", to: "d", in: order), ["d"])
         XCTAssertEqual(selectionRange(from: "b", to: "gone", in: order), ["gone"])
     }
+
+    /// Where a decision leaves you: the next file still waiting *below* the one decided,
+    /// in the order on screen. Walking the results instead is how confirming one file
+    /// landed on another from a different folder entirely.
+    func testADecisionMovesToTheNextWaitingFileBelowIt() {
+        let waiting: Set<String> = ["a", "d", "e"]
+        XCTAssertEqual(nextWaiting(after: "b", in: order, waiting: { waiting.contains($0) }), "d")
+        XCTAssertEqual(nextWaiting(after: "d", in: order, waiting: { waiting.contains($0) }), "e")
+    }
+
+    /// Past the last one it wraps, so the files above the anchor are not stranded.
+    func testItWrapsOnceAndStopsWhenNothingIsWaiting() {
+        XCTAssertEqual(nextWaiting(after: "e", in: order, waiting: { $0 == "a" }), "a")
+        XCTAssertNil(nextWaiting(after: "b", in: order, waiting: { _ in false }))
+        XCTAssertNil(nextWaiting(after: "b", in: [], waiting: { _ in true }))
+    }
+
+    /// An anchor no longer on screen starts at the top rather than jumping somewhere
+    /// arbitrary.
+    func testAMissingAnchorStartsAtTheTop() {
+        XCTAssertEqual(nextWaiting(after: "gone", in: order, waiting: { $0 != "a" }), "b")
+        XCTAssertEqual(nextWaiting(after: nil, in: order, waiting: { _ in true }), "a")
+    }
 }

@@ -124,4 +124,30 @@ final class ExplorerTreeTests: XCTestCase {
 
         XCTAssertTrue(filterExplorerTree(tree, matching: "zzz").isEmpty)
     }
+
+    /// The sidebar draws rows, not a tree: a folded folder contributes its own row and
+    /// nothing else, which is what keeps a click in the results list from rebuilding
+    /// every file in the sidebar.
+    func testFoldedFoldersKeepTheirContentsOutOfTheRows() throws {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let tree = buildExplorerTree([
+            item(root, "papers/2020/a.pdf"),
+            item(root, "top.pdf"),
+        ])
+        let children = try XCTUnwrap(tree.first?.children)
+
+        let folded = flattenExplorer(children, expanded: [])
+        XCTAssertEqual(folded.map(\.node.name), ["papers", "top.pdf"])
+        XCTAssertEqual(folded.map(\.depth), [0, 0])
+
+        let open = flattenExplorer(children, expanded: ["/tmp/shelf/papers"])
+        XCTAssertEqual(open.map(\.node.name), ["papers", "2020", "top.pdf"])
+        XCTAssertEqual(open.map(\.depth), [0, 1, 0])
+
+        let deep = flattenExplorer(children,
+                                   expanded: ["/tmp/shelf/papers", "/tmp/shelf/papers/2020"])
+        XCTAssertEqual(deep.map(\.node.name), ["papers", "2020", "a.pdf", "top.pdf"])
+        XCTAssertEqual(deep.map(\.depth), [0, 1, 2, 0])
+        XCTAssertEqual(deep.map(\.isFolder), [true, true, false, false])
+    }
 }

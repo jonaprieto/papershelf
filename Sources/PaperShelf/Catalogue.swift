@@ -568,8 +568,9 @@ struct ResultsPane: View {
             guard case .success(let urls) = outcome, let folder = urls.first else { return }
             let files = actingItems
             guard !files.isEmpty else { return }
+            let order = onScreenOrder
             for file in files { runner.move(file, to: folder) }
-            afterDeciding()
+            afterDeciding(through: order)
         }
             .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
                             isPresented: $confirmingBatchAI) {
@@ -1200,28 +1201,32 @@ struct ResultsPane: View {
 
     private func confirm() {
         guard let item = selectedItem else { return }
+        let order = onScreenOrder
         runner.confirm(item, as: draft)
-        advance()
+        advance(through: order)
     }
 
     private func skip() {
         let files = actingItems
         guard !files.isEmpty else { return }
+        let order = onScreenOrder
         for file in files { runner.skip(file) }
-        afterDeciding()
+        afterDeciding(through: order)
     }
 
     private func skipFolder() {
         guard let item = selectedItem else { return }
+        let order = onScreenOrder
         runner.skipFolder(of: item)
-        advance()
+        advance(through: order)
     }
 
     /// Carries out this one file straight away, then moves on like any other decision.
     private func applyNow() {
         guard let item = selectedItem, runner.decision(for: item) != .applied else { return }
+        let order = onScreenOrder
         applyOne(item, draft)
-        advance()
+        advance(through: order)
     }
 
     /// One menu, built for whichever file was right-clicked rather than the selected one,
@@ -1234,9 +1239,10 @@ struct ResultsPane: View {
             item: item,
             others: many.count > 1 ? many.count : 0,
             confirm: {
+                let order = onScreenOrder
                 selected = item.key
                 runner.confirm(item, as: item.destinationName)
-                advance()
+                advance(through: order)
             },
             identify: {
                 selected = item.key
@@ -1247,12 +1253,14 @@ struct ResultsPane: View {
                 choosingMoveTarget = true
             },
             trash: {
+                let order = onScreenOrder
                 for file in many { runner.markForDeletion(file) }
-                if many.count > 1 { afterDeciding() }
+                if many.count > 1 { afterDeciding(through: order) }
             },
             skip: {
+                let order = onScreenOrder
                 for file in many { runner.skip(file) }
-                if many.count > 1 { afterDeciding() }
+                if many.count > 1 { afterDeciding(through: order) }
             },
             convert: {
                 selected = item.key
@@ -1333,22 +1341,42 @@ struct ResultsPane: View {
     private func markDeleted() {
         let files = actingItems
         guard !files.isEmpty else { return }
+        let order = onScreenOrder
         for file in files { runner.markForDeletion(file) }
-        afterDeciding()
+        afterDeciding(through: order)
     }
 
     /// After deciding, the picked files are decided: a selection of forty that has just
     /// been trashed is not a selection anybody still wants. The anchor moves on to what is
     /// still waiting, the way it always did for one file.
-    private func afterDeciding() {
+    private func afterDeciding(through order: [String]) {
         selection = []
-        advance()
+        advance(through: order)
     }
 
-    /// After a decision, jump to the next file still waiting. When none are left the
-    /// selection stays put so the last thing decided is still on screen.
-    private func advance() {
-        if let next = runner.nextPending() { selected = next.key }
+    /// The keys in the order this view is drawing them: the folder tree as the list folds
+    /// it, or the shelf in its sort order, filtered either way.
+    ///
+    /// Taken before a decision is recorded, so it still holds the file being decided and
+    /// "the next one" means the row under it rather than the top of what is left.
+    private var onScreenOrder: [String] {
+        switch mode {
+        case .list, .bibliography:
+            return listRows.compactMap { $0.node.itemKey }
+        case .catalogue, .duplicates:
+            let keys = visibleKeys
+            return runner.results.filter { keys?.contains($0.key) ?? true }.map(\.key)
+        }
+    }
+
+    /// After a decision, jump to the next file still waiting in the order on screen. When
+    /// none are left the selection stays put so the last thing decided is still on screen.
+    private func advance(through order: [String]) {
+        if let next = nextWaiting(after: selected, in: order, waiting: { key in
+            runner.item(key).map { runner.decision(for: $0) == nil } ?? false
+        }) {
+            selected = next
+        }
         loadDraft()
     }
 
@@ -2528,6 +2556,23 @@ func selectionRange(from anchor: String?, to key: String, in order: [String]) ->
     else { return [key] }
     let range = from < to ? from...to : to...from
     return Array(order[range])
+}
+
+/// Where a decision leaves you: the next file still waiting, in the order the view is
+/// drawing them, starting below the anchor and wrapping once around.
+///
+/// `order` is the order on screen, which is not the order of the results: the list is a
+/// folder tree, the shelf is sorted, and both can be filtered. Walking the results instead
+/// is how confirming a file used to land on one from somewhere else entirely.
+func nextWaiting(after anchor: String?, in order: [String],
+                 waiting: (String) -> Bool) -> String? {
+    guard !order.isEmpty else { return nil }
+    let start = anchor.flatMap { order.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+    for offset in 0..<order.count {
+        let key = order[(start + offset) % order.count]
+        if waiting(key) { return key }
+    }
+    return nil
 }
 
 /// A folder in the list: a chevron that folds it, its name, and how much is in it.

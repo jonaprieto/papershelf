@@ -110,7 +110,6 @@ struct ContentView: View {
     /// Which folders are open, by path. Kept here rather than inside `OutlineGroup` so the
     /// Explorer can be folded and unfolded from its header the way an editor's can.
     @State private var explorerExpanded: Set<String> = []
-    @State private var explorerFilter = ""
     @State private var expanded: Set<String> = []
     @State private var sizedWindow = false
     @State private var confirmingApply = false
@@ -933,42 +932,7 @@ struct ContentView: View {
 
     // MARK: Explorer
 
-    /// What the filter box leaves of the tree. Recomputed as it is typed rather than kept
-    /// in state, so it can never disagree with the tree it is filtering.
-    private var visibleExplorerTree: [ExplorerNode] {
-        filterExplorerTree(explorerTree, matching: explorerFilter)
-    }
-
-    /// The folder tree, drawn inside the Sources section rather than beside it.
-    ///
-    /// It was a tab of its own, which put "which folders are these files in" one level
-    /// away from "where do the files come from" -- the same question, one level down.
-    @ViewBuilder
-    private var explorerTreeRows: some View {
-        if !runner.results.isEmpty {
-            explorerFilterField
-            let visible = visibleExplorerTree
-            if visible.isEmpty {
-                Text("No file here matches \"\(explorerFilter)\"")
-                    .foregroundStyle(.secondary)
-            } else {
-                ExplorerOutline(
-                    nodes: visible,
-                    expanded: $explorerExpanded,
-                    // A filter that hid its own matches inside folded folders would be
-                    // useless, so filtering opens everything it kept and folding is
-                    // handed back once the box is empty again.
-                    forceExpanded: !explorerFilter.isEmpty,
-                    selected: reviewing,
-                    select: { reviewing = $0; sidebarTarget = .document($0) }
-                )
-            }
-        }
-    }
-
     /// Fold and unfold the whole tree, in the Sources header, beside what they fold.
-    /// Disabled while the filter is on: filtering opens what it kept, and a fold button
-    /// that fights the filter is a button that does nothing you can see.
     private var explorerFolding: some View {
         HStack(spacing: 2) {
             Button {
@@ -978,7 +942,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+            .disabled(runner.results.isEmpty)
             .tip("Unfold every folder")
 
             Button {
@@ -988,31 +952,10 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+            .disabled(runner.results.isEmpty)
             .tip("Fold every folder")
         }
         .font(.caption)
-    }
-
-    private var explorerFilterField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-            TextField("Filter by name", text: $explorerFilter)
-                .textFieldStyle(.plain)
-            if !explorerFilter.isEmpty {
-                Button { explorerFilter = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .tip("Clear the filter")
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
     }
 
     /// Where the files come from, with what is inside them.
@@ -1063,7 +1006,7 @@ struct ContentView: View {
         if let root, let children = root.children, !children.isEmpty {
             DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
                 ExplorerOutline(nodes: children, expanded: $explorerExpanded,
-                                forceExpanded: false, selected: reviewing,
+                                selected: reviewing,
                                 select: { reviewing = $0; sidebarTarget = .document($0) },
                                 focusPath: { sidebarTarget = .folder($0) },
                                 openFolder: showFolder,
@@ -1511,18 +1454,40 @@ func buildExplorerTree(_ items: [Item]) -> [ExplorerNode] {
     return top.order.map { top.children[$0]!.node() }
 }
 
+/// One row of the explorer as the sidebar draws it: the node and how deep it sits.
+struct FlatExplorerRow: Identifiable {
+    let node: ExplorerNode
+    let depth: Int
+    var id: String { node.id }
+    var isFolder: Bool { node.children != nil }
+}
+
+/// The explorer tree as rows, in the order it reads, with folded folders left out.
+///
+/// Nested `DisclosureGroup`s build every row of every folder, open or not, and the whole
+/// tree again on each pass -- and the sidebar's pass runs on every click in the list,
+/// since the selected file is drawn here too. A flat array is what a `List` can be lazy
+/// over, the same fix the results list already has (`flattenTree`).
+func flattenExplorer(_ nodes: [ExplorerNode], expanded: Set<String>,
+                     depth: Int = 0) -> [FlatExplorerRow] {
+    var rows: [FlatExplorerRow] = []
+    for node in nodes {
+        rows.append(FlatExplorerRow(node: node, depth: depth))
+        guard let children = node.children, expanded.contains(node.id) else { continue }
+        rows.append(contentsOf: flattenExplorer(children, expanded: expanded, depth: depth + 1))
+    }
+    return rows
+}
+
 /// The Explorer's tree, folded and unfolded from the outside.
 ///
 /// `OutlineGroup` keeps its own expansion state where nothing can reach it, which is fine
-/// until a header offers "unfold everything" or a filter has to open what it kept. Plain
-/// `DisclosureGroup`s over a shared set of open folder paths put that state somewhere both
-/// can act on.
+/// until a header offers "unfold everything". A shared set of open folder paths puts that
+/// state somewhere both can act on, and the rows are flat so only what is on screen is
+/// built.
 struct ExplorerOutline: View {
     let nodes: [ExplorerNode]
     @Binding var expanded: Set<String>
-    /// Overrides the set while a filter is on: everything shown is open, and folding it by
-    /// hand meanwhile is not offered rather than silently ignored.
-    let forceExpanded: Bool
     let selected: String?
     let select: (String) -> Void
     var focusPath: (String) -> Void = { _ in }
@@ -1533,52 +1498,49 @@ struct ExplorerOutline: View {
     var focusedPath: String? = nil
 
     var body: some View {
-        ForEach(nodes) { node in
-            if let children = node.children {
-                DisclosureGroup(isExpanded: binding(for: node)) {
-                    ExplorerOutline(nodes: children, expanded: $expanded,
-                                    forceExpanded: forceExpanded,
-                                    selected: selected, select: select, focusPath: focusPath,
-                                    openFolder: openFolder,
-                                    focusedPath: focusedPath)
-                } label: {
-                    row(node)
-                }
-            } else {
-                row(node)
-            }
+        ForEach(flattenExplorer(nodes, expanded: expanded)) { row in
+            self.row(row.node, depth: row.depth)
         }
     }
 
-    private func binding(for node: ExplorerNode) -> Binding<Bool> {
-        Binding(
-            get: { forceExpanded || expanded.contains(node.id) },
-            set: { open in
-                guard !forceExpanded else { return }
-                if open { expanded.insert(node.id) } else { expanded.remove(node.id) }
-            }
-        )
+    private func toggle(_ id: String) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }
 
     /// A document row is a document: it can be dragged onto a project. Folders are not,
     /// since a project is made of documents, not of places they happen to sit.
     @ViewBuilder
-    private func row(_ node: ExplorerNode) -> some View {
+    private func row(_ node: ExplorerNode, depth: Int) -> some View {
         if node.itemKey == nil {
-            rowLabel(node)
+            rowLabel(node, depth: depth)
         } else {
-            rowLabel(node).draggable(node.url)
+            rowLabel(node, depth: depth).draggable(node.url)
         }
     }
 
-    private func rowLabel(_ node: ExplorerNode) -> some View {
+    private func rowLabel(_ node: ExplorerNode, depth: Int) -> some View {
         HStack(spacing: 6) {
+            // The triangle a `DisclosureGroup` used to draw. Flat rows have to draw their
+            // own, and a file gets the same width of blank so the names line up.
+            if node.children != nil {
+                Button { toggle(node.id) } label: {
+                    Image(systemName: expanded.contains(node.id) ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .frame(width: 10)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            } else {
+                Color.clear.frame(width: 10, height: 1)
+            }
             Image(systemName: node.itemKey == nil ? "folder" : "doc")
                 .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
             Text(node.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+        .padding(.leading, CGFloat(depth) * 12)
         .padding(.vertical, 1)
         .contentShape(Rectangle())
         .background(
