@@ -21,6 +21,10 @@ struct ResultsPane: View {
     var setReading: (Bool) -> Void = { _ in }
     let watching: Bool
     @ObservedObject var palette: Palette
+    /// The live page. Owned by the window rather than by this pane: the status bar sits
+    /// outside it and says what is on the page -- how long the document is and how many
+    /// marks are on it.
+    @ObservedObject var annotator: Annotator
     let rules: NameRules
     let chooseFiles: () -> Void
     let focusSidebar: () -> Void
@@ -75,8 +79,11 @@ struct ResultsPane: View {
     /// holds one column of controls rather than a page and a column.
     @AppStorage("inspectorPanelWidth") private var panelOnlyWidth: Double = 340
     @AppStorage("contentsShown") private var contentsShown = false
+    /// The same two keys the inspector reads, so the toolbar's note button lands on the
+    /// tab it names rather than on whichever one was last open.
+    @AppStorage("inspectorPanel") private var inspectorPanel: InspectorPanel = .rename
+    @AppStorage("lastHighlightColour") private var lastColourID = ""
     @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
-    @StateObject private var annotator = Annotator()
     @State private var addingNote = false
     @State private var noteText = ""
     @StateObject private var tagIndex = CatalogueTags()
@@ -581,7 +588,7 @@ struct ResultsPane: View {
             var drawn: Set<Region> = [.document, .status]
             if !reading { drawn.insert(.sidebar) }
             if !inspectorCollapsed { drawn.insert(.inspector) }
-            if showsPage && contentsShown && !annotator.contents.isEmpty { drawn.insert(.contents) }
+            if showsPage && contentsShown && annotator.hasPages { drawn.insert(.contents) }
             regions.available = drawn
         }
             .onChange(of: regions.focused) { _, region in
@@ -646,6 +653,9 @@ struct ResultsPane: View {
         // metadata filtering live, `text:` waiting for Return, `/` to focus — around a
         // binding, and that behaviour is the useful part.
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                contentsToggle
+            }
             ToolbarItem(placement: .principal) {
                 if SplitLayout.showsViewIcons(paneWidth: viewPaneWidth) {
                     viewIcons
@@ -657,7 +667,14 @@ struct ResultsPane: View {
                 searchField
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                contextualActions
+                // A document on screen wants a highlighter, a note and a way to send it
+                // on. A collection wants the actions for the view it is in. They are
+                // never both what the bar should hold, so only one of them is here.
+                if showsReaderActions {
+                    readerActions
+                } else {
+                    contextualActions
+                }
                 Button { setReading(!reading) } label: {
                     Label("Reading", systemImage: reading ? "book.fill" : "book")
                 }
@@ -691,6 +708,82 @@ struct ResultsPane: View {
         }
         .task(id: showingPalette) { await loadPalettePlaces() }
         .task(id: runner.revision) { await loadProjects() }
+    }
+
+    /// Whether the bar is looking at a document rather than at a collection.
+    private var showsReaderActions: Bool { showsPage && (reading || reader != nil) }
+
+    /// The colour the next highlight will be painted with, and what it means.
+    private var currentStyle: HighlightStyle? {
+        palette.styles.first { $0.id.uuidString == lastColourID } ?? palette.styles.first
+    }
+
+    /// The rail beside the page, from the same group as the sidebar button, because it is
+    /// the same kind of thing: a pane that opens and shuts. Under
+    /// `SplitLayout.contentsFoldsBelow` it opens as a popover from here instead, which is
+    /// the only place left that can host one now the inspector's header is four tabs.
+    @ViewBuilder
+    private var contentsToggle: some View {
+        if showsPage && annotator.hasPages {
+            Button { contentsShown.toggle() } label: {
+                Label("Contents", systemImage: "sidebar.squares.left")
+            }
+            .foregroundStyle(contentsShown ? Color.accentColor : .secondary)
+            .tip(contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
+            .popover(isPresented: Binding(
+                get: { contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
+                set: { contentsShown = $0 }
+            ), arrowEdge: .bottom) {
+                ContentsRail(annotator: annotator)
+                    .frame(width: 300, height: 420)
+            }
+        }
+    }
+
+    /// Marking up what is on screen: which highlighter, a note on the selection, and a
+    /// way to hand the file on.
+    @ViewBuilder
+    private var readerActions: some View {
+        Menu {
+            ForEach(palette.styles) { style in
+                Button {
+                    lastColourID = style.id.uuidString
+                    if annotator.hasSelection { annotator.highlightSelection(colour: style.nsColor) }
+                } label: {
+                    Label(style.meaning.isEmpty ? "Unnamed" : style.meaning,
+                          systemImage: "circle.fill")
+                }
+            }
+        } label: {
+            // A drawn swatch: see `swatchImage`. A shape used as a menu's label is not
+            // drawn on macOS and a symbol is repainted in the control colour, which left
+            // the highlighter button as a bare chevron and then as a black dot.
+            swatchImage(currentStyle?.nsColor ?? .systemYellow, size: 14)
+                .accessibilityLabel("Highlighter")
+        }
+        .tip(annotator.hasSelection
+             ? "Highlight the selection, in this colour"
+             : "Which highlighter the next mark uses")
+
+        Button {
+            // A note is a highlight you wrote on. With text selected this makes the mark
+            // and opens the notes on it; with nothing selected it is the way to the notes.
+            if annotator.hasSelection, let style = currentStyle {
+                annotator.highlightSelection(colour: style.nsColor)
+            }
+            inspectorPanel = .notes
+            inspectorCollapsed = false
+        } label: {
+            Label("Note", systemImage: "bubble.left")
+        }
+        .tip(annotator.hasSelection
+             ? "Mark the selection and write about it"
+             : "The highlights and notes on this document", key: "⌘⇧N")
+
+        if let item = readerItem ?? selectedItem {
+            ShareLink(item: item.currentURL)
+                .tip("Send this document somewhere else")
+        }
     }
 
     /// What this view can do to what is in it, in the place a person looks for an
@@ -1026,7 +1119,7 @@ struct ResultsPane: View {
 
     /// Everything that decides which regions exist right now.
     private var regionSignature: String {
-        "\(reading)\(inspectorCollapsed)\(contentsShown)\(annotator.contents.isEmpty)\(showsPage)"
+        "\(reading)\(inspectorCollapsed)\(contentsShown)\(annotator.hasPages)\(showsPage)"
     }
 
     /// One key, always meaning "out of this, into what contains it".
@@ -1149,7 +1242,7 @@ struct ResultsPane: View {
             focusSidebar()
             regions.focus(.sidebar)
         case .focusContents:
-            guard !annotator.contents.isEmpty else { return false }
+            guard annotator.hasPages else { return false }
             contentsShown = true
             regions.focus(.contents)
         case .focusDocument:
@@ -1852,7 +1945,7 @@ struct ResultsPane: View {
         // The contents rail is nested inside the document region, not a sibling here, so
         // it only needs to widen that region's own floor, not the outer reservation
         // `inspectorMaximum` makes for the browser.
-        let contentsOpen = contentsShown && !annotator.contents.isEmpty
+        let contentsOpen = contentsShown && annotator.hasPages
         let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
         let maximum = SplitLayout.inspectorMaximum(
             available: available, contentsShown: contentsOpen)
@@ -2095,8 +2188,6 @@ struct ResultsPane: View {
                     try await aiClient.ask(system: system, user: user, feature: .bibtex)
                 },
                 autoIdentify: $autoIdentify,
-                reveal: revealInFinder,
-                openExternally: openInViewer,
                 moveTo: { choosingMoveTarget = true },
                 aiReady: aiReady,
                 markDeleted: markDeleted,
@@ -2106,7 +2197,6 @@ struct ResultsPane: View {
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
-                reading: reading,
                 tags: tagActions(for: item),
                 annotator: annotator,
                 palette: palette
@@ -2213,9 +2303,41 @@ struct ResultsPane: View {
     ///
     /// It said the internal product name on every screen, which is the one thing a person looking at
     /// the window already knows.
+    /// One name, or the first and "et al.". Four authors written out is wider than the
+    /// title above it, and a subtitle that has to be truncated says less than a short one.
+    private func shortAuthor(_ author: String?) -> String? {
+        guard let author, !author.isEmpty else { return nil }
+        let separators = CharacterSet(charactersIn: ",;&")
+        let names = author.components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.lowercased() != "and" }
+        guard let first = names.first else { return author }
+        return names.count > 1 ? "\(first) et al." : first
+    }
+
+    /// What the open document says about itself, but only when the open document is this
+    /// one. The annotator is attached to whatever the page is showing, and a title read
+    /// off the last file is worse than no title at all.
+    private func statedByDocument(_ item: Item, _ stated: String?) -> String? {
+        guard let stated, annotator.url == item.currentURL else { return nil }
+        return stated
+    }
+
     private var placeTitle: String {
         if let item = readerItem ?? (reading ? selectedItem : nil) {
-            return runner.ai.guesses[item.key]?.title ?? item.destinationName
+            // What the book calls itself first. A reader is looking at a title page, and
+            // a window titled `2017-verifying-strong-eventual-...-gomes.pdf` above it is
+            // the filename twice over: the status bar already carries the path.
+            //
+            // The open document is asked before the plan is. Both know the title, but the
+            // plan only learns it once a run has read the file, so a window opened
+            // straight onto a document was named after its filename until then.
+            if let stated = statedByDocument(item, annotator.statedTitle) { return stated }
+            let planned = item.documentInfo["Title"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let planned, !planned.isEmpty { return planned }
+            return runner.ai.guesses[item.key]?.title
+                ?? (item.destinationName as NSString).deletingPathExtension
         }
         let terms = Query(query).terms
         switch mode {
@@ -2234,8 +2356,17 @@ struct ResultsPane: View {
     private var placeSubtitle: String {
         if let item = readerItem ?? (reading ? selectedItem : nil) {
             let guess = runner.ai.guesses[item.key]
-            let pages = item.pageCount.map { "\($0) pages" }
-            return [guess?.author, guess?.year, pages]
+            let planned = item.documentInfo["Author"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let author = shortAuthor(statedByDocument(item, annotator.statedAuthor)
+                                     ?? (planned?.isEmpty == false ? planned : nil)
+                                     ?? guess?.author)
+            // Where you are, not how long it is. "248 pages" is a fact about the file and
+            // belongs in the Info tab; the subtitle of a window with a page in it should
+            // say which page.
+            let total = annotator.pageCount > 0 ? annotator.pageCount : item.pageCount
+            let where_ = total.map { "page \(annotator.page) of \($0)" }
+            return [author, guess?.year, where_]
                 .compactMap { $0 }.joined(separator: " · ")
         }
         switch mode {

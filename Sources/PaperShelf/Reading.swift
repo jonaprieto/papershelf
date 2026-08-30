@@ -32,8 +32,12 @@ struct MarkRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
+        // Three lines, in the order a person reads them: what this mark means, what the
+        // page says, and what you thought about it. The old row led with the quotation
+        // and put the meaning underneath in small grey type, which made a column of marks
+        // read as a column of unattributed quotations.
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
                 Menu {
                     ForEach(styles) { style in
                         Button { recolour(style.nsColor) } label: {
@@ -42,93 +46,44 @@ struct MarkRow: View {
                         }
                     }
                 } label: {
-                    Circle()
-                        .fill(colour)
-                        .frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(.primary.opacity(0.25), lineWidth: 1))
+                    // A drawn swatch: see `swatchImage`. A shape here is not drawn and a
+                    // symbol here is repainted, so a column of marks came out colourless.
+                    swatchImage(mark.colour, size: 13)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .frame(width: 16)
-                .padding(.top, 2)
-                .tip(meaning)
+                .fixedSize()
+                .tip("What this colour means. Pick another to repaint the mark.")
 
-                VStack(alignment: .leading, spacing: 3) {
-                    if !mark.quoted.isEmpty {
-                        // The quote carries the highlight it has on the page. A swatch
-                        // says which colour; this says what the page looks like.
-                        Text(mark.quoted)
-                            .font(.callout)
-                            .lineLimit(3)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(colour.opacity(0.38), in: RoundedRectangle(cornerRadius: 3))
-                    }
-                    if !mark.note.isEmpty && !editing {
-                        Text(mark.note).font(.caption).foregroundStyle(.secondary).lineLimit(4)
-                    }
-                    HStack(spacing: 5) {
-                        Text("page \(mark.page)")
-                        if !meaning.isEmpty && meaning != "Highlight" {
-                            Text("·")
-                            Text(meaning).lineLimit(1)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                }
-                Spacer(minLength: 0)
+                Text(meaning)
+                    .font(Face.headline)
+                    .lineLimit(1)
 
-                if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
-                   !mark.quoted.isEmpty || !mark.note.isEmpty {
-                    Menu {
-                        if offerChatGPT {
-                            Button("Open in ChatGPT") {
-                                ChatGPTHandoff.open(handoffPrompt)
-                            }
-                        }
-                        if offerChatGPTCopy {
-                            Button("Copy for ChatGPT") {
-                                ChatGPTHandoff.copy(handoffPrompt)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "bubble.left.and.text.bubble.right")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    // Kept in the tree and faded rather than removed by an `if`, so
-                    // keyboard focus and VoiceOver can still reach it when the pointer
-                    // is not over the row.
-                    .opacity(hovering ? 1 : 0)
-                    .accessibilityLabel("Send the mark on page \(mark.page) to ChatGPT")
-                    .tip("Send this passage to ChatGPT. Open starts a new conversation; "
-                         + "copy is for one you already have going.")
-                }
-                // Always present so keyboard and VoiceOver can reach them; only their
-                // opacity is hover-gated. Three icons on every mark turned a column of
-                // quotations into a column of buttons, and none of them needs to be
-                // seen until you are looking at the mark they belong to.
-                Button {
-                    text = mark.note
-                    editing.toggle()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.tertiary)
-                .opacity(hovering || editing ? 1 : 0)
-                .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
-                .accessibilityLabel(mark.note.isEmpty
-                                     ? "Add a note to the mark on page \(mark.page)"
-                                     : "Edit the note on the mark on page \(mark.page)")
-                Button(action: remove) { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
+                Spacer(minLength: 6)
+
+                Text("p. \(mark.page)")
+                    .font(Face.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
-                    .opacity(hovering || editing ? 1 : 0)
-                    .tip("Remove this mark from the file")
-                    .accessibilityLabel("Delete the mark on page \(mark.page)")
+            }
+
+            if !mark.quoted.isEmpty {
+                // Set as the page sets it, in quotation marks, on its own highlight. A
+                // passage lifted out of a document should still look like the document.
+                Text("\u{201C}\(mark.quoted)\u{201D}")
+                    .font(Face.page)
+                    .lineLimit(8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(colour.opacity(0.42), in: RoundedRectangle(cornerRadius: 7))
+            }
+
+            if !mark.note.isEmpty && !editing {
+                Text(mark.note)
+                    .font(Face.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if editing {
@@ -146,14 +101,76 @@ struct MarkRow: View {
                 }
             }
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.14) : .clear)
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Edge to edge rather than a rounded card inset from the panel: the marks are a
+        // list, and a selected row in a list is a band, not a floating tile.
+        .background(isSelected ? Color.accentColor.opacity(0.09) : .clear)
+        // Floated over the row rather than laid out in it. In the row they were three
+        // controls' worth of width that a mark's meaning had to fit around, so "Definition
+        // or key term" was drawn as "Definition or key…" on every mark, all the time, to
+        // make room for buttons nobody could see.
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 2) { rowActions }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.trailing, 8)
+                .padding(.top, 5)
+                .opacity(hovering || editing ? 1 : 0)
+                .allowsHitTesting(hovering || editing)
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: jump)
+    }
+
+    /// Edit, delete and the handoff. Always in the tree so keyboard focus and VoiceOver
+    /// can reach them; only their opacity is hover-gated. Three icons on every mark turned
+    /// a column of quotations into a column of buttons, and none of them needs to be seen
+    /// until you are looking at the mark they belong to.
+    @ViewBuilder
+    private var rowActions: some View {
+        if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
+           !mark.quoted.isEmpty || !mark.note.isEmpty {
+            Menu {
+                if offerChatGPT {
+                    Button("Open in ChatGPT") { ChatGPTHandoff.open(handoffPrompt) }
+                }
+                if offerChatGPTCopy {
+                    Button("Copy for ChatGPT") { ChatGPTHandoff.copy(handoffPrompt) }
+                }
+            } label: {
+                Image(systemName: "bubble.left.and.text.bubble.right")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .opacity(hovering ? 1 : 0)
+            .accessibilityLabel("Send the mark on page \(mark.page) to ChatGPT")
+            .tip("Send this passage to ChatGPT. Open starts a new conversation; "
+                 + "copy is for one you already have going.")
+        }
+        Button {
+            text = mark.note
+            editing.toggle()
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.tertiary)
+        .opacity(hovering || editing ? 1 : 0)
+        .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
+        .accessibilityLabel(mark.note.isEmpty
+                             ? "Add a note to the mark on page \(mark.page)"
+                             : "Edit the note on the mark on page \(mark.page)")
+        Button(action: remove) { Image(systemName: "trash") }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.tertiary)
+            .opacity(hovering || editing ? 1 : 0)
+            .tip("Remove this mark from the file")
+            .accessibilityLabel("Delete the mark on page \(mark.page)")
     }
 }
 
@@ -173,58 +190,63 @@ struct NotesRail: View {
     /// the inspector, which already has one of those and does not need two.
     var showsHeader: Bool = true
 
+    /// What is on this document, counted the two ways a reader counts it: passages picked
+    /// out, and passages written about.
+    private var tally: String {
+        let highlights = annotator.marks.count
+        let notes = annotator.marks.filter { !$0.note.isEmpty }.count
+        guard highlights > 0 else { return "No marks yet" }
+        return "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
+            + "\(notes) note\(notes == 1 ? "" : "s")"
+    }
+
+    /// The meanings actually on this document, so the filter offers what is there rather
+    /// than the whole palette.
+    private var meaningsPresent: [String] {
+        var seen: [String] = []
+        for mark in annotator.marks {
+            let meaning = palette.meaning(for: mark.colour)
+            if !seen.contains(meaning) { seen.append(meaning) }
+        }
+        return seen
+    }
+
+    private var shownMarks: [Annotator.Mark] {
+        guard let filter else { return annotator.marks }
+        return annotator.marks.filter { palette.meaning(for: $0.colour) == filter }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
-            HStack {
-                Text("Notes").font(.callout.weight(.semibold))
-                Spacer()
-                Text("\(annotator.marks.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if !annotator.marks.isEmpty {
-                    Menu {
-                        Button("Copy as Markdown") { copyNotes() }
-                        Button("Save as Markdown…") { exporting = true }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .frame(width: 18)
-                    .tip("Export these notes")
-
-                    Button(role: .destructive) { clearing = true } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Ink.red)
-                    .help("Remove every mark from this document")
+                HStack {
+                    Text("Notes").font(Face.headline)
+                    Spacer()
+                    Button(action: close) { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.tertiary)
+                        .tip("Hide the notes", key: "⌘⇧N")
                 }
-                Button {
-                    close()
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.tertiary)
-                .tip("Hide the notes", key: "⌘⇧N")
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .background(.bar)
 
+            summaryBar
             Divider()
-            }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+            // A `List`, not a `ScrollView` of a `LazyVStack`: a scroll proxy cannot reach
+            // a lazy row that has not been built yet, so asking it to follow the page did
+            // nothing for every mark below the fold -- which is all the ones worth
+            // scrolling to.
+            ScrollViewReader { notes in
+                List {
                     if addingNote {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Note on the selection")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(Face.caption).foregroundStyle(.secondary)
                             TextField("What is worth remembering", text: $noteText, axis: .vertical)
                                 .textFieldStyle(.roundedBorder)
                                 .lineLimit(2...5)
@@ -239,17 +261,23 @@ struct NotesRail: View {
                                 Button("Cancel") { noteText = ""; addingNote = false }
                             }
                         }
-                        Divider()
+                        .padding(12)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
 
                     if annotator.marks.isEmpty && !addingNote {
                         Text("Select text on the page to highlight it or attach a note.")
-                            .font(.callout)
+                            .font(Face.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
 
-                    ForEach(annotator.marks) { mark in
+                    ForEach(shownMarks) { mark in
                         MarkRow(
                             mark: mark,
                             isSelected: annotator.selectedMark == mark.id,
@@ -261,25 +289,133 @@ struct NotesRail: View {
                             meaning: palette.meaning(for: mark.colour),
                             documentTitle: title
                         )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
 
                     if let problem = annotator.lastError {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(Ink.red)
                             .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                // The list follows the page. Marks are in page order, so the one to bring
+                // up is the first that is not behind you; past the last mark the list
+                // stays at the end rather than springing back to the top.
+                .onChange(of: annotator.page) { _, page in
+                    let target = shownMarks.first { $0.page >= page } ?? shownMarks.last
+                    guard let target else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        notes.scrollTo(target.id, anchor: .top)
+                    }
+                }
+                // Jumping to a mark from anywhere else -- the page, the palette -- brings
+                // it up here too, so the list and the page never disagree about which
+                // mark is being looked at.
+                .onChange(of: annotator.selectedMark) { _, mark in
+                    guard let mark else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        notes.scrollTo(mark, anchor: .center)
+                    }
+                }
+            }
+
+            if !annotator.marks.isEmpty {
+                Divider()
+                exportBar
             }
         }
         .background(.background.secondary)
+        // Both of these were set by buttons in the old header and read by nothing: the
+        // export wrote no file and the trash removed no marks.
+        .fileExporter(isPresented: $exporting,
+                      document: TextDocument(text: notesMarkdown),
+                      contentType: .plainText,
+                      defaultFilename: (title as NSString).deletingPathExtension + " notes") { _ in }
+        .confirmationDialog("Remove every mark from this document?",
+                            isPresented: $clearing) {
+            Button("Remove \(annotator.marks.count) marks", role: .destructive) {
+                annotator.removeAll()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This writes the document without them. It cannot be undone.")
+        }
     }
 
+    /// What the document holds, and the one control that changes what is listed.
+    private var summaryBar: some View {
+        HStack(spacing: 8) {
+            Text(filter ?? tally)
+                .font(Face.control)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Menu {
+                Button("All marks") { filter = nil }
+                if !meaningsPresent.isEmpty { Divider() }
+                ForEach(meaningsPresent, id: \.self) { meaning in
+                    Button(meaning) { filter = meaning }
+                }
+            } label: {
+                Image(systemName: filter == nil
+                      ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundStyle(filter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+            .tip("Show only one kind of mark")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// What leaves the app with these notes, and in what shape. The format is stated
+    /// rather than chosen: there is one, and a menu of one is a menu that lies.
+    private var exportBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                exporting = true
+            } label: {
+                Label("Export notes", systemImage: "square.and.arrow.up")
+            }
+            .tip("Write these notes to a file")
+
+            Button("Copy all") { copyNotes() }
+                .tip("Every mark on this document, as text")
+
+            Spacer(minLength: 6)
+
+            Button(role: .destructive) { clearing = true } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.tertiary)
+            .help("Remove every mark from this document")
+
+            Text("Markdown")
+                .font(Face.control)
+                .foregroundStyle(.tertiary)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
 
     @State private var clearing = false
     @State private var exporting = false
+    /// Which meaning the list is narrowed to, or nil for all of them.
+    @State private var filter: String?
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
@@ -300,28 +436,126 @@ struct NotesRail: View {
     }
 }
 
+// MARK: - Page bar
+
+/// Where you are in the document, and how big it is drawn.
+///
+/// It floats over the page rather than sitting in a bar of its own: the two facts it
+/// carries are about the page under it, and a strip along the bottom of the window would
+/// cost every document a line of height to say so.
+struct PageBar: View {
+    @ObservedObject var annotator: Annotator
+    @Binding var fit: PageFit
+
+    private var total: Int { max(annotator.pageCount, 0) }
+
+    var body: some View {
+        if total > 0 {
+            HStack(spacing: 8) {
+                step(-1, "chevron.left", "Previous page")
+                Text("\(annotator.page) / \(total)")
+                    .font(Face.control.monospacedDigit())
+                    .fixedSize()
+                step(1, "chevron.right", "Next page")
+
+                Divider().frame(height: 14)
+
+                Menu {
+                    Picker("", selection: $fit) {
+                        ForEach(PageFit.allCases) { Text($0.label).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.inline)
+                } label: {
+                    Text(fit.label).font(Face.control)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .tip("How big the page is drawn")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator.opacity(0.6)))
+            .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
+            .fixedSize()
+        }
+    }
+
+    private func step(_ delta: Int, _ icon: String, _ what: String) -> some View {
+        Button { annotator.go(toPage: annotator.page + delta) } label: {
+            Image(systemName: icon)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .disabled(delta < 0 ? annotator.page <= 1 : annotator.page >= total)
+        .accessibilityLabel(what)
+        .tip(what)
+    }
+}
+
 // MARK: - Metadata
 
 // MARK: - Contents
 
-/// The document's own table of contents, on the page's left where a reader expects it.
-/// Only offered when the PDF actually carries an outline.
+/// Two ways of looking at the same document from the side: what it says it contains, and
+/// what its pages look like. A scan carries no outline and a textbook's outline is the
+/// fastest way through it, so neither one alone is the rail.
+enum ContentsRailMode: String, CaseIterable, Identifiable {
+    case outline, thumbnails
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .outline: return "Contents"
+        case .thumbnails: return "Pages"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .outline: return "text.alignleft"
+        case .thumbnails: return "square.grid.2x2"
+        }
+    }
+}
+
+/// The document's own table of contents, on the page's left where a reader expects it,
+/// with its pages as thumbnails behind the same switch.
 struct ContentsRail: View {
     @ObservedObject var annotator: Annotator
-    let close: () -> Void
+    @AppStorage("contentsRailMode") private var railMode: ContentsRailMode = .outline
+
+    /// The chapter you are inside: the last one that starts at or before the page on
+    /// screen. A table of contents that does not say where you are is a list of links.
+    private var currentChapter: Annotator.Chapter.ID? {
+        annotator.contents.last { ($0.page ?? .max) <= annotator.page }?.id
+    }
+
+    /// An outline is only worth offering when the document carries one. Without it the
+    /// rail is the pages, and the switch would be a choice between a list and nothing.
+    private var hasOutline: Bool { !annotator.contents.isEmpty }
+
+    private var shown: ContentsRailMode { hasOutline ? railMode : .thumbnails }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Contents").font(.callout.weight(.semibold))
-                Spacer()
-                Text("\(annotator.contents.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.tertiary)
-                    .tip("Hide the contents", key: "⌘⇧T")
+            HStack(spacing: 8) {
+                Text(shown.label).font(Face.headline)
+                Spacer(minLength: 4)
+                if hasOutline {
+                    Picker("", selection: $railMode) {
+                        ForEach(ContentsRailMode.allCases) { mode in
+                            Image(systemName: mode.icon)
+                                .accessibilityLabel(mode.label)
+                                .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .tip("The chapters, or the pages themselves")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -331,32 +565,83 @@ struct ContentsRail: View {
 
             Divider()
 
-            List(annotator.contents) { chapter in
-                Button {
-                    annotator.go(to: chapter)
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(chapter.label)
-                            .font(chapter.level == 0 ? .callout.weight(.medium) : .caption)
-                            .foregroundStyle(chapter.level == 0 ? .primary : .secondary)
-                            .lineLimit(2)
-                        Spacer(minLength: 4)
-                        if let page = chapter.page {
-                            Text("\(page)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    // Depth by indent: a table of contents is read straight down far more
-                    // often than it is folded.
-                    .padding(.leading, CGFloat(chapter.level) * 11)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+            switch shown {
+            case .outline: outline
+            case .thumbnails: PageThumbnails(view: annotator.view)
             }
-            .listStyle(.inset)
         }
         .background(.background.secondary)
+    }
+
+    private var outline: some View {
+        ScrollViewReader { rail in
+            outlineList
+                // The rail follows the page too: a chapter marked as the one you are in,
+                // scrolled off the top of its own list, is a highlight nobody can see.
+                .onChange(of: currentChapter) { _, chapter in
+                    guard let chapter else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        rail.scrollTo(chapter, anchor: .center)
+                    }
+                }
+        }
+    }
+
+    private var outlineList: some View {
+        List(annotator.contents, selection: .constant(currentChapter)) { chapter in
+            Button {
+                annotator.go(to: chapter)
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // The same two sizes the sidebar uses for a row and its count:
+                    // a chapter is a place you can go, exactly as a shelf is.
+                    Text(chapter.label)
+                        .font(chapter.level == 0 ? Face.body.weight(.medium) : Face.caption)
+                        .foregroundStyle(chapter.level == 0 ? .primary : .secondary)
+                        .lineLimit(2)
+                    Spacer(minLength: 4)
+                    if let page = chapter.page {
+                        Text("\(page)")
+                            .font(Face.caption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                // Depth by indent: a table of contents is read straight down far more
+                // often than it is folded.
+                .padding(.leading, CGFloat(chapter.level) * 11)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .background(chapter.id == currentChapter
+                            ? Color.accentColor.opacity(0.13) : .clear,
+                            in: RoundedRectangle(cornerRadius: Metric.control))
+            }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+            .listRowSeparator(.hidden)
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+    }
+}
+
+/// The document's pages, drawn by PDFKit's own thumbnail view and wired straight to the
+/// page on screen: clicking one turns to it, and turning a page moves the selection here.
+struct PageThumbnails: NSViewRepresentable {
+    let view: PDFView?
+
+    func makeNSView(context: Context) -> PDFThumbnailView {
+        let thumbnails = PDFThumbnailView()
+        thumbnails.thumbnailSize = NSSize(width: 92, height: 122)
+        thumbnails.maximumNumberOfColumns = 1
+        thumbnails.backgroundColor = .clear
+        thumbnails.pdfView = view
+        return thumbnails
+    }
+
+    func updateNSView(_ thumbnails: PDFThumbnailView, context: Context) {
+        // Identity, not equality: a new document means a new `PDFView`, and reassigning
+        // the same one makes the thumbnail view rebuild every page for nothing.
+        if thumbnails.pdfView !== view { thumbnails.pdfView = view }
     }
 }

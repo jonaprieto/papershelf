@@ -95,6 +95,9 @@ struct ContentView: View {
 
     @StateObject var runner = Runner()
     @StateObject private var covers = Covers()
+    /// The page on screen. Held by the window because the status bar, which is outside
+    /// the results pane, says what is on it.
+    @StateObject private var annotator = Annotator()
     @State private var selection: [URL] = []
     @State private var sidebarTarget: SidebarTarget?
     /// The project row a drag is currently over, so exactly one row lights up.
@@ -114,6 +117,11 @@ struct ContentView: View {
     /// project holds, so the workspace reads its members again.
     @State private var projectContentsRevision = 0
     @State private var explorerTree: [ExplorerNode] = []
+    /// Narrows the source tree to folders whose name matches. `filterExplorerTree` was
+    /// written and tested and then reached by nothing; the sidebar's own footer is where
+    /// a filter for the sidebar belongs.
+    @State private var sourceFilter = ""
+    @State private var filteringSources = false
     /// Which folders are open, by path. Kept here rather than inside `OutlineGroup` so the
     /// Explorer can be folded and unfolded from its header the way an editor's can.
     @State private var explorerExpanded: Set<String> = []
@@ -369,6 +377,7 @@ struct ContentView: View {
                 setReading: chrome.setReading,
                 watching: watchSources && !selection.isEmpty,
                 palette: palette,
+                annotator: annotator,
                 rules: rules,
                 chooseFiles: { importing = true },
                 focusSidebar: {
@@ -521,33 +530,92 @@ struct ContentView: View {
         // and a paragraph of explanation, which is right for the settings window and wrong
         // for the one column that answers "where am I": there the rows want to be small,
         // dense and close together.
-        List {
-            shelvesPanel
-            sidebarSectionDivider
-            // Projects above sources: a project is somewhere you work, a source is where
-            // files came from. A shelf of fourteen thousand files pushes its own folder
-            // tree down the sidebar, and everything under it with it.
-            projectsPanel
-            sidebarSectionDivider
-            sourcesPanel
-            sidebarSectionDivider
-            tagsPanel
+        VStack(spacing: 0) {
+            List {
+                shelvesPanel
+                // Sources above projects: where the files came from is the question asked
+                // of a sidebar far more often than which piece of work they are for, and
+                // the four section headers are what separate them. There were rules
+                // between them; whitespace and a small caps heading do that job without
+                // drawing three more lines down a column that is already a list of lists.
+                sourcesPanel
+                projectsPanel
+                tagsPanel
+            }
+            .listStyle(.sidebar)
+            .listRowSeparator(.hidden)
+            sidebarFooter
         }
-        .listStyle(.sidebar)
-        .listRowSeparator(.hidden)
         .frame(maxWidth: .infinity)
     }
 
-    /// One quiet rule between the four kinds of place. The sidebar list's automatic rules
-    /// are too easy to mistake for document rows, so the grouping gets exactly three of its
-    /// own instead.
-    private var sidebarSectionDivider: some View {
-        Divider()
-            .opacity(0.45)
+    /// One row of the sidebar: something you can go to, and how much is there.
+    ///
+    /// Written once because four sections were each drawing their own, and they disagreed
+    /// -- one count was 11 points and the next 13, and a chosen row was accent-coloured
+    /// text in one section and a tinted background in another. Selected is the platform's
+    /// own answer: a filled bar with the label on it.
+    private func sidebarRow<Label: View, Trailing: View>(
+        _ selected: Bool,
+        @ViewBuilder label: () -> Label,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 6) {
+            label()
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            trailing()
+                .monospacedDigit()
+                .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8))
+                                          : AnyShapeStyle(.secondary))
+        }
+        .font(Face.body)
+        .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .background(selected ? Color.accentColor : .clear,
+                    in: RoundedRectangle(cornerRadius: Metric.control))
+    }
+
+    /// What the sidebar can be told to do, under what it is showing: add a source, narrow
+    /// the tree, and how many sources there are.
+    private var sidebarFooter: some View {
+        VStack(spacing: 0) {
+            if filteringSources {
+                TextField("Filter folders", text: $sourceFilter)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onExitCommand { sourceFilter = ""; filteringSources = false }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
+            Divider()
+            HStack(spacing: 10) {
+                Button { importing = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(.borderless)
+                    .tip("Watch another folder, or add one PDF")
+
+                Button {
+                    filteringSources.toggle()
+                    if !filteringSources { sourceFilter = "" }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(filteringSources ? Color.accentColor : .secondary)
+                .tip("Show only folders whose name matches")
+
+                Spacer(minLength: 6)
+
+                Text("\(selection.count) source\(selection.count == 1 ? "" : "s")")
+                    .foregroundStyle(.secondary)
+            }
+            .font(Face.control)
             .padding(.horizontal, 10)
-            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-            .listRowBackground(Color.clear)
-            .accessibilityHidden(true)
+            .frame(height: Metric.statusBar)
+        }
     }
 
     private var sidebarTargets: [SidebarTarget] {
@@ -692,17 +760,13 @@ struct ContentView: View {
                             userInfo: ["shelf": list.rawValue])
                     }
                 } label: {
-                    HStack {
+                    sidebarRow(shelves.current == list) {
                         Label(list.title, systemImage: list.icon)
-                        Spacer()
-                        Text("\(shelves.count(list, among: runner.results))")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                    } trailing: {
+                        Text(shelves.count(list, among: runner.results).formatted())
                     }
-                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(shelves.current == list ? Color.accentColor : .primary)
                 .accessibilityAddTraits(shelves.current == list ? .isSelected : [])
                 .tip(list.explanation)
             }
@@ -729,27 +793,20 @@ struct ContentView: View {
                     // A row rather than a Button: a Button takes the drag for itself, so a
                     // paper dropped on a project landed on nothing and the project went on
                     // saying what it said before. The tap does what the Button did.
-                    HStack {
-                        Label(project.name, systemImage: "books.vertical.fill")
-                            .lineLimit(1)
-                        Spacer()
-                        Text("\(project.documentCount)")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                    sidebarRow(openProject?.id == project.id) {
+                        Label(project.name, systemImage: "briefcase")
+                    } trailing: {
+                        Text(project.documentCount.formatted())
                     }
-                    .contentShape(Rectangle())
                     .onTapGesture {
                         chrome.setReading(false)
                         openProject = openProject?.id == project.id ? nil : project
                         sidebarTarget = .project(project.id)
                     }
-                    .foregroundStyle(openProject?.id == project.id ? Color.accentColor : .primary)
                     .accessibilityAddTraits(sidebarTarget == .project(project.id) ? .isSelected : [])
                     .background(dropProject == project.id
-                                ? Color.accentColor.opacity(0.25)
-                                : sidebarTarget == .project(project.id)
-                                ? Color.accentColor.opacity(0.12)
-                                : .clear, in: RoundedRectangle(cornerRadius: 5))
+                                ? Color.accentColor.opacity(0.25) : .clear,
+                                in: RoundedRectangle(cornerRadius: Metric.control))
                     // `onDrop` rather than `dropDestination`: this is a row of a List, and
                     // the newer modifier does not receive drops there. Every drag in this
                     // app carries a file URL (the sidebar's own rows, the list's, the
@@ -827,7 +884,23 @@ struct ContentView: View {
             planIsCurrent: previewIsCurrent,
             selectedPath: selectedPath,
             lastOpened: selectionOpenedAt,
-            bibliography: bibliographySummary
+            bibliography: bibliographySummary,
+            document: readerFacts
+        )
+    }
+
+    /// The document the bar should describe, or nil when the window is showing a
+    /// collection. Only while reading: the reviewer's bar is about the plan and the shelf
+    /// it was built from, and a page is beside it rather than the subject of the window.
+    private var readerFacts: StatusBar.DocumentFacts? {
+        guard chrome.reading, let key = reviewing, let item = runner.item(key) else { return nil }
+        return StatusBar.DocumentFacts(
+            path: item.currentURL.path,
+            bytes: item.byteCount,
+            pages: annotator.pageCount > 0 ? annotator.pageCount : (item.pageCount ?? 0),
+            locked: item.status == .locked,
+            highlights: annotator.marks.count,
+            notes: annotator.marks.filter { !$0.note.isEmpty }.count
         )
     }
 
@@ -919,6 +992,19 @@ struct ContentView: View {
         }
     }
 
+    /// A stable colour for a tag, derived from its name.
+    ///
+    /// Tags carry no colour of their own and giving them one is a schema and a colour
+    /// picker; this is the cheap half that gets the useful part. The same name always
+    /// gets the same dot, on this machine and on any other, because the hash is written
+    /// here rather than taken from `hashValue`, which is seeded per process.
+    private func tagColour(_ name: String) -> Color {
+        let palette: [Color] = [Ink.amber, Ink.blue, Ink.green, Ink.purple, Ink.red, Ink.magenta]
+        var hash: UInt64 = 5381
+        for byte in name.lowercased().utf8 { hash = hash &* 33 &+ UInt64(byte) }
+        return palette[Int(hash % UInt64(palette.count))]
+    }
+
     private func tagRow(_ tag: TagCount) -> some View {
         Button {
             chrome.setReading(false)
@@ -929,20 +1015,23 @@ struct ContentView: View {
             }
             sidebarTarget = .tag(tag.name)
         } label: {
-            HStack {
-                Label(tag.name, systemImage: "tag")
-                Spacer()
-                Text("\(tag.documents)")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+            sidebarRow(sidebarTarget == .tag(tag.name)) {
+                HStack(spacing: 6) {
+                    // A dot in the tag's own colour rather than a tag glyph on every row:
+                    // a column of identical icons carries no information, and a colour
+                    // makes a tag recognisable before its name is read.
+                    Circle()
+                        .fill(tagColour(tag.name))
+                        .frame(width: 9, height: 9)
+                        .padding(.horizontal, 2)
+                    Text(tag.name)
+                }
+            } trailing: {
+                Text(tag.documents.formatted())
             }
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(sidebarTarget == .tag(tag.name) ? .isSelected : [])
-        .background(sidebarTarget == .tag(tag.name)
-                    ? Color.accentColor.opacity(0.12)
-                    : .clear, in: RoundedRectangle(cornerRadius: 5))
         .tip("Show the \(tag.documents) document\(tag.documents == 1 ? "" : "s") carrying this tag")
         .contextMenu {
             Button("Rename…") {
@@ -1023,12 +1112,9 @@ struct ContentView: View {
                 ForEach(selection, id: \.self) { url in
                     sourceRow(url)
                 }
-                Button {
-                    importing = true
-                } label: {
-                    Label("Add a folder or a PDF", systemImage: "plus.circle")
-                }
-                .buttonStyle(.link)
+                // Adding a source is the `+` in the sidebar's footer now, where the count
+                // of them is. A blue link in the middle of the column said the same thing
+                // twice and moved down the window as sources were added.
             } header: {
                 // Folding lives with the tree it folds. These buttons existed and were
                 // never drawn, which on a source with several hundred folders is the
@@ -1052,7 +1138,8 @@ struct ContentView: View {
     @ViewBuilder
     private func sourceRow(_ url: URL) -> some View {
         let root = explorerTree.first { $0.url == url }
-        if let root, let children = root.children, !children.isEmpty {
+        let children = filterExplorerTree(root?.children ?? [], matching: sourceFilter)
+        if let root, !children.isEmpty {
             DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
                 ExplorerOutline(nodes: children, expanded: $explorerExpanded,
                                 selected: reviewing,
@@ -1283,8 +1370,13 @@ private struct SidebarSourceLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: reachable ? "folder.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(reachable ? AnyShapeStyle(.tint) : AnyShapeStyle(Ink.amber))
+            // Only when something is wrong. A folder glyph on every source is a column of
+            // identical icons beside a disclosure triangle that already says "folder";
+            // the warning is the one state worth a symbol.
+            if !reachable {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Ink.amber)
+            }
             Text(url.lastPathComponent)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1295,8 +1387,8 @@ private struct SidebarSourceLabel: View {
                     .font(Face.caption)
                     .foregroundStyle(Ink.amber)
             } else if count > 0 {
-                Text("\(count)")
-                    .font(Face.caption.monospacedDigit())
+                Text(count.formatted())
+                    .font(Face.body.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             if hovered {

@@ -34,8 +34,6 @@ struct ReviewInspector: View {
     /// client lives with the view that owns the settings, not with this one.
     let improveCitation: (String, String) async throws -> String
     @Binding var autoIdentify: Bool
-    let reveal: () -> Void
-    let openExternally: () -> Void
     let moveTo: () -> Void
     let aiReady: Bool
     let markDeleted: () -> Void
@@ -50,7 +48,6 @@ struct ReviewInspector: View {
     let reset: () -> Void
     let leaveField: () -> Void
     let excerpt: String?
-    let reading: Bool
 
     /// This file's tags, so the Details panel can show and change them.
     var tags: TagActions = .none
@@ -77,10 +74,8 @@ struct ReviewInspector: View {
     @State var citationImprovedByAI = false
     @State var citationNote: String?
     @AppStorage("inspectorCollapsed") private var collapsed = false
-    /// The inspector is on its Notes tab and open. What used to be a rail with a switch
-    /// of its own is a tab, so "are the notes showing" is a question about the inspector.
-    private var showingNotes: Bool { panel == .notes && !collapsed }
     @AppStorage("contentsShown") private var contentsShown = false
+    @AppStorage("pageFit") private var pageFit: PageFit = .width
     @AppStorage("readingTint") private var readingTint = true
     @AppStorage("offerChatGPT") private var offerChatGPT = true
     @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
@@ -107,7 +102,8 @@ struct ReviewInspector: View {
     ///
     /// It used to be `!collapsed && !reading`, which meant the toolbar's inspector button,
     /// ⌥⌘I and ⌘⇧N all did nothing while reading: the mode hid the panel, so flipping the
-    /// switch changed a value nothing was reading.
+    /// switch changed a value nothing was reading. Reading mode puts the panel away by
+    /// entering (see `Chrome.toggleReading`) rather than by holding it shut.
     private var showsPanel: Bool { !collapsed }
 
     /// Below `SplitLayout.inspectorOverlaysBelow` the panel is drawn over the page rather
@@ -119,7 +115,7 @@ struct ReviewInspector: View {
     /// toolbar button instead of a third column.
     private var contentsIsPopover: Bool { SplitLayout.contentsIsPopover(paneWidth: paneWidth) }
 
-    private var hasContents: Bool { !annotator.contents.isEmpty }
+    private var hasContents: Bool { annotator.hasPages }
 
     private var decision: Decision? { runner.decision(for: item) }
     private var isEdited: Bool { sanitizedFilename(draft) != item.destinationName }
@@ -208,24 +204,27 @@ struct ReviewInspector: View {
         GeometryReader { page in
             HStack(spacing: 0) {
                 if contentsShown && hasContents && !contentsIsPopover {
-                    ContentsRail(annotator: annotator,
-                                 close: { contentsShown = false })
+                    ContentsRail(annotator: annotator)
                         .frame(width: SplitLayout.contentsRailWidth(
                             inspectorWidth: page.size.width))
                         .region(.contents)
                     Divider()
                 }
-                PDFPreview(url: item.currentURL, passwords: passwords, annotator: annotator)
+                PDFPreview(url: item.currentURL, passwords: passwords,
+                           annotator: annotator, fit: pageFit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The page is an AppKit view hosted in SwiftUI, and a hosted view does
                 // not honour the frame it was given while it is being resized: squeezed
                 // narrow, it kept drawing at its old width, straight over the panel
                 // beside it. Clipping is what actually holds it to its pane.
                 .clipped()
-                .background(.quaternary.opacity(0.35))
                 .overlay { nightTint }
                 .overlay(alignment: .topTrailing) { lockedOverlay }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
+                .overlay(alignment: .bottom) {
+                    PageBar(annotator: annotator, fit: $pageFit)
+                        .padding(.bottom, 14)
+                }
             }
             .clipped()
         }
@@ -246,20 +245,28 @@ struct ReviewInspector: View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    switch panel {
-                    case .rename: renamePanel
-                    case .details:
-                        MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
-                                      livePage: showsPage ? annotator.page : nil,
-                                      livePageCount: showsPage ? annotator.pageCount : nil)
-                    case .notes: notesPanel
-                    case .bibtex: bibtexPanel
+            // Notes are not padded and not scrolled here. They are a list with a bar of
+            // their own at the top and another at the bottom, and inside this scroll view
+            // both bars scrolled away with the marks -- the export bar sat below the fold
+            // of a pane it was supposed to be pinned to.
+            if panel == .notes {
+                notesPanel
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch panel {
+                        case .rename: renamePanel
+                        case .details:
+                            MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
+                                          livePage: showsPage ? annotator.page : nil,
+                                          livePageCount: showsPage ? annotator.pageCount : nil)
+                        case .bibtex: bibtexPanel
+                        case .notes: EmptyView()
+                        }
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -280,17 +287,17 @@ struct ReviewInspector: View {
     }
 
     private var panelHeader: some View {
-        // Two versions, widest first: on a narrow inspector, one with the status pill in it
-        // does not fit, and an HStack that does not fit does not tidy itself up -- it
-        // overlaps its own controls and runs them past the edge. Dropping the pill is the
-        // cheapest thing to lose, since the row it describes says the same thing.
-        ViewThatFits(in: .horizontal) {
-            header(showingStatus: true)
-            header(showingStatus: false)
-        }
+        header
     }
 
-    private func header(showingStatus: Bool) -> some View {
+    /// Four tabs, and the way back out of the reader. Nothing else.
+    ///
+    /// It used to carry a status pill, the contents toggle, Reveal, Open, a notes button
+    /// and a collapse chevron beside them, which on a 320-point panel left the four tabs
+    /// squeezed to about half the row. Every one of those has a key and a home elsewhere:
+    /// the contents rail and the panel itself are toolbar buttons, Reveal and Open are
+    /// ⌘R and O, and Notes is one of the tabs.
+    private var header: some View {
         HStack(spacing: 8) {
             if let leaveReader {
                 Button(action: leaveReader) {
@@ -300,82 +307,15 @@ struct ReviewInspector: View {
                 .tip("Back to the shelf", key: "⎋")
             }
 
-            if showingStatus {
-                StatusPill(status: item.status, count: nil)
+            // Drawn while reading too. The panel is only here at all if it was asked for,
+            // and a panel you can open on a tab you cannot leave is a dead end.
+            Picker("", selection: $panel) {
+                ForEach(InspectorPanel.allCases) { Text($0.label).tag($0) }
             }
-
-            if !reading {
-                Picker("", selection: $panel) {
-                    ForEach(InspectorPanel.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .disabled(collapsed)
-                .tip("Rename this file, read what it says about itself, or take its citation")
-            }
-
-            Spacer(minLength: 8)
-
-            if hasContents && showsPage {
-                Button {
-                    contentsShown.toggle()
-                } label: {
-                    Image(systemName: "list.bullet.indent")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(contentsShown ? Color.accentColor : .secondary)
-                .tip(contentsShown ? "Hide the contents" : "Table of contents", key: "⌘⇧T")
-                // Under `SplitLayout.contentsFoldsBelow` the outline has nowhere to stand
-                // as a column, so it stands here instead: same button, same key, same
-                // list, no horizontal room.
-                .popover(isPresented: Binding(
-                    get: { contentsShown && contentsIsPopover },
-                    set: { contentsShown = $0 }
-                ), arrowEdge: .bottom) {
-                    ContentsRail(annotator: annotator, close: { contentsShown = false })
-                        .frame(width: 300, height: 420)
-                }
-            }
-
-            Button(action: reveal) { Image(systemName: "folder") }
-                .buttonStyle(.borderless)
-                .tip("Reveal in Finder", key: "⌘R")
-            Button(action: openExternally) { Image(systemName: "arrow.up.forward.app") }
-                .buttonStyle(.borderless)
-                .tip("Open in the default PDF viewer", key: "O")
-
-            Button {
-                if panel == .notes && !collapsed { collapsed = true } else { panel = .notes; collapsed = false }
-            } label: {
-                if reading {
-                    Label(showingNotes ? "Hide notes" : "Notes",
-                          systemImage: showingNotes ? "sidebar.trailing" : "note.text")
-                } else {
-                    Image(systemName: showingNotes ? "sidebar.trailing" : "note.text")
-                }
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(showingNotes ? Color.accentColor : .secondary)
-            .help(showingNotes ? "Hide the notes (⌘⇧N)" : "Show notes and highlights (⌘⇧N)")
-            .overlay(alignment: .topTrailing) {
-                if !annotator.marks.isEmpty && !showingNotes {
-                    Circle()
-                        .fill(Ink.amber)
-                        .frame(width: 6, height: 6)
-                        .offset(x: 3, y: -2)
-                }
-            }
-
-            if !reading {
-                Button {
-                    collapsed.toggle()
-                } label: {
-                    Image(systemName: collapsed ? "chevron.up" : "chevron.down")
-                }
-                .buttonStyle(.borderless)
-                .help(collapsed ? "Show the panel" : "Hide the panel, give the room to the page")
-            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(collapsed)
+            .tip("Rename this file, read what it says about itself, or take its citation")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -683,8 +623,34 @@ struct KeyLabel: View {
 
 /// A `PDFView` that fits the page to the pane's width and starts at the top of the
 /// document, rather than shrinking the whole page to fit and centring it.
+/// How big the page is drawn. Named rather than a scale factor because these are the
+/// three answers a reader actually wants, and only one of them is a number.
+enum PageFit: String, CaseIterable, Identifiable {
+    case width, page, actual
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .width: return "Fit width"
+        case .page: return "Fit page"
+        case .actual: return "Actual size"
+        }
+    }
+}
+
 final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
+
+    /// How the page is sized in the room it has. Fitting the width is what a page of text
+    /// wants; the other two are here because a figure and a scan do not.
+    var fit: PageFit = .width {
+        didSet { if fit != oldValue { needsLayout = true } }
+    }
+
+    /// The gap between the page and the pane around it. A page drawn edge to edge reads
+    /// as the window's background rather than as a sheet of paper, which is what the
+    /// shadow and this margin together are for.
+    static let margin: CGFloat = 28
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -708,11 +674,20 @@ final class FitWidthPDFView: PDFView {
 
     private func fitToWidth() {
         guard let page = document?.page(at: 0) else { return }
-        let pageWidth = page.bounds(for: displayBox).width
+        let box = page.bounds(for: displayBox)
         let width = availableWidth
-        guard pageWidth > 0, width > 0 else { return }
+        guard box.width > 0, width > 0 else { return }
 
-        let target = min(max(width / pageWidth, minScaleFactor), maxScaleFactor)
+        let room = max(1, width - 2 * FitWidthPDFView.margin)
+        let wanted: CGFloat
+        switch fit {
+        case .width: wanted = room / box.width
+        case .page:
+            let height = max(1, bounds.height - 2 * FitWidthPDFView.margin)
+            wanted = box.height > 0 ? min(room / box.width, height / box.height) : room / box.width
+        case .actual: wanted = 1
+        }
+        let target = min(max(wanted, minScaleFactor), maxScaleFactor)
         if abs(scaleFactor - target) > 0.002 { scaleFactor = target }
 
         if wantsTopScroll {
@@ -729,6 +704,7 @@ struct PDFPreview: NSViewRepresentable {
     let url: URL
     let passwords: [String]
     var annotator: Annotator?
+    var fit: PageFit = .width
 
     func makeCoordinator() -> Coordinator { Coordinator(annotator: annotator) }
 
@@ -744,7 +720,20 @@ struct PDFPreview: NSViewRepresentable {
         view.autoScales = false
         view.displayMode = .singlePageContinuous
         view.displaysPageBreaks = true
-        view.backgroundColor = .clear
+        // A sheet of paper on a desk, rather than ink printed on the window. The shadow
+        // and the margin are what say where the page ends, which matters most on a scan
+        // whose own paper is off-white and on a figure that runs to the trim.
+        view.pageShadowsEnabled = true
+        view.pageBreakMargins = NSEdgeInsets(top: FitWidthPDFView.margin,
+                                             left: FitWidthPDFView.margin,
+                                             bottom: FitWidthPDFView.margin,
+                                             right: FitWidthPDFView.margin)
+        // Not `.underPageBackgroundColor`, which is very nearly white: against it a page
+        // has no edge, and the shadow has nothing to fall on.
+        view.backgroundColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? srgb(28, 28, 30) : srgb(232, 232, 235)
+        }
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.selectionChanged),
@@ -759,6 +748,9 @@ struct PDFPreview: NSViewRepresentable {
         // the file. The coordinator remembers what was asked for, so the same file is
         // never read twice over and A -> B -> A does not end up showing B.
         let coordinator = context.coordinator
+        // Set before the early return: the fit changes far more often than the file, and
+        // reading a different document is not what a zoom menu is asking for.
+        view.fit = fit
         guard coordinator.wanted != url else { return }
 
         // Parsing a document is not free: a two-hundred-page thesis takes the better part
@@ -781,6 +773,9 @@ struct PDFPreview: NSViewRepresentable {
                 return
             }
             view.document = document
+            // After the document, not before it: PDFView drops the setting when a
+            // document is assigned, which is why the page had a margin and no shadow.
+            view.pageShadowsEnabled = true
             view.showFromTop()
             annotator?.attach(view, url: wanted)
             // The reader's local key monitor deliberately lets arrows continue down the

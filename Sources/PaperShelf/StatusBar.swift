@@ -22,6 +22,21 @@ func openedLabel(_ date: Date, now: Date = Date()) -> String {
     }
 }
 
+/// One line, one height, one background, whichever of the two bars is drawn.
+private struct StatusBarChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(height: Metric.statusBar)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .region(.status)
+    }
+}
+
 struct StatusBar: View {
     @ObservedObject var runner: Runner
     /// Observed on its own: these are the numbers that move several times a second, and
@@ -47,10 +62,84 @@ struct StatusBar: View {
     /// many are short of what the standard wants, and whether any two share a key. Nil in
     /// every other view, which is the only way the bar says nothing about it.
     var bibliography: String?
+    /// The document on screen, when there is one. A bar about a collection and a bar
+    /// about one document are not the same bar: "4.2 MB here · 15.3 GB in the library" is
+    /// the right sentence under a shelf and the wrong one under a page.
+    var document: DocumentFacts?
     @State private var showingActivity = false
     @ObservedObject private var regions: Regions = .shared
+    @ObservedObject private var library: LibraryStatus = .shared
+
+    /// What the bar says about the one document being read.
+    struct DocumentFacts: Equatable {
+        let path: String
+        let bytes: Int?
+        let pages: Int
+        let locked: Bool
+        let highlights: Int
+        let notes: Int
+
+        var physical: String {
+            var parts: [String] = []
+            if let bytes {
+                parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes),
+                                                       countStyle: .file))
+            }
+            if pages > 0 { parts.append("\(pages) page\(pages == 1 ? "" : "s")") }
+            parts.append(locked ? "locked" : "unlocked")
+            return parts.joined(separator: " · ")
+        }
+
+        var marks: String {
+            "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
+                + "\(notes) note\(notes == 1 ? "" : "s")"
+        }
+    }
 
     var body: some View {
+        if let document {
+            readerBar(document)
+        } else {
+            collectionBar
+        }
+    }
+
+    /// Reading: what is open, how big it is, what is on it, and the two facts about the
+    /// app itself that are true whatever is on screen.
+    private func readerBar(_ document: DocumentFacts) -> some View {
+        HStack(spacing: 10) {
+            Text(shorten(document.path))
+                .truncationMode(.middle)
+                .tip(document.path)
+            separator
+            Text(document.physical)
+
+            Spacer(minLength: 8)
+
+            // Only while it is doing something. Idle, this is a button about the
+            // collection, and the bar under a page is not the place for it.
+            if runner.phase != .idle || activity.indexing || activity.absorbing {
+                runningNow
+                separator
+            }
+
+            Text(document.marks)
+            separator
+
+            if let label = library.label {
+                Text(label)
+                separator
+            }
+
+            watchingDot
+        }
+        .modifier(StatusBarChrome())
+        .onChange(of: regions.focused) { _, region in
+            if region == .status { showingActivity = true }
+        }
+    }
+
+    private var collectionBar: some View {
         HStack(spacing: 10) {
             runningNow
 
@@ -91,26 +180,29 @@ struct StatusBar: View {
             Text(sizeLabel)
             separator
 
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(watching ? Color.green : unavailableSources > 0 ? Ink.amber : Color.secondary.opacity(0.5))
-                    .frame(width: 6, height: 6)
-                Text(watchingLabel)
-            }
+            watchingDot
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .padding(.horizontal, 12)
-        .frame(height: Metric.statusBar)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
-        .region(.status)
+        .modifier(StatusBarChrome())
         // Focusing the status bar opens what it is a summary of, which is the only useful
         // thing focus can mean for a bar of text.
         .onChange(of: regions.focused) { _, region in
             if region == .status { showingActivity = true }
         }
+    }
+
+    private var watchingDot: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(watching ? Color.green : unavailableSources > 0 ? Ink.amber : Color.secondary.opacity(0.5))
+                .frame(width: 6, height: 6)
+            Text(watchingLabel)
+        }
+    }
+
+    /// A path said the way a person keeps it: under the home folder, from the home folder.
+    private func shorten(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
     /// Whether what is on screen is a plan, an applied run, or a plan that no longer

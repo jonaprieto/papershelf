@@ -116,6 +116,26 @@ enum Face {
     static let page = Font.system(size: 13.5, design: .serif)
 }
 
+/// A filled dot in a colour of its own, for a highlighter swatch.
+///
+/// Drawn rather than declared. A `Circle` used as a `Menu`'s label is not drawn at all on
+/// macOS, and an SF Symbol used there is repainted in the control colour, so both ways of
+/// saying "a yellow dot" came out as a black dot or as nothing. A non-template `NSImage`
+/// keeps the colours it was drawn with wherever it is put.
+func swatchImage(_ colour: NSColor, size: CGFloat = 12) -> Image {
+    let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+        let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+        colour.setFill()
+        circle.fill()
+        NSColor.black.withAlphaComponent(0.18).setStroke()
+        circle.lineWidth = 1
+        circle.stroke()
+        return true
+    }
+    image.isTemplate = false
+    return Image(nsImage: image)
+}
+
 /// Things held for this run of the app and never written down.
 ///
 /// The output password lived as `@State` on the one view that asked for it, which was

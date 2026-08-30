@@ -28,6 +28,20 @@ final class Annotator: ObservableObject {
     @Published private(set) var page = 1
     @Published private(set) var pageCount = 0
 
+    /// What the open document says it is called, and by whom.
+    ///
+    /// Read off the file on screen rather than from the plan. The plan carries these too,
+    /// but only once a run has read the file, so a window opened straight onto a document
+    /// was titled with its filename until somebody pressed Review names.
+    @Published private(set) var statedTitle: String?
+    @Published private(set) var statedAuthor: String?
+
+    /// Whether there is a document to look at from the side. The rail shows the outline
+    /// where there is one and the pages themselves where there is not, so what it needs
+    /// is pages, not chapters -- a scan has none of the latter and is exactly the kind of
+    /// document a column of thumbnails is for.
+    var hasPages: Bool { pageCount > 0 }
+
     /// One outline entry, flattened with its depth. A table of contents is read top to
     /// bottom far more often than it is folded, and indentation carries the structure
     /// without a disclosure triangle on every line.
@@ -60,6 +74,24 @@ final class Annotator: ObservableObject {
             self.colour = colour
             self.annotation = annotation
         }
+    }
+
+    /// Marks in reading order: by page, then down the page, then across it.
+    ///
+    /// Both ways marks arrive are out of order on their own. The initial scan takes each
+    /// page's annotations in the order the file stores them, which is the order they were
+    /// made rather than where they sit; and a new highlight was appended, so a passage
+    /// marked on page 1 landed under one from page 7. Sorting here is what makes the list
+    /// beside the page agree with the page.
+    static func precedes(_ first: Mark, _ second: Mark) -> Bool {
+        if first.page != second.page { return first.page < second.page }
+        let top = first.annotation.bounds.maxY
+        let other = second.annotation.bounds.maxY
+        // PDF coordinates grow upwards, so the higher box is the earlier line. A point of
+        // slack keeps two marks on the same line ordered left to right instead of by a
+        // rounding difference in their heights.
+        if abs(top - other) > 1 { return top > other }
+        return first.annotation.bounds.minX < second.annotation.bounds.minX
     }
 
     weak var view: PDFView?
@@ -95,6 +127,9 @@ final class Annotator: ObservableObject {
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
         page = 1
+        let attributes = view.document?.documentAttributes
+        statedTitle = stated(attributes?[PDFDocumentAttribute.titleAttribute])
+        statedAuthor = stated(attributes?[PDFDocumentAttribute.authorAttribute])
         NotificationCenter.default.addObserver(
             self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
         restorePosition()
@@ -107,6 +142,15 @@ final class Annotator: ObservableObject {
             self.readContents()
             self.startScanningForMarks()
         }
+    }
+
+    /// A document attribute worth showing: a string, with something in it. PDFs written
+    /// by LaTeX routinely carry an empty title, and a window titled "" is worse than one
+    /// titled with the filename.
+    private func stated(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Walks the pages for marks a slice at a time, giving the run loop a turn between
@@ -131,7 +175,7 @@ final class Annotator: ObservableObject {
                 found.append(contentsOf: self.marks(on: page, page: index + 1))
             }
             guard !Task.isCancelled, mine == self.generation else { return }
-            self.marks = found
+            self.marks = found.sorted(by: Annotator.precedes)
             self.scan = nil
         }
     }
@@ -357,6 +401,7 @@ final class Annotator: ObservableObject {
         let wasScanning = scan != nil
         scan?.cancel()
         marks.append(contentsOf: madeMarks)
+        marks.sort(by: Annotator.precedes)
         if wasScanning { startScanningForMarks() }
         save()
         view.clearSelection()
