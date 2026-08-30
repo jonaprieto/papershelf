@@ -73,6 +73,8 @@ struct ReviewInspector: View {
     @State var citationImproving = false
     @State var citationImprovedByAI = false
     @State var citationNote: String?
+    /// How tall the entry is, measured by the editor that draws it.
+    @State var citationHeight: CGFloat = 40
     @AppStorage("inspectorCollapsed") private var collapsed = false
     @AppStorage("contentsShown") private var contentsShown = false
     @AppStorage("pageFit") private var pageFit: PageFit = .width

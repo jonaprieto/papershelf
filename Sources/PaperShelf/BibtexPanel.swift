@@ -25,26 +25,11 @@ extension ReviewInspector {
                 // Sized to the entry rather than given a fixed height with its own
                 // scroller. The pane it sits in already scrolls, and a scroll view inside
                 // a scroll view clipped the last lines of a normal entry: the closing
-                // brace and the DOI were simply not there.
-                //
-                // The height comes from a copy of the same text laid out with the same
-                // font and insets, so it accounts for wrapping, which counting lines
-                // would not.
-                ZStack(alignment: .topLeading) {
-                    Text(citationDraft.isEmpty ? " " : citationDraft)
-                        .font(entryFont)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .hidden()
-                    TextEditor(text: $citationDraft)
-                        .font(entryFont)
-                        .scrollContentBackground(.hidden)
-                        .scrollDisabled(true)
-                        .padding(.horizontal, 1)
-                        .padding(.vertical, 3)
-                }
-                .padding(4)
+                // brace and the DOI were simply not there. The editor measures itself and
+                // says how tall it is (see `BibtexEditor.report`).
+                BibtexEditor(text: $citationDraft) { citationHeight = $0 }
+                    .frame(height: max(citationHeight, 40))
+                    .padding(4)
                 .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
 
@@ -148,7 +133,6 @@ extension ReviewInspector {
         !citationStored && !citationDraft.isEmpty && citationDraft != generatedCitation
     }
 
-    private var entryFont: Font { .system(.caption, design: .monospaced) }
 
     /// What is wrong with the entry as it currently reads, if anything.
     @ViewBuilder private var warning: some View {
