@@ -668,7 +668,7 @@ struct ResultsPane: View {
         .fileExporter(isPresented: $savingBib,
                       document: TextDocument(text: builtBib.text),
                       contentType: .plainText,
-                      defaultFilename: "library.bib") { _ in }
+                      defaultFilename: bibFileName) { _ in }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
                 commands: Self.performable.filter { $0 != .palette },
@@ -1508,12 +1508,12 @@ struct ResultsPane: View {
                         bibEntryList
                             .frame(width: max(380, geometry.size.width * 0.42))
                         Divider()
-                        BibFileView(entries: visibleBib, order: $bibOrder,
+                        BibFileView(entries: visibleBib, name: bibFileName, order: $bibOrder,
                                     completeOnly: $bibCompleteOnly, style: bibStyle)
                             .frame(maxWidth: .infinity)
                     }
                 } else if bibShowsFile {
-                    BibFileView(entries: visibleBib, order: $bibOrder,
+                    BibFileView(entries: visibleBib, name: bibFileName, order: $bibOrder,
                                 completeOnly: $bibCompleteOnly, style: bibStyle)
                 } else {
                     bibEntryList
@@ -1535,9 +1535,15 @@ struct ResultsPane: View {
         Group {
             ScrollViewReader { scroll in
                 List(selection: $selected) {
-                    ForEach(runner.tree) { node in
-                        BibNodeView(node: node, expanded: $expanded, runner: runner,
-                                    visible: visibleKeys)
+                    ForEach(bibShown) { group in
+                        Section("\(group.name) · \(group.entries.count)") {
+                            ForEach(group.entries, id: \.itemKey) { entry in
+                                BibRow(entry: entry, item: runner.item(entry.itemKey),
+                                       passwords: passwords)
+                                    .tag(entry.itemKey)
+                                    .id(entry.itemKey)
+                            }
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -1705,6 +1711,24 @@ struct ResultsPane: View {
       .scrollIndicators(.hidden)
       .fixedSize(horizontal: false, vertical: true)
       .background(.bar)
+    }
+
+    /// What the .bib would be called: after the folder it was built from, since that is
+    /// what tells two of them apart on disk.
+    private var bibFileName: String {
+        let source = folderScope?.lastPathComponent ?? runner.results.first?.root.lastPathComponent
+        guard let source, !source.isEmpty else { return "library.bib" }
+        return source + ".bib"
+    }
+
+    /// The entries as the list draws them: in the order chosen in the bar, grouped by the
+    /// folder each document sits in.
+    private var bibShown: [BibGroup] {
+        bibGroups(bibtexOrdered(visibleBib, order: bibOrder)) { entry in
+            guard let item = runner.item(entry.itemKey) else { return "Elsewhere" }
+            let folders = item.relativePath.split(separator: "/").dropLast()
+            return folders.last.map(String.init) ?? item.root.lastPathComponent
+        }
     }
 
     /// Every entry the standard is not satisfied by, and what each one is short of.
@@ -2203,7 +2227,11 @@ struct ResultsPane: View {
             return "\(groups.count) group\(groups.count == 1 ? "" : "s") · \(files) files"
         case .bibliography:
             let entries = visibleBib.count
-            return "\(entries) entr\(entries == 1 ? "y" : "ies")"
+            let where_ = folderScope?.lastPathComponent
+                ?? runner.results.first?.root.lastPathComponent
+            return [where_, "\(entries) entr\(entries == 1 ? "y" : "ies")",
+                    "rebuilt as you change anything"]
+                .compactMap { $0 }.joined(separator: " · ")
         default:
             let shown = visibleKeys?.count ?? runner.results.count
             let reachable = max(0, sourceCount - unavailableSourceCount)

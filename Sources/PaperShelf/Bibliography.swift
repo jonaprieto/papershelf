@@ -180,54 +180,29 @@ private func lookupSourceLabel(_ source: MetadataSource) -> String {
 }
 
 /// Mirrors NodeView, but each file shows what it will contribute to the .bib.
-struct BibNodeView: View {
-    let node: Node
-    @Binding var expanded: Set<String>
-    @ObservedObject var runner: Runner
-    var passwords: [String] = []
-    /// The search's answer, or nil when nothing is filtering. The bibliography draws the
-    /// same tree the list does and hides the same branches: a search box that changes one
-    /// view and not the other is a search box that cannot be trusted.
-    var visible: Set<String>?
+/// The entries as the list draws them: one group per folder, in the order the entries
+/// themselves are in.
+///
+/// A folder is a heading here rather than a disclosure triangle. A bibliography is read
+/// straight down, and a folder you can fold is a folder that can hide the entry you were
+/// looking for from a search that says it found it.
+struct BibGroup: Identifiable {
+    let name: String
+    let entries: [BibEntry]
+    var id: String { name }
+}
 
-    private var isHidden: Bool {
-        guard let visible else { return false }
-        if let key = node.itemKey { return !visible.contains(key) }
-        return !anyVisible(node, visible)
+/// Groups without reordering: the first entry decides where its folder appears, so the
+/// order the entries arrive in is the order they are read in.
+func bibGroups(_ entries: [BibEntry], folder: (BibEntry) -> String) -> [BibGroup] {
+    var order: [String] = []
+    var byFolder: [String: [BibEntry]] = [:]
+    for entry in entries {
+        let name = folder(entry)
+        if byFolder[name] == nil { order.append(name) }
+        byFolder[name, default: []].append(entry)
     }
-
-    var body: some View {
-        if isHidden {
-            EmptyView()
-        } else if let key = node.itemKey, let entry = runner.bibByItem[key] {
-            BibRow(entry: entry, item: runner.item(key), passwords: passwords)
-                .tag(key).id(key)
-        } else if node.itemKey == nil {
-            DisclosureGroup(isExpanded: expansion) {
-                ForEach(node.children ?? []) { child in
-                    BibNodeView(node: child, expanded: $expanded, runner: runner,
-                                passwords: passwords, visible: visible)
-                }
-            } label: {
-                Label {
-                    Text(node.name).fontWeight(.medium)
-                } icon: {
-                    Image(systemName: "folder.fill").foregroundStyle(.tint)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { expansion.wrappedValue.toggle() }
-            }
-        }
-    }
-
-    private var expansion: Binding<Bool> {
-        Binding(
-            get: { expanded.contains(node.id) },
-            set: { open in
-                if open { expanded.insert(node.id) } else { expanded.remove(node.id) }
-            }
-        )
-    }
+    return order.map { BibGroup(name: $0, entries: byFolder[$0] ?? []) }
 }
 
 struct BibRow: View {
@@ -390,6 +365,9 @@ struct BibRow: View {
 /// redraw is what made this slow.
 struct BibFileView: View {
     let entries: [BibEntry]
+    /// What the file would be called, after the source it was built from. The header says
+    /// which file this is, and "library.bib" says that about every shelf equally.
+    var name: String = "library.bib"
     @Binding var order: BibOrder
     @Binding var completeOnly: Bool
     let style: BibStyle
@@ -548,7 +526,7 @@ struct BibFileView: View {
     private var controls: some View {
       ScrollView(.horizontal) {
         HStack(spacing: 8) {
-            Text("library.bib")
+            Text(name)
                 .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(.secondary)
             dot

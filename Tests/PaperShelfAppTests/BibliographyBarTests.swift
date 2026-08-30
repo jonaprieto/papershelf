@@ -57,3 +57,40 @@ final class BibliographyBarTests: XCTestCase {
         XCTAssertEqual(gaps([]).count, 0)
     }
 }
+
+/// How the entry list is laid out: one heading per folder, in the order the entries are
+/// already in, so the order chosen in the bar is the order that is read.
+final class BibliographyGroupingTests: XCTestCase {
+
+    private func entry(_ key: String, folder: String) -> (BibEntry, String) {
+        let path = "/tmp/\(folder)/\(key).pdf"
+        return (BibEntry(itemKey: path, key: key, title: key, author: nil, year: nil, file: path),
+                folder)
+    }
+
+    func testEntriesAreGroupedByFolderInTheOrderTheyArrive() {
+        let rows = [entry("pearl", folder: "causal"), entry("angrist", folder: "causal"),
+                    entry("koller", folder: "seminar"), entry("gelman", folder: "causal")]
+        let byEntry = Dictionary(uniqueKeysWithValues: rows.map { ($0.0.key, $0.1) })
+
+        let groups = bibGroups(rows.map(\.0)) { byEntry[$0.key] ?? "" }
+
+        XCTAssertEqual(groups.map(\.name), ["causal", "seminar"], "first appearance decides")
+        XCTAssertEqual(groups[0].entries.map(\.key), ["pearl", "angrist", "gelman"])
+        XCTAssertEqual(groups[1].entries.map(\.key), ["koller"])
+    }
+
+    func testEveryEntryLandsInExactlyOneGroup() {
+        let rows = (0..<20).map { entry("k\($0)", folder: $0 % 3 == 0 ? "a" : "b") }
+        let byEntry = Dictionary(uniqueKeysWithValues: rows.map { ($0.0.key, $0.1) })
+
+        let groups = bibGroups(rows.map(\.0)) { byEntry[$0.key] ?? "" }
+
+        XCTAssertEqual(groups.reduce(0) { $0 + $1.entries.count }, 20)
+        XCTAssertEqual(Set(groups.map(\.name)), ["a", "b"])
+    }
+
+    func testNoEntriesIsNoGroups() {
+        XCTAssertTrue(bibGroups([]) { _ in "anywhere" }.isEmpty)
+    }
+}
