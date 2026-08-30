@@ -152,6 +152,9 @@ struct ResultsPane: View {
     @State private var showingPalette = false
     @State private var paletteTags: [TagCount] = []
     @State private var paletteProjects: [ProjectSummary] = []
+    /// The projects a file can be filed into from its own menu. Loaded with the shelf
+    /// rather than when the palette opens, since the menu is right there on every row.
+    @State private var projects: [ProjectSummary] = []
     /// The document the reader is open on, by key. Nil means the browser has the middle
     /// of the window.
     ///
@@ -225,6 +228,58 @@ struct ResultsPane: View {
         guard let destination = forwardPlaces.popLast() else { return }
         backPlaces.append(currentPlace)
         show(destination)
+    }
+
+    /// Every file picked, for the actions that can act on more than one. The anchor,
+    /// `selected`, stays what the inspector is showing and what a single-file action uses.
+    /// One click sets both; command-click and shift-click add to this and move the anchor.
+    @State private var selection: Set<String> = []
+
+    /// What `List` drives. Writing through it keeps the anchor inside the selection, so
+    /// the inspector never shows a file that is no longer picked.
+    private var multipleSelection: Binding<Set<String>> {
+        Binding(
+            get: { selection.isEmpty ? Set([selected].compactMap { $0 }) : selection },
+            set: { picked in
+                selection = picked
+                if picked.count == 1 { selected = picked.first }
+                else if let selected, !picked.contains(selected) { self.selected = picked.first }
+                else if picked.isEmpty { selected = nil }
+            }
+        )
+    }
+
+    /// One file, and only that one.
+    private func pick(_ key: String) {
+        selected = key
+        selection = [key]
+    }
+
+    /// Command-click: add a file to what is picked, or take it back out. The anchor
+    /// follows the file just clicked, since that is the one being looked at.
+    private func toggleInSelection(_ key: String) {
+        var picked = selection.isEmpty ? Set([selected].compactMap { $0 }) : selection
+        if picked.contains(key) {
+            picked.remove(key)
+            if selected == key { selected = picked.first }
+        } else {
+            picked.insert(key)
+            selected = key
+        }
+        selection = picked
+    }
+
+    /// Shift-click: everything between the anchor and the file clicked, in the order the
+    /// view is drawing them.
+    private func extendSelection(to key: String, through order: [String]) {
+        selection = Set(selectionRange(from: selected, to: key, in: order))
+        selected = key
+    }
+
+    /// What an action acts on: everything picked, or the one file the inspector is on.
+    private var actingItems: [Item] {
+        let keys = selection.isEmpty ? Set([selected].compactMap { $0 }) : selection
+        return runner.results.filter { keys.contains($0.key) }
     }
 
     private var selectedItem: Item? {
@@ -444,6 +499,9 @@ struct ResultsPane: View {
                 selected = previous
                 return
             }
+            // Moving the anchor by any other means -- the arrows, J and K, a decision --
+            // means one file again. Only a modifier click grows a selection.
+            if let new, !selection.contains(new) { selection = [new] }
             loadDraft()
         }
             .onAppear {
@@ -507,10 +565,11 @@ struct ResultsPane: View {
             .fileImporter(isPresented: $choosingMoveTarget,
                       allowedContentTypes: [.folder],
                       allowsMultipleSelection: false) { outcome in
-            guard case .success(let urls) = outcome, let folder = urls.first,
-                  let item = selectedItem else { return }
-            runner.move(item, to: folder)
-            advance()
+            guard case .success(let urls) = outcome, let folder = urls.first else { return }
+            let files = actingItems
+            guard !files.isEmpty else { return }
+            for file in files { runner.move(file, to: folder) }
+            afterDeciding()
         }
             .confirmationDialog("Ask AI for \(runner.pendingCount) names?",
                             isPresented: $confirmingBatchAI) {
@@ -573,6 +632,7 @@ struct ResultsPane: View {
             )
         }
         .task(id: showingPalette) { await loadPalettePlaces() }
+        .task(id: runner.revision) { await loadProjects() }
     }
 
     /// What this view can do to what is in it, in the place a person looks for an
@@ -723,6 +783,17 @@ struct ResultsPane: View {
             goToPage: annotator.view == nil ? nil : { annotator.go(toPage: $0) },
             help: { showingShortcuts = true }
         )
+    }
+
+    /// The projects, for the file menu's "Add to project". Two columns and a count; cheap
+    /// enough to read whenever the shelf changes and never on a row's own render.
+    private func loadProjects() async {
+        guard let library = Library.shared else { return }
+        let found = (try? await library.projects()) ?? []
+        let counts = (try? await library.projectMemberCounts()) ?? [:]
+        projects = found.map {
+            ProjectSummary(id: $0.id, name: $0.name, documentCount: counts[$0.id] ?? 0)
+        }
     }
 
     /// Loaded when the palette opens rather than kept in step: it is two queries, and
@@ -1134,9 +1205,10 @@ struct ResultsPane: View {
     }
 
     private func skip() {
-        guard let item = selectedItem else { return }
-        runner.skip(item)
-        advance()
+        let files = actingItems
+        guard !files.isEmpty else { return }
+        for file in files { runner.skip(file) }
+        afterDeciding()
     }
 
     private func skipFolder() {
@@ -1155,8 +1227,12 @@ struct ResultsPane: View {
     /// One menu, built for whichever file was right-clicked rather than the selected one,
     /// because a right-click on a row people have not selected still means that row.
     private func fileMenu(_ item: Item) -> FileContextMenu {
-        FileContextMenu(
+        // A right-click inside a selection acts on the selection, which is what every
+        // file window does; a right-click outside it is about the file under the pointer.
+        let many = selection.contains(item.key) ? actingItems : [item]
+        return FileContextMenu(
             item: item,
+            others: many.count > 1 ? many.count : 0,
             confirm: {
                 selected = item.key
                 runner.confirm(item, as: item.destinationName)
@@ -1167,15 +1243,30 @@ struct ResultsPane: View {
                 Task { await runner.identify(item, client: aiClient, passwords: passwords, rules: rules) }
             },
             moveTo: {
-                selected = item.key
+                if !selection.contains(item.key) { pick(item.key) }
                 choosingMoveTarget = true
             },
-            trash: { runner.markForDeletion(item) },
-            skip: { runner.skip(item) },
+            trash: {
+                for file in many { runner.markForDeletion(file) }
+                if many.count > 1 { afterDeciding() }
+            },
+            skip: {
+                for file in many { runner.skip(file) }
+                if many.count > 1 { afterDeciding() }
+            },
             convert: {
                 selected = item.key
                 converting.clear()
                 showingMarkdown = true
+            },
+            projects: projects,
+            addToProject: { id in
+                let paths = many.map(\.currentURL.path)
+                Task {
+                    guard let library = Library.shared else { return }
+                    _ = try? await library.addMembers(paths: paths, toProject: id)
+                    await loadProjects()
+                }
             },
             tags: tagIndex.tags(for: item),
             availableTags: tagIndex.everyTag,
@@ -1240,8 +1331,17 @@ struct ResultsPane: View {
     }
 
     private func markDeleted() {
-        guard let item = selectedItem else { return }
-        runner.markForDeletion(item)
+        let files = actingItems
+        guard !files.isEmpty else { return }
+        for file in files { runner.markForDeletion(file) }
+        afterDeciding()
+    }
+
+    /// After deciding, the picked files are decided: a selection of forty that has just
+    /// been trashed is not a selection anybody still wants. The anchor moves on to what is
+    /// still waiting, the way it always did for one file.
+    private func afterDeciding() {
+        selection = []
         advance()
     }
 
@@ -1500,12 +1600,22 @@ struct ResultsPane: View {
                             duplicate: runner.duplicateKind[item.key],
                             passwords: passwords,
                             covers: covers,
-                            isSelected: selected == item.key,
+                            isSelected: selection.isEmpty
+                                ? selected == item.key
+                                : selection.contains(item.key),
                             tags: tagIndex.tags(for: item)
                         )
                         .id(item.key)
                         .onTapGesture(count: 2) { openReader(item.key) }
-                        .onTapGesture { selected = item.key }
+                        // Modifier taps first, or the plain one swallows them and every
+                        // click means "just this file".
+                        .highPriorityGesture(TapGesture().modifiers(.command).onEnded {
+                            toggleInSelection(item.key)
+                        })
+                        .highPriorityGesture(TapGesture().modifiers(.shift).onEnded {
+                            extendSelection(to: item.key, through: shown.map(\.key))
+                        })
+                        .onTapGesture { pick(item.key) }
                     }
                 }
                 .padding(18)
@@ -1658,13 +1768,23 @@ struct ResultsPane: View {
             }
     }
 
+    /// The rows the list draws: the tree, folded where it is folded, filtered by the
+    /// search, flattened so `List` can be lazy over it.
+    ///
+    /// It used to be a nested `ForEach` of `DisclosureGroup`s, which builds every row of
+    /// every open folder whether or not it is on screen. On fourteen thousand files that
+    /// is fourteen thousand views rebuilt on every click, which is why clicking a row felt
+    /// slow and sometimes landed on the wrong file: the click arrived while the last one
+    /// was still being drawn.
+    private var listRows: [FlatNode] {
+        flattenTree(runner.tree, expanded: expanded, visible: visibleKeys)
+    }
+
     private var list: some View {
         ScrollViewReader { scroll in
-            List(selection: $selected) {
-                ForEach(runner.tree) { node in
-                    NodeView(node: node, expanded: $expanded, facts: RowFacts(runner: runner),
-                             menu: fileMenu, tags: tagIndex.tags, openFolder: openFolder,
-                             visible: visibleKeys)
+            List(selection: multipleSelection) {
+                ForEach(listRows) { row in
+                    listRow(row)
                 }
             }
             .listStyle(.inset)
@@ -1677,6 +1797,62 @@ struct ResultsPane: View {
                 withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(new, anchor: .center) }
             }
         }
+    }
+
+    @ViewBuilder
+    private func listRow(_ row: FlatNode) -> some View {
+        if let key = row.node.itemKey, let item = runner.item(key) {
+            ResultRow(item: item, decision: runner.decision(for: item),
+                      duplicate: runner.duplicateKind[key], tags: tagIndex.tags(for: item))
+                .padding(.leading, CGFloat(row.depth) * 14)
+                .tag(key)
+                .id(key)
+                .contextMenu { fileMenu(item) }
+                // A real file drag: Finder and anything else that takes one gets a copy.
+                .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
+        } else {
+            FolderRow(node: row.node, depth: row.depth,
+                      open: expanded.contains(row.node.id),
+                      count: filesUnder(row.node),
+                      toggle: { toggleFolder(row.node.id) },
+                      show: { showFolder(row.node) })
+        }
+    }
+
+    private func toggleFolder(_ id: String) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    /// Narrows the shelf to a folder in the list, the same way the sidebar's own tree does.
+    private func showFolder(_ node: Node) {
+        guard let url = folderURL(of: node) else { return }
+        openFolder(url)
+    }
+
+    /// Where a folder in the tree sits on disk. A `Node` stores names, so the path is the
+    /// source root followed by the names down to it.
+    private func folderURL(of node: Node) -> URL? {
+        guard let item = firstFile(under: node) else { return nil }
+        var url = item.currentURL.deletingLastPathComponent()
+        while url.lastPathComponent != node.name, url.pathComponents.count > 1 {
+            url = url.deletingLastPathComponent()
+        }
+        return url.lastPathComponent == node.name ? url : nil
+    }
+
+    /// How many files a folder holds, counted through the tree it already has rather than
+    /// over the whole result set per row.
+    private func filesUnder(_ node: Node) -> Int {
+        guard let children = node.children else { return 1 }
+        return children.reduce(0) { $0 + filesUnder($1) }
+    }
+
+    private func firstFile(under node: Node) -> Item? {
+        if let key = node.itemKey { return runner.item(key) }
+        for child in node.children ?? [] {
+            if let found = firstFile(under: child) { return found }
+        }
+        return nil
     }
 
     // MARK: Review inspector
@@ -1812,6 +1988,14 @@ struct ResultsPane: View {
             Spacer(minLength: 6)
 
             searchWarning
+
+            if selection.count > 1 {
+                Text("\(selection.count) selected")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.accentColor)
+                    .fixedSize()
+                    .tip("Skip, trash and Move to act on all of them")
+            }
 
             Text(shownLabel)
                 .font(.caption.monospacedDigit())
@@ -2346,6 +2530,58 @@ func groupsVisible(_ groups: [DuplicateGroup], in visible: Set<String>?) -> [Dup
 func anyVisible(_ node: Node, _ visible: Set<String>) -> Bool {
     if let key = node.itemKey { return visible.contains(key) }
     return (node.children ?? []).contains { anyVisible($0, visible) }
+}
+
+/// The run a shift-click takes: from the anchor to the file clicked, in the order the view
+/// is drawing them, in either direction. An anchor that is no longer on screen selects the
+/// file clicked and nothing else, which is what a person expects and is a good deal better
+/// than selecting everything between a stale row and this one.
+func selectionRange(from anchor: String?, to key: String, in order: [String]) -> [String] {
+    guard let anchor, anchor != key,
+          let from = order.firstIndex(of: anchor),
+          let to = order.firstIndex(of: key)
+    else { return [key] }
+    let range = from < to ? from...to : to...from
+    return Array(order[range])
+}
+
+/// A folder in the list: a chevron that folds it, its name, and how much is in it.
+///
+/// Its own view so a click on a row does not rebuild every other row, and so the chevron
+/// and the row mean two different things: fold, and show me only this.
+struct FolderRow: View {
+    let node: Node
+    let depth: Int
+    let open: Bool
+    let count: Int
+    let toggle: () -> Void
+    let show: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: toggle) {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                    .frame(width: 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .tip(open ? "Fold this folder" : "Open this folder")
+
+            Image(systemName: "folder.fill").foregroundStyle(.tint)
+            Text(node.name).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
+            Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, CGFloat(depth) * 14)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: show)
+        .onTapGesture(perform: toggle)
+        .contextMenu {
+            Button("Show only this folder", action: show)
+        }
+    }
 }
 
 struct NodeView: View {

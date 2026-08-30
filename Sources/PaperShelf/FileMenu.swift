@@ -12,6 +12,9 @@ import PaperShelfCore
 /// services, not a hand-written imitation.
 struct FileContextMenu: View {
     let item: Item
+    /// How many files this menu is about when it was opened inside a selection. Zero for
+    /// the ordinary case of one file, so the labels stay short where they always were.
+    var others: Int = 0
     let confirm: () -> Void
     let identify: () -> Void
     let moveTo: () -> Void
@@ -20,6 +23,9 @@ struct FileContextMenu: View {
     let convert: () -> Void
     /// This file's own tags, and every tag in use anywhere else, so adding one is a pick
     /// rather than a retype that can be misspelled. See `CatalogueTags` in Catalogue.swift.
+    /// The reading projects this file can be filed into, and what to do about it.
+    var projects: [ProjectSummary] = []
+    var addToProject: (Int64) -> Void = { _ in }
     var tags: [String] = []
     var availableTags: [String] = []
     /// False only when the library itself could not be opened. A file not indexed yet is
@@ -44,10 +50,15 @@ struct FileContextMenu: View {
 
         Button("Quick Look") { QuickLook.show(item.currentURL) }
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.currentURL]) }
+        if others > 1 {
+            Text("\(others) files selected")
+        }
 
         Divider()
 
         tagsMenu
+
+        projectsMenu
 
         Divider()
 
@@ -63,9 +74,27 @@ struct FileContextMenu: View {
 
         Button("Confirm", action: confirm)
         Button("Ask AI for a Name", action: identify)
-        Button("Move to…", action: moveTo)
-        Button("Skip", action: skip)
-        Button("Move to Trash", role: .destructive, action: trash)
+        Button(others > 1 ? "Move \(others) to…" : "Move to…", action: moveTo)
+        Button(others > 1 ? "Skip \(others)" : "Skip", action: skip)
+        Button(others > 1 ? "Move \(others) to Trash" : "Move to Trash",
+               role: .destructive, action: trash)
+    }
+
+    /// Filing files into a reading project without dragging them there. A drag carries one
+    /// file; a selection is often the reason someone opened this menu at all.
+    @ViewBuilder
+    private var projectsMenu: some View {
+        Menu(others > 1 ? "Add \(others) to Project" : "Add to Project") {
+            if projects.isEmpty {
+                Button("No Projects Yet") {}.disabled(true)
+            } else {
+                ForEach(projects) { project in
+                    Button("\(project.name)  (\(project.documentCount))") {
+                        addToProject(project.id)
+                    }
+                }
+            }
+        }
     }
 
     /// What the file has (click one to remove it), what is already in use elsewhere

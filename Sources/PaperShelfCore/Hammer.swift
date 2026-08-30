@@ -1468,6 +1468,47 @@ public struct Node: Identifiable, Sendable {
     public var children: [Node]?
 }
 
+/// One row of the tree as a list draws it: the node, how deep it sits, and whether it has
+/// anything under it.
+///
+/// A nested `ForEach` of `DisclosureGroup`s builds every row of every open folder whether
+/// or not it is on screen, so a shelf of fourteen thousand files rebuilt fourteen thousand
+/// views on each keystroke and each click. A flat array is what a `List` can be lazy over.
+public struct FlatNode: Identifiable, Sendable {
+    public let node: Node
+    public let depth: Int
+    public var id: String { node.id }
+    public var isFolder: Bool { node.children != nil }
+}
+
+/// The tree as rows, in the order it reads, with folded folders left out.
+///
+/// `visible` is the search's answer: a file not in it is dropped, and a folder with
+/// nothing left under it goes with its contents rather than sitting there empty.
+public func flattenTree(_ nodes: [Node], expanded: Set<String>,
+                        visible: Set<String>? = nil, depth: Int = 0) -> [FlatNode] {
+    var rows: [FlatNode] = []
+    for node in nodes {
+        if let children = node.children {
+            let inside = flattenTree(children, expanded: expanded, visible: visible,
+                                     depth: depth + 1)
+            if visible != nil && inside.isEmpty && !anyFileVisible(node, visible!) { continue }
+            rows.append(FlatNode(node: node, depth: depth))
+            if expanded.contains(node.id) { rows.append(contentsOf: inside) }
+        } else if let key = node.itemKey, visible?.contains(key) ?? true {
+            rows.append(FlatNode(node: node, depth: depth))
+        }
+    }
+    return rows
+}
+
+/// Whether any file under this node survived the filter, used to decide whether a folded
+/// folder is worth a row of its own.
+private func anyFileVisible(_ node: Node, _ visible: Set<String>) -> Bool {
+    if let key = node.itemKey { return visible.contains(key) }
+    return (node.children ?? []).contains { anyFileVisible($0, visible) }
+}
+
 /// Groups results back into the folder hierarchy they came from. A single selected
 /// folder with no subfolders is flattened, since one root disclosure adds nothing.
 public func buildTree(_ items: [Item]) -> [Node] {

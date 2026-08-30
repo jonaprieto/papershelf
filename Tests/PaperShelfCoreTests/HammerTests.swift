@@ -364,6 +364,46 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/pick/bank/2024")
     }
 
+    func testFlatteningDrawsOnlyWhatIsOpen() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let tree = buildTree(fakeItems(root, ["top.pdf", "bank/2024/x.pdf", "bank/z.pdf"]))
+        let rootID = tree[0].id
+        let bankID = tree[0].children?.first { $0.name == "bank" }?.id ?? ""
+
+        XCTAssertEqual(flattenTree(tree, expanded: []).map(\.node.name), ["pick"],
+                       "a folded root is one row, whatever is under it")
+
+        XCTAssertEqual(flattenTree(tree, expanded: [rootID]).map(\.node.name),
+                       ["pick", "top.pdf", "bank"])
+
+        let open = flattenTree(tree, expanded: [rootID, bankID])
+        XCTAssertEqual(open.map(\.node.name), ["pick", "top.pdf", "bank", "2024", "z.pdf"])
+        XCTAssertEqual(open.map(\.depth), [0, 1, 1, 2, 2])
+        XCTAssertEqual(open.filter(\.isFolder).map(\.node.name), ["pick", "bank", "2024"])
+    }
+
+    /// The search's answer applies to the rows a list draws: a file that did not match is
+    /// gone, and a folder with nothing left under it goes with its contents.
+    func testFlatteningDropsWhatTheSearchExcluded() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let items = fakeItems(root, ["bank/2024/x.pdf", "bank/z.pdf", "other/y.pdf"])
+        let tree = buildTree(items)
+        let onlyX = Set(items.map(\.key).filter { $0.hasSuffix("x.pdf") })
+
+        func folderIDs(_ nodes: [Node]) -> Set<String> {
+            nodes.reduce(into: Set<String>()) { found, node in
+                guard let children = node.children else { return }
+                found.insert(node.id)
+                found.formUnion(folderIDs(children))
+            }
+        }
+
+        let rows = flattenTree(tree, expanded: folderIDs(tree), visible: onlyX)
+
+        XCTAssertEqual(rows.map(\.node.name), ["pick", "bank", "2024", "x.pdf"])
+        XCTAssertFalse(rows.contains { $0.node.name == "other" }, "nothing left under it")
+    }
+
     func testTreeKeepsBothRootsWhenTwoAreSelected() {
         let a = URL(fileURLWithPath: "/tmp/one")
         let b = URL(fileURLWithPath: "/tmp/two")
