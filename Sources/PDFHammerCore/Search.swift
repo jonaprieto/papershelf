@@ -48,6 +48,21 @@ public struct Query: Sendable, Equatable {
         "tag:\"\(name)\""
     }
 
+    /// Fields someone tried to use that do not exist. `autor:pearl` is a typo, and the
+    /// grammar's own rule (anything unrecognised is a bare word) turns it into a search
+    /// for the literal text `autor:pearl`, which finds nothing and explains nothing.
+    /// Only pieces that look like a field are reported: a bare `10:30` is not a typo.
+    public static func unknownFields(in text: String) -> [String] {
+        split(text).compactMap { piece in
+            guard let index = piece.firstIndex(where: { $0 == ":" || $0 == ">" || $0 == "<" })
+            else { return nil }
+            let field = String(piece[piece.startIndex..<index]).lowercased()
+            guard !field.isEmpty, field.allSatisfy({ $0.isLetter }), !fields.contains(field)
+            else { return nil }
+            return field
+        }
+    }
+
     /// Splits on spaces while keeping quoted runs together.
     static func split(_ text: String) -> [String] {
         var pieces: [String] = []
@@ -66,10 +81,15 @@ public struct Query: Sendable, Equatable {
         return pieces
     }
 
-    private static let fields: Set<String> = [
-        "name", "was", "folder", "text", "status", "size", "pages", "year", "tag",
-        "title", "author", "abstract",
+    /// Every field, in the order a menu should offer them: what the document says about
+    /// itself first, then where it lives, then what it is made of.
+    public static let knownFields: [String] = [
+        "title", "author", "abstract", "text",
+        "name", "was", "folder", "tag",
+        "year", "pages", "size", "status",
     ]
+
+    private static let fields = Set(knownFields)
 
     /// The fields only the library can answer: they are about the inside of a document,
     /// which lives in the store's extracted text rather than in anything an `Item` knows.

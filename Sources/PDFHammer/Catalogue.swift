@@ -1207,11 +1207,43 @@ struct ResultsPane: View {
 
     @ViewBuilder
     private var browser: some View {
-        switch mode {
-        case .catalogue: catalogue
-        case .list: list
-        case .bibliography: bibliography
-        case .duplicates: duplicatesView
+        if visibleKeys?.isEmpty == true {
+            noMatches
+        } else {
+            switch mode {
+            case .catalogue: catalogue
+            case .list: list
+            case .bibliography: bibliography
+            case .duplicates: duplicatesView
+            }
+        }
+    }
+
+    /// A filter that left nothing. Four empty views used to be four blank panes, and a
+    /// blank pane reads as a broken app rather than as an answer. The one thing worth
+    /// offering here is the thing that would change the answer: a text search over
+    /// documents nothing has read cannot match, however the query is written.
+    private var noMatches: some View {
+        ContentUnavailableView {
+            Label("Nothing matches", systemImage: "magnifyingglass")
+        } description: {
+            if Query(query).needsText, runner.unindexedInSearch > 0 {
+                Text("\(runner.unindexedInSearch) of these documents have never been read, "
+                     + "so nothing inside them can match yet.")
+            } else {
+                Text("No file here answers to that. Take a filter off, or search for less.")
+            }
+        } actions: {
+            if Query(query).needsText, runner.unindexedInSearch > 0, !runner.activity.indexing {
+                Button("Index text for search") { runner.indexText(passwords: passwords) }
+                    .buttonStyle(.borderedProminent)
+            }
+            if !query.isEmpty {
+                Button("Clear the search") {
+                    query = ""
+                    runner.search("", passwords: passwords)
+                }
+            }
         }
     }
 
@@ -1732,6 +1764,8 @@ struct ResultsPane: View {
 
             Spacer(minLength: 6)
 
+            searchWarning
+
             Text(shownLabel)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
@@ -1798,6 +1832,39 @@ struct ResultsPane: View {
     private var shownLabel: String {
         let shown = visibleKeys?.count ?? runner.results.count
         return "\(shown) of \(runner.results.count) shown"
+    }
+
+    /// The two ways a search can quietly answer the wrong question: a field that does not
+    /// exist, which the grammar turns into a literal word, and a question about the inside
+    /// of documents nothing has read. Neither is worth an alert; both are worth saying.
+    @ViewBuilder
+    private var searchWarning: some View {
+        let unknown = Query.unknownFields(in: query)
+        if let field = unknown.first {
+            Label("no field called \(field)", systemImage: "questionmark.circle")
+                .font(.caption)
+                .foregroundStyle(Ink.amber)
+                .fixedSize()
+                .tip("Fields are title, author, abstract, text, name, was, folder, tag, "
+                     + "year, pages and size. Anything else is searched for as written.")
+        } else if Query(query).needsText, runner.unindexedInSearch > 0 {
+            HStack(spacing: 5) {
+                Text("\(runner.unindexedInSearch) not indexed")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Ink.amber)
+                if runner.activity.indexing {
+                    Text("reading…").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Button("Index") { runner.indexText(passwords: passwords) }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .fixedSize()
+            .tip("Searching inside a document needs its text read once. Files never read "
+                 + "cannot match, and are not counted as a no.")
+        }
     }
 
     private func removeChip(_ piece: String) {
@@ -1896,7 +1963,7 @@ struct ResultsPane: View {
 
     private var searchField: some View {
         HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            fieldsMenu
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
@@ -1925,7 +1992,49 @@ struct ResultsPane: View {
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
         .frame(width: 240)
-        .tip("Search names, or use folder: size> text: …", key: "/")
+        .tip("Search names, or narrow by field: title, author, abstract, text, folder, "
+             + "tag, year, pages, size", key: "/")
+    }
+
+    /// The grammar, offered rather than described. It lived in a tooltip, which is a place
+    /// people find a fact once and then have to remember it; a menu is where they can go
+    /// back for it. Choosing a field types it and leaves the caret after the colon.
+    private var fieldsMenu: some View {
+        Menu {
+            ForEach(Query.knownFields, id: \.self) { field in
+                Button(fieldMenuLabel(field)) { appendField(field) }
+            }
+        } label: {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Search fields")
+        .tip("Narrow the search by a field")
+    }
+
+    private func fieldMenuLabel(_ field: String) -> String {
+        switch field {
+        case "title": return "title:  what the document calls itself"
+        case "author": return "author:  who it says wrote it"
+        case "abstract": return "abstract:  the opening of the document"
+        case "text": return "text:  anywhere inside the document"
+        case "name": return "name:  the new filename"
+        case "was": return "was:  the original filename"
+        case "folder": return "folder:  the folder it sits in"
+        case "tag": return "tag:  a tag you gave it"
+        case "year": return "year:  the name, the metadata or the file's own year"
+        case "pages": return "pages:  how long it is, with > or <"
+        case "size": return "size:  how big it is, with > or <"
+        default: return "\(field):"
+        }
+    }
+
+    private func appendField(_ field: String) {
+        let separator = query.isEmpty || query.hasSuffix(" ") ? "" : " "
+        query += separator + field + (field == "pages" || field == "size" ? ">" : ":")
+        searchFocused = true
     }
 
     @ViewBuilder

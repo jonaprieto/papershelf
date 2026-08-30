@@ -98,6 +98,16 @@ final class SearchTests: XCTestCase {
         XCTAssertFalse(Query("author:pearl pages>100").needsText)
     }
 
+    /// A misspelt field is not a bare word people meant to type: `autor:pearl` finds
+    /// nothing and, without being told, looks like a search that simply failed.
+    func testATypoInAFieldNameIsReportable() {
+        XCTAssertEqual(Query.unknownFields(in: "autor:pearl"), ["autor"])
+        XCTAssertEqual(Query.unknownFields(in: "title:causality autor:pearl"), ["autor"])
+        XCTAssertTrue(Query.unknownFields(in: "author:pearl pages>100").isEmpty)
+        XCTAssertTrue(Query.unknownFields(in: "10:30").isEmpty, "not everything with a colon is a field")
+        XCTAssertTrue(Query.unknownFields(in: "plain words").isEmpty)
+    }
+
     func testBareWordsMatchEitherName() {
         let file = subject(name: "2024-06-extracto.pdf")
         XCTAssertTrue(matches(file, Query("extracto")))
