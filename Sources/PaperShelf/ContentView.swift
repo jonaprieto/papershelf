@@ -1589,12 +1589,16 @@ struct ExplorerOutline: View {
         }
         .contextMenu {
             if node.itemKey == nil {
-                // The catalogue is the only thing that can honour this, and it owns its own
-                // state, so the intent is posted rather than reached for directly.
-                Button("Open in Catalogue") {
-                    NotificationCenter.default.post(
-                        name: .openFolderInCatalogue, object: nil,
-                        userInfo: ["path": node.url.path])
+                // The catalogue is the only thing that can honour the first of these, and
+                // it owns its own state, so the intent is posted rather than reached for.
+                Button("Show only this folder") { openFolder(node.url.path) }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([node.url])
+                }
+                Divider()
+                Button("Copy path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(node.url.path, forType: .string)
                 }
             }
         }

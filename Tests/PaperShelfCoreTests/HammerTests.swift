@@ -346,6 +346,24 @@ final class HammerTests: XCTestCase {
         XCTAssertEqual((year?.children ?? []).map(\.name), ["x.pdf", "y.pdf"])
     }
 
+    /// The list's folder menu rebuilds a folder's real path by walking down from the
+    /// source root, appending each node's name. That only works while a top-level node is
+    /// the root itself and every name below it is one path component.
+    func testAFoldersPathCanBeRebuiltFromTheTreeItSitsIn() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let tree = buildTree(fakeItems(root, ["bank/2024/x.pdf"]))
+
+        var url = root
+        var node = tree[0]
+        XCTAssertEqual(node.name, root.lastPathComponent, "the top node is the root itself")
+        while let child = node.children?.first, child.itemKey == nil {
+            url = url.appendingPathComponent(child.name)
+            node = child
+        }
+
+        XCTAssertEqual(url.path, "/tmp/pick/bank/2024")
+    }
+
     func testTreeKeepsBothRootsWhenTwoAreSelected() {
         let a = URL(fileURLWithPath: "/tmp/one")
         let b = URL(fileURLWithPath: "/tmp/two")

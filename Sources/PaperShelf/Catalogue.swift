@@ -2345,6 +2345,13 @@ struct NodeView: View {
     /// from: empty at the top level, since a root's own name is never part of an item's
     /// `relativePath` (see `Item.relativePath` in `Hammer.swift`).
     var relativeFolder: String = ""
+    /// Where this folder actually is on disk, handed down as the tree is drawn.
+    ///
+    /// A `Node` stores names, not paths, and a top-level node is the source root itself.
+    /// Rebuilding the path from `root + relativeFolder` was wrong by exactly one level for
+    /// every top-level folder, which is why right-clicking one and asking to see inside it
+    /// filtered to the whole source and looked like nothing had happened.
+    var folderURL: URL?
 
     private var isHidden: Bool {
         guard let visible else { return false }
@@ -2368,7 +2375,8 @@ struct NodeView: View {
                 ForEach(node.children ?? []) { child in
                     NodeView(node: child, expanded: $expanded, facts: facts,
                              menu: menu, tags: tags, openFolder: openFolder, visible: visible,
-                             relativeFolder: relativeFolder.isEmpty ? child.name : "\(relativeFolder)/\(child.name)")
+                             relativeFolder: relativeFolder.isEmpty ? child.name : "\(relativeFolder)/\(child.name)",
+                             folderURL: url?.appendingPathComponent(child.name))
                 }
             } label: {
                 Label {
@@ -2383,12 +2391,29 @@ struct NodeView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { expansion.wrappedValue.toggle() }
             }
-            .contextMenu {
-                Button("Open in Catalogue") {
-                    if let item = firstDescendantItem(of: node) {
-                        openFolder(item.root.appendingPathComponent(relativeFolder))
-                    }
-                }
+            .contextMenu { folderMenu }
+        }
+    }
+
+    /// Where this folder is. Handed down while drawing, except at the top, where the node
+    /// is a source root and any file under it can name it.
+    private var url: URL? {
+        folderURL ?? firstDescendantItem(of: node)?.root
+    }
+
+    /// What a folder can answer. It offered one thing, which did not work; these are the
+    /// three questions a folder in a list of files is actually asked.
+    @ViewBuilder
+    private var folderMenu: some View {
+        if let url {
+            Button("Show only this folder") { openFolder(url) }
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+            Divider()
+            Button("Copy path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path, forType: .string)
             }
         }
     }
