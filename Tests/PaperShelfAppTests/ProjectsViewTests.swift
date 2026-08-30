@@ -20,6 +20,7 @@ final class ProjectsEnvironmentStub {
     var shouldThrow = false
 
     private(set) var membersCallCount = 0
+    private(set) var tagsCallCount = 0
     private(set) var sectionsCallCount = 0
     private(set) var setSectionCalls: [(id: Int64, hash: String, section: String?)] = []
     private(set) var removeMemberCalls: [(id: Int64, hash: String)] = []
@@ -73,7 +74,10 @@ final class ProjectsEnvironmentStub {
                 if self.shouldThrow { throw Failure() }
                 self.membersByProject[id]?.removeAll { $0.document.contentHash == hash }
             },
-            tags: { hash in self.tagsByHash[hash] ?? [] },
+            tags: { hashes in
+                self.tagsCallCount += 1
+                return self.tagsByHash.filter { hashes.contains($0.key) }
+            },
             addTag: { hash, name in
                 self.addTagCalls.append((hash, name))
                 if self.shouldThrow { throw Failure() }
@@ -121,6 +125,20 @@ final class ProjectDetailModelLoadTests: XCTestCase {
         XCTAssertEqual(model.knownSections, ["background"])
         XCTAssertEqual(model.tagsByDocument["a"], ["math"])
         XCTAssertEqual(model.tagsByDocument["b"], [])
+    }
+
+    /// The cost of opening a project must not grow with what is in it: the tags for the
+    /// whole project are one question, not one per document.
+    func testLoadAsksForTagsOnceHoweverManyDocuments() async {
+        let stub = ProjectsEnvironmentStub()
+        stub.membersByProject[1] = (0..<50).map { makeMember("d\($0)") }
+        let model = ProjectDetailModel(project: ProjectSummary(id: 1, name: "P", documentCount: 50),
+                                       env: stub.environment())
+
+        await model.load()
+
+        XCTAssertEqual(stub.tagsCallCount, 1)
+        XCTAssertEqual(model.tagsByDocument.count, 50, "and every member still has an answer")
     }
 
     func testLoadSurfacesAnErrorFromTheEnvironment() async {

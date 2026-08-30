@@ -216,4 +216,34 @@ final class ProjectCorpusTests: XCTestCase {
         XCTAssertEqual(members.count, 5)
         XCTAssertEqual(listed?.documentCount, 5)
     }
+
+    /// Opening a project has to cost about one query, not one per document. This is the
+    /// shape the test guards, not a stopwatch: the number of round trips through the
+    /// library actor must not grow with the size of the project.
+    func testOpeningAProjectDoesNotAskThePerDocumentQuestions() async throws {
+        let library = try library()
+        let env = await environment(library)
+        let files = try corpus(120)
+        let ids = try await fill(library, files: files, withText: 120)
+        let project = try await env.createProject("crdts")
+        _ = try await addToProject(files.map(\.path), project: project.id, library: library)
+        for id in ids.prefix(30) { try await library.addTag("crdts", toDocument: id) }
+
+        let started = Date()
+        let model = await MainActor.run {
+            ProjectDetailModel(project: ProjectSummary(id: project.id, name: "crdts",
+                                                       documentCount: 120),
+                               env: env)
+        }
+        await model.load()
+        let elapsed = Date().timeIntervalSince(started)
+
+        let members = await MainActor.run { model.members }
+        let tagged = await MainActor.run { model.tagsByDocument.filter { !$0.value.isEmpty } }
+        XCTAssertEqual(members.count, 120)
+        XCTAssertEqual(tagged.count, 30)
+        // Generous on purpose: a machine under load is allowed to be slow, a load that
+        // asks the library 120 separate questions for the tags alone is not.
+        XCTAssertLessThan(elapsed, 2.0, "opening a project of 120 documents took \(elapsed)s")
+    }
 }

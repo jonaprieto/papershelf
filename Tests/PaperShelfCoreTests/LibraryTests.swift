@@ -1151,4 +1151,28 @@ final class PDFShelfFixtureTests: XCTestCase {
         XCTAssertEqual(consistency.count, 2)
         XCTAssertTrue(invoices.isEmpty)
     }
+
+    /// The batched read a project's list is drawn from: only the documents asked for, and
+    /// a document with no stored text simply is not in the answer.
+    func testExtractedTextComesBackForAWholeSetAtOnce() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("batched-text"), isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = try Library(url: root.appendingPathComponent("library.sqlite"))
+
+        var ids: [String] = []
+        for name in ["a", "b", "c"] {
+            ids.append(try await library.indexDocument(path: "/tmp/\(name).pdf", contentHash: nil).id)
+        }
+        try await library.setExtractedText("first", forDocument: ids[0])
+        try await library.setExtractedText("third", forDocument: ids[2])
+
+        let found = try await library.extractedText(forDocuments: [ids[0], ids[1]])
+        XCTAssertEqual(found, [ids[0]: "first"])
+        let none = try await library.extractedText(forDocuments: [])
+        XCTAssertTrue(none.isEmpty)
+        let all = try await library.extractedText(forDocuments: ids)
+        XCTAssertEqual(all.count, 2)
+    }
 }

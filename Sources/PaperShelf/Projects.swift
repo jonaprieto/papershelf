@@ -109,7 +109,10 @@ struct ProjectsEnvironment {
     /// paths were documents this library knows; the rest are skipped. Defaults to doing
     /// nothing so a stub environment only has to fill in what it is testing.
     var addFiles: (_ id: Int64, _ paths: [String]) async throws -> Int = { _, _ in 0 }
-    var tags: (_ contentHash: String) async throws -> [String]
+    /// The tags on a set of documents, asked once for the whole set. It used to be one
+    /// question per document, which on a project of a thousand papers was a thousand round
+    /// trips through the library actor before the list could be drawn.
+    var tags: (_ contentHashes: [String]) async throws -> [String: [String]]
     var addTag: (_ contentHash: String, _ name: String) async throws -> Void
     var removeTag: (_ contentHash: String, _ tag: String) async throws -> Void
     /// Backed by `Library.fullTextSearch`: which of the given documents best match a
@@ -319,11 +322,11 @@ final class ProjectDetailModel: ObservableObject {
             let documents = try await env.members(project.id)
             members = documents
             knownSections = try await env.sections(project.id)
-            var tags: [String: [String]] = [:]
-            for member in documents {
-                tags[member.document.contentHash] = try await env.tags(member.document.contentHash)
-            }
-            tagsByDocument = tags
+            // Every member gets an entry, tagged or not: the views read this dictionary
+            // directly, and "no tags" is an answer, not a missing one.
+            let ids = documents.map(\.document.contentHash)
+            let found = try await env.tags(ids)
+            tagsByDocument = ids.reduce(into: [:]) { $0[$1] = found[$1] ?? [] }
         } catch {
             self.error = error.localizedDescription
         }

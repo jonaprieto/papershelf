@@ -40,14 +40,15 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
         },
         deleteProject: { id in try await library.deleteProject(id: id) },
         members: { id in
-            var out: [ProjectMember] = []
-            for (record, section) in try await library.sectionedMembers(ofProject: id) {
-                // The text is what a question is answered from, so it travels with the
-                // document. A document with none contributes nothing but its title.
-                let text = try await library.extractedText(forDocument: record.id)?.markdown ?? ""
-                out.append(member(record, section: section, markdown: text))
+            let rows = try await library.sectionedMembers(ofProject: id)
+            // The text is what a question is answered from, so it travels with the
+            // document. A document with none contributes nothing but its title. Asked for
+            // the whole project at once: one question per document meant a project of a
+            // thousand papers waited on a thousand round trips before it could be drawn.
+            let text = try await library.extractedText(forDocuments: rows.map { $0.0.id })
+            return rows.map { record, section in
+                member(record, section: section, markdown: text[record.id] ?? "")
             }
-            return out
         },
         availableDocuments: { id in
             let already = Set(try await library.members(ofProject: id).map(\.id))
@@ -63,7 +64,13 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             try await library.removeMember(documentID, fromProject: id)
         },
         addFiles: { id, paths in try await addToProject(paths, project: id, library: library) },
-        tags: { documentID in try await library.tags(forDocument: documentID).map(\.name) },
+        tags: { documentIDs in
+            // One query for the whole project. The library can hand back every document's
+            // tags in a single statement, and asking per document is what made opening a
+            // large project wait on a round trip per row.
+            let wanted = Set(documentIDs)
+            return try await library.tagsByDocument().filter { wanted.contains($0.key) }
+        },
         addTag: { documentID, name in try await library.addTag(name, toDocument: documentID) },
         removeTag: { documentID, name in
             try await library.removeTag(name, fromDocument: documentID)

@@ -833,6 +833,25 @@ public actor Library {
         }
     }
 
+    /// Every stored text belonging to a project's documents, in one statement.
+    ///
+    /// Asked per document, opening a project of a thousand papers was a thousand round
+    /// trips through this actor before its list could be drawn. The whole table is read
+    /// and narrowed here rather than binding a thousand parameters: the callers want most
+    /// of a project at a time, and SQLite has no list parameter.
+    public func extractedText(forDocuments documentIDs: [String]) throws -> [String: String] {
+        guard !documentIDs.isEmpty else { return [:] }
+        let wanted = Set(documentIDs)
+        return try withStatement("SELECT document_id, markdown FROM extracted_text;") { statement in
+            var out: [String: String] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = columnText(statement, 0), wanted.contains(id) else { continue }
+                out[id] = columnText(statement, 1) ?? ""
+            }
+            return out
+        }
+    }
+
     /// Which documents' stored text matches, as ids, for a shelf search that then has to
     /// intersect the answer with what is on screen. Ids rather than records: the caller
     /// already holds everything it needs to draw a row, and fetching whole rows for
