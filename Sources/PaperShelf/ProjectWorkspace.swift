@@ -64,15 +64,21 @@ struct ProjectWorkspace: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ProjectConversationView(project: project,
-                                    documents: asking,
-                                    totalDocuments: model.members.count,
-                                    env: env,
-                                    model: conversation)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            documents.frame(width: Metric.inspectorIdeal)
+        // Bounded to the room it is given rather than to what its panes would like. Asked
+        // for their ideal height the two of them add up to more than the window, and a
+        // subtree that demands more height than there is pushes the window's own status
+        // bar off the bottom and clips its own content top and bottom. A `GeometryReader`
+        // proposes the space that exists, so nothing inside can ask for more.
+        GeometryReader { room in
+            HStack(spacing: 0) {
+                ProjectConversationView(documents: asking,
+                                        totalDocuments: model.members.count,
+                                        model: conversation)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                documents.frame(width: Metric.inspectorIdeal)
+            }
+            .frame(width: room.size.width, height: room.size.height)
         }
         .navigationTitle(project.name)
         .navigationSubtitle(subtitle)
@@ -109,11 +115,18 @@ struct ProjectWorkspace: View {
 
     private var subtitle: String {
         let sections = Set(model.members.compactMap(\.section)).count
-        let indexed = model.members.filter { !$0.document.markdown.isEmpty }.count
+        let unread = model.members.count - choosable.count
         var parts = ["\(model.members.count) document\(model.members.count == 1 ? "" : "s")"]
-        if indexed < model.members.count { parts.append("\(model.members.count - indexed) not indexed") }
+        // How much there is to ask across, which is the number that decides whether a
+        // question can be answered at all. Words rather than characters: nobody has an
+        // intuition for 1,200,000 characters.
+        let words = choosable.reduce(0) { $0 + $1.document.markdown.count } / 5
+        if words > 0 {
+            parts.append("\(words.formatted(.number.notation(.compactName))) words indexed")
+        }
+        if unread > 0 { parts.append("\(unread) not indexed") }
         if sections > 0 { parts.append("\(sections) section\(sections == 1 ? "" : "s")") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: " \u{00B7} ")
     }
 
     @ToolbarContentBuilder

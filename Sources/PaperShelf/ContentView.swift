@@ -793,16 +793,22 @@ struct ContentView: View {
                     // A row rather than a Button: a Button takes the drag for itself, so a
                     // paper dropped on a project landed on nothing and the project went on
                     // saying what it said before. The tap does what the Button did.
-                    sidebarRow(openProject?.id == project.id) {
-                        Label(project.name, systemImage: "briefcase")
-                    } trailing: {
-                        Text(project.documentCount.formatted())
-                    }
-                    .onTapGesture {
+                    // A Button for the click, with the drop hung on the outside of it.
+                    // Neither gesture on its own worked: a plain tap on a row of a sidebar
+                    // `List` is swallowed by the list's own click handling, and so is a
+                    // simultaneous one, so a project could not be opened by clicking it.
+                    Button {
                         chrome.setReading(false)
                         openProject = openProject?.id == project.id ? nil : project
                         sidebarTarget = .project(project.id)
+                    } label: {
+                        sidebarRow(openProject?.id == project.id) {
+                            Label(project.name, systemImage: "briefcase")
+                        } trailing: {
+                            Text(project.documentCount.formatted())
+                        }
                     }
+                    .buttonStyle(.plain)
                     .accessibilityAddTraits(sidebarTarget == .project(project.id) ? .isSelected : [])
                     .background(dropProject == project.id
                                 ? Color.accentColor.opacity(0.25) : .clear,

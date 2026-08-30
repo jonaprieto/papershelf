@@ -475,7 +475,9 @@ struct ProjectDetailView: View {
         .navigationTitle(model.project.name)
         .toolbar {
             NavigationLink {
-                ProjectConversationView(project: model.project, documents: model.members.map(\.document), env: env)
+                ProjectConversationView(documents: model.members.map(\.document),
+                                        model: ProjectConversationModel(project: model.project,
+                                                                        env: env))
             } label: {
                 Label("Ask", systemImage: "bubble.left.and.bubble.right")
             }
@@ -841,85 +843,90 @@ final class ProjectConversationModel: ObservableObject {
 }
 
 struct ProjectConversationView: View {
-    /// Owned here unless the window hands one in. The workspace's toolbar exports the
+    /// Held by whoever put this view on screen. The workspace's toolbar exports the
     /// thread, and it cannot export turns held privately by the view under it.
-    @StateObject private var owned: ProjectConversationModel
-    private var supplied: ProjectConversationModel?
-    private var model: ProjectConversationModel { supplied ?? owned }
+    ///
+    /// `@ObservedObject`, not a plain property: a model in a plain property is one the
+    /// view never hears from again, so answers arrived and the pane did not redraw.
+    @ObservedObject var model: ProjectConversationModel
     /// The documents this question goes across: what was ticked beside it, and readable.
     private let documents: [ProjectDocument]
     /// How many the project holds altogether, so the line above the field can say "12 of
     /// 14" rather than "12 of 12" -- the two numbers are the whole point of the choice.
     private let totalDocuments: Int
 
-    init(project: ProjectSummary, documents: [ProjectDocument],
-         totalDocuments: Int? = nil, env: ProjectsEnvironment,
-         model: ProjectConversationModel? = nil) {
+    init(documents: [ProjectDocument], totalDocuments: Int? = nil,
+         model: ProjectConversationModel) {
         self.documents = documents
         self.totalDocuments = totalDocuments ?? documents.count
-        self.supplied = model
-        _owned = StateObject(wrappedValue: model
-                             ?? ProjectConversationModel(project: project, env: env))
+        self.model = model
     }
 
     /// The answer being written out to a file, when one is.
     @State private var saving: ProjectTurn?
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    if model.turns.isEmpty {
-                        Text("Ask a question below. Every answer cites the document and page it came from.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(model.turns) { turn in
-                        TurnView(turn: turn,
-                                 onOpen: model.open,
-                                 footnote: footnote(for: turn),
-                                 copyWithCitations: { copy(turn) },
-                                 saveAsNote: { saving = turn })
-                    }
+        ScrollView {
+            // Not lazy. A conversation is tens of turns, so laziness buys nothing.
+            VStack(alignment: .leading, spacing: 16) {
+                if model.turns.isEmpty {
+                    Text("Ask a question below. Every answer cites the document and page it came from.")
+                        .foregroundStyle(.secondary)
                 }
-                .padding()
+                ForEach(model.turns) { turn in
+                    TurnView(turn: turn,
+                             onOpen: model.open,
+                             footnote: footnote(for: turn),
+                             copyWithCitations: { copy(turn) },
+                             saveAsNote: { saving = turn })
+                }
             }
-            Divider()
-            VStack(spacing: 10) {
-                outbound
-                HStack(alignment: .bottom, spacing: 10) {
-                    TextField("Ask across this project…",
-                              text: Binding(get: { model.pendingQuestion },
-                                            set: { model.pendingQuestion = $0 }),
-                              axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...4)
-                        .onSubmit { Task { await model.prepareToAsk(documents: documents) } }
-                    Button {
-                        Task { await model.prepareToAsk(documents: documents) }
-                    } label: {
-                        if model.isPreparing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            HStack(spacing: 6) {
-                                Text("Ask")
-                                Text("\u{2318}\u{21A9}")
-                                    .font(.caption2.weight(.bold).monospaced())
-                                    .padding(.horizontal, 3)
-                                    .background(.white.opacity(0.22),
-                                                in: RoundedRectangle(cornerRadius: 3))
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        // A bottom inset, not the last row of a `VStack`. Stacked, the scroll area and the
+        // composer added up to more than the pane, and an oversized child in a flexible
+        // frame is centred: the top of the conversation was clipped above the pane and the
+        // field clipped below it, which is why this pane looked empty and had nothing to
+        // type into.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                VStack(spacing: 10) {
+                    outbound
+                    HStack(alignment: .bottom, spacing: 10) {
+                        TextField("Ask across this project…",
+                                  text: $model.pendingQuestion, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(1...4)
+                            .onSubmit { Task { await model.prepareToAsk(documents: documents) } }
+                        Button {
+                            Task { await model.prepareToAsk(documents: documents) }
+                        } label: {
+                            if model.isPreparing {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                HStack(spacing: 6) {
+                                    Text("Ask")
+                                    Text("\u{2318}\u{21A9}")
+                                        .font(.caption2.weight(.bold).monospaced())
+                                        .padding(.horizontal, 3)
+                                        .background(.white.opacity(0.22),
+                                                    in: RoundedRectangle(cornerRadius: 3))
+                                }
                             }
                         }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                  || model.isPreparing
+                                  || askReadiness(of: documents) != .ready)
                     }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              || model.isPreparing
-                              || askReadiness(of: documents) != .ready)
                 }
+                .padding(14)
             }
-            .padding(14)
+            .background(.bar)
         }
-        .navigationTitle("Ask: \(model.project.name)")
         .confirmationDialog(confirmationTitle, isPresented: confirmationShown, titleVisibility: .visible) {
             Button("Send") { Task { await model.confirmAndAsk() } }
             Button("Cancel", role: .cancel) { model.cancelPending() }
