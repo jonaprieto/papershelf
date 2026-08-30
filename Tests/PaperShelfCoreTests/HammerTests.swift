@@ -404,6 +404,35 @@ final class HammerTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.node.name == "other" }, "nothing left under it")
     }
 
+    /// A folded folder must not need its children's rows built to know whether it still
+    /// deserves one: `anyFileVisible` alone decides that. This proves the folded case
+    /// still gets a row when a match survives underneath, still drops out when nothing
+    /// does, and that opening every folder on the way down still draws exactly what full
+    /// expansion always has.
+    func testFoldedFoldersAreDecidedWithoutBuildingTheirChildrensRows() {
+        let root = URL(fileURLWithPath: "/tmp/pick")
+        let items = fakeItems(root, ["bank/2024/x.pdf", "bank/z.pdf", "other/y.pdf"])
+        let tree = buildTree(items)
+        let onlyX = Set(items.map(\.key).filter { $0.hasSuffix("x.pdf") })
+        let rootID = tree[0].id
+        let bank = tree[0].children?.first { $0.name == "bank" }
+        let bankID = bank?.id ?? ""
+        let yearID = bank?.children?.first { $0.name == "2024" }?.id ?? ""
+
+        // Only the root is open: "bank" and "other" are both folded, "bank" holding the
+        // one match and "other" holding none.
+        let folded = flattenTree(tree, expanded: [rootID], visible: onlyX)
+        XCTAssertEqual(folded.map(\.node.name), ["pick", "bank"],
+                       "the folded folder with a match still gets a row, the other drops out")
+        XCTAssertEqual(folded.map(\.depth), [0, 1])
+
+        // Opening every folder on the path to the match must draw the same rows a full
+        // expansion always has, unaffected by the folded-folder shortcut above.
+        let expanded = flattenTree(tree, expanded: [rootID, bankID, yearID], visible: onlyX)
+        XCTAssertEqual(expanded.map(\.node.name), ["pick", "bank", "2024", "x.pdf"])
+        XCTAssertEqual(expanded.map(\.depth), [0, 1, 2, 3])
+    }
+
     func testTreeKeepsBothRootsWhenTwoAreSelected() {
         let a = URL(fileURLWithPath: "/tmp/one")
         let b = URL(fileURLWithPath: "/tmp/two")

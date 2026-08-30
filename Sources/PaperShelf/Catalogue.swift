@@ -87,6 +87,11 @@ struct ResultsPane: View {
     /// collection per render, and again on every tick of a window resize because the grid
     /// asks from inside a `GeometryReader`.
     @State private var filter = VisibleFilter()
+    /// Remembers the shelf's own last answer -- the results narrowed to `visibleKeys` --
+    /// keyed the same way `filter` is. `visibleKeys` being cached did not save the grid
+    /// anything: it was still filtering the whole collection down to that set on every
+    /// render, and again on every tick of a window resize.
+    @State private var shownFilter = ShownFilter()
     /// The file a "New Tag…" prompt was opened for. Non-nil drives the sheet.
     @State private var taggingItem: Item?
     @State private var newTagName = ""
@@ -305,13 +310,11 @@ struct ResultsPane: View {
         runner.results.first { $0.key == selected }
     }
 
-    /// The keys the search should show: Runner's own answer for the fields it
-    /// understands (name, folder, status, size, pages, year, text), narrowed further by
-    /// any `tag:` terms and by `folderScope`, neither of which Runner knows anything
-    /// about. Nil means nothing is filtering at all, the same meaning `runner.matchingKeys`
-    /// already carries on its own.
-    private var visibleKeys: Set<String>? {
-        filter.keys(matching: VisibleFilter.Signature(
+    /// Everything that could change what `visibleKeys` answers, or what the shelf's
+    /// `shown` list holds. Shared so the two caches agree on when to recompute instead of
+    /// each guessing at its own signature.
+    private var visibilitySignature: VisibleFilter.Signature {
+        VisibleFilter.Signature(
             results: runner.resultsToken,
             matching: runner.matchingToken,
             tags: tagIndex.revision,
@@ -321,7 +324,16 @@ struct ResultsPane: View {
             decisions: runner.reviewed,
             list: shelves.current,
             lists: shelves.revision
-        ), compute: computeVisibleKeys)
+        )
+    }
+
+    /// The keys the search should show: Runner's own answer for the fields it
+    /// understands (name, folder, status, size, pages, year, text), narrowed further by
+    /// any `tag:` terms and by `folderScope`, neither of which Runner knows anything
+    /// about. Nil means nothing is filtering at all, the same meaning `runner.matchingKeys`
+    /// already carries on its own.
+    private var visibleKeys: Set<String>? {
+        filter.keys(matching: visibilitySignature, compute: computeVisibleKeys)
     }
 
     private var visibleBib: [BibEntry] { entriesVisible(runner.bib, in: visibleKeys) }
@@ -1641,7 +1653,9 @@ struct ResultsPane: View {
     private func catalogueGrid(columns: Int) -> some View {
         let layout = Array(repeating: GridItem(.flexible(), spacing: 18), count: columns)
         let keys = visibleKeys
-        let shown = runner.results.filter { keys?.contains($0.key) ?? true }
+        let shown = shownFilter.items(matching: visibilitySignature) {
+            runner.results.filter { keys?.contains($0.key) ?? true }
+        }
         return ScrollViewReader { scroll in
             ScrollView {
                 LazyVGrid(columns: layout, alignment: .leading, spacing: 18) {
@@ -3158,6 +3172,24 @@ final class VisibleFilter {
     private var cached: Set<String>?
 
     func keys(matching new: Signature, compute: () -> Set<String>?) -> Set<String>? {
+        if signature == new { return cached }
+        let value = compute()
+        signature = new
+        cached = value
+        return value
+    }
+}
+
+/// Holds the last answer the shelf's grid gave for `runner.results` narrowed to
+/// `visibleKeys`, keyed on the same signature as `VisibleFilter`. That signature already
+/// carries `results` (`runner.resultsToken`), so anything that could move which items are
+/// shown -- a new scan, a rename, a decision, the search box, a tag -- invalidates this
+/// too.
+final class ShownFilter {
+    private var signature: VisibleFilter.Signature?
+    private var cached: [Item] = []
+
+    func items(matching new: VisibleFilter.Signature, compute: () -> [Item]) -> [Item] {
         if signature == new { return cached }
         let value = compute()
         signature = new

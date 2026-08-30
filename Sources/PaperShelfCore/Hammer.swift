@@ -1490,11 +1490,20 @@ public func flattenTree(_ nodes: [Node], expanded: Set<String>,
     var rows: [FlatNode] = []
     for node in nodes {
         if let children = node.children {
+            guard expanded.contains(node.id) else {
+                // Collapsed: none of the descendants would end up on screen, so don't
+                // build their rows just to throw them away. `anyFileVisible` answers the
+                // same "does this folder still deserve a row" question on its own, without
+                // walking the whole subtree into an array first.
+                if let visible, !anyFileVisible(node, visible) { continue }
+                rows.append(FlatNode(node: node, depth: depth))
+                continue
+            }
             let inside = flattenTree(children, expanded: expanded, visible: visible,
                                      depth: depth + 1)
             if visible != nil && inside.isEmpty && !anyFileVisible(node, visible!) { continue }
             rows.append(FlatNode(node: node, depth: depth))
-            if expanded.contains(node.id) { rows.append(contentsOf: inside) }
+            rows.append(contentsOf: inside)
         } else if let key = node.itemKey, visible?.contains(key) ?? true {
             rows.append(FlatNode(node: node, depth: depth))
         }
