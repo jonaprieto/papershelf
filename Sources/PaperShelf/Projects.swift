@@ -731,6 +731,12 @@ final class ProjectConversationModel: ObservableObject {
     func prepareToAsk(documents: [ProjectDocument]) async {
         let question = pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
+        // Nothing to quote from is nothing to ask. Without this, a project of documents
+        // nobody has read yet still sent the question to the endpoint, which costs money
+        // to have a model answer from its own memory and cite nothing, and contradicts
+        // the line above the composer saying there is nothing to ask across. The button
+        // is disabled for the same reason; this guards the path Return takes.
+        guard askReadiness(of: documents) == .ready else { return }
         isPreparing = true
         defer { isPreparing = false }
         do {
@@ -829,7 +835,8 @@ struct ProjectConversationView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
                 .disabled(model.pendingQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          || model.isPreparing)
+                          || model.isPreparing
+                          || askReadiness(of: documents) != .ready)
             }
             .padding()
         }

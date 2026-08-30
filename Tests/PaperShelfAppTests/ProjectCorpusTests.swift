@@ -246,4 +246,89 @@ final class ProjectCorpusTests: XCTestCase {
         // asks the library 120 separate questions for the tags alone is not.
         XCTAssertLessThan(elapsed, 2.0, "opening a project of 120 documents took \(elapsed)s")
     }
+
+    /// The whole question, over a corpus, through the real library: which documents are
+    /// worth sending, how much of them is sent, what the person is told before it goes,
+    /// and whether the answer's citations point back at real documents.
+    func testAskingAcrossACorpusSendsARankedBudgetedSliceAndCitesItBack() async throws {
+        let library = try library()
+        var env = await environment(library)
+        let files = try corpus(60)
+        let ids = try await fill(library, files: files, withText: 0)
+        let project = try await env.createProject("crdts")
+        _ = try await addToProject(files.map(\.path), project: project.id, library: library)
+
+        // Forty documents worth reading, twenty that were never read. Each is long enough
+        // that the whole project cannot fit in one question, which is the case the excerpt
+        // budget exists for.
+        let page = String(repeating: "Replicas converge once they have seen the same "
+                          + "updates, whatever order they arrived in. ", count: 60)
+        for id in ids.prefix(40) {
+            try await library.setExtractedText(page, forDocument: id)
+        }
+        let members = try await env.members(project.id)
+        let documents = members.map(\.document)
+        XCTAssertEqual(documents.filter { !$0.markdown.isEmpty }.count, 40)
+
+        var asked: (system: String, user: String)?
+        env.ask = { system, user in
+            asked = (system, user)
+            let cited = documents.first { !$0.markdown.isEmpty }!
+            return "They converge (\(cited.title), p. 1)."
+        }
+
+        let model = await MainActor.run { ProjectConversationModel(project: project, env: env) }
+        await MainActor.run { model.pendingQuestion = "When do replicas converge?" }
+        await model.prepareToAsk(documents: documents)
+
+        // A non-default endpoint always asks first, so nothing has left the machine yet.
+        let preview = await MainActor.run { model.pendingPreview }
+        XCTAssertNil(asked, "the question waits for the confirmation")
+        let shown = try XCTUnwrap(preview)
+        XCTAssertGreaterThan(shown.documentCount, 0)
+        XCTAssertLessThanOrEqual(shown.documentCount, 40, "a document with no text is not worth sending")
+        XCTAssertLessThanOrEqual(shown.approximateCharacterCount, 12_000, "the excerpt budget is what is promised")
+
+        await model.confirmAndAsk()
+
+        let sent = try XCTUnwrap(asked)
+        XCTAssertTrue(sent.user.contains("When do replicas converge?"))
+        XCTAssertTrue(sent.user.contains("Replicas converge once"))
+        XCTAssertLessThan(sent.user.count, 20_000, "the prompt is the budget plus its framing, not the corpus")
+
+        let turns = await MainActor.run { model.turns }
+        XCTAssertEqual(turns.count, 1)
+        XCTAssertEqual(turns[0].citations.count, 1)
+        let citation = try XCTUnwrap(turns[0].citations.first)
+        XCTAssertNotNil(citation.contentHash, "a citation has to name a document that exists")
+        XCTAssertTrue(ids.contains(try XCTUnwrap(citation.contentHash)))
+        XCTAssertTrue(turns[0].excerpts.allSatisfy { !$0.body.isEmpty })
+        XCTAssertTrue(turns[0].excerpts.allSatisfy { ids.contains($0.contentHash) })
+    }
+
+    /// A question asked of a project whose documents nobody has read has nothing to send,
+    /// and must not send the titles alone and call it an answer.
+    func testAskingAcrossAProjectWithNoTextSendsNothing() async throws {
+        let library = try library()
+        var env = await environment(library)
+        let files = try corpus(6)
+        try await fill(library, files: files, withText: 0)
+        let project = try await env.createProject("crdts")
+        _ = try await addToProject(files.map(\.path), project: project.id, library: library)
+
+        var asked = false
+        env.ask = { _, _ in
+            asked = true
+            return "nothing"
+        }
+        let documents = try await env.members(project.id).map(\.document)
+        XCTAssertEqual(askReadiness(of: documents), .noText)
+
+        let model = await MainActor.run { ProjectConversationModel(project: project, env: env) }
+        await MainActor.run { model.pendingQuestion = "When do replicas converge?" }
+        await model.prepareToAsk(documents: documents)
+        await model.confirmAndAsk()
+
+        XCTAssertFalse(asked, "there is nothing to ask across")
+    }
 }
