@@ -21,11 +21,16 @@ struct ProjectWorkspace: View {
     @State private var exported = false
     @State private var dropTargeted = false
 
-    init(project: ProjectSummary, env: ProjectsEnvironment, close: @escaping () -> Void) {
+    /// Told when this project gains or loses a document, so the window's own count of it,
+    /// drawn in the sidebar from a query taken when the window loaded, cannot go on
+    /// saying what used to be true.
+    init(project: ProjectSummary, env: ProjectsEnvironment,
+         membershipChanged: @escaping () -> Void = {}, close: @escaping () -> Void) {
         self.project = project
         self.env = env
         self.close = close
-        _model = StateObject(wrappedValue: ProjectDetailModel(project: project, env: env))
+        _model = StateObject(wrappedValue: ProjectDetailModel(
+            project: project, env: env, membershipChanged: membershipChanged))
     }
 
     var body: some View {

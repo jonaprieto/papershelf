@@ -340,6 +340,7 @@ struct ContentView: View {
                     project: openProject,
                     env: liveProjectsEnvironment(library: library, client: aiClient,
                                                  endpoint: aiBaseURL, model: aiModel),
+                    membershipChanged: { Task { await reloadProjects() } },
                     close: {
                         self.openProject = nil
                         sidebarTarget = .shelf(shelves.current)

@@ -54,6 +54,23 @@ func groupMembers(_ members: [ProjectMember], knownSections: [String]) -> [Membe
     return groups
 }
 
+/// Whether a project can answer a question yet, which is three states rather than two.
+///
+/// A project holding nothing and a project holding documents nobody has read yet both
+/// leave the Ask button disabled, and telling a person "none of these documents has text"
+/// when there are no documents at all points them at the wrong problem: one is waiting to
+/// be filled, the other is waiting to be indexed.
+enum AskReadiness: Equatable {
+    case noDocuments
+    case noText
+    case ready
+}
+
+func askReadiness(of documents: [ProjectDocument]) -> AskReadiness {
+    if documents.isEmpty { return .noDocuments }
+    return documents.contains { !$0.markdown.isEmpty } ? .ready : .noText
+}
+
 /// What a row shows below the title to tell two documents apart at a glance: the author,
 /// then how long it is, skipping whichever piece the library does not have.
 func recognitionDetail(author: String?, pageCount: Int?) -> String? {
@@ -279,10 +296,17 @@ final class ProjectDetailModel: ObservableObject {
     @Published var error: String?
 
     private let env: ProjectsEnvironment
+    /// Told whenever this project gains or loses a document. The sidebar draws its own
+    /// count of every project from a separate query, taken when the window loaded it, so
+    /// without this a document added or removed here left that count saying what used to
+    /// be true: a project reading "1" beside a workspace showing none.
+    private let membershipChanged: () -> Void
 
-    init(project: ProjectSummary, env: ProjectsEnvironment) {
+    init(project: ProjectSummary, env: ProjectsEnvironment,
+         membershipChanged: @escaping () -> Void = {}) {
         self.project = project
         self.env = env
+        self.membershipChanged = membershipChanged
     }
 
     /// Members grouped by section for the detail list. See `groupMembers`.
@@ -325,17 +349,20 @@ final class ProjectDetailModel: ObservableObject {
             }
             available.removeAll { hashes.contains($0.document.contentHash) }
             await load()
+            membershipChanged()
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    /// PDFs dropped on the project, from the sidebar or from Finder. Files the library has
-    /// never seen are skipped: a project is made of documents the shelf already knows.
+    /// PDFs dropped on the project, from the sidebar, the shelf, the list or Finder. A
+    /// file the library has not met yet is indexed on the way in (see `addToProject`), so
+    /// a drop files what was dropped rather than quietly doing nothing.
     func addFiles(_ paths: [String]) async {
         do {
             guard try await env.addFiles(project.id, paths) > 0 else { return }
             await load()
+            membershipChanged()
         } catch {
             self.error = error.localizedDescription
         }
@@ -346,6 +373,7 @@ final class ProjectDetailModel: ObservableObject {
             try await env.removeMember(project.id, member.document.contentHash)
             members.removeAll { $0.id == member.id }
             knownSections = try await env.sections(project.id)
+            membershipChanged()
         } catch {
             self.error = error.localizedDescription
         }
@@ -837,8 +865,14 @@ struct ProjectConversationView: View {
 
     private var outboundLine: String {
         let indexed = documents.filter { !$0.markdown.isEmpty }
-        guard !indexed.isEmpty else {
+        switch askReadiness(of: documents) {
+        case .noDocuments:
+            return "No documents in this project yet. Drop PDFs on the list beside this, "
+                 + "or add them from the library."
+        case .noText:
             return "None of these documents has text yet, so there is nothing to ask across."
+        case .ready:
+            break
         }
         // Words, not characters: nobody has an intuition for 190,000 characters, and the
         // number is approximate either way.

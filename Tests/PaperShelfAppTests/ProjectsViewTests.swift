@@ -301,6 +301,44 @@ final class ProjectDetailModelMutationTests: XCTestCase {
         XCTAssertEqual(model.members.count, 1)
         XCTAssertNotNil(model.error)
     }
+
+    /// The count in the sidebar and the list in the workspace are two different queries,
+    /// taken at two different moments. Anything that changes membership here has to say
+    /// so, or the sidebar goes on reporting a document the project no longer holds, which
+    /// is how a project read "1" beside a workspace showing none.
+    func testEveryMembershipChangeTellsTheWindow() async {
+        let stub = ProjectsEnvironmentStub()
+        let x = makeMember("x")
+        stub.catalog = ["x": x]
+        stub.membersByProject = [1: [makeMember("y")]]
+        var announced = 0
+        let model = ProjectDetailModel(project: ProjectSummary(id: 1, name: "P", documentCount: 1),
+                                       env: stub.environment(),
+                                       membershipChanged: { announced += 1 })
+
+        await model.addBatch(["x"], section: nil)
+        XCTAssertEqual(announced, 1, "adding from the library")
+
+        await model.remove(makeMember("y"))
+        XCTAssertEqual(announced, 2, "and removing")
+    }
+
+    /// A change that failed changed nothing, so there is nothing to tell.
+    func testAFailedChangeTellsTheWindowNothing() async {
+        let stub = ProjectsEnvironmentStub()
+        stub.catalog = ["x": makeMember("x")]
+        stub.shouldThrow = true
+        var announced = 0
+        let model = ProjectDetailModel(project: ProjectSummary(id: 1, name: "P", documentCount: 0),
+                                       env: stub.environment(),
+                                       membershipChanged: { announced += 1 })
+
+        await model.addBatch(["x"], section: nil)
+        await model.remove(makeMember("x"))
+
+        XCTAssertEqual(announced, 0)
+        XCTAssertNotNil(model.error)
+    }
 }
 
 // MARK: - ProjectDetailModel: tags
