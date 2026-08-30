@@ -103,8 +103,12 @@ struct ReviewInspector: View {
         return style.meaning.isEmpty ? "Unnamed highlighter" : style.meaning
     }
 
-    /// While reading, the deciding controls stay out of the way.
-    private var showBottom: Bool { !collapsed && !reading }
+    /// Whether the panel is drawn at all. Only the switch that names it decides this.
+    ///
+    /// It used to be `!collapsed && !reading`, which meant the toolbar's inspector button,
+    /// ⌥⌘I and ⌘⇧N all did nothing while reading: the mode hid the panel, so flipping the
+    /// switch changed a value nothing was reading.
+    private var showsPanel: Bool { !collapsed }
 
     /// Below `SplitLayout.inspectorOverlaysBelow` the panel is drawn over the page rather
     /// than beside it. Nothing is lost at a narrow width; it stops costing the page room
@@ -181,9 +185,9 @@ struct ReviewInspector: View {
             // the reader, where the page has the whole region to itself.
             if pageFits {
                 pageRegion
-                if showBottom { Divider() }
+                if showsPanel { Divider() }
             }
-            if showBottom {
+            if showsPanel {
                 panelColumn.frame(width: SplitLayout.panelWidth(paneWidth: paneWidth))
             }
         }
@@ -193,7 +197,7 @@ struct ReviewInspector: View {
     /// below `SplitLayout.panelFloor`: asked to, its controls overflow the frame they
     /// were given and paint over whatever is beside them.
     private var pageFits: Bool {
-        !showBottom || SplitLayout.showsPageBesidePanel(paneWidth: paneWidth)
+        !showsPanel || SplitLayout.showsPageBesidePanel(paneWidth: paneWidth)
     }
 
     /// The page, with the outline beside it where the window is wide enough to hold both.

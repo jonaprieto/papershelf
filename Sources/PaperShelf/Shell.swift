@@ -30,6 +30,19 @@ final class Chrome: ObservableObject {
 
     var notesShown: Bool { !inspectorCollapsed && inspectorPanel == .notes }
 
+    /// Reading mode gives the page the room the browser was using. It says nothing about
+    /// the inspector.
+    ///
+    /// The panel was held shut by the mode as well as by its own switch, which is why the
+    /// inspector button, ⌥⌘I and ⌘⇧N all appeared dead while reading: they flipped a
+    /// value nothing was reading (see `ReviewInspector.showsPanel`). One switch decides
+    /// the panel, and only the controls named after it touch that switch.
+    func setReading(_ on: Bool) {
+        reading = on
+    }
+
+    func toggleReading() { setReading(!reading) }
+
     /// Not animated, and neither are the notes and contents rails.
     ///
     /// Every one of these changes the width of the pane the PDF view sits in, and the view
@@ -59,9 +72,8 @@ struct PaperShelfApp: App {
                     .disabled(!chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
-                Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode") {
-                    chrome.reading.toggle()
-                }
+                Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode",
+                       action: chrome.toggleReading)
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
                     if chrome.notesShown { chrome.inspectorCollapsed = true } else { chrome.showNotes() }

@@ -16,7 +16,9 @@ struct ResultsPane: View {
     let reading: Bool
     /// Reading mode belongs to the window, not to this pane, but the button belongs in
     /// this pane's toolbar group so the order reads views · search · actions · chrome.
-    var toggleReading: () -> Void = {}
+    /// A setter rather than a toggle because the views in the same bar have to be able to
+    /// leave the mode outright: see `choose(_:)`.
+    var setReading: (Bool) -> Void = { _ in }
     let watching: Bool
     @ObservedObject var palette: Palette
     let rules: NameRules
@@ -111,13 +113,6 @@ struct ResultsPane: View {
         let folderPath: String?
         let query: String
         let reader: String?
-
-        func replacing(mode: ViewMode? = nil, shelf: SmartList? = nil,
-                       query: String? = nil, reader: String? = nil) -> Place {
-            Place(mode: mode ?? self.mode, shelf: shelf ?? self.shelf,
-                  folderPath: self.folderPath, query: query ?? self.query,
-                  reader: reader ?? self.reader)
-        }
     }
 
     @State private var backPlaces: [Place] = []
@@ -223,6 +218,18 @@ struct ResultsPane: View {
     private var currentPlace: Place {
         Place(mode: mode, shelf: shelves.current, folderPath: folderScope?.path,
               query: query, reader: reader)
+    }
+
+    /// Picking one of the four views means going to it.
+    ///
+    /// Reading mode and the reader each take the middle of the window, so a view chosen
+    /// from under either of them used to light up its icon and change nothing else: the
+    /// browser it named was not on screen to be switched. Both are left here, which is
+    /// what the icons, the menu and ⌘1 to ⌘4 all say they do.
+    private func choose(_ option: ViewMode) {
+        setReading(false)
+        navigate(to: Place(mode: option, shelf: shelves.current,
+                           folderPath: folderScope?.path, query: query, reader: nil))
     }
 
     private func navigate(to destination: Place) {
@@ -460,7 +467,11 @@ struct ResultsPane: View {
     /// is the small bridge that lets a click close the reader even when the chosen shelf was
     /// already active.
     private func showShelf(_ shelf: SmartList) {
-        navigate(to: currentPlace.replacing(shelf: shelf, reader: nil))
+        // Spelled out rather than derived from the current place: `replacing(reader: nil)`
+        // read as "close the reader" and meant "keep whichever one is open", since a nil
+        // argument is exactly how that helper spelled "leave this alone".
+        navigate(to: Place(mode: mode, shelf: shelf, folderPath: folderScope?.path,
+                           query: query, reader: nil))
     }
 
     private var aiClient: AIClient {
@@ -647,7 +658,7 @@ struct ResultsPane: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 contextualActions
-                Button { toggleReading() } label: {
+                Button { setReading(!reading) } label: {
                     Label("Reading", systemImage: reading ? "book.fill" : "book")
                 }
                 .tip(reading ? "Show the shelf again" : "Hide everything but the page",
@@ -1084,10 +1095,10 @@ struct ResultsPane: View {
     @discardableResult
     func perform(_ command: Command) -> Bool {
         switch command {
-        case .viewList: navigate(to: currentPlace.replacing(mode: .list))
-        case .viewCatalogue: navigate(to: currentPlace.replacing(mode: .catalogue))
-        case .viewBibliography: navigate(to: currentPlace.replacing(mode: .bibliography))
-        case .viewDuplicates: navigate(to: currentPlace.replacing(mode: .duplicates))
+        case .viewList: choose(.list)
+        case .viewCatalogue: choose(.catalogue)
+        case .viewBibliography: choose(.bibliography)
+        case .viewDuplicates: choose(.duplicates)
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
@@ -2346,7 +2357,7 @@ struct ResultsPane: View {
         HStack(spacing: 2) {
             ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { index, option in
                 Button {
-                    navigate(to: currentPlace.replacing(mode: option))
+                    choose(option)
                 } label: {
                     Image(systemName: option.icon)
                         .frame(width: 28, height: 20)
@@ -2374,7 +2385,7 @@ struct ResultsPane: View {
         Menu {
             ForEach(ViewMode.allCases) { option in
                 Button {
-                    navigate(to: currentPlace.replacing(mode: option))
+                    choose(option)
                 } label: {
                     Label(option.label, systemImage: option.icon)
                 }

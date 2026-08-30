@@ -366,7 +366,7 @@ struct ContentView: View {
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
                 reading: chrome.reading,
-                toggleReading: { chrome.reading.toggle() },
+                setReading: chrome.setReading,
                 watching: watchSources && !selection.isEmpty,
                 palette: palette,
                 rules: rules,
@@ -618,17 +618,17 @@ struct ContentView: View {
         let target = sidebarTarget ?? .shelf(shelves.current)
         switch target {
         case .shelf(let list):
-            chrome.reading = false
+            chrome.setReading(false)
             openProject = nil
             shelves.current = list
         case .source(let path): explorerExpanded.insert(path)
         case .folder(let path): showFolder(path)
         case .document(let key): reviewing = key
         case .project(let id):
-            chrome.reading = false
+            chrome.setReading(false)
             openProject = projects.first { $0.id == id }
         case .tag(let name):
-            chrome.reading = false
+            chrome.setReading(false)
             openProject = nil
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .showTagInCatalogue, object: nil,
@@ -643,7 +643,7 @@ struct ContentView: View {
     /// catalogue owns that state, so the intent is posted rather than reached for; this is
     /// what both a click on a folder row and Return on a focused one do.
     private func showFolder(_ path: String) {
-        chrome.reading = false
+        chrome.setReading(false)
         openProject = nil
         sidebarTarget = .folder(path)
         DispatchQueue.main.async {
@@ -682,7 +682,7 @@ struct ContentView: View {
         Section("Library") {
             ForEach(SmartList.allCases) { list in
                 Button {
-                    chrome.reading = false
+                    chrome.setReading(false)
                     openProject = nil
                     shelves.current = list
                     sidebarTarget = .shelf(list)
@@ -739,7 +739,7 @@ struct ContentView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        chrome.reading = false
+                        chrome.setReading(false)
                         openProject = openProject?.id == project.id ? nil : project
                         sidebarTarget = .project(project.id)
                     }
@@ -921,7 +921,7 @@ struct ContentView: View {
 
     private func tagRow(_ tag: TagCount) -> some View {
         Button {
-            chrome.reading = false
+            chrome.setReading(false)
             openProject = nil
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
