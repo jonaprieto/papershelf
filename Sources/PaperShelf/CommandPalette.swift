@@ -363,6 +363,14 @@ struct CommandPalette: View {
     private func runSelected() {
         guard entries.indices.contains(index) else { return }
         let entry = entries[index]
+        if case .text(let hit) = entry {
+            // Matching a text hit to a document is an async round trip to the
+            // library (see `matchingItem`), so it cannot dismiss up front the way
+            // the other cases do: closing the palette before the match answers
+            // would close it over a hit that turns out to match nothing.
+            Task { await openTextHit(hit) }
+            return
+        }
         // Dismiss first: a command that opens a sheet of its own cannot do it from
         // underneath this one.
         dismiss()
@@ -371,17 +379,50 @@ struct CommandPalette: View {
         case .document(let item): open(item)
         case .place(let place): place.go()
         case .page(let hit): hit.go()
-        case .text(let hit): openTextHit(hit)
+        case .text: break
         }
     }
 
     /// A hit in the library's text is a document first: open the file it came from, and
-    /// the page it was found on if the snippet knew one.
-    private func openTextHit(_ hit: TextHit) {
-        guard let item = documents.first(where: { $0.destinationName == hit.title })
-                ?? documents.first(where: { $0.documentInfo["Title"] == hit.title })
-        else { return }
+    /// the page it was found on if the snippet knew one. Only dismisses the palette once
+    /// a match is actually found, so a hit that cannot be traced to anything leaves the
+    /// palette open instead of quietly closing over nothing.
+    private func openTextHit(_ hit: TextHit) async {
+        guard let item = await matchingItem(for: hit) else { return }
+        dismiss()
         open(item)
         if let page = hit.page, let go = sources.goToPage { go(page) }
+    }
+
+    /// Resolves a text hit to the item it came from.
+    ///
+    /// A hit's `title` is whatever the library indexed the document's Title metadata
+    /// as, which is empty for a PDF that carries none and can drift from what the
+    /// document is titled now -- matching on it, as this used to, silently selects
+    /// nothing for exactly those files. The library's own id is stable, so it is asked
+    /// for the paths on record for that id, and those are compared against `currentURL`
+    /// with symlinks resolved on both sides, the same way `Item.key` already has to
+    /// (a path built by the caller and one handed back by the filesystem can name the
+    /// same file with different strings). Title matching only steps in when the library
+    /// cannot say what path the hit came from at all -- falling back to it once a path
+    /// is known but simply matches nothing open right now would risk landing on some
+    /// other document that happens to share a title, which is the bug this replaces.
+    private func matchingItem(for hit: TextHit) async -> Item? {
+        var paths: Set<String> = []
+        if let library = Library.shared,
+           let locations = try? await library.locations(forDocument: hit.documentID) {
+            paths = Set(locations.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path })
+        }
+        if !paths.isEmpty {
+            // The plain path first: resolving one is a filesystem call each, and almost no
+            // shelf is reached through a link, so the whole collection is only resolved
+            // when the plain comparison came up empty.
+            if let direct = documents.first(where: { paths.contains($0.currentURL.path) }) {
+                return direct
+            }
+            return documents.first { paths.contains($0.currentURL.resolvingSymlinksInPath().path) }
+        }
+        return documents.first(where: { $0.destinationName == hit.title })
+            ?? documents.first(where: { $0.documentInfo["Title"] == hit.title })
     }
 }

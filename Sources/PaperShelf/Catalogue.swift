@@ -135,7 +135,10 @@ struct ResultsPane: View {
     @AppStorage("bibBlankLines") private var bibBlankLines = true
     @AppStorage("bibSortFields") private var bibSortFields = false
     @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
-    @AppStorage("bibOmitFile") private var bibOmitFile = false
+    // The default for this key is also declared in ContentView.swift and
+    // SettingsWindow.swift; all three must agree, since whichever view registers first
+    // wins and a mismatch here would make BibTeX output disagree with the Settings toggle.
+    @AppStorage("bibOmitFile") private var bibOmitFile = true
 
     private var bibStyle: BibStyle {
         BibStyle(lineWidth: bibLineWidth,
