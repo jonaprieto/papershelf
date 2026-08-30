@@ -392,6 +392,21 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(counts, [first.id: 1, second.id: 1])
     }
 
+    func testDroppingPathsOnAProjectAddsOnlyTheOnesTheLibraryKnows() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let project = try await library.createProject(name: "Reading list")
+        let book = try await library.indexDocument(path: "/shelf/a.pdf", contentHash: "a")
+
+        let added = try await library.addMembers(paths: ["/shelf/a.pdf", "/shelf/gone.pdf"],
+                                                 toProject: project.id)
+
+        XCTAssertEqual(added, 1)
+        let members = try await library.members(ofProject: project.id)
+        XCTAssertEqual(members.map(\.id), [book.id])
+    }
+
     func testAddingAnUnknownDocumentAsAProjectMemberFails() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

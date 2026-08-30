@@ -62,6 +62,7 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
         removeMember: { id, documentID in
             try await library.removeMember(documentID, fromProject: id)
         },
+        addFiles: { id, paths in try await library.addMembers(paths: paths, toProject: id) },
         tags: { documentID in try await library.tags(forDocument: documentID).map(\.name) },
         addTag: { documentID, name in try await library.addTag(name, toDocument: documentID) },
         removeTag: { documentID, name in

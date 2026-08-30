@@ -635,6 +635,23 @@ public actor Library {
         }
     }
 
+    /// Adds documents to a project by file path, which is what a drag carries: from the
+    /// sidebar, or from Finder. A path this library has never seen is skipped rather than
+    /// indexed here, so the count is how many of them were documents.
+    @discardableResult
+    public func addMembers(paths: [String], toProject projectID: Int64,
+                           addedAt: Date = Date()) throws -> Int {
+        var added = 0
+        for path in paths {
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            guard let id = try documentID(atPath: path) ?? documentID(atPath: resolved)
+            else { continue }
+            try addMember(id, toProject: projectID, addedAt: addedAt)
+            added += 1
+        }
+        return added
+    }
+
     public func removeMember(_ documentID: String, fromProject projectID: Int64) throws {
         try run("DELETE FROM project_members WHERE project_id = ? AND document_id = ?;") { statement in
             sqlite3_bind_int64(statement, 1, projectID)

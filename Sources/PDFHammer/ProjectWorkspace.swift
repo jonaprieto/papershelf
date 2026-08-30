@@ -19,6 +19,7 @@ struct ProjectWorkspace: View {
     @StateObject private var model: ProjectDetailModel
     @State private var showingAddDocuments = false
     @State private var exported = false
+    @State private var dropTargeted = false
 
     init(project: ProjectSummary, env: ProjectsEnvironment, close: @escaping () -> Void) {
         self.project = project
@@ -94,7 +95,7 @@ struct ProjectWorkspace: View {
 
             List {
                 if model.members.isEmpty {
-                    Text("No documents yet. Add some to ask across them.")
+                    Text("No documents yet. Drop PDFs here, or add them from the library.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.groupedMembers) { group in
@@ -117,6 +118,13 @@ struct ProjectWorkspace: View {
             }
             .listStyle(.inset)
         }
+        // A document dragged from the sidebar, or a PDF from Finder. Paths the library has
+        // not seen are skipped by `addFiles`, so a stray drop is a no-op, not an import.
+        .background(dropTargeted ? Color.accentColor.opacity(0.08) : .clear)
+        .dropDestination(for: URL.self) { urls, _ in
+            Task { await model.addFiles(urls.map(\.path)) }
+            return true
+        } isTargeted: { dropTargeted = $0 }
     }
 
     private var notIndexed: [ProjectMember] {

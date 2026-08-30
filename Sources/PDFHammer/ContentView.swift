@@ -92,6 +92,8 @@ struct ContentView: View {
     @StateObject private var covers = Covers()
     @State private var selection: [URL] = []
     @State private var sidebarTarget: SidebarTarget?
+    /// The project row a drag is currently over, so exactly one row lights up.
+    @State private var dropProject: Int64?
     @State private var importing = false
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
@@ -716,10 +718,20 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(openProject?.id == project.id ? Color.accentColor : .primary)
                     .accessibilityAddTraits(sidebarTarget == .project(project.id) ? .isSelected : [])
-                    .background(sidebarTarget == .project(project.id)
+                    .background(dropProject == project.id
+                                ? Color.accentColor.opacity(0.25)
+                                : sidebarTarget == .project(project.id)
                                 ? Color.accentColor.opacity(0.12)
                                 : .clear, in: RoundedRectangle(cornerRadius: 5))
-                    .tip("Ask a question across these \(project.documentCount) documents")
+                    .dropDestination(for: URL.self) { urls, _ in
+                        addFiles(urls, toProject: project.id)
+                        return true
+                    } isTargeted: { targeted in
+                        if targeted { dropProject = project.id }
+                        else if dropProject == project.id { dropProject = nil }
+                    }
+                    .tip("Ask a question across these \(project.documentCount) documents. "
+                         + "Drop a PDF here to add it.")
                 }
             }
             if namingProject {
@@ -746,6 +758,16 @@ struct ContentView: View {
         Task {
             await reloadProjects()
             openProject = projects.first { $0.id == id }
+        }
+    }
+
+    /// A PDF dropped on a project row. The library is what knows which document a path is,
+    /// so a path it has never seen is skipped rather than invented here.
+    private func addFiles(_ urls: [URL], toProject id: Int64) {
+        guard let library = Library.shared else { return }
+        Task {
+            _ = try? await library.addMembers(paths: urls.map(\.path), toProject: id)
+            await reloadProjects()
         }
     }
 
@@ -1463,7 +1485,18 @@ struct ExplorerOutline: View {
         )
     }
 
+    /// A document row is a document: it can be dragged onto a project. Folders are not,
+    /// since a project is made of documents, not of places they happen to sit.
+    @ViewBuilder
     private func row(_ node: ExplorerNode) -> some View {
+        if node.itemKey == nil {
+            rowLabel(node)
+        } else {
+            rowLabel(node).draggable(node.url)
+        }
+    }
+
+    private func rowLabel(_ node: ExplorerNode) -> some View {
         HStack(spacing: 6) {
             Image(systemName: node.itemKey == nil ? "folder" : "doc")
                 .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)

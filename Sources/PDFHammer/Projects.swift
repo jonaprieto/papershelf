@@ -88,6 +88,10 @@ struct ProjectsEnvironment {
     /// moving one already in the project go through.
     var setSection: (_ id: Int64, _ contentHash: String, _ section: String?) async throws -> Void
     var removeMember: (_ id: Int64, _ contentHash: String) async throws -> Void
+    /// Adds documents by file path, which is what a drag carries. Returns how many of the
+    /// paths were documents this library knows; the rest are skipped. Defaults to doing
+    /// nothing so a stub environment only has to fill in what it is testing.
+    var addFiles: (_ id: Int64, _ paths: [String]) async throws -> Int = { _, _ in 0 }
     var tags: (_ contentHash: String) async throws -> [String]
     var addTag: (_ contentHash: String, _ name: String) async throws -> Void
     var removeTag: (_ contentHash: String, _ tag: String) async throws -> Void
@@ -292,6 +296,17 @@ final class ProjectDetailModel: ObservableObject {
                 try await env.setSection(project.id, hash, section)
             }
             available.removeAll { hashes.contains($0.document.contentHash) }
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// PDFs dropped on the project, from the sidebar or from Finder. Files the library has
+    /// never seen are skipped: a project is made of documents the shelf already knows.
+    func addFiles(_ paths: [String]) async {
+        do {
+            guard try await env.addFiles(project.id, paths) > 0 else { return }
             await load()
         } catch {
             self.error = error.localizedDescription
