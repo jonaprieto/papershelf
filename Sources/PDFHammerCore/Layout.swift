@@ -115,6 +115,12 @@ public extension SplitLayout {
     /// the number is here so the rest of the app can agree about when it happens.
     static let sidebarOverlaysBelow: CGFloat = 360
 
+    /// Below this the four views of the collection collapse from a row of icons into one
+    /// menu. The row is worth its width: it says which views exist and switches in one
+    /// click. The menu is what a toolbar already carrying a search field and the actions
+    /// for the current mode has room for.
+    static let viewIconsBelow: CGFloat = 520
+
     /// The smallest window the app will open at, and the smallest it can be dragged to.
     static let windowFloorWidth: CGFloat = 640
     static let windowFloorHeight: CGFloat = 480
@@ -125,6 +131,10 @@ public extension SplitLayout {
 
     static func inspectorOverlays(paneWidth: CGFloat) -> Bool {
         paneWidth < inspectorOverlaysBelow
+    }
+
+    static func showsViewIcons(paneWidth: CGFloat) -> Bool {
+        paneWidth >= viewIconsBelow
     }
 
     /// The narrowest the inspector panel is still worth drawing: a name field, a row of

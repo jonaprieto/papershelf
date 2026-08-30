@@ -86,6 +86,9 @@ struct ResultsPane: View {
     /// `.openFolderInCatalogue`: narrows what the catalogue shows to files under one
     /// folder, on top of whatever the search box is doing.
     @State private var folderScope: URL?
+    /// How wide this pane is, so the toolbar can tell whether the four views fit as a row
+    /// of icons.
+    @State private var viewPaneWidth: CGFloat = SplitLayout.windowFloorWidth
 
     /// Places are the navigable state, not each selected row. This keeps ⌘[ / ⌘] useful
     /// without turning ordinary arrow-key browsing into a history entry per document.
@@ -518,21 +521,11 @@ struct ResultsPane: View {
         // binding, and that behaviour is the useful part.
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Menu {
-                    ForEach(ViewMode.allCases) { mode in
-                        Button {
-                            navigate(to: currentPlace.replacing(mode: mode))
-                        } label: {
-                            Label(mode.label, systemImage: mode.icon)
-                        }
-                    }
-                } label: {
-                    Text(mode.label)
+                if SplitLayout.showsViewIcons(paneWidth: viewPaneWidth) {
+                    viewIcons
+                } else {
+                    viewMenu
                 }
-                .menuStyle(.borderlessButton)
-                .accessibilityLabel("View: \(mode.label)")
-                .fixedSize()
-                .tip("Which view of the same files", key: "⌘1 to ⌘4")
             }
             ToolbarItem(placement: .primaryAction) {
                 searchField
@@ -1444,10 +1437,17 @@ struct ResultsPane: View {
     /// that used to sit beside them was half a window given to a file nobody had opened.
     private var split: some View {
         GeometryReader { geometry in
-            if showsPage {
-                pageSplit(available: geometry.size.width)
-            } else {
-                panelSplit(available: geometry.size.width)
+            Group {
+                if showsPage {
+                    pageSplit(available: geometry.size.width)
+                } else {
+                    panelSplit(available: geometry.size.width)
+                }
+            }
+            // The toolbar is laid out somewhere this geometry cannot reach, so the width
+            // it decides the view control's shape from is recorded here.
+            .onChange(of: geometry.size.width, initial: true) { _, width in
+                viewPaneWidth = width
             }
         }
     }
@@ -1834,6 +1834,51 @@ struct ResultsPane: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .tip("Reorders within each folder, and across the catalogue")
+    }
+
+    /// The four views of the same files, as four icons. A menu costs a click to reach a
+    /// view and says nothing about which views exist; the row is one click and reads as a
+    /// row of choices, which is what it is.
+    private var viewIcons: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { index, option in
+                Button {
+                    navigate(to: currentPlace.replacing(mode: option))
+                } label: {
+                    Image(systemName: option.icon)
+                        .frame(width: 28, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(option == mode ? Color.accentColor : .secondary)
+                .background(option == mode ? Color.accentColor.opacity(0.15) : .clear,
+                            in: RoundedRectangle(cornerRadius: Metric.control))
+                .accessibilityLabel(option.label)
+                .accessibilityAddTraits(option == mode ? .isSelected : [])
+                .tip(option.label, key: "⌘\(index + 1)")
+            }
+        }
+        .fixedSize()
+    }
+
+    /// The same four views where the toolbar has no room for them: search, the actions for
+    /// the mode and the panel buttons are all in this bar too.
+    private var viewMenu: some View {
+        Menu {
+            ForEach(ViewMode.allCases) { option in
+                Button {
+                    navigate(to: currentPlace.replacing(mode: option))
+                } label: {
+                    Label(option.label, systemImage: option.icon)
+                }
+            }
+        } label: {
+            Text(mode.label)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("View: \(mode.label)")
+        .fixedSize()
+        .tip("Which view of the same files", key: "⌘1 to ⌘4")
     }
 
     private var searchField: some View {

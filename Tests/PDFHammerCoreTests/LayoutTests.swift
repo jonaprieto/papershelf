@@ -244,6 +244,12 @@ final class FoldingTests: XCTestCase {
                        SplitLayout.panelReserved - SplitLayout.dividerBeforeInspector)
     }
 
+    func testTheFourViewsAreARowOfIconsUntilTheToolbarRunsOut() {
+        XCTAssertTrue(SplitLayout.showsViewIcons(paneWidth: 900))
+        XCTAssertTrue(SplitLayout.showsViewIcons(paneWidth: SplitLayout.viewIconsBelow))
+        XCTAssertFalse(SplitLayout.showsViewIcons(paneWidth: 420))
+    }
+
     func testTheInspectorDoesNotCoverTheShelfWhenBothFit() {
         XCTAssertFalse(SplitLayout.inspectorOverlays(paneWidth: 890))
         XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: 500))
