@@ -801,9 +801,33 @@ final class Runner: ObservableObject {
         }
         let generation = workGeneration
         workTask = Task.detached(priority: .utility) { [self] in
-            let found = collectJobs(roots: roots, recursive: options.recursive,
-                                    cancelled: { Task.isCancelled })
+            // The walk is the slow part of adding a volume, and it is the part with
+            // nothing on screen to show for it. Same throttled report as a full scan:
+            // which folder is being read, and how many PDFs are in it so far.
+            let throttle = Throttle(milliseconds: 80)
+            let found = collectJobs(
+                roots: roots,
+                recursive: options.recursive,
+                progress: { directory, count in
+                    guard throttle.allow() else { return }
+                    Task { @MainActor in
+                        guard self.workGeneration == generation else { return }
+                        self.current = directory
+                        self.found = count
+                    }
+                },
+                cancelled: { Task.isCancelled }
+            )
             guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self.workGeneration == generation else { return }
+                self.total = found.count
+                self.found = found.count
+                self.current = ""
+                // A refresh behind a shelf that is already on screen stays idle on
+                // purpose: `busy` blanks the shelf, and this pass is fast.
+                if !preservingVisibleResults { self.phase = .processing }
+            }
             let out = found.map { libraryItem(for: $0, options: options) }
             let derived = Runner.derive(out)
             await MainActor.run {
