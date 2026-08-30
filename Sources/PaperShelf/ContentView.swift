@@ -269,6 +269,16 @@ struct ContentView: View {
         runner.preview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
     }
 
+    /// Reads the sources again from scratch, whatever is on screen: the shelf if that is
+    /// what you are looking at, the full plan if you were reviewing names. Covers are
+    /// dropped with it, since a file that changed on disk has a cover that no longer
+    /// describes it.
+    private func forceRefresh() {
+        guard !selection.isEmpty else { return }
+        covers.forget()
+        if mode == .catalogue { libraryPreview() } else { preview() }
+    }
+
     private func libraryPreview() {
         runner.libraryPreview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
     }
@@ -358,6 +368,7 @@ struct ContentView: View {
                 },
                 handleSidebarKey: handleSidebarKey,
                 preview: preview,
+                refresh: forceRefresh,
                 apply: confirmApply,
                 applyOne: { item, name in
                     runner.applyNow(item, as: name, options: options(dryRun: false))

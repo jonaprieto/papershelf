@@ -122,6 +122,8 @@ final class Runner: ObservableObject {
     var busy: Bool { phase != .idle }
     var reviewed: Int { confirmedCount + appliedCount + skippedCount + deletedCount + movedCount }
     var pendingCount: Int { results.count - reviewed }
+    /// Every file decided. Read by the inspector's "nothing left to review" state; Apply
+    /// deliberately does not wait for it, since it only ever touches what was decided.
     var allReviewed: Bool { lastRunWasDry && !results.isEmpty && pendingCount == 0 }
     /// What a batch Apply would still touch. Files already applied are done.
     var actionable: Int { confirmedCount + deletedCount + movedCount }

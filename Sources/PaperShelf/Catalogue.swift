@@ -24,6 +24,9 @@ struct ResultsPane: View {
     let focusSidebar: () -> Void
     let handleSidebarKey: (UInt16) -> Bool
     let preview: () -> Void
+    /// Reads the sources again, for ⌘R. Owned by the window: this pane knows what is on
+    /// screen, not where it came from.
+    let refresh: () -> Void
     let apply: () -> Void
     let applyOne: (Item, String) -> Void
 
@@ -619,8 +622,8 @@ struct ResultsPane: View {
                 .disabled(!canApply)
                 .keyboardShortcut(.return, modifiers: .command)
                 .tip(canApply
-                     ? "Carry out the reviewed plan on disk"
-                     : "Every file has to be reviewed first, against the current settings",
+                     ? "Carry out what you have decided, on disk"
+                     : "The plan no longer matches the settings. Review names again.",
                      key: "⌘Return")
             }
         }
@@ -661,10 +664,15 @@ struct ResultsPane: View {
         .tip("Confirm, undo, compare copies, copy the shelf out")
     }
 
-    /// Applying needs a preview that still matches the settings, every file reviewed, and
-    /// at least one of them left to act on.
+    /// Applying needs a preview that still matches the settings and at least one file
+    /// with a decision behind it.
+    ///
+    /// It used to need every file reviewed as well, which on a shelf of fourteen thousand
+    /// made the button unreachable: confirm one name, and Apply stayed dim with nothing on
+    /// screen saying why. Apply only ever touches what was confirmed, trashed or moved, so
+    /// the files still pending are not a reason to refuse.
     private var canApply: Bool {
-        previewIsCurrent && runner.allReviewed && runner.actionable > 0 && !runner.busy
+        previewIsCurrent && runner.actionable > 0 && !runner.busy
     }
 
     /// Everywhere the palette can send you, and everything it can look inside.
@@ -919,7 +927,7 @@ struct ResultsPane: View {
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-        .findDuplicates, .indexText, .revealInFinder, .openExternally,
+        .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
@@ -945,6 +953,7 @@ struct ResultsPane: View {
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
+        case .refresh: refresh()
         case .findDuplicates: runner.findDuplicates(passwords: passwords)
         case .indexText:
             if runner.activity.indexing { runner.stopIndexing() }

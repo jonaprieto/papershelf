@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 import PaperShelfCore
 
 struct ReviewInspector: View {
+    /// Return in the name field renames the file on disk. Off means it confirms the name
+    /// into the plan instead, to be applied with everything else later.
+    @AppStorage("returnAppliesRename") private var returnApplies = true
+
     /// Whether the page is one of the panes here.
     ///
     /// The shelf, the bibliography and the duplicates view are about a collection; the
@@ -490,6 +494,18 @@ struct ReviewInspector: View {
         }
     }
 
+    /// What Return in the name field does. Applying the rename there and then is what
+    /// most of this app's editing is for, and it makes the button beside the field a
+    /// second way to do the same thing rather than the only way. Someone building a plan
+    /// to apply in one go wants the other behaviour, so it is a setting.
+    private func submit() {
+        if returnApplies {
+            applyNow()
+        } else {
+            confirm()
+        }
+    }
+
     @ViewBuilder
     private var renamePanel: some View {
         Text(folderPath)
@@ -504,7 +520,7 @@ struct ReviewInspector: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
                 .focused($editing)
-                .onSubmit(confirm)
+                .onSubmit(submit)
                 .onKeyPress(.escape) {
                     leaveField()
                     return .handled

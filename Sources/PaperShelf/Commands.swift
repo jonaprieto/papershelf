@@ -30,7 +30,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case addNote, nextMark, previousMark, openExternally
 
     // Library
-    case plan, apply, findDuplicates, indexText, revealInFinder, newTag, shortcuts
+    case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
 
     var id: String { rawValue }
 
@@ -89,7 +89,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .nextMark, .previousMark, .openExternally:
             return .reading
-        case .plan, .apply, .findDuplicates, .indexText, .revealInFinder, .newTag, .shortcuts:
+        case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
+             .shortcuts:
             return .library
         }
     }
@@ -104,7 +105,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
             return .reviewing
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-             .plan, .apply, .findDuplicates, .indexText, .revealInFinder, .newTag, .openExternally:
+             .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
+             .openExternally:
             return .library
         default:
             return .anywhere
@@ -160,6 +162,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openExternally: return "Open in the default PDF viewer"
         case .plan: return "Plan renames"
         case .apply: return "Apply the reviewed plan"
+        case .refresh: return "Read the sources again"
         case .findDuplicates: return "Find duplicates"
         case .indexText: return "Index text for search"
         case .revealInFinder: return "Reveal in Finder"
@@ -221,7 +224,10 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // No default shortcut: this one reads every file on the shelf, so it is asked for
         // by name rather than fired by a key someone can hit while reaching for another.
         case .indexText: return nil
-        case .revealInFinder: return Shortcut("r", .command)
+        // ⌘R reads the disk again, which is what ⌘R means in a browser and in every
+        // file window. Reveal keeps the letter and takes a modifier.
+        case .refresh: return Shortcut("r", .command)
+        case .revealInFinder: return Shortcut("r", [.command, .option])
         case .newTag: return nil
         case .shortcuts: return Shortcut("?", [])
         }

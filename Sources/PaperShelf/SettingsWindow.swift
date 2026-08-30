@@ -137,6 +137,7 @@ struct GeneralSettings: View {
     @AppStorage("autoPreview") private var autoPreview = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
     @AppStorage("readingTint") private var readingTint = true
+    @AppStorage("returnAppliesRename") private var returnApplies = true
     @AppStorage("sources") private var storedSources = ""
     @State private var addingSource = false
 
@@ -212,13 +213,17 @@ struct GeneralSettings: View {
             Section {
                 Toggle("Watch the sources for changes", isOn: $watchSources)
                 Toggle("Plan as soon as a source is added", isOn: $autoPreview)
+                Toggle("Return in the name field renames the file", isOn: $returnApplies)
                 Picker("Open in", selection: $mode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
             } header: {
                 Text("Running")
             } footer: {
-                Text("The watcher checks each new file against what is already known rather "
+                Text("Return renames the file there and then. Turn it off to have Return "
+                     + "confirm the name into the plan instead, to be carried out with "
+                     + "everything else when you apply.\n\n"
+                     + "The watcher checks each new file against what is already known rather "
                      + "than rescanning the shelf, which is what lets it notice a copy of "
                      + "something you already own as it arrives.")
                 .font(.caption)
