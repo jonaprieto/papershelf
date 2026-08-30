@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFKit
 import PaperShelfCore
 
 /// The reading-project views against the real library and the real model.
@@ -10,7 +11,8 @@ import PaperShelfCore
 @MainActor
 func liveProjectsEnvironment(library: Library, client: AIClient,
                              endpoint: String, model: String = "",
-                             passwords: @escaping () -> [String] = { [] }) -> ProjectsEnvironment {
+                             passwords: @escaping () -> [String] = { [] },
+                             converterName: @escaping () -> String = { "" }) -> ProjectsEnvironment {
     // The library's own document id, not a hash of the bytes: this app rewrites PDFs, so
     // the bytes change and the id does not. The field is named contentHash for historical
     // reasons; what travels through it is whatever identity the store uses.
@@ -66,7 +68,8 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
                 work.append((id, URL(fileURLWithPath: path)))
             }
             guard !work.isEmpty else { return 0 }
-            let read = await readTextForProject(work, passwords: passwords())
+            let read = await readTextForProject(work, passwords: passwords(),
+                                                using: converter(named: converterName()))
             guard !read.isEmpty else { return 0 }
             try await library.setExtractedText(read)
             return read.count
@@ -121,15 +124,26 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
     )
 }
 
-/// Reads several documents' text off the main thread, the same way the shelf's own
-/// indexer does. A file that cannot be opened at all is left out rather than stored as
-/// empty, since empty means "opened, and has no text layer", which is a permanent answer.
-func readTextForProject(_ work: [(id: String, url: URL)],
-                        passwords: [String]) async -> [(documentID: String, markdown: String)] {
+/// Reads several documents as Markdown, off the main thread.
+///
+/// Markdown rather than the plain page text the shelf's search index stores: what a
+/// project keeps is what a question is answered from and what a citation points into, and
+/// a converter that keeps headings, lists and tables (MarkItDown, Marker, Docling) makes
+/// a far better answer than a page of run-together lines. Which converter is the one
+/// chosen in Settings, and the built-in reader is the fallback when none is installed or
+/// the tool fails on a file, so this works with nothing installed.
+///
+/// A file that cannot be opened at all contributes nothing rather than an empty string:
+/// empty means "opened, and has no text to quote", which is a permanent answer, and a
+/// file that was unreadable today should be tried again.
+func readTextForProject(_ work: [(id: String, url: URL)], passwords: [String],
+                        using converter: MarkdownConverter?) async
+    -> [(documentID: String, markdown: String)] {
     await Task.detached(priority: .userInitiated) {
         var stored: [(documentID: String, markdown: String)] = []
         for job in work {
-            guard let text = documentText(of: job.url, passwords: passwords) else { continue }
+            guard PDFDocument(url: job.url) != nil else { continue }
+            let text = markdown(for: job.url, passwords: passwords, using: converter).text
             stored.append((documentID: job.id, markdown: text))
         }
         return stored

@@ -70,6 +70,82 @@ public func availableConverters() -> [(MarkdownConverter, URL)] {
     }
 }
 
+/// The name that means "read it here, with nothing installed", as opposed to the empty
+/// string, which means "whatever is best installed right now".
+public let builtInReaderName = "built-in"
+
+/// The converter a stored preference names, or nil for the built-in reader.
+///
+/// Three answers, not two: a name picks that tool if it is installed, `builtInReaderName`
+/// picks the reader inside the app on purpose, and an empty preference, which is what
+/// every install starts with, means take the best tool that happens to be installed. The
+/// last one is why installing MarkItDown is enough to get better Markdown out of a
+/// project without first going to find a setting.
+public func converter(named name: String) -> MarkdownConverter? {
+    if name == builtInReaderName { return nil }
+    let installed = availableConverters()
+    guard !name.isEmpty else { return installed.first?.0 }
+    return installed.first { $0.0.name == name }?.0
+}
+
+/// One PDF as Markdown, and the name of whatever produced it.
+///
+/// Runs the external tool when there is one, since a layout-aware converter keeps the
+/// headings and tables the built-in reader cannot recover, and falls back to reading the
+/// document directly when the tool is missing, fails, or answers with nothing. The
+/// fallback is the point: it needs nothing installed and works on every file the app can
+/// open, so a caller never has to decide what to do about a converter that is not there.
+///
+/// Blocking: it waits on another process. Call it off the main actor.
+public func markdown(for url: URL, passwords: [String], using converter: MarkdownConverter?,
+                     title: String? = nil) -> (text: String, tool: String) {
+    let fallbackTitle = title ?? (url.lastPathComponent as NSString).deletingPathExtension
+    guard let converter, let tool = locate(converter.executable) else {
+        return (markdownFromPDF(url: url, passwords: passwords, title: fallbackTitle),
+                "the built-in reader")
+    }
+    if let text = runConverter(tool: tool, converter: converter, source: url), !text.isEmpty {
+        return (text, converter.name)
+    }
+    // A tool that is installed can still fail on a particular file, and an empty answer is
+    // worse than the one that always works.
+    return (markdownFromPDF(url: url, passwords: passwords, title: fallbackTitle),
+            "the built-in reader, after \(converter.name) returned nothing")
+}
+
+/// Runs one converter over one file, in a scratch directory of its own.
+public func runConverter(tool: URL, converter: MarkdownConverter, source: URL) -> String? {
+    let scratch = FileManager.default.temporaryDirectory
+        .appendingPathComponent("papershelf-md-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: scratch) }
+
+    let output = scratch.appendingPathComponent(
+        (source.lastPathComponent as NSString).deletingPathExtension + ".md")
+
+    let process = Process()
+    process.executableURL = tool
+    process.arguments = converter.arguments(source, output)
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+        try process.run()
+    } catch {
+        return nil
+    }
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { return nil }
+
+    if let text = try? String(contentsOf: output, encoding: .utf8) { return text }
+    // Some of them decide the filename themselves, so take whatever Markdown appeared.
+    let produced = (try? FileManager.default.subpathsOfDirectory(atPath: scratch.path)) ?? []
+    for path in produced where path.hasSuffix(".md") {
+        if let text = try? String(contentsOf: scratch.appendingPathComponent(path),
+                                  encoding: .utf8) { return text }
+    }
+    return nil
+}
+
 /// True for a line that stands on its own: a contents entry, an index entry, anything
 /// with dot leaders or a trailing page number.
 func isListing(_ line: String) -> Bool {

@@ -25,59 +25,29 @@ final class Converting: ObservableObject {
 
         let source = item.currentURL
         let title = (item.destinationName as NSString).deletingPathExtension
-
-        guard let converter, let tool = locate(converter.executable) else {
-            result = markdownFromPDF(url: source, passwords: passwords, title: title)
-            usedTool = "the built-in reader"
-            return
-        }
-
-        let text = await Task.detached(priority: .userInitiated) {
-            Converting.run(tool: tool, converter: converter, source: source)
+        // The same conversion the projects use to read their own documents (see
+        // `readTextForProject`), so what a person sees in this sheet and what a question
+        // is answered from cannot be produced two different ways.
+        let produced = await Task.detached(priority: .userInitiated) {
+            markdown(for: source, passwords: passwords, using: converter, title: title)
         }.value
-
-        if let text, !text.isEmpty {
-            result = text
-            usedTool = converter.name
-        } else {
-            // A tool that is installed can still fail on a particular file, and an empty
-            // answer is worse than the one that always works.
-            result = markdownFromPDF(url: source, passwords: passwords, title: title)
-            usedTool = "the built-in reader, after \(converter.name) returned nothing"
-        }
+        result = produced.text
+        usedTool = produced.tool
     }
 
-    private nonisolated static func run(tool: URL, converter: MarkdownConverter,
-                                        source: URL) -> String? {
-        let scratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("papershelf-md-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: scratch) }
-
-        let output = scratch.appendingPathComponent(
-            (source.lastPathComponent as NSString).deletingPathExtension + ".md")
-
-        let process = Process()
-        process.executableURL = tool
-        process.arguments = converter.arguments(source, output)
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return nil
+    /// Keeps a conversion as what the library knows this document says. Reports failure
+    /// through `problem`, since a write that quietly did nothing is how a person ends up
+    /// asking a project a question it cannot answer.
+    func keep(_ markdown: String, for item: Item) async -> Bool {
+        guard let library = Library.shared else {
+            problem = "The library is unavailable, so there is nowhere to keep this."
+            return false
         }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-
-        if let text = try? String(contentsOf: output, encoding: .utf8) { return text }
-        // Some of them decide the filename themselves, so take whatever Markdown appeared.
-        let produced = (try? FileManager.default.subpathsOfDirectory(atPath: scratch.path)) ?? []
-        for path in produced where path.hasSuffix(".md") {
-            if let text = try? String(contentsOf: scratch.appendingPathComponent(path),
-                                      encoding: .utf8) { return text }
+        guard await storeAsDocumentText(markdown, for: item.currentURL, library: library) else {
+            problem = "Could not keep this as \(item.destinationName)'s text."
+            return false
         }
-        return nil
+        return true
     }
 
     func clear() {
@@ -97,9 +67,15 @@ struct MarkdownSheet: View {
     /// rather than on every sheet.
     @AppStorage("defaultConverter") private var chosen: String = ""
     @State private var saving = false
+    /// True once this Markdown has been kept as the document's text, so the button says
+    /// what happened rather than inviting the same write again.
+    @State private var kept = false
 
     private var installed: [(MarkdownConverter, URL)] { converting.installed }
-    private var picked: MarkdownConverter? { installed.first { $0.0.name == chosen }?.0 }
+    /// The same resolution a project uses (see `converter(named:)`): a name picks that
+    /// tool, "built-in" picks the reader here on purpose, and an empty preference takes
+    /// the best tool installed.
+    private var picked: MarkdownConverter? { converter(named: chosen) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -111,7 +87,8 @@ struct MarkdownSheet: View {
 
             HStack(spacing: 8) {
                 Picker("Converter", selection: $chosen) {
-                    Text("Built-in reader").tag("")
+                    Text("Automatic (best installed)").tag("")
+                    Text("Built-in reader").tag(builtInReaderName)
                     ForEach(installed, id: \.0.name) { converter, _ in
                         Text(converter.name).tag(converter.name)
                     }
@@ -133,6 +110,17 @@ struct MarkdownSheet: View {
                         NSPasteboard.general.setString(result, forType: .string)
                     }
                     Button("Save…") { saving = true }
+                    // The same text a reading project reads its own documents with, kept
+                    // for this file from wherever it was selected. Without this the only
+                    // way to give a document text was to index the whole shelf, and the
+                    // only way to get a converter's Markdown out of here was a file on
+                    // disk the app then knew nothing about.
+                    Button(kept ? "Kept" : "Use as this document's text") {
+                        Task { kept = await converting.keep(result, for: item) }
+                    }
+                    .disabled(kept || Library.shared == nil)
+                    .tip("Keep this as the document's text, so search can find it and a "
+                         + "project can quote it")
                 }
             }
 
@@ -162,9 +150,12 @@ struct MarkdownSheet: View {
         }
         .padding(16)
         .frame(minWidth: 620, minHeight: 460)
+        .onChange(of: converting.result) { _, _ in kept = false }
         .task {
+            // Left alone rather than overwritten: the preference is shared with Settings
+            // and with what a project reads its documents through, and opening this sheet
+            // is not a decision about any of that.
             if converting.result == nil {
-                chosen = installed.first?.0.name ?? ""
                 await converting.convert(item, passwords: passwords, using: picked)
             }
         }

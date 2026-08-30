@@ -56,6 +56,8 @@ struct ContentView: View {
     @AppStorage("watchSources") private var watchSources = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
     @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
+    /// Which Markdown converter a project reads its documents with, chosen in Settings.
+    @AppStorage("defaultConverter") private var defaultConverter = ""
     @AppStorage("aiBaseURL") var aiBaseURL = "https://api.openai.com/v1"
     @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @AppStorage("autoIdentify") private var autoIdentify = false
@@ -340,7 +342,8 @@ struct ContentView: View {
                     project: openProject,
                     env: liveProjectsEnvironment(library: library, client: aiClient,
                                                  endpoint: aiBaseURL, model: aiModel,
-                                                 passwords: { passwords }),
+                                                 passwords: { passwords },
+                                                 converterName: { defaultConverter }),
                     membershipChanged: { Task { await reloadProjects() } },
                     close: {
                         self.openProject = nil

@@ -167,6 +167,30 @@ func addToProject(_ paths: [String], project id: Int64, library: Library) async 
     return try await library.addMembers(paths: wanted, toProject: id)
 }
 
+/// Keeps this Markdown as what the library knows the document says, so a search can find
+/// it and a project can quote it.
+///
+/// The library files documents, not paths, so a file it has never met is indexed here
+/// first, the same way filing one into a project does. Answers false when the file could
+/// not be recorded at all, which is the only case the caller can do anything about.
+@discardableResult
+func storeAsDocumentText(_ markdown: String, for url: URL, library: Library) async -> Bool {
+    let resolved = url.resolvingSymlinksInPath().path
+    var known = (try? await library.document(atPath: url.path)) ?? nil
+    if known == nil, resolved != url.path {
+        known = (try? await library.document(atPath: resolved)) ?? nil
+    }
+    if known == nil {
+        guard FileManager.default.fileExists(atPath: resolved),
+              let records = try? await library.indexDocuments([indexInput(for: URL(fileURLWithPath: resolved))]),
+              let first = records.first
+        else { return false }
+        known = first
+    }
+    guard let document = known else { return false }
+    return ((try? await library.setExtractedText(markdown, forDocument: document.id)) != nil)
+}
+
 /// What a scan records about one file: its size, its pages, and whatever the PDF says
 /// about itself. The same fields `syncLibrary` writes, read straight off the disk.
 func indexInput(for url: URL) -> Library.IndexInput {

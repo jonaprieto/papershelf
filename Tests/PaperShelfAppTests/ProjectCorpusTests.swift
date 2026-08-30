@@ -395,4 +395,68 @@ final class ProjectCorpusTests: XCTestCase {
         let stored = try await library.extractedText(forDocuments: ids)
         XCTAssertEqual(stored.count, 4, "the six documents outside the project were left unread")
     }
+
+    /// A project reads its documents through the same converter the Markdown sheet uses,
+    /// so what a question is answered from and what a person was shown cannot be produced
+    /// two different ways. With nothing installed that is the built-in reader, which is
+    /// what this machine and CI both have.
+    func testAProjectReadsThroughTheConverterAndKeepsMarkdown() async throws {
+        let file = try writePDF(named: "converted.pdf",
+                                text: "Replicas converge once they agree on the updates.")
+        let library = try library()
+        let record = try await library.indexDocuments([indexInput(for: file)]).first!
+
+        let read = await readTextForProject([(record.id, file)], passwords: [], using: nil)
+
+        let text = try XCTUnwrap(read.first?.markdown)
+        XCTAssertTrue(text.contains("Replicas converge"), "the document's own words survive")
+        XCTAssertTrue(text.hasPrefix("# "), "Markdown, not a page of run-together lines")
+    }
+
+    /// The converter's answer, kept for a file selected anywhere, is what search and a
+    /// project then read. A file the library has never met is recorded on the way.
+    func testKeepingAConversionGivesAnUnknownFileItsText() async throws {
+        let file = try writePDF(named: "elsewhere.pdf", text: "Convergence, stated plainly.")
+        let library = try library()
+        let before = try await library.document(atPath: file.path)
+        XCTAssertNil(before, "not on record yet")
+
+        let kept = await storeAsDocumentText("# Elsewhere\n\nConvergence, stated plainly.",
+                                             for: file, library: library)
+
+        XCTAssertTrue(kept)
+        let found = try await library.document(atPath: file.path)
+        let record = try XCTUnwrap(found)
+        let stored = try await library.extractedText(forDocument: record.id)
+        XCTAssertEqual(stored?.markdown.contains("Convergence, stated plainly."), true)
+    }
+
+    /// Keeping it twice is keeping the newer answer, not a second document.
+    func testKeepingAConversionAgainReplacesTheText() async throws {
+        let file = try writePDF(named: "twice.pdf", text: "First reading.")
+        let library = try library()
+
+        let first = await storeAsDocumentText("first", for: file, library: library)
+        let second = await storeAsDocumentText("second", for: file, library: library)
+        XCTAssertTrue(first)
+        XCTAssertTrue(second)
+
+        let documents = try await library.documents()
+        XCTAssertEqual(documents.count, 1)
+        let stored = try await library.extractedText(forDocument: documents[0].id)
+        XCTAssertEqual(stored?.markdown, "second")
+    }
+
+    /// A path with nothing behind it cannot be given text, and says so rather than
+    /// inventing a document.
+    func testKeepingAConversionForAMissingFileFails() async throws {
+        let library = try library()
+        let gone = folder.appendingPathComponent("gone.pdf")
+
+        let kept = await storeAsDocumentText("anything", for: gone, library: library)
+
+        XCTAssertFalse(kept)
+        let documents = try await library.documents()
+        XCTAssertTrue(documents.isEmpty)
+    }
 }

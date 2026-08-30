@@ -674,7 +674,8 @@ struct IntegrationSettings: View {
 
             Section {
                 Picker("Converter", selection: $defaultConverter) {
-                    Text("Built-in reader").tag("")
+                    Text("Automatic (best installed)").tag("")
+                    Text("Built-in reader").tag(builtInReaderName)
                     ForEach(markdownConverters, id: \.name) { converter in
                         Text(installed.contains(converter.name)
                              ? converter.name
@@ -687,8 +688,9 @@ struct IntegrationSettings: View {
             } footer: {
                 Text("The built-in reader never leaves the app and needs nothing "
                      + "installed; the others are found on your PATH and are better on "
-                     + "scanned pages and equations. This is the one the conversion sheet "
-                     + "starts on.")
+                     + "scanned pages and equations. Automatic takes the best one you "
+                     + "have. This is what the conversion sheet starts on, and what a "
+                     + "reading project reads its own documents with.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }

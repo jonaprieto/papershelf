@@ -75,4 +75,59 @@ extension ConvertTests {
                        "a sentence can end on a year, and a year is not a page number")
         XCTAssertFalse(isListing("42"), "a bare number is not a listing")
     }
+
+    /// The external-tool path, run for real against whichever converter this machine has.
+    /// Skipped rather than failed where none is installed, since that is the normal case
+    /// and the fallback is what covers it.
+    func testAnInstalledConverterProducesTheDocumentsWords() throws {
+        let installed = availableConverters()
+        try XCTSkipIf(installed.isEmpty, "no Markdown converter installed")
+        let (converter, tool) = installed[0]
+
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("converter"), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: file, text: "Replicas converge once they agree on the updates.")
+
+        let text = try XCTUnwrap(runConverter(tool: tool, converter: converter, source: file),
+                                 "\(converter.name) produced nothing")
+        XCTAssertTrue(text.contains("Replicas converge"))
+    }
+
+    /// Whatever the converter, the caller gets Markdown and the name of what made it, and
+    /// a missing tool is answered by the built-in reader rather than by an error.
+    func testMarkdownFallsBackToTheBuiltInReader() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("fallback"), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: file, text: "Replicas converge once they agree on the updates.")
+
+        let missing = MarkdownConverter(name: "Nowhere", executable: "papershelf-not-installed",
+                                        note: "", arguments: { input, _ in [input.path] })
+        let produced = markdown(for: file, passwords: [], using: missing, title: "Paper")
+
+        XCTAssertEqual(produced.tool, "the built-in reader")
+        XCTAssertTrue(produced.text.hasPrefix("# Paper"))
+        XCTAssertTrue(produced.text.contains("Replicas converge"))
+    }
+
+    /// Three answers from one stored name: a tool by name when it is installed, the
+    /// built-in reader when that was chosen on purpose, and the best installed tool for
+    /// the empty preference every install starts with.
+    func testAStoredNameResolvesToAToolTheBuiltInReaderOrTheBestInstalled() {
+        XCTAssertNil(converter(named: builtInReaderName), "chosen on purpose")
+        XCTAssertNil(converter(named: "A Converter Nobody Has"), "named but not installed")
+
+        let installed = availableConverters()
+        if let best = installed.first?.0 {
+            XCTAssertEqual(converter(named: ""), best, "automatic takes the best installed")
+            XCTAssertEqual(converter(named: best.name), best)
+        } else {
+            XCTAssertNil(converter(named: ""), "automatic with nothing installed reads it here")
+        }
+    }
 }
