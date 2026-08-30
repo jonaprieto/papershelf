@@ -104,10 +104,15 @@ struct RegionRing: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay {
-                RoundedRectangle(cornerRadius: Metric.control)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .opacity(regions.focused == region ? 1 : 0)
+            // A bar down the leading edge rather than a box around everything. The box
+            // said the right thing and said it far too loudly: two accent-coloured
+            // rectangles nested inside each other, drawn over content, on every screen.
+            // The edge marks the same region and stays out of the way of what is in it.
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: 2)
+                    .opacity(regions.focused == region ? 0.85 : 0)
                     .allowsHitTesting(false)
             }
             // Simultaneous, not a gesture of its own: clicking inside a region should
