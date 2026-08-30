@@ -447,6 +447,21 @@ final class LibraryTests: XCTestCase {
     }
 
     /// What a search needs about a file the shelf listed but never opened.
+    func testTotalsCountWhatTheLibraryHolds() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        _ = try await library.indexDocument(path: "/shelf/a.pdf", contentHash: "a", byteCount: 1_000)
+        _ = try await library.indexDocument(path: "/shelf/b.pdf", contentHash: "b", byteCount: 2_500)
+        // A document whose size nothing has read counts as a document and as no bytes,
+        // rather than as a guess.
+        _ = try await library.indexDocument(path: "/shelf/c.pdf", contentHash: "c")
+
+        let totals = try await library.totals()
+
+        XCTAssertEqual(totals, LibraryTotals(documents: 3, bytes: 3_500))
+    }
+
     func testDocumentFactsComeBackByPath() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

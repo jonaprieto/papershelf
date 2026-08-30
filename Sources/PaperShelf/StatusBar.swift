@@ -7,6 +7,21 @@ import PaperShelfCore
 /// lived in a second row of the results bar that appeared and disappeared — which meant
 /// the toolbar changed shape while work was running and the content below it jumped. All
 /// of that lives here now, in a bar that is always exactly one line tall.
+/// When a document was last opened, said the way a person would. Exact dates are for a
+/// file listing; a status bar is answering "have I read this recently".
+func openedLabel(_ date: Date, now: Date = Date()) -> String {
+    let seconds = now.timeIntervalSince(date)
+    switch seconds {
+    case ..<0: return "opened just now"
+    case ..<3600: return "opened in the last hour"
+    case ..<86_400: return "opened today"
+    case ..<172_800: return "opened yesterday"
+    case ..<2_592_000: return "opened \(Int(seconds / 86_400)) days ago"
+    case ..<31_536_000: return "opened \(max(1, Int(seconds / 2_592_000))) months ago"
+    default: return "opened \(max(1, Int(seconds / 31_536_000))) years ago"
+    }
+}
+
 struct StatusBar: View {
     @ObservedObject var runner: Runner
     /// Observed on its own: these are the numbers that move several times a second, and
@@ -22,9 +37,12 @@ struct StatusBar: View {
     /// a label in the results bar; it belongs with everything else that is about right
     /// now rather than about the collection.
     let planIsCurrent: Bool
-    /// What the library holds. A fact about the whole collection rather than about this
-    /// run, and the last thing before the watcher's own state.
-    let library: String?
+    /// Where the selected file is. The one fact about a document that fits nowhere else:
+    /// a card shows a name, the inspector shows what is in it, and neither has room for
+    /// three folders and a filename.
+    let selectedPath: String?
+    /// When that file was last read, or nil for one nobody has opened.
+    let lastOpened: Date?
     @State private var showingActivity = false
     @ObservedObject private var regions: Regions = .shared
 
@@ -56,10 +74,15 @@ struct StatusBar: View {
                 separator
             }
 
-            if let library {
-                Text(library)
+            if let selection = selectionLabel {
+                Text(selection)
+                    .truncationMode(.middle)
+                    .tip(selectedPath ?? "")
                 separator
             }
+
+            Text(sizeLabel)
+            separator
 
             HStack(spacing: 5) {
                 Circle()
@@ -180,6 +203,30 @@ struct StatusBar: View {
                 ActivityLog(entries: activity.log)
             }
         }
+    }
+
+    /// The selected file, by path, with when it was last read. Middle-truncated by the
+    /// view: the two ends of a path are the parts that identify it.
+    private var selectionLabel: String? {
+        guard let selectedPath else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let shown = selectedPath.hasPrefix(home)
+            ? "~" + selectedPath.dropFirst(home.count)
+            : selectedPath
+        guard let lastOpened else { return shown }
+        return "\(shown) · \(openedLabel(lastOpened))"
+    }
+
+    /// How much the shelf and the library weigh. A person adding a four-terabyte drive is
+    /// asking a size question, and the app knew both numbers and said neither.
+    private var sizeLabel: String {
+        let here = runner.results.reduce(0) { $0 + ($1.byteCount ?? 0) }
+        let shown = ByteCountFormatter.string(fromByteCount: Int64(here), countStyle: .file)
+        guard let totals = runner.libraryTotals, totals.bytes > here else {
+            return "\(shown) here"
+        }
+        let whole = ByteCountFormatter.string(fromByteCount: Int64(totals.bytes), countStyle: .file)
+        return "\(shown) here · \(whole) in the library"
     }
 
     private var idleLabel: String {

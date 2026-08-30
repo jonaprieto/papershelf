@@ -113,6 +113,8 @@ final class Runner: ObservableObject {
     var indexGeneration = 0
     /// How many documents in the library have text on record.
     @Published private(set) var indexedTextCount = 0
+    /// What the whole library adds up to, for the status bar. Nil until it has been asked.
+    @Published private(set) var libraryTotals: LibraryTotals?
 
     func setIndexedTextCount(_ count: Int) { indexedTextCount = count }
 
@@ -412,6 +414,7 @@ final class Runner: ObservableObject {
     /// next search sees what an earlier pass had already read out of the PDFs.
     func refreshLibraryFacts() async {
         guard let library = Library.shared else { return }
+        libraryTotals = try? await library.totals()
         guard let facts = try? await library.documentFactsByPath() else { return }
         libraryFacts = facts
         projections = []

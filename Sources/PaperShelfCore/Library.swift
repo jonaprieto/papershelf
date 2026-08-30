@@ -436,6 +436,16 @@ public actor Library {
     /// For resolving a whole shelf at once. Asking file by file meant two statements and a
     /// round trip through this actor per file, a thousand times over on a thousand-file
     /// shelf, to end up with nothing but the ids.
+    /// How much the library holds, for a bar that has to say so in one line. Counted in
+    /// SQL rather than by reading every row back out: the answer is two numbers.
+    public func totals() throws -> LibraryTotals {
+        try withStatement("SELECT COUNT(*), COALESCE(SUM(byte_count), 0) FROM documents;") { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return LibraryTotals(documents: 0, bytes: 0) }
+            return LibraryTotals(documents: Int(sqlite3_column_int64(statement, 0)),
+                                 bytes: Int(sqlite3_column_int64(statement, 1)))
+        }
+    }
+
     /// What an earlier pass read out of the PDFs, by path: enough for a search over a
     /// shelf that listed its files without opening any of them. A `pages:`, `title:` or
     /// `author:` term would otherwise be dead on a source added the cheap way.
@@ -1081,6 +1091,19 @@ public enum LibraryError: Error, CustomStringConvertible, Sendable {
 }
 
 // MARK: - Records
+
+/// What the whole library adds up to: how many documents it knows and how many bytes
+/// they are. A document whose size was never read counts as nothing rather than as a
+/// guess.
+public struct LibraryTotals: Sendable, Equatable {
+    public let documents: Int
+    public let bytes: Int
+
+    public init(documents: Int, bytes: Int) {
+        self.documents = documents
+        self.bytes = bytes
+    }
+}
 
 /// The little of a document a search needs to know without opening the file: how long it
 /// is, what it says it is called, and who it says wrote it.

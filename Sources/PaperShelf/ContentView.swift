@@ -87,6 +87,9 @@ struct ContentView: View {
     @State private var loadingModels = false
     @State private var modelsError: String?
     @State private var sourceAvailability: [String: Bool] = [:]
+    /// When the selected document was last opened, for the status bar. Read from the
+    /// library rather than kept in memory: the answer outlives the session that set it.
+    @State private var selectionOpenedAt: Date?
 
     @StateObject var runner = Runner()
     @StateObject private var covers = Covers()
@@ -379,16 +382,7 @@ struct ContentView: View {
             // Everything transient goes here and only here, so the toolbar never changes
             // shape while work is running.
             Divider()
-            StatusBar(
-                runner: runner,
-                activity: runner.activity,
-                watching: watchSources && selection.contains(where: isReachable),
-                sources: selection.filter(isReachable).count,
-                unavailableSources: selection.filter { !isReachable($0) }.count,
-                spend: sessionSpendLabel,
-                planIsCurrent: previewIsCurrent,
-                library: runner.results.isEmpty ? nil : "\(runner.results.count) loaded here"
-            )
+            statusBar
         }
         // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
         // because the rail, the notes rail and the contents rail were all fixed
@@ -441,6 +435,7 @@ struct ContentView: View {
         }
         .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
         .task { await watchSourceAvailability() }
+        .task(id: reviewing) { await readSelectionPosition() }
         // Restyling is cheap but not free, so let a run of toggles settle first.
         .task(id: namingFingerprint) {
             guard !runner.results.isEmpty, runner.lastRunWasDry else { return }
@@ -779,6 +774,41 @@ struct ContentView: View {
             _ = try? await library.addMembers(paths: urls.map(\.path), toProject: id)
             await reloadProjects()
         }
+    }
+
+    /// Its own property: as one expression inside the window's body, the type-checker
+    /// gives up on it.
+    private var statusBar: some View {
+        let reachable = selection.filter(isReachable).count
+        return StatusBar(
+            runner: runner,
+            activity: runner.activity,
+            watching: watchSources && reachable > 0,
+            sources: reachable,
+            unavailableSources: selection.count - reachable,
+            spend: sessionSpendLabel,
+            planIsCurrent: previewIsCurrent,
+            selectedPath: selectedPath,
+            lastOpened: selectionOpenedAt
+        )
+    }
+
+    /// Where the selected file is. One string rather than a chain inside the status bar's
+    /// own arguments, which is more than the type-checker will work through in one pass.
+    private var selectedPath: String? {
+        guard let key = reviewing else { return nil }
+        return runner.item(key)?.currentURL.path
+    }
+
+    /// When the selected document was last read. Nil for a file nobody has opened, which
+    /// the bar says rather than leaving a blank where a date goes.
+    private func readSelectionPosition() async {
+        selectionOpenedAt = nil
+        guard let key = reviewing, let library = Library.shared,
+              let record = try? await library.document(atPath: key),
+              let position = try? await library.readingPosition(forDocument: record.id)
+        else { return }
+        selectionOpenedAt = position.updatedAt
     }
 
     private func reloadProjects() async {
