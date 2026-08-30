@@ -761,6 +761,14 @@ struct ResultsPane: View {
 
     /// The commands that do not need a file in front of them, and so must still work on
     /// an empty shelf — which is exactly when someone reaches for the palette.
+    /// What can still be decided while a document is open. Deliberately not every
+    /// reviewing command: `n`, `e` and the number keys mean something else to a reader,
+    /// and a key that means two things depending on where you last clicked is worse than
+    /// a key that means one thing in one place.
+    static let decisionsInTheReader: Set<Command> = [
+        .trash, .skip, .confirm, .moveTo, .applyOne, .reopen,
+    ]
+
     private static let alwaysAvailable: Set<Command> = [
         .palette, .focusSearch, .shortcuts,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
@@ -773,7 +781,17 @@ struct ResultsPane: View {
         let match = Keymap.shared.command(for: event, in: activeScope)
             ?? defaultRegionCommand(for: event)
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
-        if (reading || reader != nil), handleReaderNavigation(event) { return true }
+        if reading || reader != nil {
+            if handleReaderNavigation(event) { return true }
+            // A book open on screen is still a file with a decision pending, and none of
+            // these keys is a page key. Without this, reaching for D over an open document
+            // did nothing at all: the reader's scope cannot see a reviewing command, and
+            // every bare key below is handed to the page.
+            if let decision = Keymap.shared.command(for: event, in: .reviewing),
+               Self.decisionsInTheReader.contains(decision), selectedItem != nil {
+                return perform(decision)
+            }
+        }
 
         if regions.focused == .sidebar, handleSidebarKey(event.keyCode) {
             regions.rowFocused = true

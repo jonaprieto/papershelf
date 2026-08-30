@@ -170,16 +170,23 @@ final class Covers: ObservableObject {
     }
 
     private nonisolated static func render(_ url: URL, passwords: [String], height: CGFloat) -> NSImage? {
-        guard let document = PDFDocument(url: url) else { return nil }
-        if document.isLocked {
-            for password in passwords where document.unlock(withPassword: password) { break }
-        }
-        guard let page = document.page(at: 0) else { return nil }
-        let box = page.bounds(for: .mediaBox)
-        guard box.height > 0 else { return nil }
-        let width = max(1, box.width * (height / box.height))
-        return page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+        firstPageImage(of: url, passwords: passwords, height: height)
     }
+}
+
+/// The first page of a PDF, drawn at a given height. Shared by the shelf's covers and by
+/// the duplicate window, which used to be handed a closure that returned nil for every
+/// file and so showed two grey rectangles where the whole point is comparing two pages.
+func firstPageImage(of url: URL, passwords: [String], height: CGFloat) -> NSImage? {
+    guard let document = PDFDocument(url: url) else { return nil }
+    if document.isLocked {
+        for password in passwords where document.unlock(withPassword: password) { break }
+    }
+    guard let page = document.page(at: 0) else { return nil }
+    let box = page.bounds(for: .mediaBox)
+    guard box.height > 0 else { return nil }
+    let width = max(1, box.width * (height / box.height))
+    return page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
 }
 
 enum ViewMode: String, CaseIterable, Identifiable, Equatable {

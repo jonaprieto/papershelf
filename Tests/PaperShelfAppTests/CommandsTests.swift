@@ -120,6 +120,25 @@ final class CommandsTests: XCTestCase {
                       "no one carries out: \(orphans.map(\.rawValue).sorted().joined(separator: ", "))")
     }
 
+    /// Deciding while a book is open. These are reviewing commands heard in the reader,
+    /// so each one has to be a key the reader has not already given a meaning to, or the
+    /// same press would highlight a line and trash a file.
+    func testTheReaderCanDecideWithoutStealingItsOwnKeys() {
+        let readerKeys = Set(Command.allCases
+            .filter { $0.scope == .reader }
+            .compactMap { Keymap.shared.shortcut(for: $0) })
+
+        for command in ResultsPane.decisionsInTheReader {
+            XCTAssertEqual(command.scope, .reviewing,
+                           "\(command.rawValue) is not a decision")
+            XCTAssertTrue(ResultsPane.performable.contains(command),
+                          "\(command.rawValue) cannot be carried out")
+            guard let shortcut = Keymap.shared.shortcut(for: command) else { continue }
+            XCTAssertFalse(readerKeys.contains(shortcut),
+                           "\(command.rawValue) would take a key the reader already uses")
+        }
+    }
+
     /// And the other direction: a command claimed by both would be ambiguous about which
     /// one wins, which is how a key starts doing two things depending on focus.
     func testNoCommandIsClaimedTwice() {

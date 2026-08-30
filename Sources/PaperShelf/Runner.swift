@@ -772,9 +772,15 @@ final class Runner: ObservableObject {
             // index that lives here, so it stays put.
             guard let group = duplicateIndex?.insert(item, passwords: passwords) else { continue }
             note(.scanned, subject: item.sourceName, detail: "looks like a copy of something here")
+            // Two pages, drawn once each as the window is built. The window exists to be
+            // looked at; handing it a closure that answered nil made it a pair of grey
+            // rectangles with a filename under each.
+            let pages = Dictionary(uniqueKeysWithValues: group.items.map { copy in
+                (copy.key, firstPageImage(of: copy.currentURL, passwords: passwords, height: 480))
+            })
             DuplicateAlert.present(
                 group,
-                thumbnail: { _ in nil },
+                thumbnail: { pages[$0.key] ?? nil },
                 trashNow: { [weak self] copy in
                     guard let self else { return }
                     self.markForDeletion(copy)
