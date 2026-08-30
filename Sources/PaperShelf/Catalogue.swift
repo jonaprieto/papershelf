@@ -338,7 +338,11 @@ struct ResultsPane: View {
     /// as a shelf. The one function both the local right-click and the notification from
     /// the file explorer (`.openFolderInCatalogue`) call, so the two stay in step.
     private func openFolder(_ url: URL) {
-        navigate(to: Place(mode: .catalogue, shelf: shelves.current, folderPath: url.path,
+        // Whichever way you were reading the collection, you are still reading it: a
+        // folder narrows the list or the shelf you are on rather than moving you to the
+        // shelf. Only the two views that are not about files at all switch.
+        let showing = mode == .list ? ViewMode.list : .catalogue
+        navigate(to: Place(mode: showing, shelf: shelves.current, folderPath: url.path,
                            query: query, reader: nil))
     }
 

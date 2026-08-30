@@ -606,13 +606,7 @@ struct ContentView: View {
             openProject = nil
             shelves.current = list
         case .source(let path): explorerExpanded.insert(path)
-        case .folder(let path):
-            chrome.reading = false
-            openProject = nil
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .openFolderInCatalogue, object: nil,
-                                                userInfo: ["path": path])
-            }
+        case .folder(let path): showFolder(path)
         case .document(let key): reviewing = key
         case .project(let id):
             chrome.reading = false
@@ -627,6 +621,19 @@ struct ContentView: View {
         case .addSource: importing = true
         }
         return true
+    }
+
+    /// Narrows the catalogue and the list to one folder and everything under it. The
+    /// catalogue owns that state, so the intent is posted rather than reached for; this is
+    /// what both a click on a folder row and Return on a focused one do.
+    private func showFolder(_ path: String) {
+        chrome.reading = false
+        openProject = nil
+        sidebarTarget = .folder(path)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .openFolderInCatalogue, object: nil,
+                                            userInfo: ["path": path])
+        }
     }
 
     private func expandSidebarTarget() -> Bool {
@@ -1018,6 +1025,7 @@ struct ContentView: View {
                                 forceExpanded: false, selected: reviewing,
                                 select: { reviewing = $0; sidebarTarget = .document($0) },
                                 focusPath: { sidebarTarget = .folder($0) },
+                                openFolder: showFolder,
                                 focusedPath: focusedSidebarPath)
             } label: {
                 sourceLabel(url, count: countOfFiles(in: root))
@@ -1035,7 +1043,7 @@ struct ContentView: View {
             reachable: reachable,
             focused: sidebarTarget == .source(url.path),
             hovered: hoveredSource == url,
-            focus: { sidebarTarget = .source(url.path) },
+            focus: { showFolder(url.path) },
             setHovered: { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) },
             remove: { removeSource(url) }
         )
@@ -1477,6 +1485,10 @@ struct ExplorerOutline: View {
     let selected: String?
     let select: (String) -> Void
     var focusPath: (String) -> Void = { _ in }
+    /// Clicking a folder shows what is in it. The triangle beside it is what opens the
+    /// folder to look inside; the row itself is the filter, which is what a folder in a
+    /// sidebar means everywhere else.
+    var openFolder: (String) -> Void = { _ in }
     var focusedPath: String? = nil
 
     var body: some View {
@@ -1486,6 +1498,7 @@ struct ExplorerOutline: View {
                     ExplorerOutline(nodes: children, expanded: $expanded,
                                     forceExpanded: forceExpanded,
                                     selected: selected, select: select, focusPath: focusPath,
+                                    openFolder: openFolder,
                                     focusedPath: focusedPath)
                 } label: {
                     row(node)
@@ -1537,7 +1550,12 @@ struct ExplorerOutline: View {
         .accessibilityAddTraits((node.itemKey == selected || node.url.path == focusedPath)
                                 ? .isSelected : [])
         .onTapGesture {
-            if let key = node.itemKey { select(key) } else { focusPath(node.url.path) }
+            if let key = node.itemKey {
+                select(key)
+            } else {
+                focusPath(node.url.path)
+                openFolder(node.url.path)
+            }
         }
         .contextMenu {
             if node.itemKey == nil {

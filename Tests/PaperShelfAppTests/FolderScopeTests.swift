@@ -13,6 +13,19 @@ final class FolderScopeTests: XCTestCase {
                     status: .renamed)
     }
 
+    /// Clicking a source in the sidebar filters to that source, which means everything
+    /// under it, however deep. The same rule a folder row uses; a source is just the
+    /// folder at the top.
+    func testASourceScopesToEverythingUnderIt() {
+        let scope = ResultsPane.FolderScope(URL(fileURLWithPath: "/Volumes/brain"))
+
+        XCTAssertTrue(scope.contains(item("/Volumes/brain/paper.pdf")))
+        XCTAssertTrue(scope.contains(item("/Volumes/brain/e14/pdf/r1/scan.pdf")))
+        XCTAssertFalse(scope.contains(item("/Volumes/brainstorm/paper.pdf")),
+                       "a prefix of the name is not a folder")
+        XCTAssertFalse(scope.contains(item("/Users/someone/paper.pdf")))
+    }
+
     func testAFileUnderTheFolderIsInScope() {
         let scope = ResultsPane.FolderScope(URL(fileURLWithPath: "/tmp/shelf"))
         XCTAssertTrue(scope.contains(item("/tmp/shelf/a.pdf")))
