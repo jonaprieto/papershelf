@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import PaperShelfCore
 import os
 
@@ -87,4 +88,53 @@ extension Runner {
         Logger(subsystem: "com.jonaprieto.pdfhammer", category: "library")
             .error("library sync failed for \(path, privacy: .public), leaving it for the next sync: \(String(describing: error), privacy: .public)")
     }
+}
+
+/// Files into a project, wherever they were dragged from.
+///
+/// A path only becomes a document when a scan or a sync has written it down, and
+/// `Library.addMembers` can only file documents. Dropping a PDF the library has not met
+/// yet -- one from Finder, or from a source scanned but not yet synced -- was therefore a
+/// drop that did nothing and said nothing. Anything missing is indexed here first, with
+/// what the file itself says, which is what the next sync would have written anyway.
+@discardableResult
+func addToProject(_ paths: [String], project id: Int64, library: Library) async throws -> Int {
+    var wanted: [String] = []
+    var missing: [Library.IndexInput] = []
+    for path in paths {
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        var known = (try? await library.document(atPath: path)) ?? nil
+        if known == nil, resolved != path {
+            known = (try? await library.document(atPath: resolved)) ?? nil
+        }
+        if known != nil {
+            wanted.append(path)
+        } else if FileManager.default.fileExists(atPath: resolved) {
+            missing.append(indexInput(for: URL(fileURLWithPath: resolved)))
+            wanted.append(resolved)
+        }
+    }
+    guard !wanted.isEmpty else { return 0 }
+    if !missing.isEmpty { _ = try await library.indexDocuments(missing) }
+    return try await library.addMembers(paths: wanted, toProject: id)
+}
+
+/// What a scan records about one file: its size, its pages, and whatever the PDF says
+/// about itself. The same fields `syncLibrary` writes, read straight off the disk.
+func indexInput(for url: URL) -> Library.IndexInput {
+    let byteCount = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+    let document = PDFDocument(url: url)
+    var info: [String: String] = [:]
+    if let attributes = document?.documentAttributes {
+        for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute,
+                    .creatorAttribute, .producerAttribute, .keywordsAttribute] {
+            guard let value = attributes[key] else { continue }
+            let text = (value as? String) ?? (value as? [String])?.joined(separator: ", ") ?? ""
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { info[key.rawValue] = trimmed }
+        }
+    }
+    return Library.IndexInput(path: url.path, byteCount: byteCount,
+                              pageCount: document?.pageCount, title: info["Title"],
+                              author: info["Author"], documentInfo: info)
 }

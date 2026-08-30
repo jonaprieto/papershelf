@@ -781,7 +781,7 @@ struct ContentView: View {
     private func addFiles(_ urls: [URL], toProject id: Int64) {
         guard let library = Library.shared else { return }
         Task {
-            _ = try? await library.addMembers(paths: urls.map(\.path), toProject: id)
+            _ = try? await addToProject(urls.map(\.path), project: id, library: library)
             await reloadProjects()
         }
     }

@@ -166,9 +166,13 @@ struct ResultsPane: View {
     /// Whether the page is one of the panes.
     ///
     /// The list is the reviewer -- a name is decided against the page it belongs to -- and
-    /// the reader is the page. The shelf, the bibliography and the duplicates view are
-    /// about a collection and show none.
-    private var showsPage: Bool { reader != nil || reading || mode == .list }
+    /// the reader is the page. The shelf shows it too: picking a cover is asking what that
+    /// document is, and answering with a panel of fields while the page itself is one
+    /// click away in another view is the long way round. The bibliography and the
+    /// duplicates view have their own second pane and keep it.
+    private var showsPage: Bool {
+        reader != nil || reading || mode == .list || mode == .catalogue
+    }
 
     /// Whether the browser keeps the middle. Reading mode and the reader both take it.
     private var showsBrowser: Bool { !reading && reader == nil }
@@ -1272,7 +1276,7 @@ struct ResultsPane: View {
                 let paths = many.map(\.currentURL.path)
                 Task {
                     guard let library = Library.shared else { return }
-                    _ = try? await library.addMembers(paths: paths, toProject: id)
+                    _ = try? await addToProject(paths, project: id, library: library)
                     await loadProjects()
                 }
             },
@@ -1644,6 +1648,9 @@ struct ResultsPane: View {
                             extendSelection(to: item.key, through: shown.map(\.key))
                         })
                         .onTapGesture { pick(item.key) }
+                        // Draggable like the list's rows and the sidebar's: a cover is a
+                        // file, and dropping one on a project files it there.
+                        .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
                     }
                 }
                 .padding(18)
