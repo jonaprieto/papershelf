@@ -743,8 +743,7 @@ final class Runner: ObservableObject {
         self.fingerprint = fingerprint
         saveRunCache(RunCache(fingerprint: fingerprint, items: merged))
 
-        await announceDuplicates(among: arrived.values.map { $0 }, all: merged,
-                                 passwords: options.passwords)
+        await announceDuplicates(among: arrived.values.map { $0 }, all: merged, options: options)
     }
 
     /// A copy of something already on the shelf, said as it arrives.
@@ -752,8 +751,9 @@ final class Runner: ObservableObject {
     /// The check is incremental on purpose: the watcher fires on every settle, and
     /// rescanning the whole library each time would read every PDF again to answer a
     /// question about one new file.
-    private func announceDuplicates(among fresh: [Item], all: [Item], passwords: [String]) async {
+    private func announceDuplicates(among fresh: [Item], all: [Item], options: Options) async {
         guard !fresh.isEmpty else { return }
+        let passwords = options.passwords
         if duplicateIndex == nil {
             // Seeding reads the opening pages of every file already on the shelf, which is
             // far too much work for the main actor: every other heavy path in this file is
@@ -785,7 +785,13 @@ final class Runner: ObservableObject {
                 thumbnail: { pages[$0.key] ?? nil },
                 trashNow: { [weak self] copy in
                     guard let self else { return }
+                    // "Trash now" means now: mark the decision and carry it out in the same
+                    // step, the way `applyNow` already does for a single file everywhere
+                    // else in this class. `applyNow`'s own `.deleted` branch always trashes
+                    // for real (it calls `moveToTrash(dryRun: false)` outright), so this
+                    // reaches the Trash even though `absorbChanges` itself always previews.
                     self.markForDeletion(copy)
+                    self.applyNow(copy, as: copy.destinationName, options: options)
                 },
                 onKeepBoth: { [weak self] id in self?.duplicateIndex?.dismiss(id) }
             )
