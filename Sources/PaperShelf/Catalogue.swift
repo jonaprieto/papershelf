@@ -1542,6 +1542,10 @@ struct ResultsPane: View {
                                        passwords: passwords)
                                     .tag(entry.itemKey)
                                     .id(entry.itemKey)
+                                    // The same gesture the shelf and the list use for
+                                    // "show me this document": an entry is a claim about
+                                    // a title page, and this is the way to look at it.
+                                    .onTapGesture(count: 2) { openReader(entry.itemKey) }
                             }
                         }
                     }

@@ -64,7 +64,14 @@ struct ReviewInspector: View {
     /// different standard from the file it will end up in.
     @AppStorage("bibStandard") var bibStandard: BibStandard = .biblatex
 
+    /// Where a per-entry improvement would be sent, so the confirmation can say it. The
+    /// same key the rest of the app reads, never a copy of the string.
+    @AppStorage("aiBaseURL") var aiEndpoint = "https://api.openai.com/v1"
+
     @State var citationDraft = ""
+    /// Non-nil while the confirmation for a single entry is up. Every other billed call in
+    /// the app asks first; this one did not.
+    @State var confirmingImprove = false
     @State var citationStored = false
     @State var citationImproving = false
     @State var citationImprovedByAI = false

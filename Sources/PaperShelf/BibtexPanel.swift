@@ -55,13 +55,23 @@ extension ReviewInspector {
                     }
                     .tip("Copy the entry as it stands", key: "B")
 
-                    Button(citationStored ? "Stored" : "Store") { storeCitation() }
-                        .disabled(citationStored || citationDraft.isEmpty)
-                        .tip("Keep this entry with the document, so it survives a relaunch "
-                             + "and is used instead of one guessed from the filename")
+                    // Prominent once the model has changed it: an answer nobody kept is
+                    // an answer that is gone at the next file, and this is the step that
+                    // decides whether the work counted.
+                    Group {
+                        if needsKeeping {
+                            Button("Store") { storeCitation() }
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Button(citationStored ? "Stored" : "Store") { storeCitation() }
+                                .disabled(citationStored || citationDraft.isEmpty)
+                        }
+                    }
+                    .tip("Keep this entry with the document, so it survives a relaunch "
+                         + "and is used instead of one guessed from the filename")
 
                     Button {
-                        improve()
+                        confirmingImprove = true
                     } label: {
                         if citationImproving {
                             HStack(spacing: 5) {
@@ -78,6 +88,17 @@ extension ReviewInspector {
                          : "Needs an API key, in Settings")
 
                     Spacer()
+
+                    // The bibliography draws no page of its own, so checking an entry
+                    // against the title page it came from meant leaving the view that
+                    // asked the question. This is the way there and back.
+                    if !showsPage {
+                        Button { read() } label: {
+                            Label("Show the page", systemImage: "doc.text.image")
+                        }
+                        .buttonStyle(.link)
+                        .tip("Open this document beside the entry")
+                    }
 
                     if citationDraft != generatedCitation {
                         Button("Reset") {
@@ -106,6 +127,25 @@ extension ReviewInspector {
             }
         }
         .task(id: item.key) { await loadCitation() }
+        // Asked first, like every other billed call in the app. It was the one that spent
+        // money on a click, and the panel is where a person is going through entries one
+        // at a time, which is exactly where an accidental click is easiest.
+        .confirmationDialog("Improve this entry with AI?", isPresented: $confirmingImprove,
+                            titleVisibility: .visible) {
+            Button("Ask") { improve() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("One billed request, sending this entry and the document's opening pages "
+                 + "to \(URL(string: aiEndpoint)?.host ?? aiEndpoint). A model can be "
+                 + "confidently wrong: what comes back is yours to check, and it is not "
+                 + "kept until you press Store.")
+        }
+    }
+
+    /// True while the entry on screen is worth keeping and has not been kept: the model
+    /// changed it, or you did.
+    var needsKeeping: Bool {
+        !citationStored && !citationDraft.isEmpty && citationDraft != generatedCitation
     }
 
     private var entryFont: Font { .system(.caption, design: .monospaced) }
@@ -207,10 +247,19 @@ extension ReviewInspector {
         let origin = citationImprovedByAI ? "the model" : "you"
         let asked = item.key
         Task {
-            guard let documentID = try? await library.document(atPath: path)?.id else {
+            // A file the library has not met yet is recorded on the way, the way filing
+            // one into a project does. It used to be a dead end: the entry was written,
+            // Store said the document did not exist, and the work was gone at the next
+            // file with nothing the person could do about it from here.
+            var documentID = try? await library.document(atPath: path)?.id
+            if documentID == nil {
+                documentID = try? await library.indexDocuments(
+                    [indexInput(for: URL(fileURLWithPath: path))]).first?.id
+            }
+            guard let documentID else {
                 guard asked == item.key else { return }
-                citationNote = "This file is not in the library yet, so there is nothing to "
-                    + "attach the entry to."
+                citationNote = "Could not record this file, so there is nothing to attach "
+                    + "the entry to."
                 return
             }
             do {
