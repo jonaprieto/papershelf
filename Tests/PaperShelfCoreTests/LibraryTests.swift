@@ -38,6 +38,23 @@ final class LibraryTests: XCTestCase {
         return Int(sqlite3_column_int64(statement, 0))
     }
 
+    /// Whether a SQLite index by this name exists, read straight off the file so the
+    /// migration is what is being trusted, not `Library`'s own idea of its schema.
+    private func rawIndexExists(_ name: String, in url: URL) throws -> Bool {
+        var handle: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let handle else {
+            throw NSError(domain: "LibraryTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "could not open \(url.path) read-only"])
+        }
+        defer { sqlite3_close(handle) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?;", -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw NSError(domain: "LibraryTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "could not check for index \(name)"])
+        }
+        defer { sqlite3_finalize(statement) }
+        bindText(statement, 1, name)
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
     // MARK: - Identity and indexing
 
     func testIndexDocumentCreatesANewDocumentAndLocation() async throws {
@@ -663,6 +680,60 @@ final class LibraryTests: XCTestCase {
         let columns = try await library.columnNames(ofTable: "dismissed_duplicates")
         XCTAssertEqual(columns, ["group_id", "dismissed_at"])
     }
+
+    /// The tag and project-membership indexes have to reach a database that already
+    /// exists, not only a fresh one, or "which documents carry this tag" and "which
+    /// projects hold this document" keep scanning both tables end to end forever.
+    ///
+    /// Built at version 5 by hand, for the same reason `testAVersionTwoDatabaseGainsTheTable`
+    /// is: opening straight through `Library` would migrate the database in one step and
+    /// the test would then prove nothing.
+    func testAnOlderDatabaseGainsTheTagAndProjectIndexes() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &handle,
+                                       SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil), SQLITE_OK)
+        let older = """
+            CREATE TABLE documents (
+                id TEXT PRIMARY KEY, first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+                content_hash TEXT, byte_count INTEGER, page_count INTEGER, title TEXT,
+                author TEXT, document_info TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE TABLE tags (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE
+            );
+            CREATE TABLE document_tags (
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (document_id, tag_id)
+            );
+            CREATE TABLE projects (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE project_members (
+                project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                added_at    TEXT NOT NULL,
+                section     TEXT,
+                PRIMARY KEY (project_id, document_id)
+            );
+            PRAGMA user_version = 5;
+            """
+        XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(handle)
+
+        XCTAssertFalse(try rawIndexExists("document_tags_by_tag", in: url))
+        XCTAssertFalse(try rawIndexExists("project_members_by_document", in: url))
+
+        // Opening it must bring the missing indexes forward rather than leaving a
+        // version-5 database to be scanned end to end forever.
+        _ = try Library(url: url)
+
+        XCTAssertTrue(try rawIndexExists("document_tags_by_tag", in: url))
+        XCTAssertTrue(try rawIndexExists("project_members_by_document", in: url))
+    }
 }
 
 /// The kept-bibliography table, against a real database. A generated entry is cheap to
@@ -766,7 +837,17 @@ final class LibraryBibtexTests: XCTestCase {
             -- A real version 2 database has all of version 1's tables, and later
             -- migrations alter them. A fixture holding only the two tables this test
             -- reads is not a version 2 database, it is a fiction that migrates
-            -- differently, which is how this test caught itself.
+            -- differently, which is how this test caught itself. The tag tables are
+            -- here for that reason: version 6 indexes them, and a fixture without
+            -- them fails a migration a real database of this vintage sails through.
+            CREATE TABLE tags (
+                id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE
+            );
+            CREATE TABLE document_tags (
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (document_id, tag_id)
+            );
             CREATE TABLE projects (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL
             );

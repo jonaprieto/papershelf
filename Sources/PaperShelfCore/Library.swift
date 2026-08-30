@@ -119,7 +119,7 @@ public actor Library {
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
     fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4,
-                                                   schemaV5]
+                                                   schemaV5, schemaV6]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -268,6 +268,15 @@ public actor Library {
             page_count  INTEGER,
             updated_at  TEXT NOT NULL
         );
+        """
+
+    /// `document_tags` and `project_members` are keyed so SQLite only indexes their
+    /// leading column for free (the tag lookup and the project lookup respectively);
+    /// asking "which documents carry this tag" or "which projects hold this document"
+    /// walks the whole table without an index of its own.
+    fileprivate static let schemaV6 = """
+        CREATE INDEX IF NOT EXISTS document_tags_by_tag ON document_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS project_members_by_document ON project_members(document_id);
         """
 
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
