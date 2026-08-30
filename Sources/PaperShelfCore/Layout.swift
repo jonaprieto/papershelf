@@ -137,6 +137,14 @@ public extension SplitLayout {
         paneWidth >= viewIconsBelow
     }
 
+    /// How wide the search field should be. It was 240 points on every window, which on a
+    /// wide screen is a slot for six characters of a query beside half a metre of nothing.
+    /// A third of the pane, held between something readable and something that would start
+    /// crowding out the actions in the same bar.
+    static func searchFieldWidth(paneWidth: CGFloat) -> CGFloat {
+        min(max(paneWidth / 3, 240), 560)
+    }
+
     /// The narrowest the inspector panel is still worth drawing: a name field, a row of
     /// keyed buttons and a tab bar. Squeezed below this it does not shrink -- its contents
     /// overflow the frame they were given and paint over whatever is beside them, which is

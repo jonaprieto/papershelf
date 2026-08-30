@@ -545,11 +545,19 @@ struct ResultsPane: View {
                 Button { toggleReading() } label: {
                     Label("Reading", systemImage: reading ? "book.fill" : "book")
                 }
-                .tip("Hide everything but the page", key: "⌘⇧R")
+                .tip(reading ? "Show the shelf again" : "Hide everything but the page",
+                     key: "⌘⇧R")
                 Button { inspectorCollapsed.toggle() } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
+                    Label("Inspector", systemImage: inspectorCollapsed
+                          ? "sidebar.right" : "sidebar.trailing")
                 }
-                .tip("Info, rename, notes and the citation", key: "⌥⌘I")
+                .tip(inspectorCollapsed
+                     ? "Show info, rename, notes and the citation"
+                     : "Hide the inspector", key: "⌥⌘I")
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .tip("Naming rules, AI, integrations and shortcuts", key: "⌘,")
             }
         }
         .sheet(isPresented: $showingPalette) {
@@ -599,15 +607,22 @@ struct ResultsPane: View {
             .keyboardShortcut("p", modifiers: .command)
             .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
 
-            Button(action: apply) {
-                Label(canApply ? "Apply changes \(runner.actionable)" : "Apply changes",
-                      systemImage: "checkmark.circle")
+            // Only when there is something to carry out. A permanently visible, permanently
+            // dimmed blue button is a promise the app cannot keep, and it is the loudest
+            // thing in the window while it makes it.
+            if runner.actionable > 0 {
+                Button(action: apply) {
+                    Label("Apply changes \(runner.actionable)", systemImage: "checkmark.circle")
+                }
+                .labelStyle(.titleAndIcon)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canApply)
+                .keyboardShortcut(.return, modifiers: .command)
+                .tip(canApply
+                     ? "Carry out the reviewed plan on disk"
+                     : "Every file has to be reviewed first, against the current settings",
+                     key: "⌘Return")
             }
-            .labelStyle(.titleAndIcon)
-            .buttonStyle(.borderedProminent)
-            .disabled(!canApply)
-            .keyboardShortcut(.return, modifiers: .command)
-            .tip("Carry out the reviewed plan on disk", key: "⌘Return")
         }
 
         Menu {
@@ -643,6 +658,7 @@ struct ResultsPane: View {
         }
         .menuIndicator(.hidden)
         .disabled(runner.results.isEmpty)
+        .tip("Confirm, undo, compare copies, copy the shelf out")
     }
 
     /// Applying needs a preview that still matches the settings, every file reviewed, and
@@ -1932,6 +1948,10 @@ struct ResultsPane: View {
                     Image(systemName: option.icon)
                         .frame(width: 28, height: 20)
                         .contentShape(Rectangle())
+                        // On the label as well as the button: a toolbar's principal item
+                        // is hosted in the title area, where help on the control alone is
+                        // not always the thing the pointer is over.
+                        .help("\(option.label)  (⌘\(index + 1))")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(option == mode ? Color.accentColor : .secondary)
@@ -1957,7 +1977,7 @@ struct ResultsPane: View {
                 }
             }
         } label: {
-            Text(mode.label)
+            Text(mode.label).help("Which view of the same files  (⌘1 to ⌘4)")
         }
         .menuStyle(.borderlessButton)
         .accessibilityLabel("View: \(mode.label)")
@@ -1980,6 +2000,16 @@ struct ResultsPane: View {
                     }
                 }
             if runner.searching { ProgressView().controlSize(.small) }
+            // The tooltip said `/` focuses this, which is a fact you find once and then
+            // have to remember. A key is worth one cap of space in the field it belongs to.
+            if query.isEmpty && !searchFocused {
+                Text("/")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .fittedBackground(.quaternary, in: RoundedRectangle(cornerRadius: 3))
+            }
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -1995,7 +2025,7 @@ struct ResultsPane: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-        .frame(width: 240)
+        .frame(width: SplitLayout.searchFieldWidth(paneWidth: viewPaneWidth))
         .tip("Search names, or narrow by field: title, author, abstract, text, folder, "
              + "tag, year, pages, size", key: "/")
     }
@@ -2009,7 +2039,9 @@ struct ResultsPane: View {
                 Button(fieldMenuLabel(field)) { appendField(field) }
             }
         } label: {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .help("Narrow the search by a field")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
