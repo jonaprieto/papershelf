@@ -87,19 +87,34 @@ document — ⏎, a double-click, or **Read** in the Info tab — gives the page
 its outline beside it. A page sitting next to every view was half a window spent on a file
 nobody had asked to open.
 
-The inspector has four tabs — Info, Rename, Notes, Cite. The notes used to be a column of
-their own, 240 fixed points that the window's minimum width had to reserve for whether or
-not anyone had opened them; they are a tab now.
+The page is drawn as a sheet of paper: white, centred on a grey ground, with a shadow and
+a margin. A capsule floats over it carrying the page you are on, the way to the next one,
+and how big the page is drawn — fit width, fit page or actual size. The window is titled
+with what the document calls itself and by whom, read off the file rather than from its
+name.
 
-Nothing widens the window. Under 1100 points the contents rail becomes a popover under the
-button it already had; under 1000 the inspector takes what is left above the page's own
+The rail beside the page shows either the outline or the pages themselves, so a scan that
+carries no table of contents still has one. It follows the page: the chapter you are in is
+marked and brought into view as you scroll, and so are the notes.
+
+The inspector has four tabs — Info, Rename, Notes, Cite — and nothing else in its header.
+The notes used to be a column of their own, 240 fixed points that the window's minimum
+width had to reserve for whether or not anyone had opened them; they are a tab now. A mark
+reads as what it means, what the page says and what you thought about it: a colour, its
+meaning, the page, the passage set in serif on its own tint, and your note under it. They
+are kept in reading order, so a new highlight is filed where it sits on the page rather
+than at the end of the list.
+
+Nothing widens the window. Under 1100 points the contents rail becomes a popover under its
+toolbar button; under 1000 the inspector takes what is left above the page's own
 floor, and where there is no room for both, the page folds rather than the window growing.
 Under 900 the sidebar is an overlay. The floor is 640 × 480, down from 1011 × 560 — and
 1252 wide the moment the notes were open.
 
 The sidebar is one sectioned list and nothing else: four library lists (All Documents,
 Reading Now, Recently Added, Unfiled), the sources with their folder tree, the reading
-projects, and the tags. Everything you set once lives in a settings window instead of
+projects, and the tags, each with a colour of its own. Its footer carries how many sources
+there are, the way to add one, and a filter over the folder tree. Everything you set once lives in a settings window instead of
 sharing that column: General, Files and passwords, Name rules, Highlighters, BibTeX,
 Keyboard, AI and spend, Integrations, with a search over the lot. That is the rule the two
 obey — a setting reachable from two places is a setting that can disagree with itself.
@@ -108,7 +123,8 @@ The filter bar under the toolbar is one row: where you are, the query as chips y
 take back one at a time, how much of the collection is shown, and the order. Anything
 transient is in the status bar and only there: what is being scanned, how far through a
 plan you are, how many files no password opened, what the session has cost, what the
-library holds, whether the watcher is on. Clicking it opens the activity log. Nothing about
+library holds, whether the watcher is on. Under a document it says that document instead:
+where it is, how big, how many pages, whether it opened, and what is marked on it. Clicking it opens the activity log. Nothing about
 a running job changes the shape of the toolbar any more.
 
 ## Everything from the keyboard
@@ -520,7 +536,8 @@ collision suffixes (`-2`, `-3`) stay deterministic.
 Sources/PaperShelfCore/Hammer.swift        naming, file operations, scanning
 Sources/PaperShelf/ContentView.swift       window, library sidebar and source lifecycle
 Sources/PaperShelf/Catalogue.swift         shelf, list, reader and keyboard commands
-Sources/PaperShelf/Review.swift             PDF preview, notes, highlights and inspector
+Sources/PaperShelf/Review.swift            PDF preview and the inspector's four tabs
+Sources/PaperShelf/Reading.swift           the contents rail, the page bar and the notes
 Tools/make-icon.sh                        regenerates the icon
 ```
 
