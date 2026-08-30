@@ -339,7 +339,8 @@ struct ContentView: View {
                 ProjectWorkspace(
                     project: openProject,
                     env: liveProjectsEnvironment(library: library, client: aiClient,
-                                                 endpoint: aiBaseURL, model: aiModel),
+                                                 endpoint: aiBaseURL, model: aiModel,
+                                                 passwords: { passwords }),
                     membershipChanged: { Task { await reloadProjects() } },
                     close: {
                         self.openProject = nil

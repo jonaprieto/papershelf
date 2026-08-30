@@ -98,6 +98,13 @@ struct ProjectsEnvironment {
     var availableDocuments: (_ id: Int64) async throws -> [ProjectMember]
     /// The section names already in use in this project, so adding or moving a document
     /// offers them rather than making someone retype one they already invented.
+    /// Reads the text of documents that have none yet, and answers how many gained some.
+    ///
+    /// A project can be filled with PDFs nobody has read, and until they are read there is
+    /// nothing to ask across. The only way to read them was to index the whole shelf from
+    /// the catalogue, which for one dropped paper is a walk over every file the app knows
+    /// about. This reads exactly the documents named.
+    var readDocuments: (_ contentHashes: [String]) async throws -> Int = { _ in 0 }
     var sections: (_ id: Int64) async throws -> [String]
     /// Files a document under a section, adding it to the project first if it is not a
     /// member yet. `nil` means filed under nothing — a real, common state, not "not added"
@@ -296,6 +303,9 @@ final class ProjectDetailModel: ObservableObject {
     @Published private(set) var available: [ProjectMember] = []
     @Published private(set) var knownSections: [String] = []
     @Published private(set) var isLoading = false
+    /// True while the members with no text are being read, so the button that started it
+    /// says so rather than looking like it did nothing.
+    @Published private(set) var isReading = false
     @Published var error: String?
 
     private let env: ProjectsEnvironment
@@ -327,6 +337,21 @@ final class ProjectDetailModel: ObservableObject {
             let ids = documents.map(\.document.contentHash)
             let found = try await env.tags(ids)
             tagsByDocument = ids.reduce(into: [:]) { $0[$1] = found[$1] ?? [] }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Reads the text of every member that has none, so a project of freshly dropped PDFs
+    /// can answer a question without indexing the whole shelf from the catalogue.
+    func readUnindexed() async {
+        let waiting = members.filter { $0.document.markdown.isEmpty }.map(\.document.contentHash)
+        guard !waiting.isEmpty else { return }
+        isReading = true
+        defer { isReading = false }
+        do {
+            guard try await env.readDocuments(waiting) > 0 else { return }
+            await load()
         } catch {
             self.error = error.localizedDescription
         }

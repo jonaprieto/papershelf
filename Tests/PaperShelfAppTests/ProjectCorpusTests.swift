@@ -331,4 +331,68 @@ final class ProjectCorpusTests: XCTestCase {
 
         XCTAssertFalse(asked, "there is nothing to ask across")
     }
+
+    /// The whole loop a person actually walks: drop a folder's worth of PDFs on a
+    /// project, read them there, then ask. Before this the middle step existed only in
+    /// the catalogue, over the whole shelf, so a project of dropped papers had nothing to
+    /// ask across and nothing on the screen to do about it.
+    func testDroppedPDFsCanBeReadInsideTheProjectAndThenAsked() async throws {
+        let library = try library()
+        var env = await environment(library)
+        let files = try corpus(24)
+        try await fill(library, files: files, withText: 0)
+        let project = try await env.createProject("crdts")
+        _ = try await addToProject(files.map(\.path), project: project.id, library: library)
+
+        let model = await MainActor.run {
+            ProjectDetailModel(project: ProjectSummary(id: project.id, name: "crdts",
+                                                       documentCount: 24),
+                               env: env)
+        }
+        await model.load()
+        var members = await MainActor.run { model.members }
+        XCTAssertEqual(members.count, 24)
+        XCTAssertEqual(askReadiness(of: members.map(\.document)), .noText)
+
+        await model.readUnindexed()
+
+        members = await MainActor.run { model.members }
+        XCTAssertEqual(members.count, 24, "reading is not adding or removing")
+        XCTAssertTrue(members.allSatisfy { $0.document.markdown.contains("Conflict-free") },
+                      "the text read is the text in the file")
+        XCTAssertEqual(askReadiness(of: members.map(\.document)), .ready)
+
+        var asked: String?
+        env.ask = { _, user in
+            asked = user
+            return "They do (\(members[0].document.title), p. 1)."
+        }
+        let conversation = await MainActor.run { ProjectConversationModel(project: project, env: env) }
+        await MainActor.run { conversation.pendingQuestion = "Do these converge?" }
+        await conversation.prepareToAsk(documents: members.map(\.document))
+        await conversation.confirmAndAsk()
+
+        XCTAssertNotNil(asked, "a project that has been read can be asked")
+        XCTAssertTrue(try XCTUnwrap(asked).contains("Conflict-free"))
+    }
+
+    /// Reading is over this project's documents, not over the whole library.
+    func testReadingAProjectLeavesTheRestOfTheLibraryAlone() async throws {
+        let library = try library()
+        let env = await environment(library)
+        let files = try corpus(10)
+        let ids = try await fill(library, files: files, withText: 0)
+        let project = try await env.createProject("crdts")
+        _ = try await addToProject(files.prefix(4).map(\.path), project: project.id, library: library)
+
+        let model = await MainActor.run {
+            ProjectDetailModel(project: ProjectSummary(id: project.id, name: "crdts", documentCount: 4),
+                               env: env)
+        }
+        await model.load()
+        await model.readUnindexed()
+
+        let stored = try await library.extractedText(forDocuments: ids)
+        XCTAssertEqual(stored.count, 4, "the six documents outside the project were left unread")
+    }
 }

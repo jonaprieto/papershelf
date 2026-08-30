@@ -9,7 +9,8 @@ import PaperShelfCore
 /// fills it in for real.
 @MainActor
 func liveProjectsEnvironment(library: Library, client: AIClient,
-                             endpoint: String, model: String = "") -> ProjectsEnvironment {
+                             endpoint: String, model: String = "",
+                             passwords: @escaping () -> [String] = { [] }) -> ProjectsEnvironment {
     // The library's own document id, not a hash of the bytes: this app rewrites PDFs, so
     // the bytes change and the id does not. The field is named contentHash for historical
     // reasons; what travels through it is whatever identity the store uses.
@@ -55,6 +56,20 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             return try await library.documents()
                 .filter { !already.contains($0.id) }
                 .map { member($0, section: nil) }
+        },
+        readDocuments: { documentIDs in
+            // The paths come from the library rather than from the view: a document is
+            // wherever it was last seen, which after a run is not where it was scanned.
+            var work: [(id: String, url: URL)] = []
+            for id in documentIDs {
+                guard let path = try await library.locations(forDocument: id).last?.path else { continue }
+                work.append((id, URL(fileURLWithPath: path)))
+            }
+            guard !work.isEmpty else { return 0 }
+            let read = await readTextForProject(work, passwords: passwords())
+            guard !read.isEmpty else { return 0 }
+            try await library.setExtractedText(read)
+            return read.count
         },
         sections: { id in try await library.sections(ofProject: id) },
         setSection: { id, documentID, section in
@@ -104,4 +119,19 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             }
         }
     )
+}
+
+/// Reads several documents' text off the main thread, the same way the shelf's own
+/// indexer does. A file that cannot be opened at all is left out rather than stored as
+/// empty, since empty means "opened, and has no text layer", which is a permanent answer.
+func readTextForProject(_ work: [(id: String, url: URL)],
+                        passwords: [String]) async -> [(documentID: String, markdown: String)] {
+    await Task.detached(priority: .userInitiated) {
+        var stored: [(documentID: String, markdown: String)] = []
+        for job in work {
+            guard let text = documentText(of: job.url, passwords: passwords) else { continue }
+            stored.append((documentID: job.id, markdown: text))
+        }
+        return stored
+    }.value
 }

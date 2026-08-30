@@ -109,14 +109,35 @@ struct ProjectWorkspace: View {
                     }
                 }
                 if !notIndexed.isEmpty {
-                    Section("Not yet indexed · \(notIndexed.count)") {
+                    Section {
                         ForEach(notIndexed) { member in
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(member.document.title).lineLimit(1)
-                                Text("no text layer — convert it first, or unlock it")
+                                Text("nothing to quote from yet")
                                     .font(.caption)
                                     .foregroundStyle(Ink.amber)
                             }
+                        }
+                    } header: {
+                        // Reading them was only offered in the catalogue, over the whole
+                        // shelf: for one paper dropped here that is a walk across every
+                        // file the app knows about, which is why a project could sit with
+                        // nothing to ask across and no way forward from this screen.
+                        HStack {
+                            Text("Not read yet · \(notIndexed.count)")
+                            Spacer(minLength: 6)
+                            Button {
+                                Task { await model.readUnindexed() }
+                            } label: {
+                                if model.isReading {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("Read \(notIndexed.count == 1 ? "it" : "them")")
+                                }
+                            }
+                            .buttonStyle(.link)
+                            .disabled(model.isReading)
+                            .tip("Read the text of these documents so questions can quote them")
                         }
                     }
                 }
