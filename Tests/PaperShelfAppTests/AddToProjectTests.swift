@@ -64,4 +64,63 @@ final class AddToProjectTests: XCTestCase {
         let members = try await library.members(ofProject: project.id)
         XCTAssertTrue(members.isEmpty)
     }
+
+    /// A folder dropped on a project means the papers in it. It used to file the folder
+    /// itself, which is not a document: nothing could read it, nothing could quote it, and
+    /// the drop reported success.
+    func testAFolderMeansThePDFsUnderIt() async throws {
+        let folder = try scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let papers = folder.appendingPathComponent("papers")
+        let deeper = papers.appendingPathComponent("2020")
+        try FileManager.default.createDirectory(at: deeper, withIntermediateDirectories: true)
+        try Data("pdf".utf8).write(to: papers.appendingPathComponent("a.pdf"))
+        try Data("pdf".utf8).write(to: deeper.appendingPathComponent("b.pdf"))
+        try Data("no".utf8).write(to: papers.appendingPathComponent("notes.txt"))
+
+        let library = try Library(url: folder.appendingPathComponent("library.sqlite"))
+        let project = try await library.createProject(name: "crdts")
+
+        let added = try await addToProject([papers.path], project: project.id, library: library)
+
+        XCTAssertEqual(added, 2, "both PDFs, however deep, and not the text file")
+        let members = try await library.members(ofProject: project.id)
+        XCTAssertEqual(members.count, 2)
+    }
+
+    /// Several files dragged at once are several files filed, in the order they came.
+    func testASetOfFilesIsFiledInTheOrderItArrived() async throws {
+        let folder = try scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let names = ["one.pdf", "two.pdf", "three.pdf"]
+        for name in names { try Data("pdf".utf8).write(to: folder.appendingPathComponent(name)) }
+        let library = try Library(url: folder.appendingPathComponent("library.sqlite"))
+        let project = try await library.createProject(name: "crdts")
+
+        let paths = names.map { folder.appendingPathComponent($0).path }
+        let added = try await addToProject(paths, project: project.id, library: library)
+
+        XCTAssertEqual(added, 3)
+        let members = try await library.members(ofProject: project.id)
+        XCTAssertEqual(members.count, 3)
+    }
+
+    /// What a drop is worth, before anything is filed: folders walked down, PDFs kept,
+    /// everything else left, and nothing counted twice.
+    func testWhatADropMeans() throws {
+        let folder = try scratch()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let papers = folder.appendingPathComponent("papers")
+        try FileManager.default.createDirectory(at: papers, withIntermediateDirectories: true)
+        let inside = papers.appendingPathComponent("a.pdf")
+        try Data("pdf".utf8).write(to: inside)
+        try Data("no".utf8).write(to: papers.appendingPathComponent("cover.png"))
+
+        let dropped = pdfsUnder([papers.path, inside.path])
+
+        XCTAssertEqual(dropped.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
+                       [inside.resolvingSymlinksInPath().path],
+                       "the folder and the file in it are one paper, whichever way it was reached")
+        XCTAssertTrue(pdfsUnder([papers.appendingPathComponent("cover.png").path]).isEmpty)
+    }
 }

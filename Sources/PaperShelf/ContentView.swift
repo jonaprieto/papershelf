@@ -1536,15 +1536,11 @@ struct ExplorerOutline: View {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }
 
-    /// A document row is a document: it can be dragged onto a project. Folders are not,
-    /// since a project is made of documents, not of places they happen to sit.
-    @ViewBuilder
+    /// Every row can be dragged onto a project. A folder means the documents in it, which
+    /// is what a folder of papers is; the drop works that out (see `pdfsUnder`), so a
+    /// chapter's worth of reading is one drag rather than forty.
     private func row(_ node: ExplorerNode, depth: Int) -> some View {
-        if node.itemKey == nil {
-            rowLabel(node, depth: depth)
-        } else {
-            rowLabel(node, depth: depth).draggable(node.url)
-        }
+        rowLabel(node, depth: depth).draggable(node.url)
     }
 
     private func rowLabel(_ node: ExplorerNode, depth: Int) -> some View {

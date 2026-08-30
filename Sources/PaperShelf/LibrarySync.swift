@@ -149,7 +149,7 @@ extension Runner {
 func addToProject(_ paths: [String], project id: Int64, library: Library) async throws -> Int {
     var wanted: [String] = []
     var missing: [Library.IndexInput] = []
-    for path in paths {
+    for path in pdfsUnder(paths) {
         let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var known = (try? await library.document(atPath: path)) ?? nil
         if known == nil, resolved != path {
@@ -165,6 +165,47 @@ func addToProject(_ paths: [String], project id: Int64, library: Library) async 
     guard !wanted.isEmpty else { return 0 }
     if !missing.isEmpty { _ = try await library.indexDocuments(missing) }
     return try await library.addMembers(paths: wanted, toProject: id)
+}
+
+/// The PDFs a drop actually means.
+///
+/// A folder dropped on a project means the documents in it: dropping one used to file the
+/// folder itself, which is not a document and cannot be read or quoted, and then report
+/// success. Anything that is not a PDF is left out for the same reason. Folders are
+/// walked all the way down, since that is what a folder of papers looks like, and the
+/// order is kept so a drop of several files files them in the order they were dragged.
+func pdfsUnder(_ paths: [String]) -> [String] {
+    var found: [String] = []
+    var seen: Set<String> = []
+    func take(_ path: String) {
+        // Compared resolved, kept as it came: a folder walked by the enumerator gives
+        // /private/var while the file dragged from the same place gives /var, and a paper
+        // reached both ways is one paper, not two.
+        guard seen.insert(URL(fileURLWithPath: path).resolvingSymlinksInPath().path).inserted
+        else { return }
+        found.append(path)
+    }
+    for path in paths {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isFolder) else {
+            // A path with nothing behind it is left to the caller to skip: it may still be
+            // a document the library knows under a name that has since moved.
+            take(path)
+            continue
+        }
+        guard isFolder.boolValue else {
+            if path.lowercased().hasSuffix(".pdf") { take(path) }
+            continue
+        }
+        let inside = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: path), includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        while let entry = inside?.nextObject() as? URL {
+            guard entry.pathExtension.lowercased() == "pdf" else { continue }
+            take(entry.path)
+        }
+    }
+    return found
 }
 
 /// Keeps this Markdown as what the library knows the document says, so a search can find

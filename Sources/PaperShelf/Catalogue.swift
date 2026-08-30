@@ -1994,7 +1994,10 @@ struct ResultsPane: View {
                 .id(key)
                 .contextMenu { fileMenu(item) }
                 // A real file drag: Finder and anything else that takes one gets a copy.
-                .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
+                // `itemProvider` rather than `onDrag`, because a List drags every selected
+                // row when its rows provide one, and dragging six papers onto a project
+                // should file six papers, not the one under the pointer.
+                .itemProvider { NSItemProvider(contentsOf: item.currentURL) }
         } else {
             FolderRow(node: row.node, depth: row.depth,
                       open: expanded.contains(row.node.id),
