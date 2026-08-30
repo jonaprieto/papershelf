@@ -97,6 +97,11 @@ final class Covers: ObservableObject {
     private let cache = NSCache<NSString, NSImage>()
     /// Cards awaiting a render, by key, so several asking for the same file share one.
     private var waiting: [String: [CheckedContinuation<NSImage?, Never>]] = [:]
+    /// Files no cover could be made from: a PDF this build cannot open, or a disk that
+    /// stops serving its own bytes. Remembered because a shelf of fourteen thousand of
+    /// them would otherwise re-render every one of them on every scroll, four at a time,
+    /// against the disk that is already failing. Cleared with the cache.
+    private var unrenderable: Set<String> = []
     /// Bumped only when the whole cache is emptied. A single thumbnail landing used to
     /// bump a counter every card read, so one render redrew the entire visible grid;
     /// now each card awaits its own cover and redraws alone.
@@ -124,9 +129,14 @@ final class Covers: ObservableObject {
     /// out of the grid simply stops awaiting. The queue is still four wide and the cache
     /// still holds four hundred, both of which were measured; what changed is who gets
     /// told when a render lands.
+    /// Whether this file has already been tried and could not be drawn, so a card can say
+    /// that rather than showing the placeholder a card still waiting shows.
+    func couldNotRender(_ item: Item) -> Bool { unrenderable.contains(item.key) }
+
     func cover(for item: Item, passwords: [String], height: CGFloat) async -> NSImage? {
         if let hit = cache.object(forKey: item.key as NSString) { return hit }
         let key = item.key
+        if unrenderable.contains(key) { return nil }
 
         if waiting[key] != nil {
             return await withCheckedContinuation { continuation in
@@ -143,6 +153,7 @@ final class Covers: ObservableObject {
         }
 
         if let image { cache.setObject(image, forKey: key as NSString) }
+        else { unrenderable.insert(key) }
         for pending in waiting.removeValue(forKey: key) ?? [] {
             pending.resume(returning: image)
         }
@@ -154,6 +165,7 @@ final class Covers: ObservableObject {
     /// continuation resumed twice traps.
     func forget() {
         cache.removeAllObjects()
+        unrenderable.removeAll()
         generation &+= 1
     }
 

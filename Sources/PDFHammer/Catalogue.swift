@@ -2379,6 +2379,9 @@ struct CoverCard: View {
     /// This card's own cover. Held here rather than read out of a shared counter, so a
     /// render landing anywhere else on the shelf does not redraw this card.
     @State private var cover: NSImage?
+    /// Set once a render has been tried and produced nothing, so the card can say the file
+    /// could not be read instead of showing the placeholder forever.
+    @State private var unreadable = false
 
     /// How tall to rasterise, in pixels: the size a card actually draws at, doubled for a
     /// retina display. It used to be a flat 320 whatever the card measured, which on a
@@ -2417,6 +2420,15 @@ struct CoverCard: View {
                         .aspectRatio(contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 5))
                         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                } else if unreadable, item.status != .locked {
+                    // A cover that will not come is not a cover still coming. Same amber
+                    // the sidebar uses for a source it cannot read, and the same cause:
+                    // usually a disk that has stopped serving its own bytes.
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Ink.amber)
+                        .help("This file could not be read. The disk may be failing, or "
+                              + "the PDF may be damaged.")
                 } else {
                     Image(systemName: item.status == .locked ? "lock.fill" : "book.closed")
                         .font(.system(size: 26))
@@ -2430,10 +2442,13 @@ struct CoverCard: View {
             .aspectRatio(1 / Metric.coverAspect, contentMode: .fit)
             .overlay(alignment: .topTrailing) { badges }
             .task(id: "\(item.key)#\(covers.generation)") {
-                if let hit = covers.cached(item) { cover = hit; return }
+                if let hit = covers.cached(item) { cover = hit; unreadable = false; return }
                 cover = nil
+                unreadable = covers.couldNotRender(item)
+                guard !unreadable else { return }
                 cover = await covers.cover(for: item, passwords: passwords,
                                            height: CoverCard.rasterHeight)
+                unreadable = cover == nil
             }
 
             // A book says its own name in its own voice, with the filename underneath

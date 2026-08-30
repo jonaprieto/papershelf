@@ -1145,6 +1145,9 @@ struct ContentView: View {
             }
             sourceAvailability = current
             if remounted, watchSources {
+                // Covers that failed against a disconnected volume are not failures of the
+                // files; the ones on the drive that just came back deserve another try.
+                covers.forget()
                 startWatching()
                 if autoPreview { mode == .catalogue ? libraryPreview() : preview() }
             }
