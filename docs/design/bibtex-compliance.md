@@ -8,7 +8,7 @@ Read Bibtex.swift (347 lines) completely: it renders BibTeX text from a fixed Bi
 
 Scope decision first: bibtex-tidy is a normalize-an-existing-.bib tool (it parses arbitrary input, so it needs comment handling, duplicate-field dedup, entry-set duplicate detection/merging, and a modify/output/backup file-I/O surface). Bibtex.swift is a render-from-BibEntry tool that only ever emits entries it built itself — it never parses an existing .bib. So the honest "comparably complete" target is bibtex-tidy's *value-formatting and field-selection* surface (curly/numeric/months/align/wrap/sortFields/dropAllCaps/stripEnclosingBraces/enclosingBraces/removeBraces/escape/encodeUrls/maxAuthors/omit), not its *document-hygiene* surface (stripComments/tidyComments/removeEmptyFields/removeDupeFields/duplicates/merge/backup/v2/modify/output), which has no object to act on here. I'm proposing new types, not editing anything (per instructions).
 
-New file: Sources/PDFHammerCore/BibCompliance.swift
+New file: Sources/PaperShelfCore/BibCompliance.swift
 
 ```swift
 import Foundation
@@ -238,43 +238,43 @@ public enum CitationKeyStyle: String, Sendable, CaseIterable, Identifiable, Coda
     public var id: String { rawValue }
 }
 // citationKey(author:year:title:style:) would switch on this instead of always
-// building pdf-hammer's own colon-joined shape.
+// building papershelf's own colon-joined shape.
 ```
 
 ## Verified facts
 
 - BibType has exactly 6 cases: book, article, misc, report, inbook, online — three entry types the task asked about (inproceedings, incollection, thesis) have no case at all.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:5-6
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:5-6
 
 - BibType.report writes @techreport (not @report) — this is the biblatex-compliant choice, since biblatex's techreport alias makes the `type` field optional (defaults to a localised 'technical report'), whereas plain @report requires `type` explicitly.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:11; corroborated by biblatex.pdf p.13 'techreport ... type field is optional and defaults to the localised term technical report'
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:11; corroborated by biblatex.pdf p.13 'techreport ... type field is optional and defaults to the localised term technical report'
 
 - BibType.expected deliberately narrows required fields to a subset of {title, author, year} per type, and by its own comment never asks for publisher/journal/institution because 'nothing here can read those off a PDF'.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:24-35
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:24-35
 
 - BibEntry is a fixed 7-field struct (itemKey, key, title, author?, year?, file, type) with no generic field dictionary — it structurally cannot hold doi, url, publisher, journal, booktitle, institution, editor, etc.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:40-48
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:40-48
 
 - BibEntry.missing only ever inspects title/author/year, regardless of entry type, so it can never report a missing journal, institution, booktitle, or url even for types where the real standard requires one.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:53-59
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:53-59
 
 - bibtexEscape escapes only BibTeX/LaTeX syntax characters (\ { } $ & % # _ ~ ^) using always-available core-LaTeX macros; it performs no brace-protection of capitalized words/acronyms inside titles, and does not transliterate accented Unicode to LaTeX escapes (UTF-8 passes through unchanged).
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:66-79
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:66-79
 
 - citationKey() builds keys as lowercase, diacritic-folded 'surname:year:firstword', joined with colons; duplicate suffixing in bibEntries() uses a single letter a-z and silently reuses 'z' beyond 26 collisions in the same author+year (min(count-1,25)).
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:98-108,126
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:98-108,126
 
 - BookGuess.author is a single free-form String and the model prompt explicitly instructs 'Use the surname only for the author' — the app never captures First/Last structure, multiple authors, or an 'and'-separated list, so BibTeX's name-format rules (von/Jr, 'Last, First') are structurally inapplicable to current data.
-  EVIDENCE: Sources/PDFHammerCore/BookGuess.swift:7,23-24
+  EVIDENCE: Sources/PaperShelfCore/BookGuess.swift:7,23-24
 
 - BibStyle covers lineWidth, indent, align, delimiter(braces|quotes), trailingComma, blankLines, sortFields, dropAllCaps, and omit(Set<String>) — it has no numeric-value handling, no month-abbreviation conversion, no per-field brace-protection (enclosingBraces), no URL-encoding, no author-list truncation, and no on/off escape toggle (escaping is always applied).
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:161-207
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:161-207
 
 - The only field filter the UI exposes today is a single 'Omit the file field' toggle backed by BibStyle.omit; there is no filter for title/author/year or for any field the app doesn't yet emit.
-  EVIDENCE: Sources/PDFHammer/App.swift:1734,2129,2140
+  EVIDENCE: Sources/PaperShelf/App.swift:1734,2129,2140
 
 - BibType/BibStyle/BibOrder are persisted as ~11 separate flat @AppStorage scalars, not as one serialisable configuration value.
-  EVIDENCE: Sources/PDFHammer/App.swift:1059-1065,2117-2129
+  EVIDENCE: Sources/PaperShelf/App.swift:1059-1065,2117-2129
 
 - Classic BibTeX (Patashnik, 'BibTeXing', 1988) required/optional fields, verbatim: article — 'Required fields: author, title, journal, year. Optional fields: volume, number, pages, month, note.'; book — 'Required fields: author or editor, title, publisher, year. Optional fields: volume or number, series, address, edition, month, note.'; inbook — 'Required fields: author or editor, title, chapter and/or pages, publisher, year. Optional fields: volume or number, series, type, address, edition, month, note.'; incollection — 'Required fields: author, title, booktitle, publisher, year. Optional fields: editor, volume or number, series, type, chapter, pages, address, edition, month, note.'; inproceedings — 'Required fields: author, title, booktitle, year. Optional fields: editor, volume or number, series, pages, address, month, organization, publisher, note.'; techreport — 'Required fields: author, title, institution, year. Optional fields: type, number, address, month, note.'; phdthesis/mastersthesis — 'Required fields: author, title, school, year. Optional fields: type, address, month, note.'; misc — 'Required fields: none. Optional fields: author, title, howpublished, month, year, note.' There is no @online type in classic BibTeX.
   EVIDENCE: https://bibtexml.sourceforge.net/btxdoc.pdf (Oren Patashnik, BibTeXing, §3.1, pp.7-8) — fetched and read directly, saved locally
@@ -309,13 +309,13 @@ public enum CitationKeyStyle: String, Sendable, CaseIterable, Identifiable, Coda
 - Capitalization protection rule (TeX FAQ, citing standard BibTeX practice): 'Enclose the words or letters whose capitalisation BibTeX should not touch in braces', e.g. title = {The {THE} operating system}; the FAQ explicitly warns against double-bracing an entire title as a general habit, since 'your BibTeX database should be a general-purpose thing, not something tuned to the requirements of a particular... bibliography style.'
   EVIDENCE: https://texfaq.org/FAQ-capbibtex — fetched directly
 
-- biber (biblatex's processor) natively handles UTF-8: 'biber handles us-ascii, 8-bit encodings such as Latin 1, and utf-8. It features true Unicode support...' — meaning pdf-hammer's choice not to transliterate accented characters to LaTeX escapes is correct for a biber/biblatex pipeline, though it would not survive a pre-biber, ASCII-only classic BibTeX toolchain.
+- biber (biblatex's processor) natively handles UTF-8: 'biber handles us-ascii, 8-bit encodings such as Latin 1, and utf-8. It features true Unicode support...' — meaning papershelf's choice not to transliterate accented characters to LaTeX escapes is correct for a biber/biblatex pipeline, though it would not survive a pre-biber, ASCII-only classic BibTeX toolchain.
   EVIDENCE: biblatex.pdf §2.4.2 'Sorting and Encoding Issues', p.42
 
 - bibtex-tidy (current published version 1.15.1) full CLI/API option list with exact defaults, verbatim from its manpage-style README: --space (default 2, ignored if --tab set), --align (default 14, i.e. column position of '='), --wrap (off by default; 80 when enabled bare, e.g. --wrap), --curly/--numeric/--months/--blank-lines/--sort/--strip-enclosing-braces/--drop-all-caps/--unescape/--encode-urls/--remove-empty-fields/--enclosing-braces/--remove-braces/--generate-keys/--max-authors are all off unless specified; --modify defaults true (v1) and will default false in the announced v2; --remove-dupe-fields defaults true; --lowercase (field names + entry type) defaults true, disabled via --no-lowercase; --escape defaults true using a 'legacy' character list that 'may emit macros requiring external packages' unless --escape=new is passed (new mode is package-independent LaTeX only); --trailing-commas defaults false in the printed manpage text.
   EVIDENCE: https://raw.githubusercontent.com/FlamingTempura/bibtex-tidy/master/README.md, '## CLI' manpage block, lines 68-249 — fetched and read directly
 
-- bibtex-tidy has no field-inclusion allow-list — its only field filter is --omit (a blocklist), the same shape pdf-hammer's BibStyle.omit already has; there is no bibtex-tidy option that lets you pick which fields to keep by naming them positively.
+- bibtex-tidy has no field-inclusion allow-list — its only field filter is --omit (a blocklist), the same shape papershelf's BibStyle.omit already has; there is no bibtex-tidy option that lets you pick which fields to keep by naming them positively.
   EVIDENCE: README.md manpage block, '--omit' entry, line 86-90
 
 - bibtex-tidy's default field sort order (used by --sort-fields with no arguments) is: 'title, shorttitle, author, year, month, day, journal, booktitle, location, on, publisher, address, series, volume, number, pages, doi, isbn, issn, url, urldate, copyright, category, note, metadata'.

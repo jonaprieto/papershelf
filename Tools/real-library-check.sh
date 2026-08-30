@@ -13,5 +13,5 @@ trap 'rm -rf "$OUT"' EXIT
 # Swift only allows top-level code in a file called main.swift, so it is compiled under
 # that name rather than being written as one in a Tools directory full of other things.
 cp Tools/real-library-check.swift "$OUT/main.swift"
-swiftc -O Sources/PDFHammerCore/*.swift "$OUT/main.swift" -o "$OUT/check"
+swiftc -O Sources/PaperShelfCore/*.swift "$OUT/main.swift" -o "$OUT/check"
 "$OUT/check" "$1"

@@ -5,7 +5,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>PaperShelf</string>
 	<key>CFBundleExecutable</key>
-	<string>PDFHammer</string>
+	<string>PaperShelf</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>

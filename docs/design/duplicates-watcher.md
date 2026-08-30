@@ -2,11 +2,11 @@
 
 ## Summary
 
-Today's duplicate detection (Hammer.swift:838-977) is a manual, full-library, three-pass batch scan the user triggers by button or the "d" key; the watcher's absorbChanges (Runner.swift:547-614) never calls it, so nothing about duplicates is incremental or notification-driven yet. UNUserNotificationCenter needs no sandbox entitlement and works with ad-hoc signing on macOS as long as the binary lives in a real, CFBundleIdentifier-bearing .app bundle (which PDF Hammer already is) — no Apple documentation ties it to /Applications or a Developer ID — but its failure mode is silent (granted:false, no dialog, no error) and, per multiple independent sources (not Apple-official), the grant is tied to the app's code-signing identity, so ad-hoc rebuilds (a fresh CDHash every `./build.sh`) can invalidate a previously-granted permission. The design adds a lazy, cache-based DuplicateIndex for O(1)-per-arrival incremental checks, a content-derived and therefore stable DuplicateGroup.id used as the dismissal key, a small JSON-backed dismissal store mirroring Cache.swift's RunCache pattern, and a second Window scene reusing Runner/Covers (which must be hoisted from ContentView to PDFHammerApp) for the review UI — with the existing in-app Duplicates tab kept as the non-silent fallback surface for when the OS notification never fires.
+Today's duplicate detection (Hammer.swift:838-977) is a manual, full-library, three-pass batch scan the user triggers by button or the "d" key; the watcher's absorbChanges (Runner.swift:547-614) never calls it, so nothing about duplicates is incremental or notification-driven yet. UNUserNotificationCenter needs no sandbox entitlement and works with ad-hoc signing on macOS as long as the binary lives in a real, CFBundleIdentifier-bearing .app bundle (which PaperShelf already is) — no Apple documentation ties it to /Applications or a Developer ID — but its failure mode is silent (granted:false, no dialog, no error) and, per multiple independent sources (not Apple-official), the grant is tied to the app's code-signing identity, so ad-hoc rebuilds (a fresh CDHash every `./build.sh`) can invalidate a previously-granted permission. The design adds a lazy, cache-based DuplicateIndex for O(1)-per-arrival incremental checks, a content-derived and therefore stable DuplicateGroup.id used as the dismissal key, a small JSON-backed dismissal store mirroring Cache.swift's RunCache pattern, and a second Window scene reusing Runner/Covers (which must be hoisted from ContentView to PaperShelfApp) for the review UI — with the existing in-app Duplicates tab kept as the non-silent fallback surface for when the OS notification never fires.
 
 ## Design
 
-## Part A — PDFHammerCore: incremental duplicate detection
+## Part A — PaperShelfCore: incremental duplicate detection
 
 Add one new type to Hammer.swift (same file as `duplicateGroups`/`rank`/`fileDigest`/`contentKey`/`duplicateKey`, so it can reuse the file-private `rank` function and stay next to the algorithm it mirrors). No existing function is changed; `duplicateGroups(in:passwords:)` stays as the batch/full-rescan entry point used by the manual "Find duplicates" button.
 
@@ -138,23 +138,23 @@ Design consequence: never make the OS notification the only way a duplicate beco
 
 ## Part C — Review window
 
-New `Window(id: "duplicate-review", for: String.self)` scene in `PDFHammerApp` (Shell.swift), value = `DuplicateGroup.id`:
+New `Window(id: "duplicate-review", for: String.self)` scene in `PaperShelfApp` (Shell.swift), value = `DuplicateGroup.id`:
 
 ```swift
 Window("Duplicate", id: "duplicate-review") { EmptyView() }   // placeholder before the refactor below
 ```
 
-Requires hoisting `runner` and `covers` from `ContentView` (currently `@StateObject private var runner = Runner()` / `@StateObject private var covers = Covers()` at ContentView.swift:57-58) up to `PDFHammerApp`, then passing them into both scenes:
+Requires hoisting `runner` and `covers` from `ContentView` (currently `@StateObject private var runner = Runner()` / `@StateObject private var covers = Covers()` at ContentView.swift:57-58) up to `PaperShelfApp`, then passing them into both scenes:
 
 ```swift
 @main
-struct PDFHammerApp: App {
+struct PaperShelfApp: App {
     @StateObject private var chrome = Chrome()
     @StateObject private var runner = Runner()
     @StateObject private var covers = Covers()
 
     var body: some Scene {
-        Window("PDF Hammer", id: "main") {
+        Window("PaperShelf", id: "main") {
             ContentView(chrome: chrome, runner: runner, covers: covers)
         }
         WindowGroup("Duplicate", id: "duplicate-review", for: String.self) { $groupID in
@@ -237,10 +237,10 @@ Two separate concerns, both keyed on `DuplicateGroup.id` because that id is alre
 
 1. **Per-session de-duplication of the notification itself** (in memory only, on `Runner`): `private var notifiedGroupIDs: Set<String> = []`. `considerNotifying(group)` only calls `notifier.post(for: group)` when `!notifiedGroupIDs.contains(group.id)`, then inserts immediately regardless of whether the user acts — so the same still-open pair is not re-notified every time the watcher's settle timer fires for unrelated activity in the folder, but a fresh app launch will notify once more for anything still outstanding (a deliberate "gentle reminder on relaunch," not a bug).
 
-2. **Permanent dismissal** ("not a duplicate" / "leave both"), persisted to disk so it survives relaunch, mirroring `RunCache`'s pattern exactly (`/Users/jonaprieto/research/pdf-hammer/Sources/PDFHammerCore/Cache.swift`):
+2. **Permanent dismissal** ("not a duplicate" / "leave both"), persisted to disk so it survives relaunch, mirroring `RunCache`'s pattern exactly (`/Users/jonaprieto/research/papershelf/Sources/PaperShelfCore/Cache.swift`):
 
 ```swift
-// PDFHammerCore/Cache.swift, alongside RunCache
+// PaperShelfCore/Cache.swift, alongside RunCache
 public struct DismissedDuplicates: Codable, Sendable {
     public var ids: Set<String>
     public init(ids: Set<String> = []) { self.ids = ids }
@@ -249,7 +249,7 @@ public struct DismissedDuplicates: Codable, Sendable {
 public func dismissedDuplicatesURL() -> URL? {
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask).first else { return nil }
-    let folder = base.appendingPathComponent("PDF Hammer", isDirectory: true)
+    let folder = base.appendingPathComponent("PaperShelf", isDirectory: true)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder.appendingPathComponent("dismissed-duplicates.json")
 }
@@ -293,14 +293,14 @@ This directly answers part 4: a pair is "new" exactly when its content-derived i
 
 ## Verified facts
 
-- duplicateGroups runs three passes in priority order — identical bytes, same opening-page text, similar filename — and is exported from PDFHammerCore.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammerCore/Hammer.swift:913-977
+- duplicateGroups runs three passes in priority order — identical bytes, same opening-page text, similar filename — and is exported from PaperShelfCore.
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelfCore/Hammer.swift:913-977
 
 - Pass 1 groups items by cached byteCount (no I/O) and only SHA-256-hashes files inside a size collision, in parallel via DispatchQueue.concurrentPerform, re-hashing every candidate on every call (no caching).
   EVIDENCE: Hammer.swift:913-929, fileDigest at Hammer.swift:838-847
 
 - Pass 2 (sameText) computes contentKey for every item not already claimed as identical: extracts text from the first 3 pages via openingText, requires >=240 letters/digits, hashes it, and prefixes with pageCount so two different works with matching boilerplate cannot collide.
-  EVIDENCE: Hammer.swift:889-911, 946-964; openingText declared at /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammerCore/BookGuess.swift:85
+  EVIDENCE: Hammer.swift:889-911, 946-964; openingText declared at /Users/jonaprieto/research/papershelf/Sources/PaperShelfCore/BookGuess.swift:85
 
 - Pass 3 (likely) strips dates and one trailing copy-marker/number from the filename and keeps only letters+digits, on whatever is still unclaimed after passes 1-2.
   EVIDENCE: Hammer.swift:818-836, 966-974
@@ -309,13 +309,13 @@ This directly answers part 4: a pair is "new" exactly when its content-derived i
   EVIDENCE: Hammer.swift:941, 961, 973 (id construction); Item.id comment at Hammer.swift:544-548 ("`id` is deliberately absent... `key` is the identity that survives")
 
 - findDuplicates() is only invoked from three UI call sites (a keyboard shortcut and two buttons) — never from the watcher's absorbChanges path — and it always re-scans the entire current `results` snapshot from scratch.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammer/Catalogue.swift:251,529,564,943; Runner.swift:420-437
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelf/Catalogue.swift:251,529,564,943; Runner.swift:420-437
 
 - The watcher (FolderWatcher, FSEvents-backed) only triggers absorbChanges, which merges new/vanished files into `results` and re-derives per-item state; it never touches `duplicates`.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammer/Watcher.swift:9-74; ContentView.swift:925-940; Runner.swift:547-614 (no reference to duplicates, duplicateGroups, or findDuplicates in this function)
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelf/Watcher.swift:9-74; ContentView.swift:925-940; Runner.swift:547-614 (no reference to duplicates, duplicateGroups, or findDuplicates in this function)
 
 - The app has no entitlements file and is code-signed ad-hoc (`codesign --force --sign -`), with bundle identifier com.jonaprieto.pdfhammer and installation to /Applications only happening if `--install` is passed to build.sh.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/build.sh:1-27 (`codesign --force --sign - "$APP"`); Resources/Info.plist CFBundleIdentifier com.jonaprieto.pdfhammer; `find ... -iname *.entitlements` returned nothing
+  EVIDENCE: /Users/jonaprieto/research/papershelf/build.sh:1-27 (`codesign --force --sign - "$APP"`); Resources/Info.plist CFBundleIdentifier com.jonaprieto.pdfhammer; `find ... -iname *.entitlements` returned nothing
 
 - UNUserNotificationCenter.requestAuthorization signature and behavior: prompts only on first call, subsequent calls resolve from the stored answer, and it must be called before scheduling any local notification.
   EVIDENCE: https://developer.apple.com/tutorials/data/documentation/usernotifications/unusernotificationcenter/requestauthorization(options:completionhandler:).json — quote: "The first call prompts the user; subsequent calls do not. The system stores the user's response."
@@ -342,19 +342,19 @@ This directly answers part 4: a pair is "new" exactly when its content-derived i
   EVIDENCE: Absence in fetched pages: https://developer.apple.com/tutorials/data/documentation/usernotifications/unusernotificationcenter.json and the requestAuthorization/add(_:) doc pages make no mention of app location or Developer ID
 
 - Runner and Covers are both owned as @StateObject by ContentView (a single Window scene), not by the App struct, so no other Window scene can currently reach the live duplicate/decision state.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammer/ContentView.swift:57-58; PDFHammerApp only declares Window("PDF Hammer", id: "main") and Settings — Shell.swift:28-62
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelf/ContentView.swift:57-58; PaperShelfApp only declares Window("PaperShelf", id: "main") and Settings — Shell.swift:28-62
 
 - SwiftUI's openWindow(value:) requires the value type to conform to Decodable & Encodable & Hashable and is available on macOS 13+, compatible with this project's macOS 14 minimum.
   EVIDENCE: https://developer.apple.com/tutorials/data/documentation/swiftui/openwindowaction/callasfunction(value:).json
 
 - The project already has a precedent for a small Codable, disk-persisted store in Application Support (RunCache), which the proposed dismissal store should mirror.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammerCore/Cache.swift:1-53
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelfCore/Cache.swift:1-53
 
 - The existing Duplicates tab (ViewMode.duplicates) already renders groups with a keeper star, filenames, relative paths, and byte sizes, and offers per-group "Trash the other N" and per-item "keep" — but shows no dates, no page counts, no thumbnails, and lives inside the main window, not a separate review window.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammer/Catalogue.swift:1381-1470 (duplicateLabel/Icon/Colour/Explanation, DuplicateRow); Runner.swift:54-56 (duplicates/duplicateKind state)
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelf/Catalogue.swift:1381-1470 (duplicateLabel/Icon/Colour/Explanation, DuplicateRow); Runner.swift:54-56 (duplicates/duplicateKind state)
 
 - First-page thumbnail rendering already exists and is reusable as-is for a side-by-side comparison: Covers.cover(for:passwords:height:) renders page 0 via PDFKit's PDFPage.thumbnail(of:for:), cached in an NSCache, off-main-thread via a 4-way OperationQueue.
-  EVIDENCE: /Users/jonaprieto/research/pdf-hammer/Sources/PDFHammer/Shell.swift:69-121
+  EVIDENCE: /Users/jonaprieto/research/papershelf/Sources/PaperShelf/Shell.swift:69-121
 
 - The rank(_:_:) tie-breaker used to pick DuplicateGroup.keeper (biggest file, then shortest name, then key) is a file-private top-level function in Hammer.swift, so any new incremental-index code that needs to build a DuplicateGroup the same way should live in the same file to reuse it without making it public API.
   EVIDENCE: Hammer.swift:880-887 (`private func rank`)
@@ -364,7 +364,7 @@ This directly answers part 4: a pair is "new" exactly when its content-derived i
 
 - UNVERIFIED as an Apple-official guarantee: that ad-hoc rebuilds reset notification authorization. The evidence is strong and consistent across multiple independent developer sources describing TCC-style permissions keyed to code-signing identity, and one source specifically names ~/Library/Preferences/com.apple.ncprefs.plist for notification alert state, but no Apple documentation page confirms this mechanism for UNUserNotificationCenter specifically. Verify empirically before relying on it: build twice with build.sh, grant permission after the first build, then check whether the second (freshly re-signed) build still shows as authorized.
 
-- Hoisting Runner and Covers from ContentView to PDFHammerApp is a real, non-trivial refactor (not just adding a window) — every place that currently assumes `@StateObject` ownership semantics inside ContentView (e.g. anything relying on Runner being freshly created exactly once when ContentView's view identity changes) needs re-auditing after switching to `@ObservedObject let`.
+- Hoisting Runner and Covers from ContentView to PaperShelfApp is a real, non-trivial refactor (not just adding a window) — every place that currently assumes `@StateObject` ownership semantics inside ContentView (e.g. anything relying on Runner being freshly created exactly once when ContentView's view identity changes) needs re-auditing after switching to `@ObservedObject let`.
 
 - The per-session notifiedGroupIDs design means a duplicate a user has seen and closed with "Ask me later" will notify again on next app launch, indefinitely, until either dismissed or resolved by trashing — this is a deliberate choice in the design above, but it should be confirmed with the user/product owner rather than assumed to be the desired behavior.
 
@@ -379,7 +379,7 @@ This directly answers part 4: a pair is "new" exactly when its content-derived i
 
 - Whether notification authorization state is empirically reset by an ad-hoc rebuild on this specific machine/macOS version — not tested, only corroborated by third-party reports.
 
-- Whether running PDF Hammer straight from dist/ (never copied to /Applications, never quarantined since it was locally built) has any different notification behavior than running it from /Applications — no Apple source ties behavior to install location, but this project's own build.sh was not tested against a real requestAuthorization call during this research.
+- Whether running PaperShelf straight from dist/ (never copied to /Applications, never quarantined since it was locally built) has any different notification behavior than running it from /Applications — no Apple source ties behavior to install location, but this project's own build.sh was not tested against a real requestAuthorization call during this research.
 
 - The exact enum cases and current names of UNAuthorizationStatus (e.g. .notDetermined/.denied/.authorized/.provisional/.ephemeral) were not re-verified against Apple's JSON doc API in this session and are stated from general knowledge rather than a fetched citation in this task.
 

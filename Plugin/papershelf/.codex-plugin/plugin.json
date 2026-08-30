@@ -1,0 +1,27 @@
+{
+  "name": "papershelf",
+  "version": "1.2.3",
+  "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
+  "author": { "name": "PaperShelf" },
+  "homepage": "https://github.com/jonaprieto/papershelf",
+  "repository": "https://github.com/jonaprieto/papershelf",
+  "keywords": ["pdf", "research", "papers", "books", "bibliography", "highlights", "bibtex", "library"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "PaperShelf",
+    "shortDescription": "Search and cite your own PDFs",
+    "longDescription": "PaperShelf keeps a local index of the papers and books on your Mac. This plugin lets ChatGPT read it: search by title, author or full text, open a document or a single page as Markdown, list what you highlighted and the notes you left, pull a BibTeX entry, find duplicate copies of the same work, and browse your tags and reading projects. Everything runs against the app's own MCP server on your machine, so the files never leave it and nothing is uploaded. Requires PaperShelf to be installed.",
+    "developerName": "PaperShelf",
+    "category": "Education & Research",
+    "capabilities": ["Read", "Research", "Local processing"],
+    "websiteURL": "https://github.com/jonaprieto/papershelf",
+    "brandColor": "#586CE8",
+    "defaultPrompt": [
+      "What did I highlight in the Milner paper?",
+      "Find the papers I have on session types",
+      "Give me a BibTeX entry for this book"
+    ],
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
+}

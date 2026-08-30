@@ -7,19 +7,22 @@
 # published, nothing is reviewed, and nothing leaves this machine.
 set -euo pipefail
 
-PLUGIN_SOURCE="$(cd "$(dirname "$0")/.." && pwd)/Plugin/pdf-hammer"
+PLUGIN_SOURCE="$(cd "$(dirname "$0")/.." && pwd)/Plugin/papershelf"
 AGENTS="$HOME/.agents/plugins"
 # A marketplace entry's relative path is read from the home directory, not from beside the
-# marketplace file, so `./plugins/pdf-hammer` in the listing means exactly this.
-DESTINATION="$HOME/plugins/pdf-hammer"
-LEGACY_DESTINATION="$AGENTS/pdf-hammer"
+# marketplace file, so `./plugins/papershelf` in the listing means exactly this.
+DESTINATION="$HOME/plugins/papershelf"
+LEGACY_DESTINATION="$AGENTS/papershelf"
+# Installs from before the app was renamed. Left behind, they list a second plugin whose
+# server binary no longer exists.
+OLD_NAME_DESTINATIONS=("$HOME/plugins/pdf-hammer" "$AGENTS/pdf-hammer")
 MARKETPLACE="$AGENTS/marketplace.json"
-SERVER="/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
+SERVER="/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
 
 [[ -x "$SERVER" ]] || { echo "PaperShelf is not installed in /Applications. Run ./build.sh --install first." >&2; exit 1; }
 
 mkdir -p "$AGENTS" "$(dirname "$DESTINATION")"
-rm -rf "$DESTINATION" "$LEGACY_DESTINATION"
+rm -rf "$DESTINATION" "$LEGACY_DESTINATION" "${OLD_NAME_DESTINATIONS[@]}"
 cp -R "$PLUGIN_SOURCE" "$DESTINATION"
 
 # The marketplace may already list other plugins, so it is merged rather than replaced.
@@ -46,15 +49,18 @@ if path.exists():
 
 market.setdefault("plugins", [])
 entry = {
-    "name": "pdf-hammer",
-    "source": {"source": "local", "path": "./plugins/pdf-hammer"},
+    "name": "papershelf",
+    "source": {"source": "local", "path": "./plugins/papershelf"},
     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
     "category": "Education & Research",
 }
-market["plugins"] = [p for p in market["plugins"] if p.get("name") != "pdf-hammer"]
+# The entry the old name wrote goes with it: two listings for one app, one of them
+# pointing at a binary that no longer exists, is worse than neither.
+market["plugins"] = [p for p in market["plugins"]
+                     if p.get("name") not in ("papershelf", "pdf-hammer")]
 market["plugins"].append(entry)
 path.write_text(json.dumps(market, indent=2) + "\n")
-print(f"listed pdf-hammer in {path}")
+print(f"listed papershelf in {path}")
 PY
 
 echo "Installed to $DESTINATION"

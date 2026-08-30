@@ -2,11 +2,11 @@
 
 ## Summary
 
-AI.swift makes two plain-URLSession calls (GET /models, POST /chat/completions) and never reads the response's `usage` block anywhere in the app. OpenAI's chat-completions `usage` object reports `prompt_tokens`/`completion_tokens`/`total_tokens` plus `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens` as subsets of those totals; neither the completions API nor `GET /v1/models` exposes pricing, and the one costs endpoint that exists (`/v1/organization/costs`) needs a separate admin key and returns daily rollups, not live per-token prices — so the app needs a local, dated, user-editable price table. The design below adds pure PDFHammerCore types (`ModelPrice`/`PriceTable` using `Decimal`, `TokenUsage`, `SpendEntry`/`SpendTotals`) plus aggregation functions, persisted the same two ways the app already persists comparable data: RunCache's Application-Support-JSON pattern for the ledger, Palette's UserDefaults-JSON pattern for user price overrides.
+AI.swift makes two plain-URLSession calls (GET /models, POST /chat/completions) and never reads the response's `usage` block anywhere in the app. OpenAI's chat-completions `usage` object reports `prompt_tokens`/`completion_tokens`/`total_tokens` plus `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens` as subsets of those totals; neither the completions API nor `GET /v1/models` exposes pricing, and the one costs endpoint that exists (`/v1/organization/costs`) needs a separate admin key and returns daily rollups, not live per-token prices — so the app needs a local, dated, user-editable price table. The design below adds pure PaperShelfCore types (`ModelPrice`/`PriceTable` using `Decimal`, `TokenUsage`, `SpendEntry`/`SpendTotals`) plus aggregation functions, persisted the same two ways the app already persists comparable data: RunCache's Application-Support-JSON pattern for the ledger, Palette's UserDefaults-JSON pattern for user price overrides.
 
 ## Design
 
-New file Sources/PDFHammerCore/Spend.swift holds everything pure and testable:
+New file Sources/PaperShelfCore/Spend.swift holds everything pure and testable:
 
 ```swift
 // MARK: - Pricing
@@ -184,7 +184,7 @@ public func totals(for entries: [SpendEntry], since sessionStart: Date) -> Spend
 public func spendLedgerURL(named name: String = "spend-ledger.json") -> URL? {
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
     else { return nil }
-    let folder = base.appendingPathComponent("PDF Hammer", isDirectory: true)
+    let folder = base.appendingPathComponent("PaperShelf", isDirectory: true)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder.appendingPathComponent(name)
 }
@@ -208,15 +208,15 @@ public func clearSpendLedger() {
 }
 ```
 
-Integration in the PDFHammer target (described, not written — this task is research-only):
+Integration in the PaperShelf target (described, not written — this task is research-only):
 
-1. Sources/PDFHammer/AI.swift — `identify(filename:excerpt:)` currently discards the raw response after reading `choices` (AI.swift:149-153). Change its return type to a small struct so the caller gets both the guess and the usage from the same response body, without a second network call:
+1. Sources/PaperShelf/AI.swift — `identify(filename:excerpt:)` currently discards the raw response after reading `choices` (AI.swift:149-153). Change its return type to a small struct so the caller gets both the guess and the usage from the same response body, without a second network call:
    `struct IdentifyResult { let guess: BookGuess; let usage: TokenUsage? }`
    `func identify(filename: String, excerpt: String) async throws -> IdentifyResult` — builds `usage` via `parseTokenUsage(object ?? [:])` before returning.
 
-2. Sources/PDFHammer/Runner.swift — the one place `client.identify` and `client.identify`-via-batch already run (Runner.swift:475-511). After a successful call, look up `PriceTable.seeded.price(model: client.model, baseURL: client.baseURL)` merged with any user `custom` overrides (loaded from UserDefaults, see below), compute `cost(usage:price:)` if a price was found, build a `SpendEntry(baseURL:model:feature: .identify or .batchIdentify:usage:costUSD:)`, and append it to the ledger. `SettingsView.swift`'s `test()` (line 117-132) does the same with `feature: .connectionTest` after its own `client.identify` call at line 123.
+2. Sources/PaperShelf/Runner.swift — the one place `client.identify` and `client.identify`-via-batch already run (Runner.swift:475-511). After a successful call, look up `PriceTable.seeded.price(model: client.model, baseURL: client.baseURL)` merged with any user `custom` overrides (loaded from UserDefaults, see below), compute `cost(usage:price:)` if a price was found, build a `SpendEntry(baseURL:model:feature: .identify or .batchIdentify:usage:costUSD:)`, and append it to the ledger. `SettingsView.swift`'s `test()` (line 117-132) does the same with `feature: .connectionTest` after its own `client.identify` call at line 123.
 
-3. A tiny `@MainActor final class SpendTracker: ObservableObject` in the PDFHammer target, shaped exactly like `Palette` (Palette.swift:48-78) for the observable half, but persisting like `RunCache` for the data half:
+3. A tiny `@MainActor final class SpendTracker: ObservableObject` in the PaperShelf target, shaped exactly like `Palette` (Palette.swift:48-78) for the observable half, but persisting like `RunCache` for the data half:
    ```swift
    @MainActor
    final class SpendTracker: ObservableObject {
@@ -233,32 +233,32 @@ Integration in the PDFHammer target (described, not written — this task is res
 
 4. User-added custom prices — small, personal, edited rarely, exactly Palette's shape — persist the same way Palette does: JSON-encode `[String: ModelPrice]` (custom overrides only, not the seed) into `UserDefaults.standard` under a `"aiPriceOverrides"` key, loaded/saved by a `PriceOverrides: ObservableObject` mirroring Palette.swift:63-78 line for line. `PriceTable.custom` is populated from this at read time; `PriceTable.seeded` is the static constant above and never persisted (it's code, not data).
 
-5. Model selector, Sources/PDFHammer/ContentView.swift's `aiPanel` (ContentView.swift:572-609) — next to or below the `Picker` (line 592), a `LabeledContent("Cost")` showing, for the current `aiModel`/`aiBaseURL`: `"$0.15 in · $0.60 out per 1M tokens"` from `PriceTable.seeded.price(model:baseURL:)` merged with overrides, or `"Cost unknown for this model"` with a small `TextField`/button pair (mirroring the existing `Save key`/`Remove` HStack pattern at SettingsView.swift:44-53) that writes a `ModelPrice` into `PriceOverrides` for exactly `(aiBaseURL, aiModel)`. A second, smaller line shows `spend.sessionTotals` and `spend.allTimeTotals` (e.g. "This session: $0.0034 (12 calls) · All time: $0.42"), with unknown-cost calls surfaced separately ("+ 3 calls, cost unknown") rather than folded silently into the dollar figure.
+5. Model selector, Sources/PaperShelf/ContentView.swift's `aiPanel` (ContentView.swift:572-609) — next to or below the `Picker` (line 592), a `LabeledContent("Cost")` showing, for the current `aiModel`/`aiBaseURL`: `"$0.15 in · $0.60 out per 1M tokens"` from `PriceTable.seeded.price(model:baseURL:)` merged with overrides, or `"Cost unknown for this model"` with a small `TextField`/button pair (mirroring the existing `Save key`/`Remove` HStack pattern at SettingsView.swift:44-53) that writes a `ModelPrice` into `PriceOverrides` for exactly `(aiBaseURL, aiModel)`. A second, smaller line shows `spend.sessionTotals` and `spend.allTimeTotals` (e.g. "This session: $0.0034 (12 calls) · All time: $0.42"), with unknown-cost calls surfaced separately ("+ 3 calls, cost unknown") rather than folded silently into the dollar figure.
 
 Point 4's answer is structural, not a fallback branch bolted on: seeded prices only ever resolve when `baseURL` is recognized as OpenAI's own; any other endpoint gets a price only if the user explicitly typed one in for that exact `(baseURL, model)` pair, and until they do, the UI shows token counts (always available from `usage`, provider-agnostic) with cost marked unknown rather than computed from an unrelated model's rate.
 
 ## Verified facts
 
 - AI.swift makes exactly two network calls, both via URLSession + JSONSerialization, no SDK: GET {baseURL}/models and POST {baseURL}/chat/completions.
-  EVIDENCE: Sources/PDFHammer/AI.swift:103-122 (models()), :124-154 (identify())
+  EVIDENCE: Sources/PaperShelf/AI.swift:103-122 (models()), :124-154 (identify())
 
 - models() sends a bare GET with a Bearer header and no body, and parses only data[].id from the response.
-  EVIDENCE: Sources/PDFHammer/AI.swift:105 (URL build), :112-121 (request + parse)
+  EVIDENCE: Sources/PaperShelf/AI.swift:105 (URL build), :112-121 (request + parse)
 
 - identify() posts {model, temperature: 0, messages: [system, user]} with no stream/stream_options fields.
-  EVIDENCE: Sources/PDFHammer/AI.swift:126, :134-141
+  EVIDENCE: Sources/PaperShelf/AI.swift:126, :134-141
 
 - The response's `usage` block is never read anywhere in the app; identify() only extracts choices[0].message.content.
-  EVIDENCE: Sources/PDFHammer/AI.swift:149-152; grep -rni "usage|cost|spend|budget|pricing|token" over Sources/PDFHammer and Sources/PDFHammerCore returned zero AI-cost-related hits (all matches were unrelated: UI layout "budget", bibtex tokenizer, etc.)
+  EVIDENCE: Sources/PaperShelf/AI.swift:149-152; grep -rni "usage|cost|spend|budget|pricing|token" over Sources/PaperShelf and Sources/PaperShelfCore returned zero AI-cost-related hits (all matches were unrelated: UI layout "budget", bibtex tokenizer, etc.)
 
 - AIClient.identify has exactly two direct call sites: the app's live flow and the Settings connection test.
-  EVIDENCE: Sources/PDFHammer/Runner.swift:486 (called from identify(_:client:...) at :475, itself called from identifyPending at :511); Sources/PDFHammer/SettingsView.swift:123 (client.identify(...) inside test())
+  EVIDENCE: Sources/PaperShelf/Runner.swift:486 (called from identify(_:client:...) at :475, itself called from identifyPending at :511); Sources/PaperShelf/SettingsView.swift:123 (client.identify(...) inside test())
 
 - The model selector is a SwiftUI Picker in ContentView's aiPanel, fed by client.models().
-  EVIDENCE: Sources/PDFHammer/ContentView.swift:592 (Picker("Model", ...)), :572 (aiPanel start), :113 (availableModels = try await client.models())
+  EVIDENCE: Sources/PaperShelf/ContentView.swift:592 (Picker("Model", ...)), :572 (aiPanel start), :113 (availableModels = try await client.models())
 
 - The API key is currently stored in a 0600 file under Application Support via a KeyStore enum, not the macOS Keychain; the working tree is clean at commit cada1ca, titled 'chore: drop output encryption, and keep the API key out of the Keychain'.
-  EVIDENCE: git log --oneline -1 -- Sources/PDFHammer/AI.swift → cada1ca; git status --short → empty; Sources/PDFHammer/AI.swift:6-41 (KeyStore)
+  EVIDENCE: git log --oneline -1 -- Sources/PaperShelf/AI.swift → cada1ca; git status --short → empty; Sources/PaperShelf/AI.swift:6-41 (KeyStore)
 
 - My first Read-tool call on AI.swift/SettingsView.swift returned stale content (a Keychain/SecItemAdd-based version) that does not match the on-disk, git-clean working tree; re-reading via `cat`/`git log`/`git status` resolved this, and all citations above use the verified current content.
   EVIDENCE: Read tool output showed `enum Keychain` using SecItemAdd/SecItemCopyMatching; `cat -n` and `git status --short` (empty) on the same path immediately after showed `enum KeyStore` writing a 0600 file instead — the two cannot both be the current file
@@ -284,8 +284,8 @@ Point 4's answer is structural, not a fallback branch bolted on: seeded prices o
 - The legacy-model prices above (gpt-4o-mini, gpt-4o, gpt-4.1 family, o4-mini) match figures already in the assistant's January-2026 training data, an independent cross-check the same fetch's newer rows (gpt-5.6-sol/terra/luna, gpt-5.5, gpt-5.4 family, 'cyber' models) could not get since those postdate the cutoff.
   EVIDENCE: internal consistency check against training-time knowledge, not a second live fetch
 
-- The project has two existing persistence precedents to mirror: RunCache stores operational/data-sized content as a JSON file in Application Support/'PDF Hammer' with atomic writes and silent-failure semantics; Palette stores a small, personal, user-editable list as a JSON blob in UserDefaults.
-  EVIDENCE: Sources/PDFHammerCore/Cache.swift:8-53 (RunCache, runCacheURL, saveRunCache, loadRunCache); Sources/PDFHammer/Palette.swift:48-78 (Palette load/save via UserDefaults.standard.data(forKey:))
+- The project has two existing persistence precedents to mirror: RunCache stores operational/data-sized content as a JSON file in Application Support/'PaperShelf' with atomic writes and silent-failure semantics; Palette stores a small, personal, user-editable list as a JSON blob in UserDefaults.
+  EVIDENCE: Sources/PaperShelfCore/Cache.swift:8-53 (RunCache, runCacheURL, saveRunCache, loadRunCache); Sources/PaperShelf/Palette.swift:48-78 (Palette load/save via UserDefaults.standard.data(forKey:))
 
 - No Decimal type is used anywhere in the repo today, and there are no third-party Swift dependencies declared.
   EVIDENCE: grep -rn "Decimal" over Sources found zero hits; Package.swift has no dependencies: array; README.md:6 states 'No third-party dependencies.'

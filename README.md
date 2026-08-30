@@ -33,13 +33,13 @@ Both come from the environment, so nothing secret is in the repo:
 
 ```bash
 DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
-NOTARY_PROFILE=pdfhammer ./Tools/make-dmg.sh
+NOTARY_PROFILE=papershelf ./Tools/make-dmg.sh
 ```
 
 The notary profile is stored once:
 
 ```bash
-xcrun notarytool store-credentials pdfhammer --apple-id you@example.com \
+xcrun notarytool store-credentials papershelf --apple-id you@example.com \
       --team-id TEAMID --password <app-specific-password>
 ```
 
@@ -294,6 +294,21 @@ where the file went instead.
 It is SQLite rather than a JSON file because two processes use it: the app writes while
 the MCP server reads. That is WAL's job, and it was measured rather than assumed.
 
+The app used to be called PDF Hammer, so the folder used to be called that too. It is
+moved to `~/Library/Application Support/PaperShelf` on first launch, once, and only when
+there is nothing already there to overwrite: nobody should lose a library to a rename. The
+bundle identifier is deliberately left as it was, since changing it would drop the folder
+permissions macOS granted, the settings stored against it, and the API key in the Keychain,
+none of which the new name is worth.
+
+The MCP server moved with it, to `Contents/MacOS/papershelf-mcp`. An editor configured
+against the old path needs the new one:
+
+```
+claude mcp remove pdf-hammer
+claude mcp add papershelf -- "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
+```
+
 ## Naming with AI
 
 `G`, or **Ask AI**, reads the opening pages and suggests a title. The reply becomes a
@@ -356,20 +371,20 @@ composed first, so an accent written as one code point still matches one written
 PaperShelf ships an MCP server, so Claude Code, Codex and anything else that speaks the
 Model Context Protocol can search your library, read a document as Markdown, build a
 bibliography and find duplicates. It is a separate binary inside the app bundle at
-`/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp`, and it holds no state: the
+`/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp`, and it holds no state: the
 protocol has no sessions, so every call names the folder it works on.
 
 Claude Code:
 
 ```
-claude mcp add pdf-hammer -- "/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
+claude mcp add papershelf -- "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
 ```
 
 Codex, in `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.pdf-hammer]
-command = "/Applications/PaperShelf.app/Contents/MacOS/pdf-hammer-mcp"
+[mcp_servers.papershelf]
+command = "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
 ```
 
 The tools are `list_documents`, `search_documents`, `read_document`, `bibliography` and
@@ -502,10 +517,10 @@ run opens PDFs across all cores since it mutates nothing; a real run stays seria
 collision suffixes (`-2`, `-3`) stay deterministic.
 
 ```
-Sources/PDFHammerCore/Hammer.swift        naming, file operations, scanning
-Sources/PDFHammer/ContentView.swift       window, library sidebar and source lifecycle
-Sources/PDFHammer/Catalogue.swift         shelf, list, reader and keyboard commands
-Sources/PDFHammer/Review.swift             PDF preview, notes, highlights and inspector
+Sources/PaperShelfCore/Hammer.swift        naming, file operations, scanning
+Sources/PaperShelf/ContentView.swift       window, library sidebar and source lifecycle
+Sources/PaperShelf/Catalogue.swift         shelf, list, reader and keyboard commands
+Sources/PaperShelf/Review.swift             PDF preview, notes, highlights and inspector
 Tools/make-icon.sh                        regenerates the icon
 ```
 

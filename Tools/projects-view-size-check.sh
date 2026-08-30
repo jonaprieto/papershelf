@@ -8,12 +8,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-swift build --target PDFHammerCore >/dev/null
+swift build --target PaperShelfCore >/dev/null
 
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 MODULES=".build/arm64-apple-macosx/debug/Modules"
-COREOBJS=".build/arm64-apple-macosx/debug/PDFHammerCore.build"
+COREOBJS=".build/arm64-apple-macosx/debug/PaperShelfCore.build"
 
 # Swift only allows top-level code in a file called main.swift once more than one file is
 # in the compilation (Tools/real-library-check.sh has the same fix, for the same reason).
@@ -25,7 +25,7 @@ cp Tools/projects-view-size-check.swift "$OUT/main.swift"
 swiftc -O -swift-version 5 \
     -I "$MODULES" \
     "$OUT/main.swift" \
-    Sources/PDFHammer/Projects.swift \
+    Sources/PaperShelf/Projects.swift \
     "$COREOBJS"/*.swift.o \
     -o "$OUT/check"
 "$OUT/check"

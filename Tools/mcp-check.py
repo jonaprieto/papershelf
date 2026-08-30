@@ -41,7 +41,7 @@ check(
 check(
     "discover identifies the server",
     d.get("_meta", {}).get("io.modelcontextprotocol/serverInfo", {}).get("name")
-    == "pdf-hammer",
+    == "papershelf",
 )
 
 i = result("1")

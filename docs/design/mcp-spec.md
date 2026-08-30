@@ -2,7 +2,7 @@
 
 ## Summary
 
-The current MCP spec revision is 2026-07-28, which removed the initialize handshake entirely in favor of a stateless per-request _meta model with a new server/discover RPC; both Claude Code (installed here at 2.1.241) and OpenAI Codex CLI (0.149.1) still default to the legacy initialize-based handshake for local stdio servers in practice, so a real server needs to speak both eras. No official Swift SDK supports 2026-07-28 yet (latest tag 0.12.1 targets 2025-11-25 and pulls in swift-nio/swift-log/swift-system/eventsource, breaking the zero-dependency rule), so the recommended path is a small hand-rolled JSON-RPC-over-stdio server in a new PDFHammerMCP executable target that calls straight into PDFHammerCore's existing pure functions. PDFHammerCore already has everything needed for search, Markdown conversion, and bibliography export; only a small new ReadingProject type (mirroring the existing RunCache pattern in Cache.swift) is needed for "reading projects."
+The current MCP spec revision is 2026-07-28, which removed the initialize handshake entirely in favor of a stateless per-request _meta model with a new server/discover RPC; both Claude Code (installed here at 2.1.241) and OpenAI Codex CLI (0.149.1) still default to the legacy initialize-based handshake for local stdio servers in practice, so a real server needs to speak both eras. No official Swift SDK supports 2026-07-28 yet (latest tag 0.12.1 targets 2025-11-25 and pulls in swift-nio/swift-log/swift-system/eventsource, breaking the zero-dependency rule), so the recommended path is a small hand-rolled JSON-RPC-over-stdio server in a new PaperShelfMCP executable target that calls straight into PaperShelfCore's existing pure functions. PaperShelfCore already has everything needed for search, Markdown conversion, and bibliography export; only a small new ReadingProject type (mirroring the existing RunCache pattern in Cache.swift) is needed for "reading projects."
 
 ## Design
 
@@ -11,14 +11,14 @@ ARCHITECTURE
 New SwiftPM target, added to Package.swift alongside the existing two:
 ```swift
 .executableTarget(
-    name: "PDFHammerMCP",
-    dependencies: ["PDFHammerCore"],
+    name: "PaperShelfMCP",
+    dependencies: ["PaperShelfCore"],
     swiftSettings: [.swiftLanguageMode(.v5)]
 ),
 ```
-Foundation only, no new products, no external packages. `swift build -c release --show-bin-path` then emits `PDFHammerMCP` next to `PDFHammer`. Extend build.sh with one line, `cp "$(dirname "$BIN")/PDFHammerMCP" "$APP/Contents/MacOS/PDFHammerMCP"`, so the server binary ships embedded inside "PDF Hammer.app" and stays version-locked to the same PDFHammerCore build. Both Claude Code's and Codex's config point `command` at the absolute path `/Applications/PDF Hammer.app/Contents/MacOS/PDFHammerMCP` (or the dist/ path during development) -- no separate install step, no PATH entry.
+Foundation only, no new products, no external packages. `swift build -c release --show-bin-path` then emits `PaperShelfMCP` next to `PaperShelf`. Extend build.sh with one line, `cp "$(dirname "$BIN")/PaperShelfMCP" "$APP/Contents/MacOS/PaperShelfMCP"`, so the server binary ships embedded inside "PaperShelf.app" and stays version-locked to the same PaperShelfCore build. Both Claude Code's and Codex's config point `command` at the absolute path `/Applications/PaperShelf.app/Contents/MacOS/PaperShelfMCP` (or the dist/ path during development) -- no separate install step, no PATH entry.
 
-Relation to the GUI: PDFHammerMCP is a second, independent process; it never talks to a running PDFHammer.app instance directly (no XPC, no socket). It reads the same three on-disk stores the app already uses:
+Relation to the GUI: PaperShelfMCP is a second, independent process; it never talks to a running PaperShelf.app instance directly (no XPC, no socket). It reads the same three on-disk stores the app already uses:
 1. Library roots -- `UserDefaults(suiteName: "com.jonaprieto.pdfhammer")?.string(forKey: "sources")`, split on "\n", filtered to existing paths -- exact same encoding as ContentView.swift:945/952. Works cross-process because the app is unsandboxed (confirmed: no entitlements), so this is a plain CFPreferences plist at ~/Library/Preferences/com.jonaprieto.pdfhammer.plist, not an App-Group-gated container.
 2. Passwords -- `UserDefaults(suiteName: "com.jonaprieto.pdfhammer")?.string(forKey: "passwords")`, then `PasswordList.active(_:)` (already public in Hammer.swift) to get `[String]`. Never echoed back in any tool result.
 3. Fresh scan results -- computed on demand via `collectJobs(roots:recursive:backup:)` + `process(jobs:options:)` (dryRun: true), the exact functions the GUI's Preview button calls. The MCP server deliberately does NOT try to reuse `RunCache`/`loadRunCache(matching:)`, because the "fingerprint" it is keyed on is a private hash computed in ContentView.swift that the server has no way to reconstruct; re-deriving Items live is simple, correct, and never stale.
@@ -38,12 +38,12 @@ Pieces to write (rough sizing, Foundation-only):
 - Legacy `initialize`/`notifications/initialized` handler: ~20-30 lines.
 - Modern `_meta` detection + `server/discover` + `UnsupportedProtocolVersionError` (-32022) construction: ~40 lines.
 - Six protocol-message adapters (tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get) translating between the JSON-RPC shapes above and the 8 tool implementations below: ~120-150 lines.
-- The 8 tool implementations themselves (thin wrappers over PDFHammerCore, described below): ~200-250 lines.
+- The 8 tool implementations themselves (thin wrappers over PaperShelfCore, described below): ~200-250 lines.
 - Inline JSON Schema literals for the 8 tools' `inputSchema`: ~150-200 lines (schemas are verbose, not logic).
 - New Core type `ReadingProject` (below): ~50-60 lines.
 Total: roughly 700-900 lines of Swift for a working dual-era stdio server exposing all 8 tools. What must be implemented, concretely: JSON-RPC 2.0 message framing over stdio; the legacy initialize/initialized handshake; the modern per-request `_meta` path and `server/discover`; `tools/list` + `tools/call`; `resources/list` + `resources/read` (used only if a "read raw PDF bytes" resource is wanted -- optional, see Tool Surface); `prompts/list` + `prompts/get` (optional, only if prompt templates are wanted); and the 8 tool bodies.
 
-NEW CORE CODE: Sources/PDFHammerCore/Project.swift (new file)
+NEW CORE CODE: Sources/PaperShelfCore/Project.swift (new file)
 ```swift
 import Foundation
 
@@ -68,7 +68,7 @@ public struct ReadingProject: Identifiable, Sendable, Codable, Equatable {
 public func projectsStoreURL(named name: String = "projects.json") -> URL? {
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                               in: .userDomainMask).first else { return nil }
-    let folder = base.appendingPathComponent("PDF Hammer", isDirectory: true)
+    let folder = base.appendingPathComponent("PaperShelf", isDirectory: true)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder.appendingPathComponent(name)
 }
@@ -176,22 +176,22 @@ Claude Code -- project-scoped, `.mcp.json` at the repo/project root:
   "mcpServers": {
     "pdfhammer": {
       "type": "stdio",
-      "command": "/Applications/PDF Hammer.app/Contents/MacOS/PDFHammerMCP",
+      "command": "/Applications/PaperShelf.app/Contents/MacOS/PaperShelfMCP",
       "args": []
     }
   }
 }
 ```
-or via CLI: `claude mcp add --transport stdio pdfhammer -- "/Applications/PDF Hammer.app/Contents/MacOS/PDFHammerMCP"`.
+or via CLI: `claude mcp add --transport stdio pdfhammer -- "/Applications/PaperShelf.app/Contents/MacOS/PaperShelfMCP"`.
 
 Codex CLI -- `~/.codex/config.toml` (or project `.codex/config.toml`):
 ```toml
 [mcp_servers.pdfhammer]
-command = "/Applications/PDF Hammer.app/Contents/MacOS/PDFHammerMCP"
+command = "/Applications/PaperShelf.app/Contents/MacOS/PaperShelfMCP"
 args = []
 startup_timeout_sec = 10
 ```
-or via CLI: `codex mcp add pdfhammer -- "/Applications/PDF Hammer.app/Contents/MacOS/PDFHammerMCP"`.
+or via CLI: `codex mcp add pdfhammer -- "/Applications/PaperShelf.app/Contents/MacOS/PaperShelfMCP"`.
 
 ## Verified facts
 
@@ -234,26 +234,26 @@ or via CLI: `codex mcp add pdfhammer -- "/Applications/PDF Hammer.app/Contents/M
 - An official Swift SDK exists at github.com/modelcontextprotocol/swift-sdk (package URL `https://github.com/modelcontextprotocol/swift-sdk.git`), latest release 0.12.1 published 2026-05-07; minimum platforms macOS 13.0+/iOS+Mac Catalyst 16.0+/watchOS 9.0+/tvOS 16.0+/visionOS 1.0+, Swift 6.0+ toolchain; its README states it implements the 2025-11-25 (legacy, initialize-handshake) revision, not 2026-07-28.
   EVIDENCE: `gh api repos/modelcontextprotocol/swift-sdk/releases` (read-only) -> newest tag "0.12.1" published_at "2026-05-07T08:37:25Z"; raw.githubusercontent.com/modelcontextprotocol/swift-sdk/main/Package.swift for platforms; raw.githubusercontent.com/.../main/README.md: "This Swift SDK implements both client and server components according to the 2025-11-25 (latest) version of the MCP specification."
 
-- swift-sdk's own Package.swift declares dependencies on swift-system, swift-log, eventsource, and swift-nio -- real third-party dependencies that would break PDF Hammer's stated zero-dependency property.
+- swift-sdk's own Package.swift declares dependencies on swift-system, swift-log, eventsource, and swift-nio -- real third-party dependencies that would break PaperShelf's stated zero-dependency property.
   EVIDENCE: raw.githubusercontent.com/modelcontextprotocol/swift-sdk/main/Package.swift fetch, "Dependencies" section listing all four packages.
 
-- PDF Hammer's README explicitly states no third-party dependencies.
+- PaperShelf's README explicitly states no third-party dependencies.
   EVIDENCE: README.md:6 "Built on PDFKit and SwiftUI. No third-party dependencies."
 
-- PDFHammerCore already exposes pure, reusable building blocks for the proposed tools: search (Query/Searchable/matches/PreparedQuery), bibliography (bibEntries/BibEntry/bibtexDocument/BibStyle/markdownBibliography), Markdown conversion (markdownFromPDF, MarkdownConverter, availableConverters, locate), file discovery and rename proposal (collectJobs, process(jobs:options:), restyled, NameRules, Options, Item, PasswordList).
-  EVIDENCE: Sources/PDFHammerCore/Search.swift:13-179 (Query, Searchable, matches); Sources/PDFHammerCore/Bibtex.swift:35-125,150-347 (BibType, BibEntry, bibEntries, bibtexDocument); Sources/PDFHammerCore/Markdown.swift:31-123 (markdownBibliography, markdownCatalogue, markdownNotes); Sources/PDFHammerCore/Convert.swift:1-117 (MarkdownConverter, availableConverters, markdownFromPDF); Sources/PDFHammerCore/Hammer.swift:61-231 (NameRules), 334-397 (restyled), 495-620 (Status/Item/Options/BackupSettings), 659-746 (collectJobs), 1093-1321 (process/moveFile/moveToTrash).
+- PaperShelfCore already exposes pure, reusable building blocks for the proposed tools: search (Query/Searchable/matches/PreparedQuery), bibliography (bibEntries/BibEntry/bibtexDocument/BibStyle/markdownBibliography), Markdown conversion (markdownFromPDF, MarkdownConverter, availableConverters, locate), file discovery and rename proposal (collectJobs, process(jobs:options:), restyled, NameRules, Options, Item, PasswordList).
+  EVIDENCE: Sources/PaperShelfCore/Search.swift:13-179 (Query, Searchable, matches); Sources/PaperShelfCore/Bibtex.swift:35-125,150-347 (BibType, BibEntry, bibEntries, bibtexDocument); Sources/PaperShelfCore/Markdown.swift:31-123 (markdownBibliography, markdownCatalogue, markdownNotes); Sources/PaperShelfCore/Convert.swift:1-117 (MarkdownConverter, availableConverters, markdownFromPDF); Sources/PaperShelfCore/Hammer.swift:61-231 (NameRules), 334-397 (restyled), 495-620 (Status/Item/Options/BackupSettings), 659-746 (collectJobs), 1093-1321 (process/moveFile/moveToTrash).
 
 - No "reading project"/collection concept exists anywhere in the repo today.
-  EVIDENCE: `grep -rn "project\|Project" Sources/PDFHammerCore/*.swift` returned no matches; Sources/PDFHammer/Reading.swift (349 lines) is about in-document highlights/notes/table-of-contents, not project grouping (read in full).
+  EVIDENCE: `grep -rn "project\|Project" Sources/PaperShelfCore/*.swift` returned no matches; Sources/PaperShelf/Reading.swift (349 lines) is about in-document highlights/notes/table-of-contents, not project grouping (read in full).
 
 - The GUI app is unsandboxed (ad-hoc signed, no entitlements file), bundle id com.jonaprieto.pdfhammer.
   EVIDENCE: Resources/Info.plist:11 `<key>CFBundleIdentifier</key><string>com.jonaprieto.pdfhammer</string>`; `find ... -iname "*.entitlements"` returned nothing; build.sh:22 `codesign --force --sign -` (ad-hoc, no entitlements passed).
 
 - The GUI persists selected library root folders in UserDefaults key "sources" as newline-joined absolute paths, and passwords in UserDefaults key "passwords" in cleartext.
-  EVIDENCE: Sources/PDFHammer/ContentView.swift:9 `@AppStorage("passwords") private var passwordsText = ""`; line 34 `@AppStorage("sources") private var storedSources = ""`; line 945 `storedSources = selection.map(\.path).joined(separator: "\n")`; line 952 `let paths = storedSources.split(separator: "\n").map(String.init)`.
+  EVIDENCE: Sources/PaperShelf/ContentView.swift:9 `@AppStorage("passwords") private var passwordsText = ""`; line 34 `@AppStorage("sources") private var storedSources = ""`; line 945 `storedSources = selection.map(\.path).joined(separator: "\n")`; line 952 `let paths = storedSources.split(separator: "\n").map(String.init)`.
 
-- The GUI's last-scan snapshot is cached on disk at ~/Library/Application Support/PDF Hammer/last-run.json, via public Core functions runCacheURL/saveRunCache/loadRunCache, keyed by an app-computed "fingerprint" string.
-  EVIDENCE: Sources/PDFHammerCore/Cache.swift (full file): `runCacheURL(named:)` uses `.applicationSupportDirectory` + "PDF Hammer" + filename "last-run.json"; `RunCache` struct has fingerprint/savedAt/items; Sources/PDFHammer/ContentView.swift:143 `private var fingerprint: String { [selection.map(\.path).joined(separator: "|"), ...`.
+- The GUI's last-scan snapshot is cached on disk at ~/Library/Application Support/PaperShelf/last-run.json, via public Core functions runCacheURL/saveRunCache/loadRunCache, keyed by an app-computed "fingerprint" string.
+  EVIDENCE: Sources/PaperShelfCore/Cache.swift (full file): `runCacheURL(named:)` uses `.applicationSupportDirectory` + "PaperShelf" + filename "last-run.json"; `RunCache` struct has fingerprint/savedAt/items; Sources/PaperShelf/ContentView.swift:143 `private var fingerprint: String { [selection.map(\.path).joined(separator: "|"), ...`.
 
 
 ## Risks
@@ -268,7 +268,7 @@ or via CLI: `codex mcp add pdfhammer -- "/Applications/PDF Hammer.app/Contents/M
 
 - No renames.apply/projects.add_items/write-side tools were designed here. renames.propose never touches disk; an "apply" tool would need its own confirmation contract (which files, is a GUI instance possibly running against the same paths concurrently, does it honor BackupSettings) that is a distinct decision the user should make explicitly rather than getting bundled in silently.
 
-- Cross-process UserDefaults(suiteName:) read from a plain, non-App-Group executable was reasoned from the absence of a sandbox entitlement, not empirically run on this machine; it should be smoke-tested (launch PDFHammerMCP standalone, confirm it sees the same "sources"/"passwords" values the GUI shows) before being relied on.
+- Cross-process UserDefaults(suiteName:) read from a plain, non-App-Group executable was reasoned from the absence of a sandbox entitlement, not empirically run on this machine; it should be smoke-tested (launch PaperShelfMCP standalone, confirm it sees the same "sources"/"passwords" values the GUI shows) before being relied on.
 
 - Two incompatible client config formats (Claude Code JSON vs Codex TOML) must be hand-maintained; a small pdfhammer-mcp install helper that prints or writes both blocks (never touching secrets) would reduce setup error, but is a separate piece of work from the server itself.
 

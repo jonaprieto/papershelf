@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import PDFHammerCore
+import PaperShelfCore
 
 // A mechanical check on the reading-projects views this agent cannot otherwise see: each
 // one, at several widths a real sidebar or window could plausibly be, must lay out to real,
@@ -17,14 +17,14 @@ import PDFHammerCore
 // window is actually ordered on screen, so this measures those directly instead.
 //
 // Building against a stub `ProjectsEnvironment` rather than the live one, the same way
-// Tests/PDFHammerAppTests/ProjectsViewTests.swift does: no database, no network, and it
-// only needs this file plus PDFHammerCore and Sources/PDFHammer/Projects.swift, so it stays
+// Tests/PaperShelfAppTests/ProjectsViewTests.swift does: no database, no network, and it
+// only needs this file plus PaperShelfCore and Sources/PaperShelf/Projects.swift, so it stays
 // inside what this agent actually changed.
 
 // Projects.swift's own `.tip(_:key:)` lives in Tooltips.swift, which drags in `Decision`
 // (Shell.swift) and the rest of that dependency chain. It is a plain `.help(...)` wrapper
 // with no effect on layout, so a same-signature shim here is enough for a size check and
-// keeps this compilation to exactly the files this agent changed plus PDFHammerCore.
+// keeps this compilation to exactly the files this agent changed plus PaperShelfCore.
 extension View {
     func tip(_ what: String, key: String? = nil) -> some View {
         help(key.map { "\(what)  (\($0))" } ?? what)

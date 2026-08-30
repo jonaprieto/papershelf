@@ -12,10 +12,10 @@
 # Both are read from the environment, so nothing secret lives in this repo:
 #
 #   DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
-#   NOTARY_PROFILE=pdfhammer ./Tools/make-dmg.sh
+#   NOTARY_PROFILE=papershelf ./Tools/make-dmg.sh
 #
 # The notary profile is created once with:
-#   xcrun notarytool store-credentials pdfhammer --apple-id you@example.com \
+#   xcrun notarytool store-credentials papershelf --apple-id you@example.com \
 #         --team-id TEAMID --password <app-specific-password>
 set -euo pipefail
 cd "$(dirname "$0")/.."

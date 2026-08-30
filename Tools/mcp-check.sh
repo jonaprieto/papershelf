@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BIN="${1:-$(swift build --show-bin-path)/PDFHammerMCP}"
+BIN="${1:-$(swift build --show-bin-path)/PaperShelfMCP}"
 [[ -x "$BIN" ]] || { echo "no binary at $BIN; run 'swift build' first" >&2; exit 1; }
 
 FOLDER="$(mktemp -d)"
@@ -119,7 +119,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"32","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"kant"}}}' \
   '{"jsonrpc":"2.0","id":"33","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
-  | PDFHAMMER_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
+  | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
 
 # The same tools against the scratch library above.
 printf '%s\n' \
@@ -134,5 +134,5 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"48","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"99"}}}' \
   '{"jsonrpc":"2.0","id":"49","method":"tools/call","params":{"name":"search_project","arguments":{"project":"2","query":"categorical"}}}' \
   '{"jsonrpc":"2.0","id":"50","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"1","limit":-1}}}' \
-  | PDFHAMMER_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
+  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

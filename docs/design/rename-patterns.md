@@ -2,15 +2,15 @@
 
 ## Summary
 
-The current model in Sources/PDFHammerCore/Hammer.swift is a filename normalizer, not a metadata composer: NameRules (a 9 field toggle bag) drives normalizedName, which extracts a date out of a messy existing stem and tidies what is left, falling back to folder/metadata/file dates only when the name has none. Zotero 7, Better BibTeX and JabRef all expose genuine, chip friendly token grammars, verified below with direct quotes; Mendeley's is confirmed only through secondary library guides since Mendeley Desktop's own documentation is gone. I'm proposing an additive NamePattern/NameToken/NameElement/SlugStyle model plus render/preview functions that sit alongside NameRules behind a new Options.pattern field, with a lossless one time migration and four presets grounded in what the repo already collects (BookGuess, Item.documentInfo).
+The current model in Sources/PaperShelfCore/Hammer.swift is a filename normalizer, not a metadata composer: NameRules (a 9 field toggle bag) drives normalizedName, which extracts a date out of a messy existing stem and tidies what is left, falling back to folder/metadata/file dates only when the name has none. Zotero 7, Better BibTeX and JabRef all expose genuine, chip friendly token grammars, verified below with direct quotes; Mendeley's is confirmed only through secondary library guides since Mendeley Desktop's own documentation is gone. I'm proposing an additive NamePattern/NameToken/NameElement/SlugStyle model plus render/preview functions that sit alongside NameRules behind a new Options.pattern field, with a lossless one time migration and four presets grounded in what the repo already collects (BookGuess, Item.documentInfo).
 
 ## Design
 
-All additions go in Sources/PDFHammerCore/Hammer.swift itself, in a new `// MARK: - Name patterns` section, not a separate file: findDate, FoundDate, tidy, clipped, isUninformative, withoutLeadingArticles are all `private`/internal to that file (Hammer.swift:35-228), and the renderer needs to call them directly rather than have its access level loosened across files. `NamePattern`/`NameToken`/etc. themselves are `public`, same as everything else callers outside the module touch.
+All additions go in Sources/PaperShelfCore/Hammer.swift itself, in a new `// MARK: - Name patterns` section, not a separate file: findDate, FoundDate, tidy, clipped, isUninformative, withoutLeadingArticles are all `private`/internal to that file (Hammer.swift:35-228), and the renderer needs to call them directly rather than have its access level loosened across files. `NamePattern`/`NameToken`/etc. themselves are `public`, same as everything else callers outside the module touch.
 
 ## Token set
 
-Deliberately 13 tokens, not the dozens Zotero/JabRef expose, because PDFHammer's actual structured data is thin: a BookGuess (title/author/year) and six raw PDFDocumentAttribute strings (Item.documentInfo, verified at Hammer.swift:1240-1241), plus whatever the filename/folder already say. A wide token menu would mostly be options that are empty for a bank statement.
+Deliberately 13 tokens, not the dozens Zotero/JabRef expose, because PaperShelf's actual structured data is thin: a BookGuess (title/author/year) and six raw PDFDocumentAttribute strings (Item.documentInfo, verified at Hammer.swift:1240-1241), plus whatever the filename/folder already say. A wide token menu would mostly be options that are empty for a bank statement.
 
 ```swift
 /// One placeholder. `rawValue` is also its spelling inside `[...]` in a pattern string.
@@ -207,43 +207,43 @@ Once every UI call site (ContentView's namingPanel, Runner.identify/identifyPend
 ## Verified facts
 
 - NameRules holds 9 fields (casing, separator, stripSymbols, stripDiacritics, asciiOnly, dropLeadingArticles, maxLength, datePosition, dateFormat) plus a computed joiner; Casing/Separator/DatePosition/DateFormat are small String raw enums.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:61-132
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:61-132
 
 - normalizedName's actual algorithm: find a date anywhere in the stem with findDate, replace that date's range with a dash and run tidy() on the rest to get a slug, borrow the enclosing folder's slug when the stem is uninformative (generic word or digits only), drop leading articles, clip to maxLength on a word boundary, then attach the date (from the filename, else the first non-empty fallbackPrefix) at the front or back per datePosition, in dashed or compact form per dateFormat.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:297-329, with helpers findDate:41-57, tidy:168-201, isUninformative:223-228, withoutLeadingArticles:143-151, clipped:155-163
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:297-329, with helpers findDate:41-57, tidy:168-201, isUninformative:223-228, withoutLeadingArticles:143-151, clipped:155-163
 
 - A date is only ever kept at year or year-month precision; even a matched YYYY-MM-DD shape discards the day when building the prefix.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:47-49 (case .yearMonthDay, .yearMonth: return FoundDate(prefix: "\(group(1))-\(group(2))" ...))
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:47-49 (case .yearMonthDay, .yearMonth: return FoundDate(prefix: "\(group(1))-\(group(2))" ...))
 
 - Fallback order for the date, all three switchable and consulted only when the filename itself has no date: folder name > PDF metadata creation date > file modification date. A date already in the filename always wins.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:1249-1258 (process(job:)), 352-369 (restyledFromName), and the ordering comment at Hammer.swift:287-292
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:1249-1258 (process(job:)), 352-369 (restyledFromName), and the ordering comment at Hammer.swift:287-292
 
 - Item already carries a documentInfo dictionary of raw PDF attributes (title, author, subject, creator, producer, keywords, keyed by PDFDocumentAttribute.*.rawValue) that is captured on every run but never fed into naming today.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:522 (field), 1239-1247 (populated), 1240-1241 lists the six PDFDocumentAttribute keys read
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:522 (field), 1239-1247 (populated), 1240-1241 lists the six PDFDocumentAttribute keys read
 
 - BookGuess (title/author/year, from an AI reading the opening pages) is the one existing path where structured fields drive a name: filename(for:rules:) joins year, title, author (in that order, empty ones dropped) into one string and re-runs it through normalizedName, so the AI's guess is treated exactly like text found in the filename, not as separate slots.
-  EVIDENCE: Sources/PDFHammerCore/BookGuess.swift:71-81; called from Hammer.swift:338-339 (restyled) and Sources/PDFHammer/Runner.swift:475-488 (identify)
+  EVIDENCE: Sources/PaperShelfCore/BookGuess.swift:71-81; called from Hammer.swift:338-339 (restyled) and Sources/PaperShelf/Runner.swift:475-488 (identify)
 
 - A second, independent parser exists only for the bibliography view: titleWords(from:) reparses the already-normalized destination name (date out, rest split on -/_/space) to get title/year for a BibEntry when no BookGuess is known; citationKey is a fixed surname:year:firstword shape, never user configurable.
-  EVIDENCE: Sources/PDFHammerCore/Bibtex.swift:82-95 (titleWords), 97-108 (citationKey), 112-131 (bibEntries)
+  EVIDENCE: Sources/PaperShelfCore/Bibtex.swift:82-95 (titleWords), 97-108 (citationKey), 112-131 (bibEntries)
 
 - Collision handling today is entirely post hoc and outside any pattern: availableURL probes the filesystem and appends -2, -3, ... only once a real name clash is found; nothing before it knows about the eventual suffix.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:993-1005; a real (non dry run) process(jobs:) run is kept serial specifically because this probing races (comment at 1082-1084)
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:993-1005; a real (non dry run) process(jobs:) run is kept serial specifically because this probing races (comment at 1082-1084)
 
 - Two safety nets already exist that any new renderer should reuse rather than reimplement: sanitizedFilename strips / and :, trims stray punctuation, and guarantees a non-empty untitled.pdf fallback; clipped(_:to:) clips on a word boundary.
-  EVIDENCE: Sources/PDFHammerCore/Hammer.swift:1066-1078 (sanitizedFilename), 153-163 (clipped)
+  EVIDENCE: Sources/PaperShelfCore/Hammer.swift:1066-1078 (sanitizedFilename), 153-163 (clipped)
 
 - The UI's naming panel is literally the pile of toggles the task describes: two Pickers (Case, Separators), three plain Toggles (Remove symbols, Remove accents, ASCII only), one more Toggle (Drop leading article), two more Pickers (Date goes, Date looks like), and a Max length slider, nine controls with no way to see or change the arrangement of date vs. name.
-  EVIDENCE: Sources/PDFHammer/ContentView.swift:445-482, AppStorage keys at ContentView.swift:24-32
+  EVIDENCE: Sources/PaperShelf/ContentView.swift:445-482, AppStorage keys at ContentView.swift:24-32
 
 - NameRules is decomposed field by field in three separate places today (10 @AppStorage keys, a `rules` computed property, and a hand built namingFingerprint cache key string), all of which a token based replacement would collapse to one stored string plus one field read.
-  EVIDENCE: Sources/PDFHammer/ContentView.swift:24-32 (AppStorage), 121-127 (rules), 153-160 (namingFingerprint)
+  EVIDENCE: Sources/PaperShelf/ContentView.swift:24-32 (AppStorage), 121-127 (rules), 153-160 (namingFingerprint)
 
-- The repo is Swift 6 tooling with swiftLanguageMode v5, macOS 14 minimum, no third party dependencies, split into PDFHammerCore (logic) and PDFHammer (SwiftUI) targets.
+- The repo is Swift 6 tooling with swiftLanguageMode v5, macOS 14 minimum, no third party dependencies, split into PaperShelfCore (logic) and PaperShelf (SwiftUI) targets.
   EVIDENCE: Package.swift:1-22
 
 - As of this session the repo went from no-git to a live git history mid task (HEAD 4d6aaea 'refactor: split the app view into files by what it draws'); the naming code (Hammer.swift, BookGuess.swift, Bibtex.swift) was untouched by that refactor, but an earlier commit (cada1ca) dropped output encryption from Hammer.swift, removing EncryptionSettings, writeOptions, and the .encrypted Status case that an initial read of the file still showed.
-  EVIDENCE: git log --oneline -5 in /Users/jonaprieto/research/pdf-hammer; diff between two Hammer.swift reads in this session (1416 lines vs 1374 lines)
+  EVIDENCE: git log --oneline -5 in /Users/jonaprieto/research/papershelf; diff between two Hammer.swift reads in this session (1416 lines vs 1374 lines)
 
 - Zotero 7's file renaming templates use `{{ variable param="value" }}` mustache style blocks: documented variables include authors, authorsCount, editors, creators, firstCreator, itemType, year, plus any item field (title, DOI, ISBN, citationKey); documented parameters include start, truncate, prefix, suffix, case, join, initialize, match, replaceFrom, replaceTo, regexOpts; if/elseif/else/endif blocks with ==, <, <=, >, >= handle conditional inclusion (used specifically to branch on itemType or to test a value with `match` before falling back to something else).
   EVIDENCE: https://www.zotero.org/support/file_renaming (fetched); example quoted verbatim: `{{ if itemType == "book" }} {{ISBN}} {{ elseif itemType == "preprint" }} {{ DOI }} ... {{ else }} {{ title }} {{ endif }}`

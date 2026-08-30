@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "pdf-hammer": {
+    "papershelf": {
       "type": "stdio",
-      "command": "/Applications/PDF Hammer.app/Contents/MacOS/pdf-hammer-mcp",
+      "command": "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp",
       "args": [],
       "env": {}
     }
