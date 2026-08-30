@@ -143,6 +143,21 @@ struct StatusBar: View {
                 Text("\(activity.done) of \(activity.total)")
                     .monospacedDigit()
             }
+        case .idle where activity.indexing:
+            // Reading documents' text so a search can look inside them. The shelf is
+            // usable throughout, so this is a line rather than an overlay, and it says
+            // how to stop.
+            HStack(spacing: 7) {
+                ProgressView(value: Double(activity.indexed),
+                             total: Double(max(activity.indexTotal, 1)))
+                    .progressViewStyle(.linear)
+                    .frame(width: 120)
+                Text("Indexing text \(activity.indexed) of \(activity.indexTotal)")
+                    .monospacedDigit()
+                Button("Stop") { runner.stopIndexing() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+            }
         case .idle where activity.absorbing:
             // The watcher taking in files it just noticed. Its own line until now, in a
             // second bar underneath this one.
@@ -193,6 +208,12 @@ struct StatusBar: View {
         if locked > 0 { out.append(("\(locked) locked", Ink.amber)) }
         if !runner.duplicates.isEmpty {
             out.append(("\(runner.duplicates.count) duplicate group\(runner.duplicates.count == 1 ? "" : "s")", Ink.purple))
+        }
+        // Files the indexer could not open. Said once, as a number: on a disk that has
+        // stopped answering this is every file, and a list of names would be the whole
+        // shelf written along the bottom of the window.
+        if activity.indexFailures > 0 {
+            out.append(("\(activity.indexFailures) could not be read", Ink.amber))
         }
         return out
     }

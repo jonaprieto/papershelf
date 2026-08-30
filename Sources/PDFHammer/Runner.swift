@@ -107,6 +107,14 @@ final class Runner: ObservableObject {
     private var workGeneration = 0
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = 0
+    /// The text indexer, which runs beside everything else rather than instead of it: a
+    /// shelf stays usable while its documents are being read. See `TextIndexing.swift`.
+    var indexTask: Task<Void, Never>?
+    var indexGeneration = 0
+    /// How many documents in the library have text on record.
+    @Published private(set) var indexedTextCount = 0
+
+    func setIndexedTextCount(_ count: Int) { indexedTextCount = count }
 
 
     var busy: Bool { phase != .idle }

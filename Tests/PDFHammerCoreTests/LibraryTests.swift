@@ -392,6 +392,31 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(counts, [first.id: 1, second.id: 1])
     }
 
+    /// What the indexer asks before it starts: every path, the document it belongs to,
+    /// and whether its text has been read. One query, because the alternative is one per
+    /// file across fourteen thousand of them.
+    func testTheIndexReportsWhatStillHasNoText() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let read = try await library.indexDocument(path: "/shelf/read.pdf", contentHash: "a")
+        _ = try await library.indexDocument(path: "/shelf/unread.pdf", contentHash: "b")
+
+        try await library.setExtractedText([(documentID: read.id, markdown: "a theorem here")])
+
+        let rows = try await library.textIndexRows().sorted { $0.path < $1.path }
+        XCTAssertEqual(rows.map(\.path), ["/shelf/read.pdf", "/shelf/unread.pdf"])
+        XCTAssertNotNil(rows.first?.extractedAt)
+        XCTAssertNil(rows.last?.extractedAt, "nothing has read this one yet")
+        let indexed = try await library.indexedTextCount()
+        XCTAssertEqual(indexed, 1)
+
+        // The batch write goes through the same triggers a single write does, so what it
+        // stores is searchable immediately.
+        let found = try await library.fullTextSearch("theorem")
+        XCTAssertEqual(found.map(\.id), [read.id])
+    }
+
     func testDroppingPathsOnAProjectAddsOnlyTheOnesTheLibraryKnows() async throws {
         let url = try makeDatabaseURL()
         defer { tearDownDatabase(url) }

@@ -20,6 +20,15 @@ final class Activity: ObservableObject {
     @Published var lastAbsorbed = 0
     /// True while what is on screen came from the last launch rather than from a scan.
     @Published var showingCached = false
+    /// Reading documents' text so it can be searched. Deliberately not a `phase`: the
+    /// shelf stays usable while it runs, and going busy would blank it.
+    @Published var indexing = false
+    @Published var indexed = 0
+    @Published var indexTotal = 0
+    /// Files the indexer could not open. Counted rather than listed: on a failing disk
+    /// this is every file, and a list of fourteen thousand names says nothing a number
+    /// does not.
+    @Published var indexFailures = 0
 
     func note(_ kind: LogEntry.Kind, subject: String, detail: String = "") {
         log.append(LogEntry(kind: kind, subject: subject, detail: detail))
@@ -35,6 +44,10 @@ final class Activity: ObservableObject {
         absorbing = false
         lastAbsorbed = 0
         showingCached = false
+        indexing = false
+        indexed = 0
+        indexTotal = 0
+        indexFailures = 0
     }
 }
 

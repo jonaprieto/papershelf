@@ -752,6 +752,53 @@ public actor Library {
         }
     }
 
+    /// Every known path with the document it belongs to and when its text was last read.
+    /// One query rather than one per file: the indexer asks this once and then knows what
+    /// is left to do. A path with no text yet reports `nil`.
+    public func textIndexRows() throws -> [TextIndexRow] {
+        try withStatement("""
+            SELECT l.path, l.document_id, e.extracted_at
+            FROM locations l
+            LEFT JOIN extracted_text e ON e.document_id = l.document_id;
+            """) { statement in
+            var rows: [TextIndexRow] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let path = columnText(statement, 0),
+                      let id = columnText(statement, 1) else { continue }
+                rows.append(TextIndexRow(path: path, documentID: id,
+                                         extractedAt: columnText(statement, 2)
+                                            .flatMap(Library.isoDate)))
+            }
+            return rows
+        }
+    }
+
+    /// Stores a batch of extracted text in one transaction. Fourteen thousand documents
+    /// written one statement at a time is fourteen thousand fsyncs.
+    public func setExtractedText(_ batch: [(documentID: String, markdown: String)],
+                                 extractedAt: Date = Date()) throws {
+        guard !batch.isEmpty else { return }
+        try execute("BEGIN IMMEDIATE;")
+        do {
+            for entry in batch {
+                try setExtractedText(entry.markdown, forDocument: entry.documentID,
+                                     extractedAt: extractedAt)
+            }
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    /// How many documents have text on record, for a status line that has to say whether
+    /// searching the text is going to answer anything.
+    public func indexedTextCount() throws -> Int {
+        try withStatement("SELECT COUNT(*) FROM extracted_text;") { statement in
+            sqlite3_step(statement) == SQLITE_ROW ? Int(sqlite3_column_int64(statement, 0)) : 0
+        }
+    }
+
     public func extractedText(forDocument documentID: String) throws -> ExtractedText? {
         try withStatement("SELECT document_id, markdown, extracted_at FROM extracted_text WHERE document_id = ?;",
                           bind: { statement in bindText(statement, 1, documentID) }) { statement in

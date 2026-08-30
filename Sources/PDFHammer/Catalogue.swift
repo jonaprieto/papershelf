@@ -881,7 +881,7 @@ struct ResultsPane: View {
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-        .findDuplicates, .revealInFinder, .openExternally,
+        .findDuplicates, .indexText, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
@@ -908,6 +908,9 @@ struct ResultsPane: View {
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
         case .findDuplicates: runner.findDuplicates(passwords: passwords)
+        case .indexText:
+            if runner.activity.indexing { runner.stopIndexing() }
+            else { runner.indexText(passwords: passwords) }
         case .confirmAllPending:
             runner.confirmAllPending()
             ensureSelection()
