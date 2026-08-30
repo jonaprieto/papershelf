@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import PaperShelfCore
 
 /// A reading project in the middle of the window: the conversation, and the documents it
@@ -24,8 +25,16 @@ struct ProjectWorkspace: View {
     /// Told when this project gains or loses a document, so the window's own count of it,
     /// drawn in the sidebar from a query taken when the window loaded, cannot go on
     /// saying what used to be true.
+    /// Bumped by the window whenever something outside this view changes what the project
+    /// holds, which is what a paper dropped on the project's row in the sidebar is. The
+    /// list in front of you has to say what the project holds, not what it held when it
+    /// was opened.
+    var reloadToken: Int = 0
+
     init(project: ProjectSummary, env: ProjectsEnvironment,
-         membershipChanged: @escaping () -> Void = {}, close: @escaping () -> Void) {
+         membershipChanged: @escaping () -> Void = {}, reloadToken: Int = 0,
+         close: @escaping () -> Void) {
+        self.reloadToken = reloadToken
         self.project = project
         self.env = env
         self.close = close
@@ -47,6 +56,10 @@ struct ProjectWorkspace: View {
         .toolbar { toolbar }
         .onExitCommand(perform: close)
         .task { await model.load() }
+        .task(id: reloadToken) {
+            guard reloadToken != 0 else { return }
+            await model.load()
+        }
         .sheet(isPresented: $showingAddDocuments) {
             AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
                 Task { await model.addBatch(hashes, section: section) }
@@ -147,10 +160,17 @@ struct ProjectWorkspace: View {
         // A document dragged from the sidebar, or a PDF from Finder. Paths the library has
         // not seen are skipped by `addFiles`, so a stray drop is a no-op, not an import.
         .background(dropTargeted ? Color.accentColor.opacity(0.08) : .clear)
-        .dropDestination(for: URL.self) { urls, _ in
-            Task { await model.addFiles(urls.map(\.path)) }
+        // `onDrop` rather than `dropDestination`: most of this pane is a List, and a drop
+        // over a List does not reach the newer modifier wrapped around it. Every drag in
+        // this app carries a file URL, so that is what it asks for.
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            Task {
+                let urls = await droppedFileURLs(from: providers)
+                guard !urls.isEmpty else { return }
+                await model.addFiles(urls.map(\.path))
+            }
             return true
-        } isTargeted: { dropTargeted = $0 }
+        }
     }
 
     private var notIndexed: [ProjectMember] {

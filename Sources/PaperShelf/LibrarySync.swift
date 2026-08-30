@@ -167,6 +167,26 @@ func addToProject(_ paths: [String], project id: Int64, library: Library) async 
     return try await library.addMembers(paths: wanted, toProject: id)
 }
 
+/// The files a drag is carrying, whichever view it started in.
+///
+/// Every drag in this app registers a file URL: SwiftUI's own `draggable`, and the item
+/// providers the list and the shelf hand out. `onDrop` gives the providers rather than
+/// decoding them, so this is the one place that asks each one for its URL, and the one
+/// place a drag that carries nothing usable is turned into an empty answer rather than a
+/// crash or a silent half-drop.
+func droppedFileURLs(from providers: [NSItemProvider]) async -> [URL] {
+    var found: [URL] = []
+    for provider in providers where provider.canLoadObject(ofClass: URL.self) {
+        let url: URL? = await withCheckedContinuation { continuation in
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                continuation.resume(returning: url)
+            }
+        }
+        if let url, url.isFileURL { found.append(url) }
+    }
+    return found
+}
+
 /// The PDFs a drop actually means.
 ///
 /// A folder dropped on a project means the documents in it: dropping one used to file the

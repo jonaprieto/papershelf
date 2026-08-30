@@ -110,6 +110,9 @@ struct ContentView: View {
     @State private var tagBeingDeleted: TagCount?
     /// Rebuilt from the results whenever they change, so the Explorer draws a folder
     /// hierarchy without walking the disk again.
+    /// Bumped whenever something outside the project workspace changes what an open
+    /// project holds, so the workspace reads its members again.
+    @State private var projectContentsRevision = 0
     @State private var explorerTree: [ExplorerNode] = []
     /// Which folders are open, by path. Kept here rather than inside `OutlineGroup` so the
     /// Explorer can be folded and unfolded from its header the way an editor's can.
@@ -345,6 +348,7 @@ struct ContentView: View {
                                                  passwords: { passwords },
                                                  converterName: { defaultConverter }),
                     membershipChanged: { Task { await reloadProjects() } },
+                    reloadToken: projectContentsRevision,
                     close: {
                         self.openProject = nil
                         sidebarTarget = .shelf(shelves.current)
@@ -722,22 +726,23 @@ struct ContentView: View {
                 Text("No projects yet").foregroundStyle(.secondary)
             } else {
                 ForEach(projects) { project in
-                    Button {
+                    // A row rather than a Button: a Button takes the drag for itself, so a
+                    // paper dropped on a project landed on nothing and the project went on
+                    // saying what it said before. The tap does what the Button did.
+                    HStack {
+                        Label(project.name, systemImage: "books.vertical.fill")
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(project.documentCount)")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         chrome.reading = false
                         openProject = openProject?.id == project.id ? nil : project
                         sidebarTarget = .project(project.id)
-                    } label: {
-                        HStack {
-                            Label(project.name, systemImage: "books.vertical.fill")
-                                .lineLimit(1)
-                            Spacer()
-                            Text("\(project.documentCount)")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                     .foregroundStyle(openProject?.id == project.id ? Color.accentColor : .primary)
                     .accessibilityAddTraits(sidebarTarget == .project(project.id) ? .isSelected : [])
                     .background(dropProject == project.id
@@ -745,12 +750,23 @@ struct ContentView: View {
                                 : sidebarTarget == .project(project.id)
                                 ? Color.accentColor.opacity(0.12)
                                 : .clear, in: RoundedRectangle(cornerRadius: 5))
-                    .dropDestination(for: URL.self) { urls, _ in
-                        addFiles(urls, toProject: project.id)
+                    // `onDrop` rather than `dropDestination`: this is a row of a List, and
+                    // the newer modifier does not receive drops there. Every drag in this
+                    // app carries a file URL (the sidebar's own rows, the list's, the
+                    // shelf's, and Finder's), so that is what it asks for.
+                    .onDrop(of: [.fileURL], isTargeted: Binding(
+                        get: { dropProject == project.id },
+                        set: { targeted in
+                            if targeted { dropProject = project.id }
+                            else if dropProject == project.id { dropProject = nil }
+                        }
+                    )) { providers in
+                        Task {
+                            let urls = await droppedFileURLs(from: providers)
+                            guard !urls.isEmpty else { return }
+                            addFiles(urls, toProject: project.id)
+                        }
                         return true
-                    } isTargeted: { targeted in
-                        if targeted { dropProject = project.id }
-                        else if dropProject == project.id { dropProject = nil }
                     }
                     .tip("Ask a question across these \(project.documentCount) documents. "
                          + "Drop a PDF here to add it.")
@@ -788,8 +804,12 @@ struct ContentView: View {
     private func addFiles(_ urls: [URL], toProject id: Int64) {
         guard let library = Library.shared else { return }
         Task {
-            _ = try? await addToProject(urls.map(\.path), project: id, library: library)
+            let added = (try? await addToProject(urls.map(\.path), project: id, library: library)) ?? 0
             await reloadProjects()
+            // The workspace, if it is the one open, is showing a list it read when it
+            // opened. Dropping a paper on the project in the sidebar changes what the
+            // project holds, so the list beside it has to be read again.
+            if added > 0, openProject?.id == id { projectContentsRevision += 1 }
         }
     }
 
