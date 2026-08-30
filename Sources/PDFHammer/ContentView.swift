@@ -508,9 +508,12 @@ struct ContentView: View {
         List {
             shelvesPanel
             sidebarSectionDivider
-            sourcesPanel
-            sidebarSectionDivider
+            // Projects above sources: a project is somewhere you work, a source is where
+            // files came from. A shelf of fourteen thousand files pushes its own folder
+            // tree down the sidebar, and everything under it with it.
             projectsPanel
+            sidebarSectionDivider
+            sourcesPanel
             sidebarSectionDivider
             tagsPanel
         }
@@ -915,26 +918,32 @@ struct ContentView: View {
         }
     }
 
+    /// Fold and unfold the whole tree, in the Sources header, beside what they fold.
+    /// Disabled while the filter is on: filtering opens what it kept, and a fold button
+    /// that fights the filter is a button that does nothing you can see.
     private var explorerFolding: some View {
-        HStack(spacing: 4) {
-                Button {
-                    explorerExpanded = explorerFolderIDs(explorerTree)
-                } label: {
-                    Image(systemName: "rectangle.expand.vertical")
-                }
-                .buttonStyle(.borderless)
-                .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
-                .tip("Unfold every folder")
+        HStack(spacing: 2) {
+            Button {
+                explorerExpanded = explorerFolderIDs(explorerTree)
+            } label: {
+                Image(systemName: "chevron.down.square")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+            .tip("Unfold every folder")
 
-                Button {
-                    explorerExpanded = []
-                } label: {
-                    Image(systemName: "rectangle.compress.vertical")
-                }
-                .buttonStyle(.borderless)
-                .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
-                .tip("Fold every folder")
+            Button {
+                explorerExpanded = []
+            } label: {
+                Image(systemName: "chevron.right.square")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(runner.results.isEmpty || !explorerFilter.isEmpty)
+            .tip("Fold every folder")
         }
+        .font(.caption)
     }
 
     private var explorerFilterField: some View {
@@ -965,7 +974,7 @@ struct ContentView: View {
     /// level down. Each source is the root of its own tree now, and unfolds into it.
     @ViewBuilder
     private var sourcesPanel: some View {
-            Section("Sources") {
+            Section {
                 if selection.isEmpty {
                     Text("Nothing added yet")
                         .foregroundStyle(.secondary)
@@ -980,6 +989,15 @@ struct ContentView: View {
                     Label("Add a folder or a PDF", systemImage: "plus.circle")
                 }
                 .buttonStyle(.link)
+            } header: {
+                // Folding lives with the tree it folds. These buttons existed and were
+                // never drawn, which on a source with several hundred folders is the
+                // difference between a sidebar and a scroll.
+                HStack(spacing: 4) {
+                    Text("Sources")
+                    Spacer(minLength: 4)
+                    explorerFolding
+                }
             }
             .task(id: runner.resultsToken) {
                 explorerTree = buildExplorerTree(runner.results)
