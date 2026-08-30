@@ -313,27 +313,41 @@ machine, and nothing is sent unless you ask.
 
 ## Search
 
-A query bar over the results, filtering the tree, the catalogue and the bibliography
-alike. `/` focuses it.
+A query bar over the results, filtering the list, the shelf, the bibliography and the
+duplicates alike. `/` focuses it, and the magnifying glass is a menu of the fields.
 
 ```
 extracto 2024            both words appear in either name
+author:pearl title:causal   who wrote it, what it calls itself
+abstract:epidemic        the document opens by saying this
+text:"do calculus"       those words appear anywhere inside it
 folder:bank size>10mb    in a folder called bank, over ten megabytes
 pages>100 status:locked  long, and no password opened it
-text:"quick brown"       those words are in the opening pages
 ```
 
-Bare words match the new and the old name, `name:` `was:` `folder:` `status:` `year:`
-narrow, `size>` `size<` `pages>` `pages<` compare, and sizes take `k`, `mb`, `gb`. Terms
-are joined with and. An unrecognised field is searched for as literal text rather than
-rejected, because a search box that refuses input is worse than one that finds nothing.
+A query is answered in two halves. What a file says about itself, `name:` `was:`
+`folder:` `status:` `year:` `size:` `pages:` `tag:` and bare words, is answered from a
+searchable form built once per result set: **1 ms** over 10,000 files, filtering as you
+type. What a document says inside itself, `text:` and `abstract:`, is answered by the
+library's own index and waits for Return.
 
-Metadata filters as you type: **1 ms** over 10,000 files, because each file's searchable
-form is built once per result set rather than per keystroke.
+`title:` and `author:` read what the PDF says about itself, falling back to what an
+earlier pass stored, so they work on a shelf whose files have been listed but not opened.
+`year:` matches the year in the name, the year the PDF says it was made, or the year the
+file was last written. `pages:` uses the library's count for a file nothing has opened,
+and an unknown count matches no `pages:` term rather than passing as zero. Sizes take
+`k`, `mb`, `gb`. Terms are joined with and. A field that does not exist is still searched
+for as literal text, but the bar says so rather than leaving a typo looking like an empty
+result.
 
-A `text:` query waits for Return, since it has to read the documents. That read is
-concurrent and cached: about 6 s for 10,000 files the first time, and **42 ms** per query
-after. Matching is a byte scan over normalised UTF-8 rather than `String.contains`, which
+Searching inside documents needs their text read once, which is the one pass that opens
+every file on the shelf, so it is asked for by name (`Index text for search`, or the
+button the bar offers when a query needs it). It reads across every core, writes in
+batches so stopping keeps what it read, skips what it has already read unless the file
+has changed since, and stores up to 100,000 characters per document. Documents it has
+never read are counted in the bar rather than quietly answered "no match".
+
+Matching a name is a byte scan over normalised UTF-8 rather than `String.contains`, which
 is grapheme-cluster aware and roughly fifty times slower. Both sides are canonically
 composed first, so an accent written as one code point still matches one written as two.
 
