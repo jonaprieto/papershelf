@@ -104,6 +104,8 @@ struct ContentView: View {
     @State private var renamingTag = false
     @State private var tagBeingRenamed: TagCount?
     @State private var renamedTagText = ""
+    @State private var deletingTag = false
+    @State private var tagBeingDeleted: TagCount?
     /// Rebuilt from the results whenever they change, so the Explorer draws a folder
     /// hierarchy without walking the disk again.
     @State private var explorerTree: [ExplorerNode] = []
@@ -869,6 +871,12 @@ struct ContentView: View {
         } message: { tag in
             Text("Renaming \"\(tag.name)\" changes it everywhere it is used.")
         }
+        .confirmationDialog("Delete Tag", isPresented: $deletingTag, presenting: tagBeingDeleted) { tag in
+            Button("Delete", role: .destructive) { Task { await performDeleteTag(tag) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { tag in
+            Text("Deleting \"\(tag.name)\" removes it from \(tag.documents) document\(tag.documents == 1 ? "" : "s").")
+        }
     }
 
     private func tagRow(_ tag: TagCount) -> some View {
@@ -903,7 +911,8 @@ struct ContentView: View {
                 renamingTag = true
             }
             Button("Delete", role: .destructive) {
-                Task { await performDeleteTag(tag) }
+                tagBeingDeleted = tag
+                deletingTag = true
             }
         }
     }

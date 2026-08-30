@@ -158,6 +158,11 @@ struct ProjectsListView: View {
     @StateObject private var store: ProjectsStore
     @State private var showingNewProject = false
     @State private var newProjectName = ""
+    /// The projects a swipe or the Delete key just asked to remove, held until the
+    /// confirmation below decides. `Library.deleteProject` is a hard SQL delete of the
+    /// project and every membership row with no undo anywhere in the app, so this dialog
+    /// is the only path to it.
+    @State private var projectsPendingDeletion: [ProjectSummary]?
     private let env: ProjectsEnvironment
 
     init(env: ProjectsEnvironment) {
@@ -181,7 +186,7 @@ struct ProjectsListView: View {
                 }
             }
             .onDelete { indexSet in
-                for index in indexSet { Task { await store.delete(store.projects[index]) } }
+                projectsPendingDeletion = indexSet.map { store.projects[$0] }
             }
         }
         .navigationTitle("Reading Projects")
@@ -211,6 +216,29 @@ struct ProjectsListView: View {
         } message: {
             Text(store.error ?? "")
         }
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: Binding(
+                get: { projectsPendingDeletion != nil },
+                set: { if !$0 { projectsPendingDeletion = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                let projects = projectsPendingDeletion ?? []
+                projectsPendingDeletion = nil
+                for project in projects { Task { await store.delete(project) } }
+            }
+            Button("Cancel", role: .cancel) { projectsPendingDeletion = nil }
+        } message: {
+            Text("The documents stay on disk; the project and its sections are gone.")
+        }
+    }
+
+    private var deleteConfirmationTitle: String {
+        guard let projectsPendingDeletion, let first = projectsPendingDeletion.first else { return "" }
+        return projectsPendingDeletion.count == 1
+            ? "Delete \"\(first.name)\"?"
+            : "Delete \(projectsPendingDeletion.count) projects?"
     }
 }
 
