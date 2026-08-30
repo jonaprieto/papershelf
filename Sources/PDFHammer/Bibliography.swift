@@ -185,15 +185,28 @@ struct BibNodeView: View {
     @Binding var expanded: Set<String>
     @ObservedObject var runner: Runner
     var passwords: [String] = []
+    /// The search's answer, or nil when nothing is filtering. The bibliography draws the
+    /// same tree the list does and hides the same branches: a search box that changes one
+    /// view and not the other is a search box that cannot be trusted.
+    var visible: Set<String>?
+
+    private var isHidden: Bool {
+        guard let visible else { return false }
+        if let key = node.itemKey { return !visible.contains(key) }
+        return !anyVisible(node, visible)
+    }
 
     var body: some View {
-        if let key = node.itemKey, let entry = runner.bibByItem[key] {
+        if isHidden {
+            EmptyView()
+        } else if let key = node.itemKey, let entry = runner.bibByItem[key] {
             BibRow(entry: entry, item: runner.item(key), passwords: passwords)
                 .tag(key).id(key)
         } else if node.itemKey == nil {
             DisclosureGroup(isExpanded: expansion) {
                 ForEach(node.children ?? []) { child in
-                    BibNodeView(node: child, expanded: $expanded, runner: runner, passwords: passwords)
+                    BibNodeView(node: child, expanded: $expanded, runner: runner,
+                                passwords: passwords, visible: visible)
                 }
             } label: {
                 Label {

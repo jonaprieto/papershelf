@@ -16,6 +16,39 @@ final class SearchTests: XCTestCase {
         return Searchable(item: item, text: text, tags: tags)
     }
 
+    /// A paper is from the year it was written, not the year its filename happens to
+    /// start with. The metadata date and the file's own date both count.
+    func testYearMatchesTheNameTheMetadataOrTheFile() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let source = root.appendingPathComponent("smith-causality.pdf")
+        var item = Item(root: root, source: source, destination: source, status: .renamed)
+        item.metadataDate = DateComponents(calendar: .current, year: 2019, month: 3, day: 2).date
+        item.modifiedDate = DateComponents(calendar: .current, year: 2024, month: 7, day: 9).date
+        let file = Searchable(item: item)
+
+        XCTAssertTrue(matches(file, Query("year:2019")), "the year the PDF says it was made")
+        XCTAssertTrue(matches(file, Query("year:2024")), "the year the file was written")
+        XCTAssertFalse(matches(file, Query("year:1999")))
+    }
+
+    /// A shelf lists files without opening them, so a page count is often unknown. An
+    /// unknown count is not zero: `pages<10` must not sweep up everything unread.
+    func testAnUnknownPageCountMatchesNoPagesTerm() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let source = root.appendingPathComponent("unread.pdf")
+        let item = Item(root: root, source: source, destination: source, status: .renamed)
+        let unread = Searchable(item: item)
+
+        XCTAssertFalse(matches(unread, Query("pages<10")))
+        XCTAssertFalse(matches(unread, Query("pages>10")))
+        XCTAssertFalse(matches(unread, Query("pages:0")))
+
+        // What the library read on an earlier pass stands in for the file itself.
+        let known = Searchable(item: item, pageCount: 240)
+        XCTAssertTrue(matches(known, Query("pages>100")))
+        XCTAssertFalse(matches(known, Query("pages<100")))
+    }
+
     func testBareWordsMatchEitherName() {
         let file = subject(name: "2024-06-extracto.pdf")
         XCTAssertTrue(matches(file, Query("extracto")))

@@ -436,6 +436,25 @@ public actor Library {
     /// For resolving a whole shelf at once. Asking file by file meant two statements and a
     /// round trip through this actor per file, a thousand times over on a thousand-file
     /// shelf, to end up with nothing but the ids.
+    /// Page counts by path, for a shelf that listed its files without opening them. The
+    /// library keeps what an earlier pass read; a `pages:` search would otherwise be dead
+    /// on a source added the cheap way.
+    public func pageCountsByPath() throws -> [String: Int] {
+        try withStatement("""
+            SELECT l.path, d.page_count
+            FROM locations l
+            JOIN documents d ON d.id = l.document_id
+            WHERE d.page_count IS NOT NULL;
+            """) { statement in
+            var counts: [String: Int] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let path = columnText(statement, 0) else { continue }
+                counts[path] = Int(sqlite3_column_int64(statement, 1))
+            }
+            return counts
+        }
+    }
+
     public func documentIDsByPath() throws -> [String: String] {
         try withStatement("SELECT path, document_id FROM locations;", bind: { _ in }) { statement in
             var found: [String: String] = [:]

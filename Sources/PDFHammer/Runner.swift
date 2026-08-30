@@ -385,12 +385,25 @@ final class Runner: ObservableObject {
     /// per keystroke was most of what a metadata search cost.
     private var projections: [Searchable] = []
     private var projectionsIncludeText = false
+    /// What the library already knows about files this shelf listed without opening them.
+    /// A source added the cheap way has no page counts of its own until a plan runs.
+    private var libraryPageCounts: [String: Int] = [:]
 
     private func buildProjections(includingText: Bool) {
         projections = results.map {
-            Searchable(item: $0, text: includingText ? textCache[$0.key] : nil)
+            Searchable(item: $0, text: includingText ? textCache[$0.key] : nil,
+                       pageCount: libraryPageCounts[$0.key])
         }
         projectionsIncludeText = includingText
+    }
+
+    /// Reads the library's page counts and drops the projections built without them, so
+    /// the next search sees what an earlier pass had already read out of the PDFs.
+    func refreshLibraryFacts() async {
+        guard let library = Library.shared else { return }
+        guard let counts = try? await library.pageCountsByPath() else { return }
+        libraryPageCounts = counts
+        projections = []
     }
 
     func search(_ text: String, passwords: [String]) {
@@ -843,7 +856,10 @@ final class Runner: ObservableObject {
                 // Register paths immediately, but keep it off the first-render path. The
                 // shelf can open before this batch is indexed; the library catches up in
                 // one SQLite write so notes, tags and reading positions have an owner.
-                Task { await self.syncLibrary(with: out) }
+                Task {
+                    await self.syncLibrary(with: out)
+                    await self.refreshLibraryFacts()
+                }
                 self.workTask = nil
             }
         }
@@ -1038,7 +1054,12 @@ final class Runner: ObservableObject {
         // watcher absorbing what changed on disk. One call covers all three, and it is the
         // call that keeps a renamed document's tags, notes and project membership attached
         // to it rather than orphaned at a path that no longer exists.
-        if syncLibrary { Task { await self.syncLibrary(with: out) } }
+        if syncLibrary {
+            Task {
+                await self.syncLibrary(with: out)
+                await self.refreshLibraryFacts()
+            }
+        }
     }
 }
 

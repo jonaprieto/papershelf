@@ -247,6 +247,12 @@ struct ResultsPane: View {
         ), compute: computeVisibleKeys)
     }
 
+    private var visibleBib: [BibEntry] { entriesVisible(runner.bib, in: visibleKeys) }
+
+    private var visibleDuplicates: [DuplicateGroup] {
+        groupsVisible(runner.duplicates, in: visibleKeys)
+    }
+
     /// The filter itself, unchanged. It is called at most once per body pass now, and not
     /// at all when nothing it reads has moved.
     private func computeVisibleKeys() -> Set<String>? {
@@ -1223,12 +1229,12 @@ struct ResultsPane: View {
                         bibEntryList
                             .frame(width: max(380, geometry.size.width * 0.42))
                         Divider()
-                        BibFileView(entries: runner.bib, order: $bibOrder,
+                        BibFileView(entries: visibleBib, order: $bibOrder,
                                     completeOnly: $bibCompleteOnly, style: bibStyle)
                             .frame(maxWidth: .infinity)
                     }
                 } else if bibShowsFile {
-                    BibFileView(entries: runner.bib, order: $bibOrder,
+                    BibFileView(entries: visibleBib, order: $bibOrder,
                                 completeOnly: $bibCompleteOnly, style: bibStyle)
                 } else {
                     bibEntryList
@@ -1251,7 +1257,8 @@ struct ResultsPane: View {
             ScrollViewReader { scroll in
                 List(selection: $selected) {
                     ForEach(runner.tree) { node in
-                        BibNodeView(node: node, expanded: $expanded, runner: runner)
+                        BibNodeView(node: node, expanded: $expanded, runner: runner,
+                                    visible: visibleKeys)
                     }
                 }
                 .listStyle(.inset)
@@ -1297,7 +1304,7 @@ struct ResultsPane: View {
                     duplicatesBar
                     Divider()
                     List(selection: $selected) {
-                        ForEach(runner.duplicates) { group in
+                        ForEach(visibleDuplicates) { group in
                             DuplicateSection(group: group, runner: runner)
                         }
                     }
@@ -1309,12 +1316,13 @@ struct ResultsPane: View {
     }
 
     private var duplicatesBar: some View {
-        let identical = runner.duplicates.filter { $0.kind == .identical }.count
-        let sameText = runner.duplicates.filter { $0.kind == .sameText }.count
-        let reclaimable = runner.duplicates.reduce(0) { $0 + $1.reclaimable }
+        let groups = visibleDuplicates
+        let identical = groups.filter { $0.kind == .identical }.count
+        let sameText = groups.filter { $0.kind == .sameText }.count
+        let reclaimable = groups.reduce(0) { $0 + $1.reclaimable }
         return HStack(spacing: 10) {
             Text("\(identical) identical, \(sameText) same pages, "
-                 + "\(runner.duplicates.count - identical - sameText) by name")
+                 + "\(groups.count - identical - sameText) by name")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Text(ByteCountFormatter.string(fromByteCount: Int64(reclaimable), countStyle: .file)
@@ -1765,10 +1773,12 @@ struct ResultsPane: View {
         }
         switch mode {
         case .duplicates:
-            let files = runner.duplicates.reduce(0) { $0 + $1.items.count }
-            return "\(runner.duplicates.count) group\(runner.duplicates.count == 1 ? "" : "s") · \(files) files"
+            let groups = visibleDuplicates
+            let files = groups.reduce(0) { $0 + $1.items.count }
+            return "\(groups.count) group\(groups.count == 1 ? "" : "s") · \(files) files"
         case .bibliography:
-            return "\(runner.bib.count) entr\(runner.bib.count == 1 ? "y" : "ies")"
+            let entries = visibleBib.count
+            return "\(entries) entr\(entries == 1 ? "y" : "ies")"
         default:
             let shown = visibleKeys?.count ?? runner.results.count
             let reachable = max(0, sourceCount - unavailableSourceCount)
@@ -2142,6 +2152,27 @@ struct RowFacts {
     }
 }
 
+/// The bibliography of what the search left on screen. The entries are the same documents
+/// the list would be showing, so a query that narrows one has to narrow both.
+func entriesVisible(_ entries: [BibEntry], in visible: Set<String>?) -> [BibEntry] {
+    guard let visible else { return entries }
+    return entries.filter { visible.contains($0.itemKey) }
+}
+
+/// A duplicate group survives if any of its copies did. Dropping the copies that did not
+/// match would leave a group of one, which is the one thing a duplicate is not.
+func groupsVisible(_ groups: [DuplicateGroup], in visible: Set<String>?) -> [DuplicateGroup] {
+    guard let visible else { return groups }
+    return groups.filter { group in group.items.contains { visible.contains($0.key) } }
+}
+
+/// Whether anything under this node survived the current filter. Shared by the list and
+/// the bibliography, which draw the same tree and have to hide the same branches.
+func anyVisible(_ node: Node, _ visible: Set<String>) -> Bool {
+    if let key = node.itemKey { return visible.contains(key) }
+    return (node.children ?? []).contains { anyVisible($0, visible) }
+}
+
 struct NodeView: View {
     let node: Node
     @Binding var expanded: Set<String>
@@ -2171,11 +2202,6 @@ struct NodeView: View {
         guard let visible else { return false }
         if let key = node.itemKey { return !visible.contains(key) }
         return !anyVisible(node, visible)
-    }
-
-    private func anyVisible(_ node: Node, _ visible: Set<String>) -> Bool {
-        if let key = node.itemKey { return visible.contains(key) }
-        return (node.children ?? []).contains { anyVisible($0, visible) }
     }
 
     var body: some View {

@@ -84,6 +84,12 @@ func byteValue(_ text: String) -> Int? {
     return Int(lowered)
 }
 
+/// The year of a date, as four digits. `Calendar.current` rather than a formatter: this
+/// runs once per file per search projection, and a formatter is the slower of the two.
+func yearText(_ date: Date) -> String {
+    String(Calendar.current.component(.year, from: date))
+}
+
 /// Normalises text for comparison: composed form, lowercased, as UTF-8 bytes.
 ///
 /// Bytes rather than `String`, because `String.contains` is grapheme-cluster aware and
@@ -120,9 +126,15 @@ public struct Searchable: Sendable {
     let original: [UInt8]
     let folder: [UInt8]
     let status: String
-    let year: String
+    /// Every year this file could reasonably be said to be from: the four digits a name
+    /// starts with, the year the PDF says it was created, and the year the file was last
+    /// written. A paper named `smith-2024-causality.pdf` is a 2024 paper, and matching
+    /// only the name's first four characters said it was not.
+    let years: [String]
     let size: Int
-    let pages: Int
+    /// Nil when nothing has read the document yet. A `pages:` term fails against it
+    /// rather than matching zero, which would let every unread file through a `pages<10`.
+    let pages: Int?
     /// Nil until the document's text has been read, which only happens for a text query.
     let text: [UInt8]?
     /// From the library, not the file itself, so it defaults to empty: a caller that has
@@ -130,14 +142,19 @@ public struct Searchable: Sendable {
     /// yes to a `tag:` term, and must not be made to guess.
     let tags: [String]
 
-    public init(item: Item, text: String? = nil, tags: [String] = []) {
+    /// `pageCount` is the library's own answer, for a file the shelf listed without
+    /// opening: the item carries a page count only once something has read the PDF.
+    public init(item: Item, text: String? = nil, tags: [String] = [],
+                pageCount: Int? = nil) {
         name = normalised(item.destinationName)
         original = normalised(item.sourceName)
         folder = normalised((item.relativePath as NSString).deletingLastPathComponent)
         status = item.status.rawValue
-        year = String(item.destinationName.prefix(4))
+        years = [String(item.destinationName.prefix(4)),
+                 item.metadataDate.map(yearText),
+                 item.modifiedDate.map(yearText)].compactMap { $0 }
         size = item.byteCount ?? 0
-        pages = item.pageCount ?? 0
+        pages = item.pageCount ?? pageCount
         self.text = text.map(normalised)
         self.tags = tags
     }
@@ -168,7 +185,7 @@ public func matches(_ subject: Searchable, _ query: PreparedQuery) -> Bool {
         case "was": return contains(subject.original, needle)
         case "folder": return contains(subject.folder, needle)
         case "status": return subject.status.hasPrefix(term.value.lowercased())
-        case "year": return subject.year.hasPrefix(term.value)
+        case "year": return subject.years.contains { $0.hasPrefix(term.value) }
         // Empty (unresolved) tags fail rather than pass, the same convention "text"
         // already uses: a file nothing has checked cannot be said to carry the tag.
         case "tag": return subject.tags.contains { $0.lowercased().hasPrefix(term.value.lowercased()) }
@@ -177,7 +194,8 @@ public func matches(_ subject: Searchable, _ query: PreparedQuery) -> Bool {
         case "text": return subject.text.map { contains($0, needle) } ?? false
         case "size", "pages":
             guard let wanted = number else { return false }
-            let actual = term.field == "size" ? subject.size : subject.pages
+            guard let actual = term.field == "size" ? subject.size : subject.pages
+            else { return false }
             switch term.comparison {
             case .greater: return actual > wanted
             case .less: return actual < wanted
