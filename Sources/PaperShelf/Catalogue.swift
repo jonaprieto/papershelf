@@ -2509,10 +2509,15 @@ final class CatalogueTags: ObservableObject {
         return true
     }
 
-    func remove(_ name: String, from item: Item) async {
-        guard let library, let id = documentID[item.key] else { return }
-        try? await library.removeTag(name, fromDocument: id)
+    // Mirrors `add`: the in-memory table only moves once the write has actually
+    // succeeded, so a failed delete does not make the chip vanish and then reappear on
+    // the next refresh.
+    @discardableResult
+    func remove(_ name: String, from item: Item) async -> Bool {
+        guard let library, let id = documentID[item.key] else { return false }
+        guard (try? await library.removeTag(name, fromDocument: id)) != nil else { return false }
         byDocument[id]?.removeAll { $0 == name }
+        return true
     }
 }
 

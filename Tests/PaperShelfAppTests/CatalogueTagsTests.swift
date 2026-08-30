@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import PaperShelfCore
 @testable import PaperShelf
 
@@ -89,6 +90,33 @@ final class CatalogueTagsTests: XCTestCase {
         let record = try await library.document(atPath: path)
         let stored = try await library.tags(forDocument: record!.id).map(\.name)
         XCTAssertEqual(stored, [], "the removal must have reached the library, not just the cache")
+    }
+
+    /// `remove` must mirror `add`: the in-memory cache only moves once the library write
+    /// has actually succeeded. A second connection to the same file drops the table
+    /// `removeTag`'s `DELETE` depends on, so the write genuinely fails -- SQLite lets a
+    /// second connection write to the same file, which is exactly what a real second
+    /// process would do -- rather than merely matching zero rows, which would not have
+    /// caught the bug this guards against.
+    func testARemovalThatFailsToWriteLeavesTheChipInPlace() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let tagIndex = CatalogueTags(library: library)
+        let item = makeItem("a.pdf")
+
+        _ = await tagIndex.add("Reading", to: item)
+        XCTAssertEqual(tagIndex.tags(for: item), ["Reading"])
+
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        XCTAssertEqual(sqlite3_exec(handle, "DROP TABLE tags;", nil, nil, nil), SQLITE_OK)
+
+        let removed = await tagIndex.remove("Reading", from: item)
+        XCTAssertFalse(removed, "the write failed, so remove must say so")
+        XCTAssertEqual(tagIndex.tags(for: item), ["Reading"],
+                        "a failed write must not make the chip vanish from the cache")
     }
 
     // MARK: - Refreshing

@@ -47,11 +47,20 @@ extension Runner {
                 let slice = Array(work[index..<min(index + batchSize, work.count)])
                 let read = await Self.readText(slice, passwords: passwords)
                 guard !Task.isCancelled else { return }
-                try? await library.setExtractedText(read.stored)
+                // `setExtractedText` is one transaction for the whole batch, so either
+                // every document read here lands in the library or none of them do. A
+                // rolled-back write leaves the batch exactly as unsearchable as a read
+                // failure, so it counts the same way rather than as indexed.
+                var wrote = true
+                do {
+                    try await library.setExtractedText(read.stored)
+                } catch {
+                    wrote = false
+                }
                 await MainActor.run {
                     guard let self, self.indexGeneration == generation else { return }
-                    self.activity.indexed += slice.count
-                    self.activity.indexFailures += read.failures
+                    self.activity.indexed += wrote ? slice.count : 0
+                    self.activity.indexFailures += wrote ? read.failures : slice.count
                     self.activity.current = read.last
                 }
                 index += batchSize
