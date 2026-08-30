@@ -55,6 +55,8 @@ final class Runner: ObservableObject {
     private var guesses: [String: BookGuess] { ai.guesses }
 
     @Published var lastRunWasDry = true
+    /// When the results on screen were produced. Nil before the first run.
+    @Published var builtAt: Date?
     /// Snapshot of the inputs the current results were produced from.
     @Published var fingerprint = ""
     /// Keyed by `Item.key`.
@@ -1029,6 +1031,9 @@ final class Runner: ObservableObject {
         found = 0
         current = ""
         lastRunWasDry = dry
+        // When this plan was built, so the bar under it can say how old what you are
+        // looking at is. A plan an hour stale is one the disk may have moved on from.
+        builtAt = Date()
         self.fingerprint = fingerprint
     }
 

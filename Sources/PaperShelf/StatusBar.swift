@@ -70,6 +70,59 @@ struct StatusBar: View {
     @ObservedObject private var regions: Regions = .shared
     @ObservedObject private var library: LibraryStatus = .shared
 
+    /// The plan being worked through, when one is on screen.
+    var plan: PlanFacts?
+
+    /// What the bar says while a plan is being reviewed.
+    struct PlanFacts: Equatable {
+        let total: Int
+        let confirmed: Int
+        let skipped: Int
+        let trashed: Int
+        let pending: Int
+        /// Where the originals go when the plan is applied, or nil when they are replaced
+        /// in place. Worth a permanent line: it is the difference between a rename you can
+        /// take back and one you cannot.
+        let backupFolder: String?
+        let sources: Int
+        let builtAt: Date?
+
+        var decided: Int { total - pending }
+        var fraction: Double { total > 0 ? Double(decided) / Double(total) : 0 }
+
+        var progress: String {
+            var parts: [String] = []
+            if confirmed > 0 { parts.append("\(confirmed) confirmed") }
+            if skipped > 0 { parts.append("\(skipped) skipped") }
+            if trashed > 0 { parts.append("\(trashed) to trash") }
+            parts.append("\(pending) to go")
+            return parts.joined(separator: " \u{00B7} ")
+        }
+
+        var originals: String {
+            guard let backupFolder else { return "Originals are replaced" }
+            return "Originals move to \(backupFolder)/"
+        }
+
+        var built: String {
+            guard let builtAt else { return "No plan built yet" }
+            let source = "\(sources) source\(sources == 1 ? "" : "s")"
+            return "Plan built \(ago(builtAt)) from \(source)"
+        }
+
+        /// "just now", "2 min ago", "3 hours ago". A plan is minutes old or it is stale;
+        /// nothing in between needs a date.
+        private func ago(_ date: Date, now: Date = Date()) -> String {
+            let seconds = now.timeIntervalSince(date)
+            switch seconds {
+            case ..<60: return "just now"
+            case ..<3600: return "\(Int(seconds / 60)) min ago"
+            case ..<86_400: return "\(Int(seconds / 3600)) hour\(Int(seconds / 3600) == 1 ? "" : "s") ago"
+            default: return "\(Int(seconds / 86_400)) day\(Int(seconds / 86_400) == 1 ? "" : "s") ago"
+            }
+        }
+    }
+
     /// What the bar says about the one document being read.
     struct DocumentFacts: Equatable {
         let path: String
@@ -99,8 +152,54 @@ struct StatusBar: View {
     var body: some View {
         if let document {
             readerBar(document)
+        } else if let plan {
+            planBar(plan)
         } else {
             collectionBar
+        }
+    }
+
+    /// Working through a plan: how far along it is, what happens to the originals, and
+    /// how old the plan on screen is.
+    ///
+    /// The collection's bar says how much the shelf weighs and how much the library
+    /// holds, which are the wrong two facts to have in front of you while deciding four
+    /// hundred filenames one at a time.
+    private func planBar(_ plan: PlanFacts) -> some View {
+        HStack(spacing: 10) {
+            ProgressView(value: plan.fraction)
+                .progressViewStyle(.linear)
+                .frame(width: 110)
+                .tip("\(plan.decided) of \(plan.total) decided")
+
+            Text(plan.progress)
+            separator
+            Text(plan.originals)
+
+            Spacer(minLength: 8)
+
+            if runner.phase != .idle || activity.indexing || activity.absorbing {
+                runningNow
+                separator
+            }
+
+            ForEach(warnings, id: \.text) { warning in
+                Text(warning.text).foregroundStyle(warning.colour)
+                separator
+            }
+
+            if let spend {
+                Text(spend)
+                separator
+            }
+
+            Text(plan.built)
+            separator
+            Text("? for every shortcut")
+        }
+        .modifier(StatusBarChrome())
+        .onChange(of: regions.focused) { _, region in
+            if region == .status { showingActivity = true }
         }
     }
 
@@ -151,7 +250,7 @@ struct StatusBar: View {
                 Text(counts)
             }
 
-            plan
+            planState
 
             Spacer(minLength: 8)
 
@@ -208,7 +307,7 @@ struct StatusBar: View {
     /// Whether what is on screen is a plan, an applied run, or a plan that no longer
     /// describes the settings it was built with.
     @ViewBuilder
-    private var plan: some View {
+    private var planState: some View {
         if runner.results.isEmpty {
             EmptyView()
         } else if !runner.lastRunWasDry {

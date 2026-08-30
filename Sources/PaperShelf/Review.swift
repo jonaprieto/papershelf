@@ -267,6 +267,13 @@ struct ReviewInspector: View {
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // Pinned, like the notes tab's export bar. A reviewer presses one of these
+                // on every file; they should not be below however much this particular
+                // document had to say about itself.
+                if panel == .rename {
+                    Divider()
+                    renameActions
+                }
             }
         }
     }
@@ -459,18 +466,47 @@ struct ReviewInspector: View {
     }
 
     @ViewBuilder
+    /// The name, where it came from, what the document says, and what you can do about
+    /// it -- in that order, because that is the order the question is answered in.
+    ///
+    /// It was a field, a "was" line and eleven buttons in two wrapping rows. The buttons
+    /// were the loudest thing in the panel and the reasoning behind the name was not in it
+    /// at all, so agreeing with a name meant taking it on trust.
     private var renamePanel: some View {
-        Text(folderPath)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.head)
+        VStack(alignment: .leading, spacing: 18) {
+            newNameSection
+            builtFromSection
+            readFromDocumentSection
 
-        VStack(alignment: .leading, spacing: 4) {
-            Text("New name").font(.caption).foregroundStyle(.secondary)
-            TextField("Name", text: $draft)
+            HStack(spacing: 7) {
+                Button(action: identify) { KeyLabel("G", "Ask AI") }
+                    .disabled(!aiReady || runner.ai.isThinking(item))
+                    .tip(aiReady ? "Read the opening pages and suggest a title"
+                                 : "Add an API key in Settings first", key: "G")
+                Button(action: copyCitation) { KeyLabel("B", "Copy citation") }
+                    .tip("Copy its BibTeX entry, asking the model if fields are missing",
+                         key: "B")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A section heading: what the block under it is, in the smallest type that still
+    /// reads, so the blocks are told apart without a rule between them.
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(Face.caption.weight(.semibold))
+            .tracking(0.7)
+            .foregroundStyle(.tertiary)
+    }
+
+    private var newNameSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("NEW NAME")
+            TextField("Name", text: $draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+                .font(Face.mono)
+                .lineLimit(1...3)
                 .focused($editing)
                 .onSubmit(submit)
                 .onKeyPress(.escape) {
@@ -478,87 +514,191 @@ struct ReviewInspector: View {
                     return .handled
                 }
                 .strikethrough(decision == .deleted)
+
             HStack(spacing: 6) {
-                Text("was \(item.sourceName)")
                 if isEdited {
-                    Text("edited")
-                        .foregroundStyle(Ink.blue)
+                    Text("edited").foregroundStyle(Ink.blue)
                     Button("Reset", action: reset).buttonStyle(.link)
+                    Spacer(minLength: 0)
+                } else {
+                    KeyLabel("E", "to edit")
+                    Text("\u{00B7}")
+                    KeyLabel("\u{2318}Z", "to undo the last decision")
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-                decisionBadge
             }
-            .font(.caption)
+            .font(Face.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            .truncationMode(.middle)
+
+            if !item.message.isEmpty {
+                Text(item.message)
+                    .font(Face.caption)
+                    .foregroundStyle(item.status == .failed ? Ink.red : Ink.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-
-        if !item.message.isEmpty {
-            Text(item.message)
-                .font(.caption)
-                .foregroundStyle(item.status == .failed ? Ink.red : Ink.amber)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        actionRows
-
-        Text(decision == .deleted
-             ? "Moves to the Trash on apply, so it stays recoverable. R puts it back."
-             : "J or N next, K or P previous. ? lists every shortcut.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    /// The ingredients, and the one or two things worth saying about how they were found.
+    /// Both come from `nameProvenance`, which claims nothing it cannot point at.
     @ViewBuilder
-    private var actionRows: some View {
-        // Wrapping, not scrolling sideways. In a 320-point column a horizontal scroll
-        // view puts half the decisions off the edge with nothing to say they are there —
-        // which is how "Apply now" ends up invisible on the screen where it matters most.
-        VStack(alignment: .leading, spacing: 7) {
-          FlowLayout(spacing: 7) {
-                Button(action: confirm) { KeyLabel("\u{21A9}", "Confirm") }
-                    .buttonStyle(.borderedProminent)
-                Button(action: { editing = true }) { KeyLabel("E", "Edit name") }
-                Button(action: copyCitation) { KeyLabel("B", "Citation") }
-                    .tip("Copy its BibTeX entry, asking the model if fields are missing", key: "B")
-                Toggle(isOn: $autoIdentify) {
-                    Image(systemName: autoIdentify ? "sparkles.rectangle.stack.fill"
-                                                   : "sparkles.rectangle.stack")
+    private var builtFromSection: some View {
+        let provenance = nameProvenance(for: item, guess: runner.ai.guesses[item.key])
+        if !provenance.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                sectionLabel("BUILT FROM")
+                FlowLayout(spacing: 6) {
+                    ForEach(provenance.parts, id: \.value) { part in
+                        HStack(spacing: 5) {
+                            Text(part.label).foregroundStyle(.tertiary)
+                            // A title can be the whole name. Held to the panel's width
+                            // and truncated in the middle, since both ends of a slug are
+                            // what identify it; the field above carries the whole thing.
+                            Text(part.value)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .font(Face.caption)
+                        .frame(maxWidth: 230, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(.quaternary.opacity(0.45),
+                                    in: RoundedRectangle(cornerRadius: Metric.control))
+                    }
                 }
-                .toggleStyle(.button)
-                .disabled(!aiReady)
-                .tip(autoIdentify ? "Asking the model on each new file"
-                                  : "Ask the model on each new file")
-                Button(action: identify) { KeyLabel("G", "Ask AI") }
-                    .disabled(!aiReady || runner.ai.isThinking(item))
-                    .tip(aiReady ? "Read the opening pages and suggest a title"
-                             : "Add an API key in Settings first", key: "G")
-          }
+                if !provenance.notes.isEmpty {
+                    Text(provenance.notes.joined(separator: " "))
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 
-          FlowLayout(spacing: 7) {
+    /// What the file itself says, as against what the plan made of it. Four lines: enough
+    /// to tell whether the name above is right, and no more -- the rest is the Info tab.
+    @ViewBuilder
+    private var readFromDocumentSection: some View {
+        let rows = documentRows
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                sectionLabel("READ FROM THE DOCUMENT")
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(rows, id: \.0) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(row.0)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Text(row.1)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(Face.caption)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Only what the document actually said. A row of "unknown" four times over says
+    /// nothing except that the file is a scan, which the page already shows.
+    private var documentRows: [(String, String)] {
+        var rows: [(String, String)] = []
+        let guess = runner.ai.guesses[item.key]
+        if let title = stated(item.documentInfo["Title"]) ?? guess?.title {
+            rows.append(("Title", title))
+        }
+        if let author = stated(item.documentInfo["Author"]) ?? guess?.author {
+            rows.append(("Author", author))
+        }
+        if let year = guess?.year ?? item.metadataDate.map({ ReviewInspector.year.string(from: $0) }) {
+            rows.append(("Year", year))
+        }
+        if let pages = item.pageCount {
+            let lock: String
+            switch item.status {
+            case .decrypted: lock = " \u{00B7} unlocked with a password you gave"
+            case .locked: lock = " \u{00B7} locked, no password matched"
+            case .encrypted: lock = " \u{00B7} will be written out locked"
+            default: lock = ""
+            }
+            rows.append(("Pages", "\(pages)\(lock)"))
+        }
+        return rows
+    }
+
+    /// A year on its own, for the one row that wants one.
+    private static let year: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy"
+        return formatter
+    }()
+
+    private func stated(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// The decision, pinned under the panel rather than scrolled with it.
+    ///
+    /// A reviewer presses one of these on every file, so they belong where the pointer
+    /// already is instead of below however much the document had to say about itself.
+    private var renameActions: some View {
+        VStack(spacing: 8) {
+            if decision == nil {
+                Button(action: confirm) {
+                    HStack(spacing: 6) {
+                        Text("Confirm and continue")
+                        Text("\u{21A9}")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .padding(.horizontal, 3)
+                            .background(.white.opacity(0.22),
+                                        in: RoundedRectangle(cornerRadius: 3))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            } else {
+                Button(action: reopen) {
+                    KeyLabel("R", decidedLabel).frame(maxWidth: .infinity)
+                }
+                .controlSize(.large)
+                .tip("Undo this decision and look at the file again", key: "R")
+            }
+
+            HStack(spacing: 7) {
                 Button(action: skip) { KeyLabel("S", "Skip") }
                     .tip("Leave this file exactly as it is", key: "S")
-                Button(action: skipFolder) { KeyLabel("F", folderScopeLabel) }
+                Button(action: skipFolder) { KeyLabel("F", "Folder") }
                     .disabled(pendingInFolder == 0)
                     .tip("Skip the rest of \(folderName)", key: "F")
-                if decision != nil {
-                    Button(action: reopen) { KeyLabel("R", "Reopen") }
-                }
-                Button(action: applyNow) { KeyLabel("A", "Apply now") }
-                    .disabled(decision == .applied)
-                    .tint(Ink.green)
-                    .tip("Rename this one file on disk now", key: "A")
-                Button(action: moveTo) { KeyLabel("M", "Move to…") }
+                Button(action: moveTo) { KeyLabel("M", "Move") }
                     .tint(Ink.purple)
                 Button(action: markDeleted) { KeyLabel("D", "Trash") }
                     .tint(Ink.red)
                     .tip("To the Trash on apply, recoverable", key: "D")
-          }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    /// What the row was decided, for the button that takes it back.
+    private var decidedLabel: String {
+        switch decision {
+        case .confirmed: return "Confirmed \u{2014} reopen"
+        case .applied: return "Applied \u{2014} reopen"
+        case .skipped: return "Skipped \u{2014} reopen"
+        case .deleted: return "Going to the Trash \u{2014} reopen"
+        case .moveTo(let folder): return "Moving to \(folder.lastPathComponent) \u{2014} reopen"
+        case nil: return "Reopen"
         }
     }
 
@@ -574,29 +714,6 @@ struct ReviewInspector: View {
         }
     }
 
-    @ViewBuilder
-    private var decisionBadge: some View {
-        switch decision {
-        case .confirmed:
-            Label("Confirmed", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Ink.green)
-        case .applied:
-            Label("Applied", systemImage: "checkmark.seal.fill")
-                .foregroundStyle(Ink.green)
-        case .skipped:
-            Label("Skipped", systemImage: "minus.circle.fill")
-                .foregroundStyle(.secondary)
-        case .deleted:
-            Label("Will be trashed", systemImage: "trash.circle.fill")
-                .foregroundStyle(Ink.red)
-        case .moveTo(let folder):
-            Label("Moving to \(folder.lastPathComponent)", systemImage: "arrow.right.circle.fill")
-                .foregroundStyle(Ink.purple)
-        case nil:
-            Label("Not reviewed", systemImage: "circle.dotted")
-                .foregroundStyle(.tertiary)
-        }
-    }
 }
 
 /// A button label that carries its own shortcut, so the keys are discoverable without a

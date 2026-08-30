@@ -885,7 +885,25 @@ struct ContentView: View {
             selectedPath: selectedPath,
             lastOpened: selectionOpenedAt,
             bibliography: bibliographySummary,
-            document: readerFacts
+            document: readerFacts,
+            plan: planFacts
+        )
+    }
+
+    /// The plan being worked through, when that is what the window is showing. Only the
+    /// reviewer: the shelf is about a collection, and the bar under it should stay about
+    /// the collection.
+    private var planFacts: StatusBar.PlanFacts? {
+        guard mode == .list, !runner.results.isEmpty, !chrome.reading else { return nil }
+        return StatusBar.PlanFacts(
+            total: runner.results.count,
+            confirmed: runner.confirmedCount + runner.appliedCount,
+            skipped: runner.skippedCount,
+            trashed: runner.deletedCount,
+            pending: runner.pendingCount,
+            backupFolder: moveOriginals ? backup.safeFolderName : nil,
+            sources: selection.filter(isReachable).count,
+            builtAt: runner.builtAt
         )
     }
 

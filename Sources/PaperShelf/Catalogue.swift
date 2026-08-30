@@ -833,20 +833,58 @@ struct ResultsPane: View {
             .disabled(runner.identicalExtras == 0)
             .tip("Only files that are identical byte for byte. A likely match is never batched.")
         default:
-            Button(action: preview) {
-                Label("Review names", systemImage: "textformat.abc")
+            // Only when there is no plan yet. Once there is one the bar is about working
+            // through it, and rebuilding it is in the menu behind.
+            if runner.results.isEmpty {
+                Button(action: preview) {
+                    Label("Review names", systemImage: "textformat.abc")
+                }
+                .labelStyle(.titleAndIcon)
+                .disabled(!hasSources || runner.busy)
+                .keyboardShortcut("p", modifiers: .command)
+                .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
             }
-            .labelStyle(.titleAndIcon)
-            .disabled(!hasSources || runner.busy)
-            .keyboardShortcut("p", modifiers: .command)
-            .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
+
+            // While there is a plan being worked through, the bar is about the plan: what
+            // the model can do to what is left, what confirming the rest would do, and
+            // what applying would. `autoIdentify` lives here rather than in the panel
+            // because it is a setting for the whole run, not a decision about one file.
+            if !runner.results.isEmpty {
+                if aiReady {
+                    Toggle("Ask AI as I go", isOn: $autoIdentify)
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .fixedSize()
+                        .tip("Ask the model for a name on each file as you reach it")
+
+                    if runner.pendingCount > 0 {
+                        Button { confirmingBatchAI = true } label: {
+                            Label("Ask AI for \(runner.pendingCount)", systemImage: "sparkles")
+                        }
+                        .labelStyle(.titleAndIcon)
+                        .tip("One request per undecided file. You are billed by the provider.")
+                    }
+                }
+
+                if runner.pendingCount > 0 {
+                    Button {
+                        runner.confirmAllPending()
+                        ensureSelection()
+                    } label: {
+                        Label("Confirm all", systemImage: "checkmark.circle")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .keyboardShortcut(.return, modifiers: [.command, .shift])
+                    .tip("Take every name still pending as it stands", key: "⌘⇧Return")
+                }
+            }
 
             // Only when there is something to carry out. A permanently visible, permanently
             // dimmed blue button is a promise the app cannot keep, and it is the loudest
             // thing in the window while it makes it.
             if runner.actionable > 0 {
                 Button(action: apply) {
-                    Label("Apply changes \(runner.actionable)", systemImage: "checkmark.circle")
+                    Label("Apply \(runner.actionable)", systemImage: "checkmark.circle.fill")
                 }
                 .labelStyle(.titleAndIcon)
                 .buttonStyle(.borderedProminent)
@@ -860,21 +898,10 @@ struct ResultsPane: View {
         }
 
         Menu {
-            Button("Confirm everything still pending") {
-                runner.confirmAllPending()
-                ensureSelection()
-            }
-            .disabled(runner.pendingCount == 0)
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
+            Button("Review names again", action: preview)
+                .disabled(!hasSources || runner.busy)
+                .keyboardShortcut("p", modifiers: .command)
 
-            if aiReady {
-                Button("Ask AI for \(runner.pendingCount) name\(runner.pendingCount == 1 ? "" : "s")") {
-                    confirmingBatchAI = true
-                }
-                .disabled(runner.pendingCount == 0)
-            }
-
-            Divider()
             Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
                 .keyboardShortcut("d", modifiers: .command)
             Divider()
@@ -2092,7 +2119,8 @@ struct ResultsPane: View {
     private func listRow(_ row: FlatNode) -> some View {
         if let key = row.node.itemKey, let item = runner.item(key) {
             ResultRow(item: item, decision: runner.decision(for: item),
-                      duplicate: runner.duplicateKind[key], tags: tagIndex.tags(for: item))
+                      duplicate: runner.duplicateKind[key], tags: tagIndex.tags(for: item),
+                      isCurrent: key == selected)
                 .padding(.leading, CGFloat(row.depth) * 14)
                 .tag(key)
                 .id(key)
@@ -2238,6 +2266,20 @@ struct ResultsPane: View {
     /// because it was also where progress, decision counts, batch actions and the state
     /// label lived. Progress and counts are in the status bar; the actions are in the
     /// toolbar, where an action belongs.
+    /// What the plan holds, in the words its rows use. Only what is there: a row of
+    /// zeroes is a row to read past.
+    private var planCounts: [(PlanState, Int)] {
+        var counts: [(PlanState, Int)] = []
+        if runner.confirmedCount > 0 { counts.append((.confirmed, runner.confirmedCount)) }
+        if runner.appliedCount > 0 { counts.append((.applied, runner.appliedCount)) }
+        if runner.skippedCount > 0 { counts.append((.skipped, runner.skippedCount)) }
+        if runner.deletedCount > 0 { counts.append((.trash, runner.deletedCount)) }
+        if runner.movedCount > 0 { counts.append((.moving, runner.movedCount)) }
+        let locked = runner.statusCounts.first { $0.0 == .locked }?.1 ?? 0
+        if locked > 0 { counts.append((.locked, locked)) }
+        return counts
+    }
+
     private var filterBar: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal) {
@@ -2257,14 +2299,8 @@ struct ResultsPane: View {
                     ForEach(Query.chips(query), id: \.self) { piece in
                         chip(piece, icon: nil) { removeChip(piece) }
                     }
-                    if mode == .list {
-                        Toggle("Only undecided", isOn: $onlyUndecided)
-                            .toggleStyle(.button)
-                            .controlSize(.small)
-                            .tip("Hide everything already confirmed, skipped or trashed")
-                    }
-                    ForEach(runner.statusCounts, id: \.0) { status, count in
-                        StatusPill(status: status, count: count)
+                    ForEach(planCounts, id: \.0) { state, count in
+                        PlanCountPill(state: state, count: count)
                     }
                 }
                 .padding(.vertical, 1)
@@ -2290,6 +2326,18 @@ struct ResultsPane: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
                 .fixedSize()
+
+            if mode == .list {
+                // A switch, not a button that looks pressed. It answers yes or no to one
+                // question -- show me only what I have not decided -- which is what a
+                // switch is for, and it reads as on or off from across the window.
+                Toggle("Only undecided", isOn: $onlyUndecided)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.caption)
+                    .fixedSize()
+                    .tip("Hide everything already confirmed, skipped or trashed")
+            }
 
             sortMenu
         }
@@ -2343,6 +2391,11 @@ struct ResultsPane: View {
         switch mode {
         case .bibliography: return "Bibliography"
         case .duplicates: return "Duplicates"
+        case .list where !runner.results.isEmpty:
+            // The list is the reviewer, and what it is showing is a plan. Naming it after
+            // the shelf it was built from said where the files came from, which the
+            // sidebar already says, rather than what the window is for.
+            return "Review plan"
         default:
             if terms.count == 1, let term = terms.first, term.field == "tag" {
                 return "Tag: \(term.value)"
@@ -2370,6 +2423,11 @@ struct ResultsPane: View {
                 .compactMap { $0 }.joined(separator: " · ")
         }
         switch mode {
+        case .list where !runner.results.isEmpty:
+            let total = runner.results.count
+            let done = runner.reviewed
+            return "\(total) file\(total == 1 ? "" : "s") \u{00B7} \(done) decided "
+                + "\u{00B7} \(runner.pendingCount) to go"
         case .duplicates:
             let groups = visibleDuplicates
             let files = groups.reduce(0) { $0 + $1.items.count }
@@ -2910,11 +2968,20 @@ struct FolderRow: View {
             .foregroundStyle(.secondary)
             .tip(open ? "Fold this folder" : "Open this folder")
 
-            Image(systemName: "folder.fill").foregroundStyle(.tint)
-            Text(node.name).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
-            Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+            // A heading over the files under it, rather than a row that looks like one:
+            // a folder icon in a column of documents is one more thing to read past.
+            Text(node.name)
+                .font(Face.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("\u{00B7} \(count)")
+                .font(Face.caption)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
             Spacer(minLength: 0)
         }
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 2)
         .padding(.leading, CGFloat(depth) * 14)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: show)
@@ -2926,25 +2993,143 @@ struct FolderRow: View {
 }
 
 
+/// What one row of a plan is, in one word.
+///
+/// A file in a plan has two things true of it at once -- what the run made of it, and what
+/// you decided about it -- and the row used to show both, a glyph for one and a pill for
+/// the other. This is the single answer: the decision where there is one, and what the
+/// plan intends to do where there is not.
+enum PlanState: String {
+    case reviewing, confirmed, applied, renamed, unchanged
+    case locked, duplicate, skipped, trash, moving, failed
+
+    var label: String {
+        switch self {
+        case .reviewing: return "Reviewing"
+        case .confirmed: return "Confirmed"
+        case .applied: return "Applied"
+        case .renamed: return "Renamed"
+        case .unchanged: return "Unchanged"
+        case .locked: return "Locked"
+        case .duplicate: return "Duplicate"
+        case .skipped: return "Skipped"
+        case .trash: return "Trash"
+        case .moving: return "Moving"
+        case .failed: return "Failed"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .reviewing: return "play.fill"
+        case .confirmed: return "checkmark"
+        case .applied: return "checkmark.seal.fill"
+        case .renamed: return "circle.dotted"
+        case .unchanged: return "clock"
+        case .locked: return "lock.fill"
+        case .duplicate: return "doc.on.doc"
+        case .skipped: return "minus"
+        case .trash: return "trash"
+        case .moving: return "arrow.right"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    /// Darkened for light and lifted for dark: the system greens and oranges sit around
+    /// 2:1 on a light background, which is unreadable at caption size.
+    var colour: Color {
+        switch self {
+        case .reviewing, .renamed: return Ink.blue
+        case .confirmed, .applied: return Ink.green
+        case .unchanged, .skipped: return Ink.grey
+        case .locked: return Ink.amber
+        case .duplicate, .moving: return Ink.purple
+        case .trash, .failed: return Ink.red
+        }
+    }
+
+    /// What it means, for the tooltip on both the glyph and the pill.
+    var explanation: String {
+        switch self {
+        case .reviewing: return "The file the panel is asking about"
+        case .confirmed: return "Confirmed, and included when you apply"
+        case .applied: return "Already carried out on disk"
+        case .renamed: return "Will be renamed when you apply"
+        case .unchanged: return "Already named correctly; nothing to do"
+        case .locked: return "Encrypted and no password matched"
+        case .duplicate: return "Another copy of this file is in the plan"
+        case .skipped: return "Left alone; nothing will happen to it"
+        case .trash: return "Headed for the Trash when you apply"
+        case .moving: return "Moving to the folder you chose"
+        case .failed: return "Something went wrong; the note says what"
+        }
+    }
+
+    /// The mark down the left of the plan, which is the column a reviewer scans.
+    var glyph: some View {
+        Image(systemName: icon)
+            .font(.caption)
+            .foregroundStyle(colour)
+            .help(explanation)
+    }
+}
+
+/// How many of the plan are in one state, for the bar over it.
+struct PlanCountPill: View {
+    let state: PlanState
+    let count: Int
+
+    var body: some View {
+        Text("\(count) \(state.label.lowercased())")
+            .font(Face.caption.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(state.colour)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .fittedBackground(state.colour.opacity(Ink.fill), in: Capsule())
+            .tip(state.explanation)
+    }
+}
+
+/// The state of one row, on the right of it.
+struct PlanPill: View {
+    let state: PlanState
+
+    var body: some View {
+        Text(state.label)
+            .font(Face.caption.weight(.semibold))
+            .foregroundStyle(state.colour)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .fittedBackground(state.colour.opacity(Ink.fill), in: Capsule())
+            .tip(state.explanation)
+    }
+}
+
 struct ResultRow: View {
     let item: Item
     let decision: Decision?
     var duplicate: DuplicateGroup.Kind?
     var tags: [String] = []
+    /// The row being reviewed right now. It reads as "Reviewing" rather than as whatever
+    /// it will be, because that is what it is: the one the panel is asking about.
+    var isCurrent: Bool = false
 
     /// Two lines and one pill.
     ///
-    /// The old name small and grey above, what it becomes at full weight below, and the
-    /// state on the right. Size, pages and dates are in the inspector: a plan is read down
-    /// the column of names, and anything else on the row is something to read past.
+    /// The old name grey above, what it becomes at full weight below, and the state on
+    /// the right. Both are set in the same monospace, because the two of them are read
+    /// against each other character by character -- that is the whole review. Size, pages
+    /// and dates are in the inspector: a plan is read down the column of names, and
+    /// anything else on the row is something to read past.
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
-            reviewMark.frame(width: 15).padding(.top, 1)
+            state.glyph.frame(width: 15).padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 1) {
                 if isRenamed {
                     Text(item.sourceName)
-                        .font(Face.caption)
+                        .font(Face.mono)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -2956,13 +3141,16 @@ struct ResultRow: View {
                 } else {
                     Text(item.sourceName)
                         .font(Face.mono)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .strikethrough(decision == .deleted)
+                    // Not a name, so not set like one: this line says what will happen
+                    // to the file above it, and the plan is read down the names.
                     Text(outcome)
                         .font(Face.caption)
                         .foregroundStyle(item.status == .failed
-                                         ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.tertiary))
+                                         ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                 }
                 // On their own line: a row of chips beside the names would take the room
@@ -2972,15 +3160,32 @@ struct ResultRow: View {
 
             Spacer(minLength: 8)
 
-            if let duplicate {
-                Image(systemName: duplicateIcon(duplicate))
-                    .foregroundStyle(duplicateColour(duplicate))
-                    .help(duplicateExplanation(duplicate))
-            }
-            StatusPill(status: item.status, count: nil)
+            PlanPill(state: state)
         }
         .padding(.vertical, 3)
-        .opacity(decision == .skipped ? 0.45 : 1)
+        .opacity(decision == .skipped ? 0.55 : 1)
+    }
+
+    /// What this row is, in one word.
+    ///
+    /// The row used to carry two of these: a glyph for what you had decided and a pill for
+    /// what the file was, so a confirmed rename said "confirmed" on the left and "renamed"
+    /// on the right and a reader had to combine them. A decision, once made, is the answer;
+    /// until then the answer is what the plan intends to do.
+    private var state: PlanState {
+        switch decision {
+        case .confirmed: return .confirmed
+        case .applied: return .applied
+        case .skipped: return .skipped
+        case .deleted: return .trash
+        case .moveTo: return .moving
+        case nil: break
+        }
+        if isCurrent { return .reviewing }
+        if item.status == .locked { return .locked }
+        if item.status == .failed { return .failed }
+        if duplicate != nil { return .duplicate }
+        return isRenamed ? .renamed : .unchanged
     }
 
     private var isRenamed: Bool {
@@ -3018,31 +3223,6 @@ struct ResultRow: View {
         }
     }
 
-    @ViewBuilder
-    private var reviewMark: some View {
-        markGlyph.tip(decision?.explanation ?? undecidedExplanation)
-    }
-
-    @ViewBuilder
-    private var markGlyph: some View {
-        switch decision {
-        case .confirmed:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Ink.green)
-        case .applied:
-            Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Ink.green)
-        case .skipped:
-            Image(systemName: "minus.circle.fill").foregroundStyle(.tertiary)
-        case .deleted:
-            Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Ink.red)
-        case .moveTo:
-            Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
-        case nil:
-            Image(systemName: "circle.dotted").foregroundStyle(.tertiary)
-        }
-    }
 }
 
 /// One book on the shelf: cover, name, and the two badges that matter (what you decided,
