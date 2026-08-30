@@ -135,6 +135,10 @@ struct ProjectsEnvironment {
     /// what is sent and who answers it are one fact, not two.
     var model: () -> String = { "" }
     var openAtPage: (_ contentHash: String, _ page: Int) -> Void
+    /// Where a document is on disk, and the passwords that open it. What a citation needs
+    /// to be shown in this window rather than handed to another application.
+    var locate: (_ contentHash: String) async -> URL? = { _ in nil }
+    var passwords: () -> [String] = { [] }
 }
 
 // MARK: - Projects list
@@ -855,11 +859,18 @@ struct ProjectConversationView: View {
     /// 14" rather than "12 of 12" -- the two numbers are the whole point of the choice.
     private let totalDocuments: Int
 
+    /// What a click on a source does. The window shows it beside the answer rather than
+    /// handing the file to another application, so checking a citation does not mean
+    /// leaving the question behind.
+    private let openCitation: (Citation) -> Void
+
     init(documents: [ProjectDocument], totalDocuments: Int? = nil,
-         model: ProjectConversationModel) {
+         model: ProjectConversationModel,
+         openCitation: ((Citation) -> Void)? = nil) {
         self.documents = documents
         self.totalDocuments = totalDocuments ?? documents.count
         self.model = model
+        self.openCitation = openCitation ?? model.open
     }
 
     /// The answer being written out to a file, when one is.
@@ -875,7 +886,7 @@ struct ProjectConversationView: View {
                 }
                 ForEach(model.turns) { turn in
                     TurnView(turn: turn,
-                             onOpen: model.open,
+                             onOpen: openCitation,
                              footnote: footnote(for: turn),
                              copyWithCitations: { copy(turn) },
                              saveAsNote: { saving = turn })

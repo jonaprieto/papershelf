@@ -824,6 +824,10 @@ struct PDFPreview: NSViewRepresentable {
     let passwords: [String]
     var annotator: Annotator?
     var fit: PageFit = .width
+    /// Open at this page, one-based. For a citation, which is about one page rather than
+    /// about the document: opening its book at the front and leaving you to find p. 108
+    /// is most of the work the citation was supposed to save.
+    var page: Int?
 
     func makeCoordinator() -> Coordinator { Coordinator(annotator: annotator) }
 
@@ -870,6 +874,10 @@ struct PDFPreview: NSViewRepresentable {
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit
+        if coordinator.wanted == url, let page, coordinator.shown != page {
+            coordinator.shown = page
+            go(view, to: page)
+        }
         guard coordinator.wanted != url else { return }
 
         // Parsing a document is not free: a two-hundred-page thesis takes the better part
@@ -895,13 +903,27 @@ struct PDFPreview: NSViewRepresentable {
             // After the document, not before it: PDFView drops the setting when a
             // document is assigned, which is why the page had a margin and no shadow.
             view.pageShadowsEnabled = true
-            view.showFromTop()
+            if let page {
+                coordinator.shown = page
+                go(view, to: page)
+            } else {
+                view.showFromTop()
+            }
             annotator?.attach(view, url: wanted)
             // The reader's local key monitor deliberately lets arrows continue down the
             // responder chain. Make the PDF canvas that responder so scrolling and text
             // selection work from the keyboard without first clicking the page.
             view.window?.makeFirstResponder(view)
         }
+    }
+
+    /// Turns to a page, one-based and clamped, at the top of it.
+    private func go(_ view: PDFView, to number: Int) {
+        guard let document = view.document, document.pageCount > 0,
+              let page = document.page(at: min(max(number, 1), document.pageCount) - 1)
+        else { return }
+        view.go(to: PDFDestination(page: page,
+                                   at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
     }
 
     /// Carries a document back from the thread that parsed it. `PDFDocument` is not
@@ -927,6 +949,9 @@ struct PDFPreview: NSViewRepresentable {
         /// The file the view should end up showing, so a slower load of the file before it
         /// can tell that it is no longer wanted.
         @MainActor var wanted: URL?
+        /// The page it was last turned to, so asking for the same one twice does not
+        /// scroll it back there while somebody is reading around it.
+        @MainActor var shown: Int?
         init(annotator: Annotator?) { self.annotator = annotator }
 
         @objc func selectionChanged() {

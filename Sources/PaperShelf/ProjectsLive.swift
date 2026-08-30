@@ -21,6 +21,17 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
                         title: record.title ?? "untitled",
                         markdown: markdown)
     }
+    /// The newest path the library knows for a document, if the file is still there.
+    /// Shared by the two things that want a citation's file: showing it in this window,
+    /// and handing it to another application.
+    @Sendable func locate(_ documentID: String) async -> URL? {
+        guard let places = try? await library.locations(forDocument: documentID),
+              let latest = places.max(by: { $0.lastSeenAt < $1.lastSeenAt })
+        else { return nil }
+        let url = URL(fileURLWithPath: latest.path)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     func member(_ record: DocumentRecord, section: String?, markdown: String = "") -> ProjectMember {
         ProjectMember(document: document(record, markdown: markdown),
                      author: record.author, pageCount: record.pageCount, section: section)
@@ -110,17 +121,15 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
         model: { model },
         openAtPage: { documentID, page in
             Task {
-                guard let places = try? await library.locations(forDocument: documentID),
-                      let latest = places.max(by: { $0.lastSeenAt < $1.lastSeenAt })
-                else { return }
-                let url = URL(fileURLWithPath: latest.path)
-                guard FileManager.default.fileExists(atPath: url.path) else { return }
+                guard let url = await locate(documentID) else { return }
                 // Page numbers are 1-based everywhere in this app. Preview understands
                 // this fragment; a viewer that does not simply opens at the first page.
                 let atPage = URL(string: url.absoluteString + "#page=\(page)") ?? url
                 NSWorkspace.shared.open(atPage)
             }
-        }
+        },
+        locate: locate,
+        passwords: passwords
     )
 }
 

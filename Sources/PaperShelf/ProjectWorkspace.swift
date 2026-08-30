@@ -73,10 +73,15 @@ struct ProjectWorkspace: View {
             HStack(spacing: 0) {
                 ProjectConversationView(documents: asking,
                                         totalDocuments: model.members.count,
-                                        model: conversation)
+                                        model: conversation,
+                                        openCitation: show)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
-                documents.frame(width: Metric.inspectorIdeal)
+                if let previewing {
+                    citationPreview(previewing).frame(width: Metric.contentsRail + 220)
+                } else {
+                    documents.frame(width: Metric.inspectorIdeal)
+                }
             }
             .frame(width: room.size.width, height: room.size.height)
         }
@@ -111,6 +116,70 @@ struct ProjectWorkspace: View {
         let unticked = Set(model.members.map(\.document.contentHash)).subtracting(chosen)
         chosen = readable.subtracting(unticked.intersection(readable))
         if chosen.isEmpty { chosen = readable }
+    }
+
+    /// The page a citation points at, shown beside the answer that cited it.
+    struct Previewing: Equatable {
+        let hash: String
+        let url: URL
+        let page: Int
+        let title: String
+    }
+
+    @State private var previewing: Previewing?
+
+    /// Opens a citation here rather than in another application. A citation is about one
+    /// page, so the file is opened at it; a document opened at the front leaves you to
+    /// find p. 108 yourself, which is the work the citation was supposed to save.
+    private func show(_ citation: Citation) {
+        guard let hash = citation.contentHash else { return }
+        Task {
+            guard let url = await env.locate(hash) else {
+                // The library knows the document but not where it is any more. Handing it
+                // to the system is the one thing left that might still find it.
+                env.openAtPage(hash, citation.page)
+                return
+            }
+            previewing = Previewing(hash: hash, url: url, page: citation.page,
+                                    title: citation.documentTitle)
+        }
+    }
+
+    /// The cited page, with the way back to the document list above it.
+    private func citationPreview(_ preview: Previewing) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button { previewing = nil } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.tertiary)
+                    .tip("Back to the documents in this project")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(preview.title)
+                        .font(Face.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("p. \(preview.page)")
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Button { env.openAtPage(preview.hash, preview.page) } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .tip("Open this page in the default PDF viewer")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            Divider()
+
+            PDFPreview(url: preview.url, passwords: env.passwords(), page: preview.page)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+        }
     }
 
     private var subtitle: String {
