@@ -1159,7 +1159,16 @@ struct ContentView: View {
             DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
                 ExplorerOutline(nodes: children, expanded: $explorerExpanded,
                                 selected: reviewing,
-                                select: { reviewing = $0; sidebarTarget = .document($0) },
+                                select: { key in
+                                    reviewing = key
+                                    sidebarTarget = .document(key)
+                                    // The shelf has to be told, or a filter that hides
+                                    // this file leaves the middle of the window saying
+                                    // nothing matches while the panel describes it.
+                                    NotificationCenter.default.post(
+                                        name: .showDocumentInCatalogue, object: nil,
+                                        userInfo: ["key": key])
+                                },
                                 focusPath: { sidebarTarget = .folder($0) },
                                 openFolder: showFolder,
                                 focusedPath: focusedSidebarPath)

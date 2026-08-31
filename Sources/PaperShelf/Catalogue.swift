@@ -431,6 +431,34 @@ struct ResultsPane: View {
                            query: query, reader: nil))
     }
 
+    /// Shows a document the file explorer's own row was clicked on.
+    ///
+    /// Clicking a file there set the selection and nothing else, so a shelf narrowed to a
+    /// smart list the file is not on -- or to another folder, or by a search -- answered
+    /// "Nothing matches" in the middle of the window while the inspector beside it
+    /// described that same file in full. Asking for a document has to be able to show it.
+    ///
+    /// Only what actually hides it is dropped. A filter the file already passes is a
+    /// filter somebody set on purpose, and clicking a row inside it is not a reason to
+    /// throw it away.
+    private func reveal(_ key: String) {
+        guard let item = runner.item(key) else { return }
+        if shelves.current != .all, !shelves.contains(item, in: shelves.current) {
+            shelves.current = .all
+        }
+        if let scope = folderScope, !FolderScope(scope).contains(item) {
+            folderScope = nil
+        }
+        if let matching = runner.matchingKeys, !matching.contains(key) {
+            query = ""
+            runner.search("", passwords: passwords)
+        }
+        if prefs.onlyUndecided, runner.decision(for: item) != nil {
+            prefs.onlyUndecided = false
+        }
+        selected = key
+    }
+
     /// Shows only what carries one tag, by writing the search the search box already
     /// understands rather than adding a second, parallel notion of scope. Any folder scope
     /// is dropped: a tag spans the shelf, and leaving a folder filter on top of it would
@@ -470,7 +498,7 @@ struct ResultsPane: View {
     }
 
     var body: some View {
-        withShelfNavigation(withDialogs(withKeys(core)))
+        withShelfNavigation(withSidebarRequests(withDialogs(withKeys(core))))
     }
 
     private func withShelfNavigation<V: View>(_ view: V) -> some View {
@@ -569,14 +597,25 @@ struct ResultsPane: View {
         // index has not seen yet. Already-resolved items are skipped inside `refresh`,
         // so this costs nothing extra when nothing new has arrived.
             .task(id: runner.results.count) { await tagIndex.refresh(items: runner.results) }
+    }
+
+    /// What the sidebar asks the shelf to show. Its own wrapper for the reason `withKeys`
+    /// is one: a third receiver on that chain put it past what the type-checker will work
+    /// through, and a generic wrapper is checked on its own.
+    private func withSidebarRequests<V: View>(_ view: V) -> some View {
+        view
             .onReceive(NotificationCenter.default.publisher(for: .openFolderInCatalogue)) { note in
-            guard let path = note.userInfo?["path"] as? String else { return }
-            openFolder(URL(fileURLWithPath: path))
-        }
+                guard let path = note.userInfo?["path"] as? String else { return }
+                openFolder(URL(fileURLWithPath: path))
+            }
             .onReceive(NotificationCenter.default.publisher(for: .showTagInCatalogue)) { note in
-            guard let name = note.userInfo?["tag"] as? String else { return }
-            showTag(name)
-        }
+                guard let name = note.userInfo?["tag"] as? String else { return }
+                showTag(name)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showDocumentInCatalogue)) { note in
+                guard let key = note.userInfo?["key"] as? String else { return }
+                reveal(key)
+            }
     }
 
     private func withDialogs<V: View>(_ view: V) -> some View {
@@ -2898,6 +2937,8 @@ extension Notification.Name {
     /// catalogue simply ends up showing zero files, same as any other search with no
     /// matches.
     static let openFolderInCatalogue = Notification.Name("PaperShelf.openFolderInCatalogue")
+    /// Posted by the file explorer when a document's own row is clicked.
+    static let showDocumentInCatalogue = Notification.Name("PaperShelf.showDocumentInCatalogue")
     /// Posted with the tag's name in `userInfo["tag"]` by the sidebar's Tags panel.
     static let showTagInCatalogue = Notification.Name("PaperShelf.showTagInCatalogue")
     /// Posted with a `SmartList.rawValue` in `userInfo["shelf"]` by the sidebar's Library
