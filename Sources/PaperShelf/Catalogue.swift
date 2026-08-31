@@ -1669,7 +1669,8 @@ struct ResultsPane: View {
                         Section("\(group.name) · \(group.entries.count)") {
                             ForEach(group.entries, id: \.itemKey) { entry in
                                 BibRow(entry: entry, item: runner.item(entry.itemKey),
-                                       passwords: passwords)
+                                       passwords: passwords,
+                                       isSelected: entry.itemKey == selected)
                                     .tag(entry.itemKey)
                                     .id(entry.itemKey)
                                     // The same gesture the shelf and the list use for

@@ -210,6 +210,11 @@ struct BibRow: View {
     let entry: BibEntry
     let item: Item?
     var passwords: [String] = []
+    /// Whether the list is painting its selection behind this row. The key and the type
+    /// badge are drawn in their own ink, which the list cannot invert the way it inverts
+    /// `.primary` and `.secondary`, so on a selected row they were dark blue and dark
+    /// green on dark blue.
+    var isSelected = false
 
     private let lookup: BibLookupStore = .shared
     private let kept: KeptBibtex = .shared
@@ -234,7 +239,9 @@ struct BibRow: View {
             VStack(alignment: .leading, spacing: Space.hair) {
                 Text(entry.key)
                     .font(Face.code)
-                    .foregroundStyle(gaps.isEmpty ? Ink.blue : Ink.amber)
+                    .foregroundStyle(isSelected
+                                     ? AnyShapeStyle(.primary)
+                                     : AnyShapeStyle(gaps.isEmpty ? Ink.blue : Ink.amber))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -282,18 +289,24 @@ struct BibRow: View {
         if let missing = gaps.first {
             Text("needs \(missing)")
                 .font(Face.caption)
-                .foregroundStyle(bibWarnColor)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(bibWarnColor))
                 .padding(.horizontal, Space.step)
                 .padding(.vertical, Space.hair)
-                .fittedBackground(bibWarnColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
+                .fittedBackground(isSelected
+                                  ? AnyShapeStyle(.secondary.opacity(0.28))
+                                  : AnyShapeStyle(bibWarnColor.opacity(0.16)),
+                                  in: RoundedRectangle(cornerRadius: Metric.control))
                 .help("Missing \(gaps.joined(separator: ", ")), which \(prefs.bibStandard.label) requires")
         } else {
             Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
                 .font(Face.mono)
-                .foregroundStyle(bibGoodColor)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(bibGoodColor))
                 .padding(.horizontal, Space.step)
                 .padding(.vertical, Space.hair)
-                .fittedBackground(bibGoodColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
+                .fittedBackground(isSelected
+                                  ? AnyShapeStyle(.secondary.opacity(0.28))
+                                  : AnyShapeStyle(bibGoodColor.opacity(0.16)),
+                                  in: RoundedRectangle(cornerRadius: Metric.control))
                 .help(keptText == nil
                       ? "Complete for \(prefs.bibStandard.label)"
                       : "Kept with the document, and complete for \(prefs.bibStandard.label)")
@@ -444,7 +457,10 @@ struct BibFileView: View {
             } else if blocks.isEmpty {
                 ContentUnavailableView("Nothing to write yet", systemImage: "text.quote")
             } else {
-                ScrollView([.vertical, .horizontal]) {
+                // Only the axes the file actually needs. Wrapped, there is nothing to
+                // scroll sideways to, and asking for the axis anyway leaves a horizontal
+                // scroller across a file that fits.
+                ScrollView(prefs.bibWrapped ? [.vertical] : [.vertical, .horizontal]) {
                     LazyVStack(alignment: .leading, spacing: Space.roomy) {
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                             Text(highlighted(block))
@@ -456,6 +472,10 @@ struct BibFileView: View {
                         }
                     }
                     .padding(Space.roomy)
+                    // A stack given more height than it needs shares out the difference,
+                    // which is why three entries sat in the middle of the pane with a
+                    // quarter of it empty above them. A file starts at the top.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
