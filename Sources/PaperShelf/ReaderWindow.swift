@@ -18,6 +18,12 @@ struct ReaderWindow: View {
     @State private var noteText = ""
     @State private var addingNote = false
     @State private var showsNotes = false
+    /// The page the library remembers, when it answered too late to move the page under a
+    /// reader who had already started. Offered rather than applied.
+    @State private var resumeAt: Int?
+    /// The row this file has in the library, made when it is opened. Opening records; it
+    /// never renames, moves or files anything.
+    @State private var documentID: String?
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the delegate is the one that builds this window.
     private var palette: Palette { Palette.shared }
@@ -39,6 +45,14 @@ struct ReaderWindow: View {
             Divider()
             HStack(spacing: Space.roomy) {
                 PageBar(annotator: annotator, fit: $fit)
+                if let resumeAt {
+                    Button("Resume at p. \(resumeAt)") {
+                        annotator.go(toPage: resumeAt)
+                        self.resumeAt = nil
+                    }
+                    .buttonStyle(.link)
+                    .font(Face.caption)
+                }
                 Spacer()
                 Text(url.lastPathComponent)
                     .font(Face.caption)
@@ -51,10 +65,65 @@ struct ReaderWindow: View {
         }
         .navigationTitle(title)
         .frame(minWidth: 520, minHeight: 400)
+        .task { await recordAndRestore() }
+        .task(id: annotator.page) { await rememberPage() }
         // The five highlighters and a note, without a menu and without the shelf's command
         // table: this window has no scopes to resolve, so it reads the keys directly.
         .onKeyPress(phases: .down) { press in mark(with: press) }
         .onDisappear { annotator.flush() }
+    }
+
+    /// Opening a file records it and asks where you were.
+    ///
+    /// The page is already on screen by the time any of this runs: nothing here is on the
+    /// path between double-clicking a file and seeing it. A position that comes back while
+    /// the document is still on its first page is applied; one that comes back after the
+    /// reader has moved is offered in the bar instead, because a page that jumps under
+    /// somebody reading it is worse than a page they have to ask to return to.
+    private func recordAndRestore() async {
+        guard let library = Library.shared else { return }
+        let resolved = url.resolvingSymlinksInPath()
+        // Off the main actor: this parses the document for its title, author and page
+        // count, which is a tenth of a second on a long paper.
+        let input = await Task.detached { indexInput(for: resolved) }.value
+        // Split rather than coalesced with ??: an autoclosure cannot carry an await.
+        var record = try? await library.document(atPath: resolved.path)
+        if record == nil {
+            record = (try? await library.indexDocuments([input]))?.first
+        }
+        guard let record else { return }
+        documentID = record.id
+
+        guard let position = try? await library.readingPosition(forDocument: record.id),
+              position.page > 1 else { return }
+        // The page has to exist before it can be turned to, and the document is read on a
+        // background queue. Waited for rather than assumed, and given up on: a file that
+        // takes longer than this to parse is one whose reader is already looking at page 1.
+        for _ in 0..<20 {
+            if annotator.hasPages { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard annotator.hasPages, !Task.isCancelled else { return }
+        if annotator.page <= 1 {
+            annotator.go(toPage: position.page)
+        } else {
+            resumeAt = position.page
+            try? await Task.sleep(for: .seconds(10))
+            if !Task.isCancelled { resumeAt = nil }
+        }
+    }
+
+    /// Where you are, kept for next time. Debounced, because turning ten pages is one
+    /// place to come back to, not ten.
+    private func rememberPage() async {
+        guard let documentID, annotator.hasPages else { return }
+        // An offer to go back is stale the moment you turn a page yourself.
+        if resumeAt != nil, annotator.page > 1 { resumeAt = nil }
+        try? await Task.sleep(for: .milliseconds(700))
+        guard !Task.isCancelled, let library = Library.shared else { return }
+        try? await library.rememberReadingPosition(documentID: documentID,
+                                                   page: annotator.page,
+                                                   pageCount: annotator.pageCount)
     }
 
     private var title: String {

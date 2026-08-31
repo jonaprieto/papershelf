@@ -216,7 +216,7 @@ struct ContentView: View {
     /// blocked until Preview runs again.
     private var fingerprint: String {
         [
-            selection.map(\.path).joined(separator: "|"),
+            scanRoots.map(\.path).joined(separator: "|"),
             prefs.namePattern, String(prefs.namePatternMaxLength),
             passwords.joined(separator: "|"),
             "\(prefs.moveOriginals)", backup.safeFolderName, prefs.backupCustomPath,
@@ -250,8 +250,15 @@ struct ContentView: View {
         !runner.results.isEmpty && runner.lastRunWasDry && runner.fingerprint == fingerprint
     }
 
+    /// What the shelf is pointed at. Every list but one is a filter over the sources; the
+    /// `Opened` list is the files themselves, because a paper read from Downloads is under
+    /// no folder the app scans and no filter could reach it.
+    private var scanRoots: [URL] {
+        shelves.current == .opened ? shelves.openedElsewhere : selection
+    }
+
     private func preview() {
-        runner.preview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
+        runner.preview(roots: scanRoots, options: options(dryRun: true), fingerprint: fingerprint)
     }
 
     /// Reads the sources again from scratch, whatever is on screen: the shelf if that is
@@ -265,11 +272,11 @@ struct ContentView: View {
     }
 
     private func libraryPreview() {
-        runner.libraryPreview(roots: selection, options: options(dryRun: true), fingerprint: fingerprint)
+        runner.libraryPreview(roots: scanRoots, options: options(dryRun: true), fingerprint: fingerprint)
     }
 
     private func libraryPreview(preservingVisibleResults: Bool) {
-        runner.libraryPreview(roots: selection, options: options(dryRun: true),
+        runner.libraryPreview(roots: scanRoots, options: options(dryRun: true),
                               fingerprint: fingerprint,
                               preservingVisibleResults: preservingVisibleResults)
     }
@@ -450,6 +457,19 @@ struct ContentView: View {
         // window nobody would ever see had already begun scanning source folders and had
         // started a file watcher. As a task it is cancelled when the window goes away, and
         // the sleep is what gives the cancellation time to arrive.
+        // The sources, so the shelf can tell which opened documents are already on it. The
+        // answer is recomputed with them: the folders are restored a moment after launch,
+        // and a list worked out before they arrived counted every paper as an orphan.
+        .onChange(of: selection, initial: true) { _, roots in
+            shelves.sources = roots
+            Task { await shelves.refresh() }
+        }
+        // Switching to or from the opened documents changes what is scanned, not just what
+        // is filtered, so the shelf has to be read again.
+        .onChange(of: shelves.current) { old, new in
+            guard old == .opened || new == .opened, !scanRoots.isEmpty else { return }
+            if prefs.viewMode == .catalogue { libraryPreview() } else { preview() }
+        }
         .task {
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }

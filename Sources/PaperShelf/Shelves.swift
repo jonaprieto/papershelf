@@ -8,7 +8,7 @@ import PaperShelfCore
 /// tags" is not a term the query language has, and "opened but not finished" is a fact
 /// about the reader rather than about the file.
 enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
-    case all, reading, recent, unfiled
+    case all, reading, recent, unfiled, opened
     var id: String { rawValue }
 
     var title: String {
@@ -17,6 +17,7 @@ enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
         case .reading: return "Reading Now"
         case .recent: return "Recently Added"
         case .unfiled: return "Unfiled"
+        case .opened: return "Opened"
         }
     }
 
@@ -26,6 +27,7 @@ enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
         case .reading: return "book"
         case .recent: return "clock"
         case .unfiled: return "tray"
+        case .opened: return "clock.arrow.circlepath"
         }
     }
 
@@ -35,6 +37,7 @@ enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
         case .reading: return "Opened past the first page and not finished"
         case .recent: return "Seen for the first time in the last two weeks"
         case .unfiled: return "Carrying no tag at all"
+        case .opened: return "Read from outside your sources"
         }
     }
 }
@@ -53,6 +56,12 @@ final class Shelves {
     private(set) var reading: Set<String> = []
     private(set) var recent: Set<String> = []
     private(set) var unfiled: Set<String> = []
+    /// Documents that have been opened and whose files sit under no source, newest first.
+    ///
+    /// A list rather than a set, and of URLs rather than paths, because this one is not a
+    /// filter over what the shelf scanned: those files are in no folder the app scans, so
+    /// the shelf is pointed at them directly.
+    private(set) var openedElsewhere: [URL] = []
     /// Bumped whenever the sets change, so a cached filter knows to recompute.
     private(set) var revision = 0
 
@@ -68,12 +77,23 @@ final class Shelves {
         async let beingRead = try? library.pathsBeingRead()
         async let added = try? library.pathsFirstSeen(since: since)
         async let untagged = try? library.pathsWithoutTags()
-        let (a, b, c) = await (beingRead, added, untagged)
+        async let read = try? library.openedPaths()
+        let (a, b, c, d) = await (beingRead, added, untagged, read)
         reading = a ?? []
         recent = b ?? []
         unfiled = c ?? []
+        openedElsewhere = (d ?? []).map { URL(fileURLWithPath: $0.path) }
+            .filter { url in
+                let path = url.resolvingSymlinksInPath().path
+                return FileManager.default.fileExists(atPath: url.path)
+                    && !sources.contains { path.hasPrefix($0.resolvingSymlinksInPath().path + "/") }
+            }
         revision &+= 1
     }
+
+    /// The folders the shelf is built from, so `refresh` can tell which opened documents
+    /// are already on it. Set by the window that owns the sources.
+    var sources: [URL] = []
 
     /// Whether a file is in a list. Both of its paths are asked about: a renamed file is
     /// still the file that was being read, and the shelf may hold either name.
@@ -83,11 +103,17 @@ final class Shelves {
         case .reading: return matches(item, reading)
         case .recent: return matches(item, recent)
         case .unfiled: return matches(item, unfiled)
+        // Everything the shelf holds while this list is showing was scanned because it is
+        // on this list: the roots are the opened files themselves.
+        case .opened: return true
         }
     }
 
     func count(_ list: SmartList, among items: [Item]) -> Int {
         guard list != .all else { return items.count }
+        // Counted from the library rather than from what is on screen: these documents are
+        // not among the shelf's items unless this list is the one showing.
+        guard list != .opened else { return openedElsewhere.count }
         return items.reduce(0) { $0 + (contains($1, in: list) ? 1 : 0) }
     }
 

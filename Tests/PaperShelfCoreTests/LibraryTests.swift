@@ -434,6 +434,27 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), [read.id])
     }
 
+    /// What has been read, as opposed to what has been filed. Opening a document is what
+    /// writes a reading position, so this is the list a paper opened from Downloads is on.
+    func testOpenedPathsAreWhatHasBeenReadNewestFirst() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let early = try await library.indexDocument(path: "/downloads/early.pdf", contentHash: "a")
+        let late = try await library.indexDocument(path: "/downloads/late.pdf", contentHash: "b")
+        _ = try await library.indexDocument(path: "/shelf/never-opened.pdf", contentHash: "c")
+
+        try await library.rememberReadingPosition(documentID: early.id, page: 4, pageCount: 20,
+                                                  at: Date(timeIntervalSince1970: 1_000))
+        try await library.rememberReadingPosition(documentID: late.id, page: 2, pageCount: 8,
+                                                  at: Date(timeIntervalSince1970: 2_000))
+
+        let opened = try await library.openedPaths()
+        XCTAssertEqual(opened.map(\.path), ["/downloads/late.pdf", "/downloads/early.pdf"],
+                       "newest first, and a document nobody opened is not on the list")
+        XCTAssertEqual(opened.first?.openedAt, Date(timeIntervalSince1970: 2_000))
+    }
+
     /// The half of search that answers before anything has been indexed: what the store
     /// already knows about a document without having read a word of it.
     func testMetadataSearchFindsTitleAuthorAndInfoWithoutAnyExtractedText() async throws {

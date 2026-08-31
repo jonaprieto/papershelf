@@ -56,6 +56,32 @@ extension Library {
         }
     }
 
+    /// Every document that has been opened, newest first, with where its file is.
+    ///
+    /// Opening a file is what writes a reading position, so this is the record of what has
+    /// been read rather than of what has been filed. The shelf uses it for the documents
+    /// that live outside every source: a paper opened from Downloads is in no folder the
+    /// app scans, and without this there is nowhere it could appear.
+    public func openedPaths(limit: Int = 500) throws -> [(path: String, openedAt: Date)] {
+        try withStatement("""
+            SELECT l.path, r.updated_at
+            FROM reading_positions r
+            JOIN locations l ON l.document_id = r.document_id
+            ORDER BY r.updated_at DESC
+            LIMIT ?;
+            """, bind: { statement in
+            sqlite3_bind_int64(statement, 1, Int64(limit))
+        }) { statement in
+            var found: [(path: String, openedAt: Date)] = []
+            var seen: Set<String> = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let path = columnText(statement, 0), seen.insert(path).inserted else { continue }
+                found.append((path, columnText(statement, 1).flatMap(Library.isoDate) ?? Date()))
+            }
+            return found
+        }
+    }
+
     public func readingPosition(forDocument documentID: String) throws -> ReadingPosition? {
         try withStatement("""
             SELECT page, page_count, updated_at FROM reading_positions WHERE document_id = ?;
