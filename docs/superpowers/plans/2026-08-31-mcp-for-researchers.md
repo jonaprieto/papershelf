@@ -262,40 +262,50 @@ git commit -m "feat: indexed text says which page it came from"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `Tests/PaperShelfCoreTests/LibraryTests.swift`, inside the existing test class (match the file's own helper for making a scratch library, which every other test in it already uses):
+Append to the `LibraryTests` class in `Tests/PaperShelfCoreTests/LibraryTests.swift`. That class already has `makeDatabaseURL()` and `tearDownDatabase(_:)` at its top and the file already has `@testable import PaperShelfCore` and `import SQLite3`; use them rather than adding helpers of your own.
 
 ```swift
     func testStoredTextRemembersWhatShapeItIsIn() async throws {
-        let library = try await scratchLibrary()
-        _ = try await library.indexDocuments([Library.IndexInput(path: "/tmp/a.pdf")])
-        let id = try await XCTUnwrapAsync(library.document(atPath: "/tmp/a.pdf")).id
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let records = try await library.indexDocuments([Library.IndexInput(path: "/tmp/a.pdf")])
+        let id = try XCTUnwrap(records.first).id
 
         try await library.setExtractedText("## Page 1\n\nhello", forDocument: id, format: .markdown)
-        let stored = try await XCTUnwrapAsync(library.extractedText(forDocument: id))
-        XCTAssertEqual(stored.format, .markdown)
 
+        let stored = try await XCTUnwrap(library.extractedText(forDocument: id))
+        XCTAssertEqual(stored.format, .markdown)
         let rows = try await library.textIndexRows()
         XCTAssertEqual(rows.first(where: { $0.path == "/tmp/a.pdf" })?.format, .markdown)
     }
 
     /// A row written before the column existed reads back as nil, which is what makes it
-    /// stale to `needsIndexing`. Written straight through SQL because no accessor can
-    /// produce a formatless row any more.
+    /// stale to `needsIndexing` however recently it was written. Written with its own
+    /// connection, the way `rawCount` reads with one, because no accessor can produce a
+    /// formatless row any more and none should be added to let a test do it.
     func testTextStoredBeforeTheColumnExistedHasNoFormat() async throws {
-        let library = try await scratchLibrary()
-        _ = try await library.indexDocuments([Library.IndexInput(path: "/tmp/b.pdf")])
-        let id = try await XCTUnwrapAsync(library.document(atPath: "/tmp/b.pdf")).id
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let records = try await library.indexDocuments([Library.IndexInput(path: "/tmp/b.pdf")])
+        let id = try XCTUnwrap(records.first).id
         try await library.setExtractedText("older text", forDocument: id, format: .markdown)
-        try await library.clearFormatForTesting(documentID: id)
 
-        let stored = try await XCTUnwrapAsync(library.extractedText(forDocument: id))
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        XCTAssertEqual(sqlite3_exec(handle, "UPDATE extracted_text SET format = NULL;",
+                                    nil, nil, nil), SQLITE_OK)
+
+        let stored = try await XCTUnwrap(library.extractedText(forDocument: id))
         XCTAssertNil(stored.format)
         XCTAssertTrue(needsIndexing(extractedAt: stored.extractedAt, fileModified: nil,
                                     format: stored.format))
     }
 ```
 
-If `scratchLibrary()` and `XCTUnwrapAsync` are not already helpers in `LibraryTests.swift`, use whatever that file already does to build a library and unwrap an async optional; read the top of the file first and match it rather than adding new helpers.
+`indexDocuments` returns `[DocumentRecord]`, so the id comes from what it returns and no lookup by path is needed. Two connections to one WAL database at once is exactly what `Library`'s own doc comment says is safe, and `LibraryTests.rawCount` already does it read-only.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -406,17 +416,7 @@ public struct TextIndexRow: Sendable, Equatable {
 
 Keep whatever fields and initialiser `TextIndexRow` already declares; this shows the shape after adding `format`, not a replacement for fields it already has. Do the same for `Library.ExtractedText`, adding `public var format: TextFormat?`.
 
-Add the test-only helper next to the other accessors, marked plainly for what it is:
-
-```swift
-    /// Blanks the format of one row, so a test can produce the pre-column state that no
-    /// accessor can write any more. Nothing in the app calls this.
-    public func clearFormatForTesting(documentID: String) throws {
-        try run("UPDATE extracted_text SET format = NULL WHERE document_id = ?;") { statement in
-            bindText(statement, 1, documentID)
-        }
-    }
-```
+No test-only accessor is added to `Library`. The one test that needs a formatless row writes it with its own SQLite connection, which is the pattern `LibraryTests.rawCount` already uses.
 
 Fix the two app call sites so the project builds. `Sources/PaperShelf/ProjectsLive.swift:85` and `Sources/PaperShelf/LibrarySync.swift:252` both store the output of the engine-choosing converter, which is complete and page-marked, so both pass `.markdown`:
 
