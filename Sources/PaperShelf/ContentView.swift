@@ -569,7 +569,8 @@ struct ContentView: View {
                 .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8))
                                           : AnyShapeStyle(.secondary))
         }
-        .font(Face.body)
+        // No font of its own. A source list has a type size on macOS and setting one
+        // here is how a sidebar ends up not quite matching every other sidebar.
         .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
@@ -1094,32 +1095,6 @@ struct ContentView: View {
 
     // MARK: Explorer
 
-    /// Fold and unfold the whole tree, in the Sources header, beside what they fold.
-    private var explorerFolding: some View {
-        HStack(spacing: 2) {
-            Button {
-                explorerExpanded = explorerFolderIDs(explorerTree)
-            } label: {
-                Image(systemName: "chevron.down.square")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .disabled(runner.results.isEmpty)
-            .tip("Unfold every folder")
-
-            Button {
-                explorerExpanded = []
-            } label: {
-                Image(systemName: "chevron.right.square")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .disabled(runner.results.isEmpty)
-            .tip("Fold every folder")
-        }
-        .font(.caption)
-    }
-
     /// Where the files come from, with what is inside them.
     ///
     /// The folder tree was a section of its own, which put "which folders are these files
@@ -1140,14 +1115,7 @@ struct ContentView: View {
                 // of them is. A blue link in the middle of the column said the same thing
                 // twice and moved down the window as sources were added.
             } header: {
-                // Folding lives with the tree it folds. These buttons existed and were
-                // never drawn, which on a source with several hundred folders is the
-                // difference between a sidebar and a scroll.
-                HStack(spacing: 4) {
-                    Text("Sources")
-                    Spacer(minLength: 4)
-                    explorerFolding
-                }
+                Text("Sources")
             }
             .task(id: runner.resultsToken) {
                 explorerTree = buildExplorerTree(runner.results)
@@ -1699,6 +1667,9 @@ struct ExplorerOutline: View {
             } else {
                 Color.clear.frame(width: 10, height: 1)
             }
+            // The triangle and what it opens were touching. Everything else in a source
+            // list has air between the disclosure and the row it belongs to.
+            Color.clear.frame(width: 2, height: 1)
             Image(systemName: node.itemKey == nil ? "folder" : "doc")
                 .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
             Text(node.name)
@@ -1730,6 +1701,10 @@ struct ExplorerOutline: View {
                 // A second way to fold a folder besides the 10pt-wide chevron, for a
                 // right-click or a keyboard context-menu invocation.
                 Button(expanded.contains(node.id) ? "Collapse" : "Expand") { toggle(node.id) }
+                // Where the pair of square chevrons in the Sources header used to be.
+                // Folding a whole tree belongs to the tree, not to a heading over it.
+                Button("Expand All") { expanded = explorerFolderIDs(nodes) }
+                Button("Collapse All") { expanded = [] }
                 // The catalogue is the only thing that can honour the first of these, and
                 // it owns its own state, so the intent is posted rather than reached for.
                 Button("Show only this folder") { openFolder(node.url.path) }

@@ -287,7 +287,7 @@ struct BibRow: View {
                 .foregroundStyle(bibWarnColor)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .fittedBackground(bibWarnColor.opacity(0.16), in: Capsule())
+                .fittedBackground(bibWarnColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
                 .help("Missing \(gaps.joined(separator: ", ")), which \(standard.label) requires")
         } else {
             Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
@@ -295,7 +295,7 @@ struct BibRow: View {
                 .foregroundStyle(bibGoodColor)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .fittedBackground(bibGoodColor.opacity(0.16), in: Capsule())
+                .fittedBackground(bibGoodColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
                 .help(keptText == nil
                       ? "Complete for \(standard.label)"
                       : "Kept with the document, and complete for \(standard.label)")
@@ -651,7 +651,7 @@ struct BibGapChip: View {
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .fittedBackground(Ink.amber.opacity(0.16), in: Capsule())
+            .fittedBackground(Ink.amber.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
         }
         .buttonStyle(.plain)
         .foregroundStyle(Ink.amber)

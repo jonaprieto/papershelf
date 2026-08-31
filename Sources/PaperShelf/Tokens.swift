@@ -50,13 +50,18 @@ enum Metric {
     static let sidebarRow: CGFloat = 26
     static let planRow: CGFloat = 44
 
-    // Corners, by the size of what they wrap
+    // Corners. Three values, not six.
+    //
+    // There were six, four of them within three points of each other, which is not a
+    // scale anybody can see -- it is just a lot of rounding. The platform rounds a
+    // selected row in a source list by about five points and leaves most other things
+    // square, and this window should read the same way.
     static let keyCap: CGFloat = 3
     static let cover: CGFloat = 5
-    static let control: CGFloat = 6
-    static let group: CGFloat = 7
-    static let card: CGFloat = 9
-    static let popover: CGFloat = 10
+    static let control: CGFloat = 5
+    static let group: CGFloat = 5
+    static let card: CGFloat = 6
+    static let popover: CGFloat = 8
 
     /// The shelf: a cover keeps a book's proportions rather than being letterboxed into a
     /// fixed band, so the grid asks for a width and derives the height.

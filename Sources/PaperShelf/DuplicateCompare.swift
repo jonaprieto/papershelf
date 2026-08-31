@@ -106,7 +106,7 @@ struct DuplicateCompare: View {
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .fittedBackground(colour.opacity(Ink.fill), in: Capsule())
+            .fittedBackground(colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .foregroundStyle(colour)
     }
 

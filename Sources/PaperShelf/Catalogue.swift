@@ -81,7 +81,7 @@ struct ResultsPane: View {
     @AppStorage("contentsShown") private var contentsShown = false
     /// The same two keys the inspector reads, so the toolbar's note button lands on the
     /// tab it names rather than on whichever one was last open.
-    @AppStorage("inspectorPanel") private var inspectorPanel: InspectorPanel = .rename
+    @AppStorage("inspectorPanel") private var inspectorPanel: InspectorPanel = .details
     @AppStorage("lastHighlightColour") private var lastColourID = ""
     @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
     @State private var addingNote = false
@@ -849,7 +849,10 @@ struct ResultsPane: View {
             // the model can do to what is left, what confirming the rest would do, and
             // what applying would. `autoIdentify` lives here rather than in the panel
             // because it is a setting for the whole run, not a decision about one file.
-            if !runner.results.isEmpty {
+            //
+            // The reviewer only. On the shelf you are looking at covers, and offering to
+            // confirm every name from there is offering to accept names nobody has read.
+            if mode == .list, !runner.results.isEmpty {
                 if aiReady {
                     Toggle("Ask AI as I go", isOn: $autoIdentify)
                         .toggleStyle(.switch)
@@ -3086,7 +3089,7 @@ struct PlanCountPill: View {
             .foregroundStyle(state.colour)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .fittedBackground(state.colour.opacity(Ink.fill), in: Capsule())
+            .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
     }
 }
@@ -3101,7 +3104,7 @@ struct PlanPill: View {
             .foregroundStyle(state.colour)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .fittedBackground(state.colour.opacity(Ink.fill), in: Capsule())
+            .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
     }
 }
@@ -3357,18 +3360,18 @@ struct CoverCard: View {
                             .lineLimit(1)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(.quaternary.opacity(0.55), in: Capsule())
+                            .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: Metric.control))
                     }
                 }
             }
         }
         .padding(7)
         .background(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: Metric.card)
                 .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: Metric.card)
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
         )
         .opacity(decision == .skipped ? 0.5 : 1)
@@ -3422,7 +3425,7 @@ struct StatusPill: View {
         .foregroundStyle(color)
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .fittedBackground(color.opacity(0.16), in: Capsule())
+        .fittedBackground(color.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
         .tip(status.explanation)
     }
 

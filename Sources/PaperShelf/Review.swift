@@ -54,7 +54,7 @@ struct ReviewInspector: View {
 
     @ObservedObject var annotator: Annotator
     @ObservedObject var palette: Palette
-    @AppStorage("inspectorPanel") private var panel: InspectorPanel = .rename
+    @AppStorage("inspectorPanel") private var panel: InspectorPanel = .details
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
     /// The same preference the bibliography tab uses, so one entry is never judged by a
@@ -418,7 +418,7 @@ struct ReviewInspector: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metric.card))
         .overlay(alignment: .top) { meaningLabel }
         .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
     }

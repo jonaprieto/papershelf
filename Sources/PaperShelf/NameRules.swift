@@ -330,8 +330,8 @@ struct NameRulesSettings: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7).fill(.quaternary.opacity(0.5)))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.tertiary.opacity(0.35)))
+        .background(RoundedRectangle(cornerRadius: Metric.card).fill(.quaternary.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: Metric.card).strokeBorder(.tertiary.opacity(0.35)))
         .contentShape(Rectangle())
         .onTapGesture { editingElementIndex = index }
         .popover(isPresented: Binding(

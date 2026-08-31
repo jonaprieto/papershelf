@@ -76,7 +76,7 @@ struct MarkRow: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(colour.opacity(0.42), in: RoundedRectangle(cornerRadius: 7))
+                    .background(colour.opacity(0.42), in: RoundedRectangle(cornerRadius: Metric.card))
             }
 
             if !mark.note.isEmpty && !editing {

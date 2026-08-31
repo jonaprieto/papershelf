@@ -17,7 +17,7 @@ final class Chrome: ObservableObject {
     /// Shared with the inspector through the same keys, so the menu can reach them.
     @AppStorage("contentsShown") var contentsShown = false
     @AppStorage("inspectorCollapsed") var inspectorCollapsed = false
-    @AppStorage("inspectorPanel") var inspectorPanel: InspectorPanel = .rename
+    @AppStorage("inspectorPanel") var inspectorPanel: InspectorPanel = .details
 
     /// Showing the notes means opening the inspector on its Notes tab. They were a column
     /// of their own with their own switch; now there is one inspector and ⌘⇧N says which
