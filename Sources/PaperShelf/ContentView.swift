@@ -94,6 +94,9 @@ struct ContentView: View {
     /// Explorer can be folded and unfolded from its header the way an editor's can.
     @State private var explorerExpanded: Set<String> = []
     @State private var expanded: Set<String> = []
+    /// Whether the sidebar is shut because the window is narrow rather than because you
+    /// shut it. Only what the width closed is reopened by the width.
+    @State private var sidebarHiddenByWidth = false
     @State private var sizedWindow = false
     @State private var confirmingApply = false
     @State private var reviewing: String?
@@ -424,6 +427,14 @@ struct ContentView: View {
         // change to a large collection and must not copy it to find out nothing moved.
         .onChange(of: runner.resultsToken, initial: true) { _, _ in publishNamingPreview() }
         .onChange(of: reviewing) { _, _ in publishNamingPreview() }
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size.width, initial: true) { _, width in
+                        fitSidebar(to: width)
+                    }
+            }
+        }
         .onAppear {
             seedNamePatternIfNeeded()
             chrome.undo = { runner.undo() }
@@ -1448,9 +1459,43 @@ struct ContentView: View {
     /// The results list is greedy, which makes `.defaultSize` lose and the window open at
     /// min-width by full-screen-height. Set the frame directly instead, and only when
     /// AppKit has no autosaved one, so a resize the user made still wins next launch.
+    /// The sidebar hides itself on a narrow window and comes back when there is room.
+    ///
+    /// At 560 points both panes are at their floor and the sidebar's own headings are cut
+    /// off by the window edge, which is what this is for. It only undoes what it did: a
+    /// sidebar you closed yourself stays closed when the window grows, and one you opened
+    /// on a narrow window stays open until the window is narrow again.
+    private func fitSidebar(to width: CGFloat) {
+        guard width > 0 else { return }
+        // Reopening asks the screen as well as the window. On a display too small for
+        // three panes the sidebar was hidden at launch and is not brought back by a window
+        // that merely got wider; ⌘B is how it comes back there, and having asked for it
+        // once you keep it.
+        let screenHasRoom = NSScreen.main.map {
+            SplitLayout.startsWithSidebar(screenWidth: $0.visibleFrame.width)
+        } ?? true
+        if SplitLayout.showsSidebar(windowWidth: width) {
+            guard sidebarHiddenByWidth, screenHasRoom else { return }
+            sidebarHiddenByWidth = false
+            chrome.columnVisibility = .all
+        } else {
+            guard chrome.columnVisibility != .detailOnly else { return }
+            sidebarHiddenByWidth = true
+            chrome.columnVisibility = .detailOnly
+        }
+    }
+
     private func sizeWindowOnFirstLaunch() {
         guard !sizedWindow else { return }
         sizedWindow = true
+        // A small display cannot hold all three panes, and the window has floors that stop
+        // it shrinking to suit. The sidebar starts shut there and ⌘B opens it over the
+        // shelf, which is what the platform's own overlay is for.
+        if let screen = NSScreen.main,
+           !SplitLayout.startsWithSidebar(screenWidth: screen.visibleFrame.width) {
+            sidebarHiddenByWidth = true
+            chrome.columnVisibility = .detailOnly
+        }
         guard UserDefaults.standard.object(forKey: "NSWindow Frame main") == nil,
               let window = NSApp.windows.first else { return }
         window.setContentSize(NSSize(width: 980, height: 680))

@@ -8,6 +8,37 @@ final class LayoutTests: XCTestCase {
 
     // MARK: inspectorMaximum keeps the browser's floor
 
+    /// Which displays start with a sidebar. The window cannot shrink to suit a small one:
+    /// its panes hold it near 885 points, so on a screen not much wider than that the
+    /// sidebar is what has to give.
+    func testASmallScreenStartsWithoutTheSidebar() {
+        XCTAssertFalse(SplitLayout.startsWithSidebar(screenWidth: 1024))
+        XCTAssertFalse(SplitLayout.startsWithSidebar(screenWidth: 1280),
+                       "a small external display, with the inspector open, has no room")
+        XCTAssertTrue(SplitLayout.startsWithSidebar(screenWidth: 1440), "a laptop display")
+        XCTAssertTrue(SplitLayout.startsWithSidebar(screenWidth: 1512))
+
+        // Deliberately above the three floors added up: a window that exactly fills the
+        // screen is not what having room means.
+        XCTAssertGreaterThan(SplitLayout.sidebarNeedsScreen,
+                             SplitLayout.sidebarFloor + SplitLayout.contentFloor
+                                 + SplitLayout.panelFloor + SplitLayout.dividerBeforeInspector)
+    }
+
+    /// The width at which the sidebar stops being worth its column. Below it both panes
+    /// are at their floor and the sidebar's headings are clipped by the window edge.
+    func testSidebarHidesItselfOnceThereIsNoRoomForBothPanes() {
+        XCTAssertFalse(SplitLayout.showsSidebar(windowWidth: 480))
+        XCTAssertFalse(SplitLayout.showsSidebar(windowWidth: 579))
+        XCTAssertTrue(SplitLayout.showsSidebar(windowWidth: 580),
+                      "the sidebar's floor plus the shelf's floor, exactly")
+        XCTAssertTrue(SplitLayout.showsSidebar(windowWidth: 1440))
+
+        // The threshold is the two floors and nothing else: a change to either has to move
+        // this number with it, or the sidebar comes back at a width that clips it again.
+        XCTAssertEqual(SplitLayout.sidebarFloor + SplitLayout.contentFloor, 580)
+    }
+
     func testBrowserKeepsItsFloorWithNeitherRailOpen() {
         let available: CGFloat = 721
         let maximum = SplitLayout.inspectorMaximum(

@@ -115,6 +115,41 @@ public extension SplitLayout {
     /// the number is here so the rest of the app can agree about when it happens.
     static let sidebarOverlaysBelow: CGFloat = 360
 
+    /// What the sidebar asks for when it is drawn beside the shelf rather than over it.
+    /// Narrower than this and its own rows start being clipped by the window's edge.
+    static let sidebarFloor: CGFloat = 220
+
+    /// Whether a screen this wide has room for a window that carries the sidebar as well
+    /// as the shelf and the inspector.
+    ///
+    /// The window cannot be made narrow: its panes have floors, and they hold it at about
+    /// 885 points however small the display is. On a screen not much wider than that the
+    /// sidebar is the pane that has to go, or the three of them are drawn over each other
+    /// and the sidebar's headings end up clipped against the window's edge. Hidden is not
+    /// gone: ⌘B brings it back as an overlay.
+    ///
+    /// Not the sum of the three floors, which comes to 841 and would call a 1024 point
+    /// display roomy. The window's own minimum is already near 885, and a window that
+    /// exactly fills the screen is not what having room means. A 13 inch laptop is 1440
+    /// points and has room; the small external displays people plug into are 1280 and do
+    /// not, once the inspector is open.
+    static let sidebarNeedsScreen: CGFloat = 1360
+
+    static func startsWithSidebar(screenWidth: CGFloat) -> Bool {
+        screenWidth >= sidebarNeedsScreen
+    }
+
+    /// Whether a window this wide can show the sidebar without taking the shelf apart.
+    ///
+    /// The platform collapses the sidebar column eventually, but it holds on well past the
+    /// point where the two panes are worth having: at 560 points the sidebar is at its
+    /// floor, the shelf is at its floor, and the section headings are clipped against the
+    /// window edge. Below this the sidebar starts hidden and ⌘B brings it back as the
+    /// overlay the platform draws.
+    static func showsSidebar(windowWidth: CGFloat) -> Bool {
+        windowWidth >= sidebarFloor + contentFloor
+    }
+
     /// Below this the four views of the collection collapse from a row of icons into one
     /// menu. The row is worth its width: it says which views exist and switches in one
     /// click. The menu is what a toolbar already carrying a search field and the actions
