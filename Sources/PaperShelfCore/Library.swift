@@ -907,6 +907,40 @@ public actor Library {
         }
     }
 
+    /// Documents whose recorded metadata mentions this: title, author, or anything in the
+    /// PDF's own info dictionary (keywords, subject, producer). Substring rather than FTS,
+    /// because a title is short enough to scan and somebody typing three letters of an
+    /// author's name means the middle of a word as often as the start of one.
+    ///
+    /// Nothing here depends on the text having been extracted, which is what makes it the
+    /// half of search that answers before a library has been indexed.
+    public func documentsMatchingMetadata(_ text: String, limit: Int = 8) throws -> [DocumentRecord] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let pattern = "%" + trimmed.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "%"
+        return try withStatement("""
+            SELECT d.id, d.first_seen_at, d.last_seen_at, d.content_hash, d.byte_count, d.page_count,
+                   d.title, d.author, d.document_info
+            FROM documents d
+            WHERE d.title LIKE ?1 ESCAPE '\\'
+               OR d.author LIKE ?1 ESCAPE '\\'
+               OR d.document_info LIKE ?1 ESCAPE '\\'
+            ORDER BY d.last_seen_at DESC
+            LIMIT ?2;
+            """, bind: { statement in
+            bindText(statement, 1, pattern)
+            sqlite3_bind_int64(statement, 2, Int64(limit))
+        }) { statement in
+            var results: [DocumentRecord] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(Library.documentRecord(from: statement))
+            }
+            return results
+        }
+    }
+
     public func fullTextSearch(_ text: String, limit: Int = 50) throws -> [DocumentRecord] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }

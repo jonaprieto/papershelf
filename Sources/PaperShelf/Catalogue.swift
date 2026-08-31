@@ -187,6 +187,16 @@ struct ResultsPane: View {
         selected = key
     }
 
+    /// Opens a document the shelf in front of you may not be showing. A hit from the
+    /// library's own index can be filed anywhere, so the shelf is put back to All
+    /// Documents first -- opening it against the current list would name a file the list
+    /// does not hold, and land on nothing.
+    private func openAnywhere(_ key: String) {
+        navigate(to: Place(mode: prefs.viewMode, shelf: .all, folderPath: nil,
+                           query: "", reader: key))
+        selected = key
+    }
+
     /// One rung of the ⎋ ladder: out of the reader, back into the collection.
     private func closeReader() {
         if reader != nil, !backPlaces.isEmpty { goBack(); return }
@@ -696,7 +706,7 @@ struct ResultsPane: View {
                 }
                 .tip(prefs.inspectorCollapsed
                      ? "Show info, rename, notes and the citation"
-                     : "Hide the inspector", key: "⌥⌘I")
+                     : "Hide the inspector", key: "⌘⇧B")
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -959,7 +969,25 @@ struct ResultsPane: View {
             places: places,
             inTheText: { text in
                 guard let library = Library.shared else { return [] }
-                return (try? await library.fullTextHits(text, limit: 4)) ?? []
+                return (try? await library.fullTextHits(text, limit: 6)) ?? []
+            },
+            inTheLibrary: { text in
+                guard let library = Library.shared else { return [] }
+                let records = (try? await library.documentsMatchingMetadata(text, limit: 6)) ?? []
+                var found: [PalettePlace] = []
+                for record in records {
+                    guard let locations = try? await library.locations(forDocument: record.id),
+                          let path = locations.first?.path else { continue }
+                    let key = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+                    let name = record.title?.isEmpty == false
+                        ? record.title! : URL(fileURLWithPath: path).lastPathComponent
+                    found.append(PalettePlace(id: "doc:" + key, title: name,
+                                              detail: record.author ?? "in the library",
+                                              kind: .document) {
+                        openAnywhere(key)
+                    })
+                }
+                return found
             },
             inThisDocument: { text in
                 annotator.find(text).map { hit in

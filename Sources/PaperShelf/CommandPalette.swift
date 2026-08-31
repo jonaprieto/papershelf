@@ -5,7 +5,7 @@ import PaperShelfCore
 /// Somewhere to go, reachable by name: a library list, a folder, a project, a tag.
 struct PalettePlace: Identifiable {
     enum Kind: String {
-        case list, folder, project, tag
+        case list, folder, project, tag, document
 
         var icon: String {
             switch self {
@@ -13,6 +13,7 @@ struct PalettePlace: Identifiable {
             case .folder: return "folder"
             case .project: return "bubble.left.and.bubble.right"
             case .tag: return "tag"
+            case .document: return "doc.text.magnifyingglass"
             }
         }
     }
@@ -41,6 +42,10 @@ struct PaletteSources {
     var places: [PalettePlace] = []
     /// Full-text hits from the library, for a query that is not a prefix.
     var inTheText: (String) async -> [TextHit] = { _ in [] }
+    /// Documents anywhere in the library whose title, author or PDF info mentions the
+    /// query -- including the ones the shelf in front of you is not showing, and the ones
+    /// whose text has never been extracted.
+    var inTheLibrary: (String) async -> [PalettePlace] = { _ in [] }
     /// Matches inside the document on screen, for `/`.
     var inThisDocument: (String) -> [PageHit] = { _ in [] }
     /// Turns the document on screen to a page, for `:`.
@@ -68,9 +73,11 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var index = 0
     @State private var textHits: [TextHit] = []
+    @State private var libraryHits: [PalettePlace] = []
     @FocusState private var fieldFocused: Bool
 
-    enum Entry: Identifiable {
+    private enum Entry: Identifiable {
+        case starter(Mode)
         case place(PalettePlace)
         case command(Command)
         case document(Item)
@@ -79,6 +86,7 @@ struct CommandPalette: View {
 
         var id: String {
             switch self {
+            case .starter(let mode): return "s:" + String(mode.rawValue)
             case .place(let place): return "p:" + place.id
             case .command(let c): return "c:" + c.rawValue
             case .document(let item): return "d:" + item.key
@@ -99,6 +107,61 @@ struct CommandPalette: View {
     }
 
     private var mode: Mode? { query.first.flatMap(Mode.init) }
+
+    /// The prefixes, spelled out. They used to live only in one line of grey text under
+    /// the results, which is the sort of legend nobody reads: an empty field now offers
+    /// them as rows, and picking one types the character for you.
+    private static let starters: [(mode: Mode, title: String, detail: String)] = [
+        (.commands, "Commands", "every one, key or no key"),
+        (.tags, "Tags", "documents filed under a tag"),
+        (.projects, "Projects", "a project and its papers"),
+        (.inDocument, "In this document", "find a passage, turn to it"),
+        (.page, "Page number", "turn to a page"),
+        (.help, "All shortcuts", "the whole table, in a window"),
+    ]
+
+    /// An empty field has nothing to match, so it shows the way in instead.
+    private var showsStarters: Bool { mode == nil && needle.isEmpty }
+
+    /// What has been typed after the prefix, exactly as typed. Completion works off this
+    /// rather than `needle`, which is trimmed and lowercased and so cannot say where the
+    /// text you typed ends and the suggestion begins.
+    private var typed: String {
+        mode == nil ? query : String(query.dropFirst())
+    }
+
+    private func completableTitle(of entry: Entry) -> String? {
+        switch entry {
+        case .command(let command): return command.title
+        case .place(let place): return place.title
+        case .document(let item): return item.destinationName
+        case .starter, .page, .text: return nil
+        }
+    }
+
+    /// The full name of the highlighted row, when what you have typed is the start of it.
+    /// Nil for a row whose text is not something you could have typed your way to -- a
+    /// passage of a document, a page number -- and nil while the field ends in a space,
+    /// where a suggestion would be drawn a space away from the word it completes.
+    private var completion: String? {
+        guard !typed.isEmpty, typed.trimmingCharacters(in: .whitespaces) == typed,
+              entries.indices.contains(index),
+              let title = completableTitle(of: entries[index]),
+              title.count > typed.count,
+              title.lowercased().hasPrefix(typed.lowercased()) else { return nil }
+        return title
+    }
+
+    /// The part of the suggestion you have not typed yet, drawn behind the field.
+    private var ghost: String {
+        completion.map { String($0.dropFirst(typed.count)) } ?? ""
+    }
+
+    private func acceptCompletion() -> KeyPress.Result {
+        guard let completion else { return .ignored }
+        query = (mode.map { String($0.rawValue) } ?? "") + completion
+        return .handled
+    }
 
     private var needle: String {
         (mode == nil ? query : String(query.dropFirst()))
@@ -140,7 +203,7 @@ struct CommandPalette: View {
     private var matchingPages: [PageHit] {
         switch mode {
         case .inDocument:
-            guard needle.count > 1 else { return [] }
+            guard !needle.isEmpty else { return [] }
             return sources.inThisDocument(needle)
         case .page:
             guard let number = Int(needle), let go = sources.goToPage else { return [] }
@@ -151,10 +214,19 @@ struct CommandPalette: View {
         }
     }
 
+    /// Library matches, minus anything the shelf is already offering under Documents.
+    /// A place's id is "doc:" and the file's path, which is `Item.key`.
+    private var elsewhereInLibrary: [PalettePlace] {
+        let shown = Set(matchingDocuments.map(\.key))
+        return libraryHits.filter { !shown.contains(String($0.id.dropFirst(4))) }
+    }
+
     private var entries: [Entry] {
-        matchingPlaces.map(Entry.place)
+        if showsStarters { return Self.starters.map { Entry.starter($0.mode) } }
+        return matchingPlaces.map(Entry.place)
             + matchingPages.map(Entry.page)
             + matchingDocuments.map(Entry.document)
+            + elsewhereInLibrary.map(Entry.place)
             + textHits.map(Entry.text)
             + matchingCommands.map(Entry.command)
     }
@@ -170,37 +242,55 @@ struct CommandPalette: View {
         .frame(width: 640)
         .onAppear { fieldFocused = true }
         .onChange(of: query) { index = 0 }
-        .task(id: needle) { await searchTheText() }
+        .task(id: needle) { await searchTheLibrary() }
         .onKeyPress(.downArrow) { move(1) }
         .onKeyPress(.upArrow) { move(-1) }
         .onKeyPress(.escape) { dismiss(); return .handled }
     }
 
-    /// The library's own text index, asked after a pause: a keystroke is not a search.
-    private func searchTheText() async {
-        guard mode == nil, needle.count > 2 else {
+    /// The library, asked after a pause: a keystroke is not a search. Metadata and text
+    /// are two queries because they fail independently -- a library nobody has indexed
+    /// still answers on title and author, which is the half that works on day one.
+    private func searchTheLibrary() async {
+        guard mode == nil, needle.count >= 2 else {
             textHits = []
+            libraryHits = []
             return
         }
         try? await Task.sleep(for: .milliseconds(220))
         guard !Task.isCancelled else { return }
-        textHits = await sources.inTheText(needle)
+        let query = needle
+        libraryHits = await sources.inTheLibrary(query)
+        guard !Task.isCancelled, query == needle else { return }
+        textHits = await sources.inTheText(query)
     }
 
     private var field: some View {
         HStack(spacing: Space.step) {
             Image(systemName: mode == nil ? "magnifyingglass" : "chevron.right")
                 .foregroundStyle(mode == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
-            TextField("", text: $query, prompt: Text("Go to anything, or type a prefix"))
-                .textFieldStyle(.plain)
-                .font(Face.title3)
-                .focused($fieldFocused)
-                .onSubmit(runSelected)
-                // The field owns first responder while the palette is open, so the
-                // ancestor never receives arrow keys on macOS.
-                .onKeyPress(.downArrow) { move(1) }
-                .onKeyPress(.upArrow) { move(-1) }
-                .onKeyPress(.escape) { dismiss(); return .handled }
+            ZStack(alignment: .leading) {
+                // The rest of the highlighted row's name, drawn behind the field. The
+                // typed half is clear rather than absent so the two halves lay out as one
+                // string and the suggestion starts exactly where the caret is.
+                (Text(query).foregroundStyle(.clear) + Text(ghost).foregroundStyle(.tertiary))
+                    .font(Face.title3)
+                    .lineLimit(1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                TextField("", text: $query, prompt: Text("Go to anything, or type a prefix"))
+                    .textFieldStyle(.plain)
+                    .font(Face.title3)
+                    .focused($fieldFocused)
+                    .onSubmit(runSelected)
+                    // The field owns first responder while the palette is open, so the
+                    // ancestor never receives arrow keys on macOS.
+                    .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.upArrow) { move(-1) }
+                    .onKeyPress(.tab) { acceptCompletion() }
+                    .onKeyPress(.rightArrow) { acceptCompletion() }
+                    .onKeyPress(.escape) { dismiss(); return .handled }
+            }
             Text("\(documents.count) documents · \(commands.count) commands")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
@@ -251,12 +341,16 @@ struct CommandPalette: View {
 
     /// The entries under the headings the artboard names, in the order they are listed.
     private var sections: [(title: String, entries: [Entry])] {
+        if showsStarters { return [("Start with", entries)] }
         var out: [(String, [Entry])] = []
         if !matchingPlaces.isEmpty { out.append(("Go to", matchingPlaces.map(Entry.place))) }
         if !matchingPages.isEmpty {
             out.append((mode == .page ? "Page" : "In this document", matchingPages.map(Entry.page)))
         }
         if !matchingDocuments.isEmpty { out.append(("Documents", matchingDocuments.map(Entry.document))) }
+        if !elsewhereInLibrary.isEmpty {
+            out.append(("In the library", elsewhereInLibrary.map(Entry.place)))
+        }
         if !textHits.isEmpty {
             out.append(("In the text · \(textHits.count) match\(textHits.count == 1 ? "" : "es")",
                         textHits.map(Entry.text)))
@@ -273,7 +367,9 @@ struct CommandPalette: View {
                 hint("⎋", "close")
                 Spacer()
             }
-            Text("> commands · # tags · @ projects · / in this document · : page · ? help")
+            Text(ghost.isEmpty
+                 ? "> commands · # tags · @ projects · / in this document · : page · ? help"
+                 : "⇥ or → completes “\(completion ?? "")”")
                 .foregroundStyle(.secondary)
         }
         .font(Face.caption)
@@ -286,6 +382,17 @@ struct CommandPalette: View {
     private func row(_ entry: Entry, selected: Bool) -> some View {
         HStack(spacing: Space.step) {
             switch entry {
+            case .starter(let mode):
+                let starter = Self.starters.first { $0.mode == mode }
+                Text(String(mode.rawValue))
+                    .font(Face.mono.weight(.bold))
+                    .frame(width: Metric.keyWidth)
+                    .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                Text(starter?.title ?? "").lineLimit(1)
+                Spacer(minLength: Space.step)
+                Text(starter?.detail ?? "")
+                    .font(Face.caption)
+                    .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
             case .place(let place):
                 Image(systemName: place.kind.icon)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
@@ -363,6 +470,10 @@ struct CommandPalette: View {
     private func runSelected() {
         guard entries.indices.contains(index) else { return }
         let entry = entries[index]
+        if case .starter(let mode) = entry {
+            query = String(mode.rawValue)
+            return
+        }
         if case .text(let hit) = entry {
             // Matching a text hit to a document is an async round trip to the
             // library (see `matchingItem`), so it cannot dismiss up front the way
@@ -379,7 +490,7 @@ struct CommandPalette: View {
         case .document(let item): open(item)
         case .place(let place): place.go()
         case .page(let hit): hit.go()
-        case .text: break
+        case .text, .starter: break
         }
     }
 

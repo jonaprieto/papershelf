@@ -49,6 +49,9 @@ enum Metric {
 
     // Rows
     static let sidebarRow: CGFloat = 26
+    /// One character in a key cap. Fixed so a column of prefixes lines up rather than
+    /// each row indenting by however wide its own glyph happens to be.
+    static let keyWidth: CGFloat = 14
     static let planRow: CGFloat = 44
 
     // Corners. Three values, not six.

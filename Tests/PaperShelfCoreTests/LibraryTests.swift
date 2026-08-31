@@ -434,6 +434,35 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), [read.id])
     }
 
+    /// The half of search that answers before anything has been indexed: what the store
+    /// already knows about a document without having read a word of it.
+    func testMetadataSearchFindsTitleAuthorAndInfoWithoutAnyExtractedText() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let paper = try await library.indexDocument(path: "/shelf/crdt.pdf", contentHash: "a",
+                                                    title: "Managing Interleaving Anomalies",
+                                                    author: "Sanabria")
+        let book = try await library.indexDocument(path: "/shelf/book.pdf", contentHash: "b",
+                                                   title: "Distributed Systems",
+                                                   documentInfo: ["Keywords": "consensus, quorum"])
+        _ = try await library.indexDocument(path: "/shelf/other.pdf", contentHash: "c",
+                                            title: "Something Else")
+
+        let byTitle = try await library.documentsMatchingMetadata("interleaving")
+        XCTAssertEqual(byTitle.map(\.id), [paper.id], "title matches, case-insensitively")
+
+        let byAuthor = try await library.documentsMatchingMetadata("sanabr")
+        XCTAssertEqual(byAuthor.map(\.id), [paper.id], "and the middle of an author's name")
+
+        let byKeyword = try await library.documentsMatchingMetadata("quorum")
+        XCTAssertEqual(byKeyword.map(\.id), [book.id], "and anything in the PDF's own info")
+
+        // A wildcard typed into the field is a character to look for, not a pattern.
+        let wildcard = try await library.documentsMatchingMetadata("%")
+        XCTAssertTrue(wildcard.isEmpty, "LIKE metacharacters are escaped, not honoured")
+    }
+
     /// The two questions the shelf asks the store once a query mentions the inside of a
     /// document: which documents say this anywhere, and which say it where a paper puts
     /// its abstract.
