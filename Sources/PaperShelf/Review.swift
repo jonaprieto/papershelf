@@ -781,11 +781,17 @@ struct ReviewInspector: View {
     /// What can be done with the file, pinned under what it says about itself, in the
     /// same place the Rename tab keeps its decision.
     ///
-    /// "Read" is not offered while you are already reading: a button that opens what is
-    /// open is a button that does nothing, and it was the loudest thing on the tab.
+    /// "Read" is not offered while the page is already on screen: a button that opens
+    /// what is open is a button that does nothing, and it was the loudest thing on the
+    /// tab.
+    ///
+    /// The test was `leaveReader == nil`, which is only true in the reader as a place of
+    /// its own. It missed the ordinary case -- the page beside the panel in the list and
+    /// on the shelf -- so a big blue Read sat under an open document offering to open it.
+    /// `showsPage` is what the Cite tab already asks before offering its own way in.
     private var infoActions: some View {
         VStack(spacing: Space.step) {
-            if leaveReader == nil {
+            if !showsPage {
                 Button(action: read) {
                     Label("Read", systemImage: "book").frame(maxWidth: .infinity)
                 }
