@@ -1193,6 +1193,7 @@ private struct TurnView: View {
                     Image(systemName: "chevron.right")
                         .font(Face.micro)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, Space.roomy)

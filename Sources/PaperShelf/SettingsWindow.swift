@@ -178,6 +178,7 @@ struct GeneralSettings: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Stop reading \(url.lastPathComponent)")
                     }
                 }
                 Button {
@@ -866,6 +867,7 @@ struct FileSettings: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Remove password \(index + 1)")
                     }
                 }
                 Button {

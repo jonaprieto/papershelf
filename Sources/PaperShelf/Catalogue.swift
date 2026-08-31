@@ -3379,6 +3379,17 @@ struct CoverCard: View {
     }
 
     @ViewBuilder
+    private func decisionBadge(_ decision: Decision) -> some View {
+        switch decision {
+        case .confirmed: Image(systemName: "checkmark.circle.fill").foregroundStyle(Ink.green)
+        case .applied: Image(systemName: "checkmark.seal.fill").foregroundStyle(Ink.green)
+        case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+        case .deleted: Image(systemName: "trash.circle.fill").foregroundStyle(Ink.red)
+        case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
+        }
+    }
+
+    @ViewBuilder
     private var badges: some View {
         HStack(spacing: Space.tight) {
             if let duplicate {
@@ -3386,16 +3397,13 @@ struct CoverCard: View {
                     .foregroundStyle(duplicateColour(duplicate))
                     .help(duplicateExplanation(duplicate))
             }
-            switch decision {
-            case .confirmed: Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Ink.green)
-            case .applied: Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Ink.green)
-            case .skipped: Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
-            case .deleted: Image(systemName: "trash.circle.fill")
-                .foregroundStyle(Ink.red)
-            case .moveTo: Image(systemName: "arrow.right.circle.fill").foregroundStyle(Ink.purple)
-            case nil: EmptyView()
+            if let decision {
+                decisionBadge(decision)
+                    // The badge is a colour and a shape and nothing else, which is no
+                    // answer at all to somebody who cannot see either. The same sentence
+                    // the tooltip gives is the one VoiceOver reads.
+                    .help(decision.explanation)
+                    .accessibilityLabel(decision.explanation)
             }
         }
         .font(Face.body)

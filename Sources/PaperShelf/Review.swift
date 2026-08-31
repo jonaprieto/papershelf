@@ -388,6 +388,7 @@ struct ReviewInspector: View {
                 Image(systemName: "text.bubble")
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Write a note")
             .onHover { hoveringNote = $0 }
 
             // One menu, not two more bare icons: the bar is a fixed width and already
