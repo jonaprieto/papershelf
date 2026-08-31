@@ -38,10 +38,10 @@ private struct StatusBarChrome: ViewModifier {
 }
 
 struct StatusBar: View {
-    @ObservedObject var runner: Runner
+    var runner: Runner
     /// Observed on its own: these are the numbers that move several times a second, and
     /// this bar is one of the two places that show them.
-    @ObservedObject var activity: Activity
+    var activity: Activity
     let watching: Bool
     let sources: Int
     let unavailableSources: Int
@@ -67,8 +67,8 @@ struct StatusBar: View {
     /// the right sentence under a shelf and the wrong one under a page.
     var document: DocumentFacts?
     @State private var showingActivity = false
-    @ObservedObject private var regions: Regions = .shared
-    @ObservedObject private var library: LibraryStatus = .shared
+    private let regions: Regions = .shared
+    private let library: LibraryStatus = .shared
 
     /// The plan being worked through, when one is on screen.
     var plan: PlanFacts?

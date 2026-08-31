@@ -46,7 +46,8 @@ struct HighlightStyle: Codable, Identifiable, Equatable {
 /// It is stored as JSON in preferences: an array of records, not something a handful of
 /// keys could hold.
 @MainActor
-final class Palette: ObservableObject {
+@Observable
+final class Palette {
     /// One palette, not one per window.
     ///
     /// The settings window and the reader each held their own, so adding a highlighter in
@@ -56,7 +57,7 @@ final class Palette: ObservableObject {
     /// this one now, so a colour added is a colour available.
     static let shared = Palette()
 
-    @Published private(set) var styles: [HighlightStyle] = []
+    private(set) var styles: [HighlightStyle] = []
 
     private let key = "highlightPalette"
 

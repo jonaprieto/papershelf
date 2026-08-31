@@ -7,7 +7,8 @@ import PaperShelfCore
 /// the case this app is for. It is deliberately not automatic: every document is a billed
 /// request, so it is asked for, it says how many, and it can be stopped.
 @MainActor
-final class BibtexBatch: ObservableObject {
+@Observable
+final class BibtexBatch {
     static let shared = BibtexBatch()
 
     struct Progress: Equatable {
@@ -18,8 +19,8 @@ final class BibtexBatch: ObservableObject {
         var failed: Int
     }
 
-    @Published private(set) var progress: Progress?
-    @Published private(set) var lastSummary: String?
+    private(set) var progress: Progress?
+    private(set) var lastSummary: String?
 
     private var task: Task<Void, Never>?
 

@@ -193,8 +193,8 @@ final class SettingsSearchTests: XCTestCase {
 @MainActor
 final class PublishedStateTests: XCTestCase {
 
-    /// Progress publishes on `Activity`, and a view reading it through `Runner` would not
-    /// be subscribed to the object that changes -- so `Runner` does not offer it at all.
+    /// Progress lives on `Activity`. `Runner` does not offer it at all, so the two views
+    /// that show it have to read the object that actually changes.
     func testProgressLivesOnItsOwnObject() {
         let runner = Runner()
         runner.activity.done = 7

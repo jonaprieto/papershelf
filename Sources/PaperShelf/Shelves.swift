@@ -45,15 +45,16 @@ enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
 /// results pane filters by them, and two copies of that query would disagree the moment a
 /// file was tagged.
 @MainActor
-final class Shelves: ObservableObject {
+@Observable
+final class Shelves {
     static let shared = Shelves()
 
-    @Published var current: SmartList = .all
-    @Published private(set) var reading: Set<String> = []
-    @Published private(set) var recent: Set<String> = []
-    @Published private(set) var unfiled: Set<String> = []
+    var current: SmartList = .all
+    private(set) var reading: Set<String> = []
+    private(set) var recent: Set<String> = []
+    private(set) var unfiled: Set<String> = []
     /// Bumped whenever the sets change, so a cached filter knows to recompute.
-    @Published private(set) var revision = 0
+    private(set) var revision = 0
 
     /// How far back "recently added" reaches. Two weeks: long enough that a weekend's
     /// downloads are still there on Monday, short enough that the list is not the shelf.

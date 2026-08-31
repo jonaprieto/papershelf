@@ -20,11 +20,11 @@ struct ContentView: View {
     private let prefs = Prefs.shared
     /// Kept in memory only, and shared with the settings window rather than owned here.
     /// A password written into a preferences plist is not a password.
-    @ObservedObject private var secret = SessionSecret.shared
+    private let secret = SessionSecret.shared
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
     @State private var choosingBackupFolder = false
     @State private var watcher: FolderWatcher?
-    @ObservedObject private var palette: Palette = .shared
+    private let palette: Palette = .shared
     // On by default so a file nearly always ends up with a year in front of it.
     /// The arrangeable pattern's own two fields. `elements` round-trips through the
     /// bracket text (NamePattern.text/init(parsing:)); maxTotalLength has no spelling in
@@ -34,10 +34,10 @@ struct ContentView: View {
 
     /// Which Markdown converter a project reads its documents with, chosen in Settings.
     @State private var availableModels: [String] = []
-    @ObservedObject private var priceBook: PriceBook = .shared
-    @ObservedObject private var spendSignal: SpendSignal = .shared
-    @ObservedObject private var shelves: Shelves = .shared
-    @ObservedObject private var libraryStatus: LibraryStatus = .shared
+    private let priceBook: PriceBook = .shared
+    private let spendSignal: SpendSignal = .shared
+    private let shelves: Shelves = .shared
+    private let libraryStatus: LibraryStatus = .shared
     @State private var projects: [ProjectSummary] = []
     @State private var namingProject = false
     /// The source row under the pointer, so its remove button is only there when it is
@@ -55,11 +55,11 @@ struct ContentView: View {
     /// library rather than kept in memory: the answer outlives the session that set it.
     @State private var selectionOpenedAt: Date?
 
-    @StateObject var runner = Runner()
-    @StateObject private var covers = Covers()
+    @State var runner = Runner()
+    @State private var covers = Covers()
     /// The page on screen. Held by the window because the status bar, which is outside
     /// the results pane, says what is on it.
-    @StateObject private var annotator = Annotator()
+    @State private var annotator = Annotator()
     @State private var selection: [URL] = []
     @State private var sidebarTarget: SidebarTarget?
     /// The project row a drag is currently over, so exactly one row lights up.
@@ -96,7 +96,7 @@ struct ContentView: View {
     @State private var reviewing: String?
     @FocusState private var focusedPassword: Int?
     @FocusState private var sidebarFocused: Bool
-    @ObservedObject var chrome: Chrome
+    @Bindable var chrome: Chrome
 
     private var passwords: [String] { PasswordList.active(prefs.passwords) }
     private var passwordRows: [String] { PasswordList.rows(prefs.passwords) }

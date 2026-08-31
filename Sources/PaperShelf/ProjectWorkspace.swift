@@ -17,10 +17,10 @@ struct ProjectWorkspace: View {
     /// same rung of the ladder ⎋ is: out of this, into what contains it.
     let close: () -> Void
 
-    @StateObject private var model: ProjectDetailModel
+    @State private var model: ProjectDetailModel
     /// Held by the window rather than by the conversation under it, so the toolbar can
     /// write the whole thread out.
-    @StateObject private var conversation: ProjectConversationModel
+    @State private var conversation: ProjectConversationModel
     @State private var showingAddDocuments = false
     @State private var exporting = false
     @State private var dropTargeted = false
@@ -41,9 +41,9 @@ struct ProjectWorkspace: View {
         self.project = project
         self.env = env
         self.close = close
-        _model = StateObject(wrappedValue: ProjectDetailModel(
+        _model = State(wrappedValue: ProjectDetailModel(
             project: project, env: env, membershipChanged: membershipChanged))
-        _conversation = StateObject(wrappedValue: ProjectConversationModel(
+        _conversation = State(wrappedValue: ProjectConversationModel(
             project: project, env: env))
     }
 

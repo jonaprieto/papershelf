@@ -331,12 +331,13 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
 /// here". Only the changes a person makes are stored, so the defaults above can grow
 /// without stranding anyone on an old copy of them.
 @MainActor
-final class Keymap: ObservableObject {
+@Observable
+final class Keymap {
     /// One map for the whole app. The settings window and the window that listens for the
     /// keys are different scenes; two instances would drift until the next launch.
     static let shared = Keymap()
 
-    @Published private(set) var overrides: [Command: Shortcut?] = [:]
+    private(set) var overrides: [Command: Shortcut?] = [:]
 
     private let defaultsKey = "keymap"
     private let store: UserDefaults

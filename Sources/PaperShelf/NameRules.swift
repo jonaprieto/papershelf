@@ -9,18 +9,19 @@ import PaperShelfCore
 /// a handful of items here as its results move; the editor reads them. Empty is a
 /// legitimate state, and the editor says so rather than drawing a row of blanks.
 @MainActor
-final class NamingPreviewSource: ObservableObject {
+@Observable
+final class NamingPreviewSource {
     static let shared = NamingPreviewSource()
 
     /// Whichever file is open for review, else the first result, so a chip means something
     /// before anything is selected.
-    @Published var reference: Item?
+    var reference: Item?
     /// A few files to show the whole pattern against. Deliberately a handful: this is a
     /// sanity check on a pattern, not a second copy of the plan.
-    @Published var samples: [Item] = []
+    var samples: [Item] = []
     /// Only the guesses belonging to the items above. Copying the whole table on every
     /// change would cost more than the preview it feeds.
-    @Published var guesses: [String: BookGuess] = [:]
+    var guesses: [String: BookGuess] = [:]
 
     private init() {}
 
@@ -43,7 +44,7 @@ final class NamingPreviewSource: ObservableObject {
 struct NameRulesSettings: View {
     @Bindable private var prefs = Prefs.shared
 
-    @ObservedObject private var source = NamingPreviewSource.shared
+    private let source = NamingPreviewSource.shared
     @State private var draggingElementIndex: Int?
     @State private var editingElementIndex: Int?
 

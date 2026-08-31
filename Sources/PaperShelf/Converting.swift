@@ -9,11 +9,12 @@ import PaperShelfCore
 /// app can already open, and is what most people will ever use. A layout-aware converter
 /// is better when there is one, and saying which was used is part of the answer.
 @MainActor
-final class Converting: ObservableObject {
-    @Published private(set) var working = false
-    @Published private(set) var result: String?
-    @Published private(set) var usedTool: String?
-    @Published var problem: String?
+@Observable
+final class Converting {
+    private(set) var working = false
+    private(set) var result: String?
+    private(set) var usedTool: String?
+    var problem: String?
 
     /// Recomputed on demand rather than cached: someone can install one while the app runs.
     var installed: [(MarkdownConverter, URL)] { availableConverters() }
@@ -60,7 +61,7 @@ final class Converting: ObservableObject {
 struct MarkdownSheet: View {
     let item: Item
     let passwords: [String]
-    @ObservedObject var converting: Converting
+    var converting: Converting
     @Environment(\.dismiss) private var dismiss
     /// The converter is picked by name, because a Picker tag has to be Hashable and a
     /// converter carries a closure. It is the same setting Settings › Integrations

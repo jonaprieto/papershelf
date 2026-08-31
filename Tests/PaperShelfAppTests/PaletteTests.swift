@@ -15,7 +15,7 @@ final class PaletteTests: XCTestCase {
                       "there is one palette, and it is the shared one")
     }
 
-    /// The property the two windows read is published, so adding a colour redraws both
+    /// The property the two windows read is tracked, so adding a colour redraws both
     /// rather than only the window that added it.
     func testAddingAColourIsVisibleToEveryHolder() {
         let palette = Palette.shared

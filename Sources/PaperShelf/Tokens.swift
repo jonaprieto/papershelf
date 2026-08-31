@@ -210,9 +210,10 @@ func swatchImage(_ colour: NSColor, size: CGFloat = 12) -> Image {
 /// so it needs somewhere to put the value that is still not a preferences file: a
 /// password written into a plist is not a password.
 @MainActor
-final class SessionSecret: ObservableObject {
+@Observable
+final class SessionSecret {
     static let shared = SessionSecret()
-    @Published var encryptPassword = ""
+    var encryptPassword = ""
     private init() {}
 }
 

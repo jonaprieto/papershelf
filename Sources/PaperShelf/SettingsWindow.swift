@@ -76,7 +76,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 struct SettingsWindowView: View {
     private let prefs = Prefs.shared
-    @ObservedObject private var palette: Palette = .shared
+    private let palette: Palette = .shared
     @State private var search = ""
 
     var body: some View {
@@ -328,7 +328,7 @@ struct GeneralSettings: View {
 // MARK: - Highlighters
 
 struct HighlighterSettings: View {
-    @ObservedObject var palette: Palette
+    var palette: Palette
     @Bindable private var prefs = Prefs.shared
 
     var body: some View {
@@ -433,7 +433,7 @@ struct HighlighterSettings: View {
 /// typed out by hand beside the monitor that actually implemented it; this one is the
 /// monitor's own table, so it cannot drift, and a binding can be changed.
 struct KeyboardSettings: View {
-    @ObservedObject private var keymap = Keymap.shared
+    private let keymap = Keymap.shared
     @State private var filter = ""
     @State private var recording: Command?
     @State private var clash: Clash?
@@ -831,7 +831,7 @@ struct IntegrationSettings: View {
 
 struct FileSettings: View {
     @Bindable private var prefs = Prefs.shared
-    @ObservedObject private var secret = SessionSecret.shared
+    @Bindable private var secret = SessionSecret.shared
     @State private var choosingBackupFolder = false
     @FocusState private var focused: Int?
 

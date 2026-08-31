@@ -22,7 +22,7 @@ struct ReviewInspector: View {
     /// from the window, since the sidebar and the browser have already taken their share.
     let paneWidth: CGFloat
     let item: Item
-    @ObservedObject var runner: Runner
+    var runner: Runner
     let passwords: [String]
     @Binding var draft: String
     @FocusState.Binding var editing: Bool
@@ -54,8 +54,8 @@ struct ReviewInspector: View {
     /// This file's tags, so the Details panel can show and change them.
     var tags: TagActions = .none
 
-    @ObservedObject var annotator: Annotator
-    @ObservedObject var palette: Palette
+    var annotator: Annotator
+    var palette: Palette
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
     /// The same preference the bibliography tab uses, so one entry is never judged by a

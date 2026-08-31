@@ -30,20 +30,21 @@ enum BibLookupStatus: Equatable {
 /// view left to hold this state in instead. A single shared instance is the plain way
 /// around that: every row and the file view all read the one lookup a person just ran.
 ///
-/// `@MainActor` because everything it publishes is read by SwiftUI on the main actor, and
+/// `@MainActor` because everything it holds is read by SwiftUI on the main actor, and
 /// its own async work only ever leaves the actor for the network calls and PDF reads that
 /// are genuinely off it, exactly the way Runner's own `identify(_:client:passwords:rules:)`
 /// already does.
 @MainActor
-final class BibLookupStore: ObservableObject {
+@Observable
+final class BibLookupStore {
     static let shared = BibLookupStore()
     private init() {}
 
-    @Published private(set) var status: [String: BibLookupStatus] = [:]
-    @Published private(set) var metadata: [String: NormalizedMetadata] = [:]
-    @Published private(set) var guesses: [String: BookGuess] = [:]
-    @Published private(set) var reverted: [String: Set<String>] = [:]
-    @Published private(set) var progress: (done: Int, total: Int)?
+    private(set) var status: [String: BibLookupStatus] = [:]
+    private(set) var metadata: [String: NormalizedMetadata] = [:]
+    private(set) var guesses: [String: BookGuess] = [:]
+    private(set) var reverted: [String: Set<String>] = [:]
+    private(set) var progress: (done: Int, total: Int)?
 
     private var batchTask: Task<Void, Never>?
     /// The real network, passed down exactly the way Metadata.swift's own doc comments ask
@@ -210,8 +211,8 @@ struct BibRow: View {
     let item: Item?
     var passwords: [String] = []
 
-    @ObservedObject private var lookup: BibLookupStore = .shared
-    @ObservedObject private var kept: KeptBibtex = .shared
+    private let lookup: BibLookupStore = .shared
+    private let kept: KeptBibtex = .shared
     private let prefs = Prefs.shared
 
     private var merged: BibEntry { lookup.apply(to: entry) }
@@ -376,8 +377,8 @@ struct BibFileView: View {
     /// same @AppStorage key straight off `entry.isComplete`. Silently redefining what that
     /// key means here would make the same checkbox lie to whichever of the two screens
     /// last set it.
-    @ObservedObject private var lookup: BibLookupStore = .shared
-    @ObservedObject private var kept: KeptBibtex = .shared
+    private let lookup: BibLookupStore = .shared
+    private let kept: KeptBibtex = .shared
     @State private var blocks: [String] = []
     @State private var edited: String?
     @State private var confirmingLookup = false
@@ -459,7 +460,7 @@ struct BibFileView: View {
             }
         }
         // Rebuilt only when the inputs actually move, off the main thread. `shown` is read
-        // here, on the main actor, since it touches @Published lookup state; everything
+        // here, on the main actor, since it touches lookup state; everything
         // after that is pure and safe to hand to a detached task.
         .task { await kept.refresh() }
         .task(id: signature) {
@@ -662,8 +663,8 @@ struct FillGapsButton: View {
     let standard: BibStandard
     let style: BibStyle
 
-    @ObservedObject private var batch: BibtexBatch = .shared
-    @ObservedObject private var kept: KeptBibtex = .shared
+    private let batch: BibtexBatch = .shared
+    private let kept: KeptBibtex = .shared
     @State private var confirming = false
 
     private var ready: Bool { !client.apiKey.isEmpty }
@@ -713,9 +714,10 @@ struct FillGapsButton: View {
 /// in one place, by the pane that draws it, and the toolbar is simply another reader of
 /// the same answer.
 @MainActor
-final class BuiltBibliography: ObservableObject {
+@Observable
+final class BuiltBibliography {
     static let shared = BuiltBibliography()
-    @Published var text = ""
+    var text = ""
     var isEmpty: Bool { text.isEmpty }
 }
 
@@ -756,10 +758,11 @@ func highlighted(_ text: String) -> AttributedString {
 /// entries reported as missing an author while the entry kept beside the document had
 /// four of them.
 @MainActor
-final class KeptBibtex: ObservableObject {
+@Observable
+final class KeptBibtex {
     static let shared = KeptBibtex()
 
-    @Published private(set) var byPath: [String: String] = [:]
+    private(set) var byPath: [String: String] = [:]
 
     func refresh() async {
         guard let library = Library.shared else { return }

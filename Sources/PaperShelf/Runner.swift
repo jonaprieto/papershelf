@@ -5,25 +5,26 @@ import UniformTypeIdentifiers
 import PaperShelfCore
 
 @MainActor
-final class Runner: ObservableObject {
+@Observable
+final class Runner {
     enum Phase: Equatable { case idle, scanning, processing }
 
-    @Published private(set) var results: [Item] = [] { didSet { resultsToken &+= 1 } }
+    private(set) var results: [Item] = [] { didSet { resultsToken &+= 1 } }
     /// Changes exactly when `results` does. A view that has to know whether the set it
     /// filtered last time is still the same set can compare one integer instead of two
-    /// arrays. Deliberately not `@Published`: `results` already publishes, and a second
-    /// signal for the same change would only cost another pass.
+    /// arrays. Tracked like everything else here, which costs nothing: observation is per
+    /// property, so this reaches only the views that read it.
     private(set) var resultsToken = 0
-    @Published var phase: Phase = .idle
+    var phase: Phase = .idle
     /// Everything that changes many times a second while work runs, on an object of its
     /// own so a scan tick no longer invalidates every row on screen. See `Activity`.
     let activity = Activity()
     /// What the model has been asked and what it said, likewise. See `Identifications`.
     let ai = Identifications()
 
-    // Written here, read by the two views that show progress. Private on purpose: a view
-    // reading these through `Runner` would not be subscribed to the object that actually
-    // publishes them, and would quietly show a stale number.
+    // Written here, read by the two views that show progress. Private on purpose: these
+    // are `Activity`'s properties, and a view has to read them off `Activity` to be
+    // tracked against it rather than against this object.
     private var done: Int {
         get { activity.done }
         set { activity.done = newValue }
@@ -54,22 +55,22 @@ final class Runner: ObservableObject {
     }
     private var guesses: [String: BookGuess] { ai.guesses }
 
-    @Published var lastRunWasDry = true
+    var lastRunWasDry = true
     /// When the results on screen were produced. Nil before the first run.
-    @Published var builtAt: Date?
+    var builtAt: Date?
     /// Snapshot of the inputs the current results were produced from.
-    @Published var fingerprint = ""
+    var fingerprint = ""
     /// Keyed by `Item.key`.
-    @Published private(set) var decisions: [String: Decision] = [:]
+    private(set) var decisions: [String: Decision] = [:]
 
     // Derived state is cached rather than recomputed. A view body runs constantly, and
     // filtering a list of a hundred thousand results on every pass is what turns a large
     // folder from slow into unusable.
-    @Published private(set) var tree: [Node] = []
-    @Published private(set) var statusCounts: [(Status, Int)] = []
-    @Published private(set) var bib: [BibEntry] = []
-    @Published private(set) var bibByItem: [String: BibEntry] = [:]
-    @Published private(set) var bibLoading = false
+    private(set) var tree: [Node] = []
+    private(set) var statusCounts: [(Status, Int)] = []
+    private(set) var bib: [BibEntry] = []
+    private(set) var bibByItem: [String: BibEntry] = [:]
+    private(set) var bibLoading = false
     private var bibStale = true
     private var bibGeneration = 0
     private var bibTask: Task<Void, Never>?
@@ -78,13 +79,13 @@ final class Runner: ObservableObject {
     private var undoStack: [[(key: String, decision: Decision?)]] = []
 
     var canUndo: Bool { !undoStack.isEmpty }
-    @Published private(set) var confirmedCount = 0
-    @Published private(set) var appliedCount = 0
+    private(set) var confirmedCount = 0
+    private(set) var appliedCount = 0
     /// Bumped whenever the suggested names change without the list itself changing.
-    @Published private(set) var revision = 0
-    @Published private(set) var skippedCount = 0
-    @Published private(set) var deletedCount = 0
-    @Published private(set) var movedCount = 0
+    private(set) var revision = 0
+    private(set) var skippedCount = 0
+    private(set) var deletedCount = 0
+    private(set) var movedCount = 0
 
     /// Indices into `results`, grouped by containing folder, so folder questions cost the
     /// size of one folder rather than a scan of everything.
@@ -95,12 +96,12 @@ final class Runner: ObservableObject {
     /// quadratic. Reopening a file earlier in the list pulls it back.
     private var cursor = 0
 
-    @Published private(set) var duplicates: [DuplicateGroup] = []
+    private(set) var duplicates: [DuplicateGroup] = []
     /// `Item.key` to the kind of duplicate it is, for the badge on a row or card.
-    @Published private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
-    @Published private(set) var findingDuplicates = false
+    private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
+    private(set) var findingDuplicates = false
     /// Whether a comparison has been run, so "none found" reads differently to "not asked".
-    @Published private(set) var duplicatesChecked = false
+    private(set) var duplicatesChecked = false
 
     private var jobs: [Job] = []
     /// The current scan/apply task. A new source or run replaces it instead of letting two
@@ -114,9 +115,9 @@ final class Runner: ObservableObject {
     var indexTask: Task<Void, Never>?
     var indexGeneration = 0
     /// How many documents in the library have text on record.
-    @Published private(set) var indexedTextCount = 0
+    private(set) var indexedTextCount = 0
     /// What the whole library adds up to, for the status bar. Nil until it has been asked.
-    @Published private(set) var libraryTotals: LibraryTotals?
+    private(set) var libraryTotals: LibraryTotals?
 
     func setIndexedTextCount(_ count: Int) { indexedTextCount = count }
 
@@ -383,10 +384,10 @@ final class Runner: ObservableObject {
     }
 
     /// Builds the entries if anything has moved since they were last needed.
-    @Published private(set) var searchText = ""
-    @Published private(set) var searching = false
+    private(set) var searchText = ""
+    private(set) var searching = false
     /// Nil when no query is active, so the views can tell "no filter" from "no matches".
-    @Published private(set) var matchingKeys: Set<String>? { didSet { matchingToken &+= 1 } }
+    private(set) var matchingKeys: Set<String>? { didSet { matchingToken &+= 1 } }
     /// As `resultsToken`, for the search result. Hashing a set of ten thousand keys to
     /// notice it had not changed would cost more than the filter it is meant to skip.
     private(set) var matchingToken = 0
@@ -426,7 +427,7 @@ final class Runner: ObservableObject {
 
     /// How many of the files on screen the library has never read, for a search over the
     /// inside of documents to be honest about what it could not look at.
-    @Published private(set) var unindexedInSearch = 0
+    private(set) var unindexedInSearch = 0
 
     func search(_ text: String, passwords: [String]) {
         searchGeneration &+= 1
@@ -507,7 +508,7 @@ final class Runner: ObservableObject {
         return (keys, unindexed)
     }
 
-    @Published private(set) var excerpts: [String: String] = [:]
+    private(set) var excerpts: [String: String] = [:]
 
     /// Reads the opening words of one file, for the panel under the actions. One file at
     /// a time and cached, so browsing costs a single read per file at most.
@@ -524,10 +525,10 @@ final class Runner: ObservableObject {
         }
     }
 
-    /// Squeezed once and kept. Deliberately not `@Published`: this is filled in from a
-    /// view body asking for it, and publishing there would invalidate the very view that
-    /// asked and have it ask again.
-    private var openings: [String: String] = [:]
+    /// Squeezed once and kept. `@ObservationIgnored`, because this is filled in from a
+    /// view body asking for it, and a tracked write there would invalidate the very view
+    /// that asked and have it ask again.
+    @ObservationIgnored private var openings: [String: String] = [:]
 
     func excerpt(for item: Item) -> String? {
         if let ready = excerpts[item.key] { return ready.isEmpty ? nil : ready }

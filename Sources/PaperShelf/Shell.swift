@@ -7,11 +7,12 @@ import PaperShelfCore
 /// Window chrome the menu bar needs to reach. The split view draws its own sidebar
 /// button, so the menu supplies only the shortcut.
 @MainActor
-final class Chrome: ObservableObject {
-    @Published var columnVisibility: NavigationSplitViewVisibility = .all
+@Observable
+final class Chrome {
+    var columnVisibility: NavigationSplitViewVisibility = .all
     /// Set by the window so the menu can reach the runner without owning it.
-    @Published var undo: () -> Void = {}
-    @Published var canUndo = false
+    var undo: () -> Void = {}
+    var canUndo = false
     /// Window state the menu reaches through here, held in `Prefs` so it survives a
     /// launch and so the panes that draw it are invalidated when the menu changes it.
     ///
@@ -75,7 +76,7 @@ final class Chrome: ObservableObject {
 
 @main
 struct PaperShelfApp: App {
-    @StateObject private var chrome = Chrome()
+    @State private var chrome = Chrome()
     @Environment(\.openWindow) private var openWindow
 
     private func openAbout() { openWindow(id: AboutWindow.windowID) }
@@ -135,7 +136,8 @@ struct PaperShelfApp: App {
 /// Renders and caches first-page thumbnails. Nothing is drawn until a card asks for it,
 /// so a shelf of thousands costs only what is on screen.
 @MainActor
-final class Covers: ObservableObject {
+@Observable
+final class Covers {
     private let cache = NSCache<NSString, NSImage>()
     /// Cards awaiting a render, by key, so several asking for the same file share one.
     private var waiting: [String: [CheckedContinuation<NSImage?, Never>]] = [:]
@@ -147,7 +149,7 @@ final class Covers: ObservableObject {
     /// Bumped only when the whole cache is emptied. A single thumbnail landing used to
     /// bump a counter every card read, so one render redrew the entire visible grid;
     /// now each card awaits its own cover and redraws alone.
-    @Published private(set) var generation = 0
+    private(set) var generation = 0
 
     /// Four at a time: enough to fill a scroll, few enough to leave the UI responsive.
     private static let queue: OperationQueue = {

@@ -144,10 +144,11 @@ struct ProjectsEnvironment {
 // MARK: - Projects list
 
 @MainActor
-final class ProjectsStore: ObservableObject {
-    @Published private(set) var projects: [ProjectSummary] = []
-    @Published private(set) var isLoading = false
-    @Published var error: String?
+@Observable
+final class ProjectsStore {
+    private(set) var projects: [ProjectSummary] = []
+    private(set) var isLoading = false
+    var error: String?
 
     private let env: ProjectsEnvironment
 
@@ -186,7 +187,7 @@ final class ProjectsStore: ObservableObject {
 }
 
 struct ProjectsListView: View {
-    @StateObject private var store: ProjectsStore
+    @State private var store: ProjectsStore
     @State private var showingNewProject = false
     @State private var newProjectName = ""
     /// The projects a swipe or the Delete key just asked to remove, held until the
@@ -198,7 +199,7 @@ struct ProjectsListView: View {
 
     init(env: ProjectsEnvironment) {
         self.env = env
-        _store = StateObject(wrappedValue: ProjectsStore(env: env))
+        _store = State(wrappedValue: ProjectsStore(env: env))
     }
 
     var body: some View {
@@ -300,17 +301,18 @@ private struct NewProjectSheet: View {
 // MARK: - Project detail: sections, members and tags
 
 @MainActor
-final class ProjectDetailModel: ObservableObject {
+@Observable
+final class ProjectDetailModel {
     let project: ProjectSummary
-    @Published private(set) var members: [ProjectMember] = []
-    @Published private(set) var tagsByDocument: [String: [String]] = [:]
-    @Published private(set) var available: [ProjectMember] = []
-    @Published private(set) var knownSections: [String] = []
-    @Published private(set) var isLoading = false
+    private(set) var members: [ProjectMember] = []
+    private(set) var tagsByDocument: [String: [String]] = [:]
+    private(set) var available: [ProjectMember] = []
+    private(set) var knownSections: [String] = []
+    private(set) var isLoading = false
     /// True while the members with no text are being read, so the button that started it
     /// says so rather than looking like it did nothing.
-    @Published private(set) var isReading = false
-    @Published var error: String?
+    private(set) var isReading = false
+    var error: String?
 
     private let env: ProjectsEnvironment
     /// Told whenever this project gains or loses a document. The sidebar draws its own
@@ -448,7 +450,7 @@ final class ProjectDetailModel: ObservableObject {
 }
 
 struct ProjectDetailView: View {
-    @StateObject private var model: ProjectDetailModel
+    @State private var model: ProjectDetailModel
     @State private var showingAddDocuments = false
     @State private var tagDrafts: [String: String] = [:]
     @State private var sectionPromptTarget: ProjectMember?
@@ -457,7 +459,7 @@ struct ProjectDetailView: View {
 
     init(project: ProjectSummary, env: ProjectsEnvironment) {
         self.env = env
-        _model = StateObject(wrappedValue: ProjectDetailModel(project: project, env: env))
+        _model = State(wrappedValue: ProjectDetailModel(project: project, env: env))
     }
 
     var body: some View {
@@ -733,17 +735,18 @@ struct ProjectTurn: Identifiable {
 }
 
 @MainActor
-final class ProjectConversationModel: ObservableObject {
+@Observable
+final class ProjectConversationModel {
     let project: ProjectSummary
-    @Published var pendingQuestion = ""
-    @Published private(set) var turns: [ProjectTurn] = []
+    var pendingQuestion = ""
+    private(set) var turns: [ProjectTurn] = []
     /// Non-nil the instant excerpts are chosen and a question is ready to send. The view
     /// turns this into a confirmation dialog every time, never a setting remembered from
     /// last time: the answer (how many documents, how many characters) is different for
     /// every question.
-    @Published private(set) var pendingPreview: OutboundPreview?
-    @Published var error: String?
-    @Published private(set) var isPreparing = false
+    private(set) var pendingPreview: OutboundPreview?
+    var error: String?
+    private(set) var isPreparing = false
 
     private let env: ProjectsEnvironment
     private var confirmedQuestion: String?
@@ -850,9 +853,10 @@ struct ProjectConversationView: View {
     /// Held by whoever put this view on screen. The workspace's toolbar exports the
     /// thread, and it cannot export turns held privately by the view under it.
     ///
-    /// `@ObservedObject`, not a plain property: a model in a plain property is one the
-    /// view never hears from again, so answers arrived and the pane did not redraw.
-    @ObservedObject var model: ProjectConversationModel
+    /// `@Bindable`, because the field the question is typed into binds to
+    /// `pendingQuestion`. The tracking that redraws the pane when an answer arrives comes
+    /// from `@Observable` on the model itself, not from anything written here.
+    @Bindable var model: ProjectConversationModel
     /// The documents this question goes across: what was ticked beside it, and readable.
     private let documents: [ProjectDocument]
     /// How many the project holds altogether, so the line above the field can say "12 of

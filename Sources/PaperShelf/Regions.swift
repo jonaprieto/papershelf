@@ -37,16 +37,17 @@ enum EscapeRung: Equatable {
 }
 
 @MainActor
-final class Regions: ObservableObject {
+@Observable
+final class Regions {
     static let shared = Regions()
 
-    @Published var focused: Region = .document
+    var focused: Region = .document
     /// Which regions are drawn right now. A collapsed sidebar and an absent table of
     /// contents are not places to be, so cycling skips them and jumping to one opens it.
-    @Published var available: Set<Region> = [.sidebar, .document, .inspector, .status]
+    var available: Set<Region> = [.sidebar, .document, .inspector, .status]
     /// True while a row inside the focused region is the thing selected, rather than the
     /// region as a whole. The ⎋ ladder reads it.
-    @Published var rowFocused = false
+    var rowFocused = false
 
     private init() {}
 
@@ -98,7 +99,7 @@ final class Regions: ObservableObject {
 /// behind, and the only way to find out was to press a key and see what moved.
 struct RegionRing: ViewModifier {
     let region: Region
-    @ObservedObject private var regions = Regions.shared
+    private let regions = Regions.shared
 
     init(_ region: Region) { self.region = region }
 

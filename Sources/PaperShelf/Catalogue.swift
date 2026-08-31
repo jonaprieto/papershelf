@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 import PaperShelfCore
 
 struct ResultsPane: View {
-    @ObservedObject var runner: Runner
-    @ObservedObject var covers: Covers
+    var runner: Runner
+    var covers: Covers
     @Binding var expanded: Set<String>
     @Binding var selected: String?
     let sourceCount: Int
@@ -20,11 +20,11 @@ struct ResultsPane: View {
     /// leave the mode outright: see `choose(_:)`.
     var setReading: (Bool) -> Void = { _ in }
     let watching: Bool
-    @ObservedObject var palette: Palette
+    var palette: Palette
     /// The live page. Owned by the window rather than by this pane: the status bar sits
     /// outside it and says what is on the page -- how long the document is and how many
     /// marks are on it.
-    @ObservedObject var annotator: Annotator
+    var annotator: Annotator
     let rules: NameRules
     let chooseFiles: () -> Void
     let focusSidebar: () -> Void
@@ -40,7 +40,7 @@ struct ResultsPane: View {
 
 
     @Bindable private var prefs = Prefs.shared
-    @ObservedObject private var kept: KeptBibtex = .shared
+    private let kept: KeptBibtex = .shared
     /// The inspector's width when the current divider drag began. Nil when nothing is
     /// being dragged.
     @State private var dragAnchor: CGFloat?
@@ -54,7 +54,7 @@ struct ResultsPane: View {
     /// -- a key, a decision, a search landing somewhere else -- has to be scrolled to.
     @State private var pickedByPointer = false
     @State private var showingShortcuts = false
-    @StateObject private var converting = Converting()
+    @State private var converting = Converting()
     @State private var showingMarkdown = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
@@ -72,11 +72,11 @@ struct ResultsPane: View {
     /// tab it names rather than on whichever one was last open.
     @State private var addingNote = false
     @State private var noteText = ""
-    @StateObject private var tagIndex = CatalogueTags()
+    @State private var tagIndex = CatalogueTags()
     /// Which of the four library lists the shelf is showing, shared with the sidebar that
     /// sets it.
-    @ObservedObject private var shelves: Shelves = .shared
-    @ObservedObject private var regions: Regions = .shared
+    private let shelves: Shelves = .shared
+    private let regions: Regions = .shared
     /// Remembers the last filter result. The grid, the folder tree and the "N of M shown"
     /// label each need it, and each used to recompute it: three passes over the whole
     /// collection per render, and again on every tick of a window resize because the grid
@@ -118,7 +118,7 @@ struct ResultsPane: View {
     /// Shared with `BibFileView`, which draws the file these two decide the shape of.
     /// The file the bibliography pane has built, so the toolbar can copy or save it
     /// without building the same text again.
-    @ObservedObject private var builtBib: BuiltBibliography = .shared
+    private let builtBib: BuiltBibliography = .shared
     @State private var bibCopied = false
     @State private var savingBib = false
 
@@ -2737,20 +2737,21 @@ struct ResultsPane: View {
 /// gives every tag in one query; the id lookups below are the only per-item cost, and
 /// they are done once per item, kept here, rather than once per row per repaint.
 @MainActor
-final class CatalogueTags: ObservableObject {
+@Observable
+final class CatalogueTags {
     private let library: Library?
     /// Document id -> tag names.
-    @Published private(set) var byDocument: [String: [String]] = [:]
+    private(set) var byDocument: [String: [String]] = [:]
     /// Item key -> document id, resolved lazily as items are seen. A file the library has
     /// never heard of (just noticed, or seen while the store could not open) has no entry
     /// here, which is the true state: it cannot be tagged until it does.
-    @Published private(set) var documentID: [String: String] = [:]
+    private(set) var documentID: [String: String] = [:]
     /// Every tag name in use anywhere, offered when adding one so nobody has to retype or
     /// misspell a tag that already exists.
-    @Published private(set) var everyTag: [String] = []
+    private(set) var everyTag: [String] = []
     /// Bumped whenever the tag tables change, so a view filtering by tag can tell in one
     /// comparison whether its last answer still holds.
-    @Published private(set) var revision = 0
+    private(set) var revision = 0
 
     init(library: Library? = Library.shared) {
         self.library = library
@@ -3226,7 +3227,7 @@ struct CoverCard: View {
     let decision: Decision?
     let duplicate: DuplicateGroup.Kind?
     let passwords: [String]
-    @ObservedObject var covers: Covers
+    var covers: Covers
     let isSelected: Bool
     /// What this file is tagged with. Shown on the card so a shelf can be read by tag at a
     /// glance rather than one right-click at a time.
@@ -3453,7 +3454,7 @@ struct StatusPill: View {
 /// and selecting any row shows it in the preview so two copies can be compared.
 struct DuplicateSection: View {
     let group: DuplicateGroup
-    @ObservedObject var runner: Runner
+    var runner: Runner
 
     var body: some View {
         Section {
@@ -3580,7 +3581,7 @@ struct DuplicateRow: View {
 /// A view of its own so the numbers that move several times a second are watched by
 /// something the size of this box rather than by the pane that holds every row.
 struct BusyOverlay: View {
-    @ObservedObject var activity: Activity
+    var activity: Activity
     let scanning: Bool
 
     var body: some View {
@@ -3609,9 +3610,9 @@ struct BusyOverlay: View {
 
 /// Holds the last answer `visibleKeys` gave, keyed on everything that could change it.
 ///
-/// Deliberately not an `ObservableObject` and deliberately a reference type held in
-/// `@State`: it publishes nothing, which is what makes it safe to read and update from
-/// inside `body`, and it survives the body passes that a value type would not.
+/// Deliberately not `@Observable` and deliberately a reference type held in `@State`:
+/// nothing here is tracked, which is what makes it safe to read and update from inside
+/// `body`, and it survives the body passes that a value type would not.
 final class VisibleFilter {
     struct Signature: Equatable {
         let results: Int

@@ -117,7 +117,7 @@ struct DuplicateReviewView: View {
 /// so the same duplicate never opens a second window while the first is still up.
 ///
 /// There is no SwiftUI `Window` scene for this because adding one means hoisting `Runner` and
-/// `Covers` out of the view that owns them today (`@StateObject`, inside `ContentView` in
+/// `Covers` out of the view that owns them today (`@State`, inside `ContentView` in
 /// App.swift) up to the app struct -- a structural change to a file this piece does not own
 /// this round, for both of the shared objects the window would need. A plain `NSWindow`
 /// hosting the same SwiftUI view needs neither: it is opened straight from wherever the

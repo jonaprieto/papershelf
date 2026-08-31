@@ -10,10 +10,11 @@ import PaperShelfCore
 /// status bar — which is where a fact about the whole library belongs, beside the rest of
 /// what is true right now.
 @MainActor
-final class LibraryStatus: ObservableObject {
+@Observable
+final class LibraryStatus {
     static let shared = LibraryStatus()
 
-    @Published private(set) var summary: LibrarySummary?
+    private(set) var summary: LibrarySummary?
 
     private init() {}
 

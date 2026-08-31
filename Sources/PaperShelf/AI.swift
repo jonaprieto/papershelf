@@ -308,8 +308,9 @@ struct AIClient {
 /// a citation, asking a reading project or testing the connection all spent money without
 /// the number moving.
 @MainActor
-final class SpendSignal: ObservableObject {
+@Observable
+final class SpendSignal {
     static let shared = SpendSignal()
-    @Published private(set) var version = 0
+    private(set) var version = 0
     func bump() { version += 1 }
 }

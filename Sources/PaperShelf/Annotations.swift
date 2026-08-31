@@ -11,30 +11,31 @@ import PaperShelfCore
 /// is a change to the document you are reading. It is recorded in the log, and it is the
 /// one thing here that Undo does not cover.
 @MainActor
-final class Annotator: ObservableObject {
-    @Published private(set) var marks: [Mark] = []
-    @Published private(set) var hasSelection = false
+@Observable
+final class Annotator {
+    private(set) var marks: [Mark] = []
+    private(set) var hasSelection = false
     /// Where the selection sits, in the preview's own coordinates, so the bar can be put
     /// next to it rather than parked at the bottom of the page.
-    @Published private(set) var selectionRect: CGRect?
-    @Published private(set) var lastError: String?
+    private(set) var selectionRect: CGRect?
+    private(set) var lastError: String?
     /// The mark being looked at, so the rail can show it and the page can point at it.
-    @Published var selectedMark: UUID?
+    var selectedMark: UUID?
     /// The document's own table of contents, if it has one.
-    @Published private(set) var contents: [Chapter] = []
+    private(set) var contents: [Chapter] = []
     /// The page on screen, one-based, and how many there are. Published so the Info panel
     /// can say where you are, and written to the library so the shelf can say which books
     /// are open.
-    @Published private(set) var page = 1
-    @Published private(set) var pageCount = 0
+    private(set) var page = 1
+    private(set) var pageCount = 0
 
     /// What the open document says it is called, and by whom.
     ///
     /// Read off the file on screen rather than from the plan. The plan carries these too,
     /// but only once a run has read the file, so a window opened straight onto a document
     /// was titled with its filename until somebody pressed Review names.
-    @Published private(set) var statedTitle: String?
-    @Published private(set) var statedAuthor: String?
+    private(set) var statedTitle: String?
+    private(set) var statedAuthor: String?
 
     /// Whether there is a document to look at from the side. The rail shows the outline
     /// where there is one and the pages themselves where there is not, so what it needs

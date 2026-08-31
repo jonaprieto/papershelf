@@ -182,8 +182,8 @@ struct MarkRow: View {
 /// inspector: nesting it inside a column that is already width-constrained made the two
 /// of them overflow the frame and draw over the browser.
 struct NotesRail: View {
-    @ObservedObject var annotator: Annotator
-    @ObservedObject var palette: Palette
+    var annotator: Annotator
+    var palette: Palette
     @Binding var addingNote: Bool
     @Binding var noteText: String
     let lastColour: NSColor
@@ -448,7 +448,7 @@ struct NotesRail: View {
 /// carries are about the page under it, and a strip along the bottom of the window would
 /// cost every document a line of height to say so.
 struct PageBar: View {
-    @ObservedObject var annotator: Annotator
+    var annotator: Annotator
     @Binding var fit: PageFit
 
     private var total: Int { max(annotator.pageCount, 0) }
@@ -527,7 +527,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
 /// The document's own table of contents, on the page's left where a reader expects it,
 /// with its pages as thumbnails behind the same switch.
 struct ContentsRail: View {
-    @ObservedObject var annotator: Annotator
+    var annotator: Annotator
     @Bindable private var prefs = Prefs.shared
 
     /// The chapter you are inside: the last one that starts at or before the page on
