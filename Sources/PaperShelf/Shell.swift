@@ -108,7 +108,7 @@ struct PaperShelfApp: App {
                 Button(chrome.inspectorCollapsed ? "Show Inspector" : "Hide Inspector") {
                     chrome.inspectorCollapsed.toggle()
                 }
-                .keyboardShortcut("i", modifiers: [.command, .option])
+                .keyboardShortcut("b", modifiers: [.command, .shift])
                 Button(chrome.contentsShown ? "Hide Contents" : "Show Contents") {
                     chrome.contentsShown.toggle()
                 }

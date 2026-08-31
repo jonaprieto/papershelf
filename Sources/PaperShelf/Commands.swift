@@ -187,7 +187,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .forward: return Shortcut("]", .command)
         case .focusSearch: return Shortcut("/", [])
         case .toggleSidebar: return Shortcut("b", .command)
-        case .toggleInspector: return Shortcut("i", [.command, .option])
+        case .toggleInspector: return Shortcut("b", [.command, .shift])
         case .viewList: return Shortcut("1", .command)
         case .viewCatalogue: return Shortcut("2", .command)
         case .viewBibliography: return Shortcut("3", .command)
