@@ -218,15 +218,90 @@ struct NotesRail: View {
     /// The marks to show: the annotator's, but only when they belong to this document.
     private var marks: [Annotator.Mark] { documentIsOpen ? annotator.marks : [] }
 
+    /// The marks of a document that is selected but not open, read off the file itself.
+    /// Highlights live in the PDF, so a panel that could only ask the open document had
+    /// nothing to say about the other one on the shelf.
+    @State private var fileMarks: [MarkReader.Mark] = []
+    @State private var readingFile = false
+
     /// What is on this document, counted the two ways a reader counts it: passages picked
     /// out, and passages written about.
     private var tally: String {
+        guard documentIsOpen else {
+            if readingFile { return "Reading the file" }
+            guard !fileMarks.isEmpty else { return "No marks in this document" }
+            let notes = fileMarks.filter { !$0.note.isEmpty }.count
+            return count(fileMarks.count, notes) + " · read from the file"
+        }
         let highlights = marks.count
-        let notes = marks.filter { !$0.note.isEmpty }.count
-        guard documentIsOpen else { return "Marks live in the document" }
         guard highlights > 0 else { return "No marks yet" }
-        return "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
+        return count(highlights, marks.filter { !$0.note.isEmpty }.count)
+    }
+
+    private func count(_ highlights: Int, _ notes: Int) -> String {
+        "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
             + "\(notes) note\(notes == 1 ? "" : "s")"
+    }
+
+    /// One row per mark found in the file, set the way an open document's marks are set:
+    /// what the colour means, which page it is on, and the passage on its own highlight.
+    /// A mark read off a file you have not opened is still the same kind of thing, and it
+    /// looked like a different one when it was a stripe and some grey text.
+    ///
+    /// Read-only, though: recolouring or deleting means writing to a document nothing has
+    /// open, and the way to edit a mark is to open the paper it is in.
+    private func fileRow(_ mark: MarkReader.Mark) -> some View {
+        VStack(alignment: .leading, spacing: Space.step) {
+            HStack(spacing: Space.step) {
+                swatchImage(mark.colour, size: 13)
+                Text(palette.meaning(for: mark.colour))
+                    .font(Face.headline)
+                    .lineLimit(1)
+                Spacer(minLength: Space.snug)
+                Text("p. \(mark.page)")
+                    .font(Face.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            if !mark.quoted.isEmpty {
+                Text("\u{201C}\(mark.quoted)\u{201D}")
+                    .font(Face.page)
+                    .lineLimit(8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Space.step)
+                    .padding(.vertical, Space.step)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: mark.colour).opacity(0.42),
+                                in: RoundedRectangle(cornerRadius: Metric.card))
+            }
+
+            if !mark.note.isEmpty {
+                Text(mark.note)
+                    .font(Face.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Reads the file when the selection lands on a document nobody has open. Keyed on the
+    /// path, so walking the shelf reads each document once and the actor's cache answers
+    /// on the way back.
+    private func readMarksFromFile() async {
+        guard !documentIsOpen, !source.isEmpty else {
+            fileMarks = []
+            return
+        }
+        readingFile = true
+        defer { readingFile = false }
+        let url = URL(fileURLWithPath: source)
+        let passwords = PasswordList.active(Prefs.shared.passwords)
+        let found = await MarkReader.shared.marks(in: url, passwords: passwords)
+        guard !Task.isCancelled else { return }
+        fileMarks = found
     }
 
     /// The meanings actually on this document, so the filter offers what is there rather
@@ -246,6 +321,12 @@ struct NotesRail: View {
     }
 
     var body: some View {
+        panel
+            .task(id: source) { await readMarksFromFile() }
+            .task(id: documentIsOpen) { await readMarksFromFile() }
+    }
+
+    private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
                 HStack {
@@ -295,14 +376,19 @@ struct NotesRail: View {
                         .listRowBackground(Color.clear)
                     }
 
-                    if marks.isEmpty && !addingNote {
-                        // Two different emptinesses. The panel said "No marks yet" over a
-                        // paper with nine highlights on it, because nothing was open to
-                        // read them from; saying which of the two is true costs a
-                        // sentence.
+                    if !documentIsOpen {
+                        ForEach(fileMarks) { mark in
+                            fileRow(mark)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+
+                    if marks.isEmpty && !addingNote && (documentIsOpen || fileMarks.isEmpty) {
                         Text(documentIsOpen
                              ? "Select text on the page to highlight it or attach a note."
-                             : "Open this document to see the passages marked in it.")
+                             : (readingFile ? "Reading the file."
+                                : "Nothing is marked in this document yet."))
                             .font(Face.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
