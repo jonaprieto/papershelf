@@ -33,7 +33,13 @@ extension ReviewInspector {
                 .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
 
-                HStack(spacing: Space.step) {
+                // Wrapping, not compressing. Five controls in an inspector that can be
+                // 280 points wide is more than one line holds, and an `HStack` answers
+                // that by squeezing its children: "Improve with AI" became "Im…" and
+                // "Show the page" broke over three lines, which is two controls nobody
+                // could read. `FlowRow` places each at its own size and starts a new line
+                // when it runs out, so a narrow panel gets two readable rows.
+                FlowRow(spacing: Space.step) {
                     Button("Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(citationDraft + "\n", forType: .string)
@@ -72,14 +78,17 @@ extension ReviewInspector {
                          ? "Send this entry and the opening text, and take back a corrected one"
                          : "Needs an API key, in Settings")
 
-                    Spacer()
-
                     // The bibliography draws no page of its own, so checking an entry
                     // against the title page it came from meant leaving the view that
                     // asked the question. This is the way there and back.
+                    //
+                    // "Read this document" rather than "Show the page": which page was
+                    // not a question the label answered, and this app calls opening a
+                    // document reading it everywhere else -- the Info panel's own button,
+                    // the Reading Now shelf.
                     if !showsPage {
                         Button { read() } label: {
-                            Label("Show the page", systemImage: "doc.text.image")
+                            Label("Read this document", systemImage: "book")
                         }
                         .buttonStyle(.link)
                         .tip("Open this document beside the entry")
