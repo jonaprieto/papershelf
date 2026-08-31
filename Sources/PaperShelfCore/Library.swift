@@ -1479,6 +1479,62 @@ extension Library {
         return only
     }
 
+    /// What would be lost with these documents, counted.
+    ///
+    /// Not everything a document carries is worth warning about. Its text can be read
+    /// again and its citation regenerated; which project you filed it under, what you
+    /// tagged it, and how far you had read cannot. Those are the three this counts, so a
+    /// question about removing a source can say what the removal actually costs instead
+    /// of listing everything it technically touches.
+    public struct Curation: Equatable, Sendable {
+        public let tagged: Int
+        public let inProjects: Int
+        public let beingRead: Int
+
+        public var isEmpty: Bool { tagged == 0 && inProjects == 0 && beingRead == 0 }
+
+        public init(tagged: Int, inProjects: Int, beingRead: Int) {
+            self.tagged = tagged
+            self.inProjects = inProjects
+            self.beingRead = beingRead
+        }
+
+        /// "2 are in reading projects and 3 are tagged". Empty when none of them is.
+        public var sentence: String {
+            var parts: [String] = []
+            if inProjects > 0 {
+                parts.append("\(inProjects) \(inProjects == 1 ? "is" : "are") in a reading project")
+            }
+            if tagged > 0 { parts.append("\(tagged) tagged") }
+            if beingRead > 0 { parts.append("\(beingRead) part-read") }
+            guard parts.count > 1 else { return parts.first ?? "" }
+            return parts.dropLast().joined(separator: ", ") + " and " + parts[parts.count - 1]
+        }
+    }
+
+    public func curation(of ids: [String]) throws -> Curation {
+        guard !ids.isEmpty else { return Curation(tagged: 0, inProjects: 0, beingRead: 0) }
+        let wanted = Set(ids)
+        return Curation(tagged: try count(wanted, in: "document_tags"),
+                        inProjects: try count(wanted, in: "project_members"),
+                        beingRead: try count(wanted, in: "reading_positions"))
+    }
+
+    /// How many of `ids` appear in a table keyed by document.
+    ///
+    /// Counted by walking the table rather than by binding a list: SQLite has a limit on
+    /// how many parameters one statement may carry, and a source can hold more documents
+    /// than that.
+    private func count(_ ids: Set<String>, in table: String) throws -> Int {
+        try withStatement("SELECT DISTINCT document_id FROM \(table);", bind: { _ in }) { statement in
+            var found = 0
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let id = columnText(statement, 0), ids.contains(id) { found += 1 }
+            }
+            return found
+        }
+    }
+
     /// Forgets documents outright: the row, and everything hung off it.
     ///
     /// Every table that references a document cascades from `documents(id)` and foreign

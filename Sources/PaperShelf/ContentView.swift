@@ -103,9 +103,9 @@ struct ContentView: View {
     /// The project row a drag is currently over, so exactly one row lights up.
     @State private var dropProject: Int64?
     @State private var importing = false
-    /// The source about to be removed, and how many documents would be forgotten with it.
-    /// Nil unless the question is on screen.
-    @State private var removing: (url: URL, documents: Int)?
+    /// The source about to be removed, how many documents go with it, and which of them
+    /// carry work that cannot be typed back in. Nil unless the question is on screen.
+    @State private var removing: (url: URL, documents: Int, curation: Library.Curation)?
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
     @State private var tagCounts: [TagCount] = []
@@ -1259,6 +1259,10 @@ struct ContentView: View {
 
     /// Removing a source takes its files with it, straight away.
     /// What removing this source costs, said before it happens.
+    ///
+    /// The number that matters is not how many documents leave; it is how much of your own
+    /// work leaves with them. A shelf of papers you have never filed is nothing to mourn,
+    /// and three you have spent a term tagging is, so the two are said separately.
     private var removeMessage: String {
         guard let removing else { return "" }
         let count = removing.documents
@@ -1266,11 +1270,16 @@ struct ContentView: View {
             return "Nothing on disk is touched. The library holds nothing from this "
                 + "folder, so nothing is forgotten."
         }
-        return "\(count) document\(count == 1 ? "" : "s") "
-            + "\(count == 1 ? "is" : "are") known only from this folder. "
-            + "\(count == 1 ? "It leaves" : "They leave") the library with it, along with "
-            + "\(count == 1 ? "its" : "their") tags, notes, place in any reading project "
-            + "and reading position. Nothing on disk is touched."
+        var message = "\(count) document\(count == 1 ? "" : "s") "
+            + "\(count == 1 ? "is" : "are") known only from this folder, and "
+            + "\(count == 1 ? "leaves" : "leave") the library with it."
+        if !removing.curation.isEmpty {
+            message += " \(removing.curation.sentence.prefix(1).uppercased())"
+                + "\(removing.curation.sentence.dropFirst()); that filing cannot be "
+                + "put back except by hand. Add the folder again first if you want to "
+                + "keep it."
+        }
+        return message + " Nothing on disk is touched."
     }
 
     /// Asks before removing, because this is not only a list the source leaves.
@@ -1286,7 +1295,9 @@ struct ContentView: View {
         Task {
             let root = url.resolvingSymlinksInPath().path
             let doomed = (try? await library.documentsOnly(under: root)) ?? []
-            removing = (url, doomed.count)
+            let curation = (try? await library.curation(of: doomed))
+                ?? Library.Curation(tagged: 0, inProjects: 0, beingRead: 0)
+            removing = (url, doomed.count, curation)
         }
     }
 
