@@ -19,6 +19,9 @@ struct MarkRow: View {
 
     @State private var editing = false
     @State private var hovering = false
+    /// Hovered, selected, or being written on: any of the three means the row is the one
+    /// being worked on.
+    private var showsActions: Bool { hovering || editing || isSelected }
     @State private var text = ""
     private let prefs = Prefs.shared
 
@@ -122,8 +125,8 @@ struct MarkRow: View {
                 .background(.regularMaterial, in: Capsule())
                 .padding(.trailing, Space.step)
                 .padding(.top, Space.tight)
-                .opacity(hovering || editing ? 1 : 0)
-                .allowsHitTesting(hovering || editing)
+                .opacity(showsActions ? 1 : 0)
+                .allowsHitTesting(showsActions)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -131,9 +134,14 @@ struct MarkRow: View {
     }
 
     /// Edit, delete and the handoff. Always in the tree so keyboard focus and VoiceOver
-    /// can reach them; only their opacity is hover-gated. Three icons on every mark turned
-    /// a column of quotations into a column of buttons, and none of them needs to be seen
+    /// can reach them; only their opacity is gated. Three icons on every mark turned a
+    /// column of quotations into a column of buttons, and none of them needs to be seen
     /// until you are looking at the mark they belong to.
+    ///
+    /// Shown while the row is selected as well as while it is hovered. Clicking a mark
+    /// selects it and jumps the page to it, which is exactly the moment somebody wants to
+    /// recolour it or write on it, and until now that took moving the pointer back to a
+    /// row they had already chosen.
     @ViewBuilder
     private var rowActions: some View {
         if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy,
@@ -151,7 +159,7 @@ struct MarkRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .opacity(hovering ? 1 : 0)
+            .opacity(showsActions ? 1 : 0)
             .accessibilityLabel("Send the mark on page \(mark.page) to ChatGPT")
             .tip("Send this passage to ChatGPT. Open starts a new conversation; "
                  + "copy is for one you already have going.")
@@ -164,7 +172,7 @@ struct MarkRow: View {
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
-        .opacity(hovering || editing ? 1 : 0)
+        .opacity(showsActions ? 1 : 0)
         .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
         .accessibilityLabel(mark.note.isEmpty
                              ? "Add a note to the mark on page \(mark.page)"
@@ -172,7 +180,7 @@ struct MarkRow: View {
         Button(action: remove) { Image(systemName: "trash") }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .opacity(hovering || editing ? 1 : 0)
+            .opacity(showsActions ? 1 : 0)
             .tip("Remove this mark from the file")
             .accessibilityLabel("Delete the mark on page \(mark.page)")
     }

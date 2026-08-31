@@ -74,6 +74,12 @@ struct ReviewInspector: View {
     /// "Stored" over an entry that no longer matched what was stored, with the button
     /// disabled and no way to keep the edit.
     @State var storedCitation = ""
+    /// The mark the pointer is over, by id rather than by value: recolouring rewrites the
+    /// entry in `marks`, and a copy held here would go on describing the old colour.
+    @State private var hoveredMarkID: UUID?
+    /// Holds the bar up for a moment after the pointer leaves the mark, so it can be
+    /// reached. Without it the bar is gone before the pointer arrives at it.
+    @State private var markBarHide: Task<Void, Never>?
     @State var citationImproving = false
     @State var citationImprovedByAI = false
     @State var citationNote: String?
@@ -219,7 +225,14 @@ struct ReviewInspector: View {
                 .clipped()
                 .overlay { nightTint }
                 .overlay(alignment: .topTrailing) { lockedOverlay }
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    switch phase {
+                    case .active(let point): pointer(at: point)
+                    case .ended: hideMarkBar(after: .milliseconds(350))
+                    }
+                }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
+                .overlay(alignment: .topLeading) { floatingMarkBar }
                 .overlay(alignment: .bottom) {
                     PageBar(annotator: annotator, fit: $prefs.pageFit)
                         .padding(.bottom, Space.roomy)
@@ -345,7 +358,11 @@ struct ReviewInspector: View {
                 // Wider when the ChatGPT menu is in it: the bar's width is fixed, so a
                 // new target has to be paid for rather than squeezed out of the swatches.
                 let handoff = ChatGPTHandoff.isInstalled && (prefs.offerChatGPT || prefs.offerChatGPTCopy)
-                let bar = CGSize(width: handoff ? 284 : 250, height: 40)
+                // Measured from the palette, for the same reason the mark bar's is: these
+                // were 250 and 284, written when the palette had five colours in it, and
+                // the palette is a list the reader edits.
+                let bar = CGSize(width: CGFloat(palette.styles.count) * 27 + (handoff ? 106 : 72),
+                                 height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
                 let above = box.minY - bar.height - 8
@@ -353,12 +370,126 @@ struct ReviewInspector: View {
                 let x = min(max(box.midX - bar.width / 2, 8), max(8, geometry.size.width - bar.width - 8))
 
                 selectionBar
-                    .frame(width: bar.width, height: bar.height)
+                    .fixedSize()
                     .offset(x: x, y: y)
                     .animation(.easeOut(duration: 0.12), value: box)
             }
             .transition(.opacity)
         }
+    }
+
+    /// The mark under the pointer, read fresh out of the annotator each time.
+    private var hoveredMark: Annotator.Mark? {
+        guard let hoveredMarkID else { return nil }
+        return annotator.marks.first { $0.id == hoveredMarkID }
+    }
+
+    private func pointer(at point: CGPoint) {
+        guard !annotator.hasSelection else { return }
+        if let mark = annotator.mark(atViewPoint: point) {
+            markBarHide?.cancel()
+            markBarHide = nil
+            if hoveredMarkID != mark.id { hoveredMarkID = mark.id }
+        } else {
+            hideMarkBar(after: .milliseconds(350))
+        }
+    }
+
+    private func hideMarkBar(after delay: Duration) {
+        guard hoveredMarkID != nil, markBarHide == nil else { return }
+        markBarHide = Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            hoveredMarkID = nil
+            markBarHide = nil
+        }
+    }
+
+    /// The same bar a fresh selection gets, over a mark that already exists.
+    ///
+    /// A highlight you have already made was a thing you could only act on from the notes
+    /// rail: to change its colour you had to find its row. It is the same three questions
+    /// either way -- what colour, what note, and whether to keep it -- so it is the same
+    /// bar, in the same place, against the thing it is about.
+    @ViewBuilder
+    private var floatingMarkBar: some View {
+        if !annotator.hasSelection, let mark = hoveredMark, let box = annotator.rect(of: mark) {
+            GeometryReader { geometry in
+                // Measured from the palette rather than fixed. A swatch and its gap are
+                // 27 points, the divider and the two buttons about 60, and the capsule's
+                // own padding 24; a fixed number is a bar that is centred correctly only
+                // for whichever palette size it was written for, and this one is a list
+                // the reader edits.
+                // An estimate, used to centre the bar over the mark and to keep it
+                // inside the pane. The bar takes its own width -- `.frame(width:)`
+                // squeezed the content into a number written for a five-colour palette,
+                // and a reader who had added two more got a trash can cut in half by the
+                // capsule's edge.
+                let bar = CGSize(width: CGFloat(palette.styles.count) * 27 + 96, height: 40)
+                let above = box.minY - bar.height - 8
+                let y = above > 8 ? above : min(box.maxY + 8, geometry.size.height - bar.height - 8)
+                let x = min(max(box.midX - bar.width / 2, 8), max(8, geometry.size.width - bar.width - 8))
+
+                markBar(mark)
+                    .fixedSize()
+                    .offset(x: x, y: y)
+                    .animation(.easeOut(duration: 0.12), value: box)
+                    // Hovering the bar counts as still being on the mark, or it would
+                    // vanish on the way to it.
+                    .onHover { inside in
+                        if inside {
+                            markBarHide?.cancel()
+                            markBarHide = nil
+                        } else {
+                            hideMarkBar(after: .milliseconds(350))
+                        }
+                    }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func markBar(_ mark: Annotator.Mark) -> some View {
+        let current = palette.nearest(to: mark.colour)
+        return HStack(spacing: Space.step) {
+            ForEach(palette.styles) { style in
+                Button { annotator.setColour(style.nsColor, on: mark) } label: {
+                    Circle()
+                        .fill(style.swatch)
+                        .frame(width: 19, height: 19)
+                        .overlay(Circle().strokeBorder(.primary.opacity(
+                            style.id == (hovered ?? current?.id) ? 0.6 : 0.15), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .onHover { hovered = $0 ? style.id : nil }
+                .accessibilityLabel(style.meaning.isEmpty ? "Unnamed colour" : style.meaning)
+            }
+
+            Divider().frame(height: 16)
+
+            Button {
+                annotator.selectedMark = mark.id
+                prefs.inspectorPanel = .notes
+                prefs.inspectorCollapsed = false
+            } label: {
+                Image(systemName: "text.bubble")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(mark.note.isEmpty ? "Write a note" : "Read the note")
+            .tip(mark.note.isEmpty ? "Write a note on this mark" : "Show this mark's note")
+
+            Button { annotator.remove(mark) } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete this mark")
+            .tip("Remove this mark from the file")
+        }
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.snug)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.separator.opacity(0.6)))
+        .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
     }
 
     private var selectionBar: some View {

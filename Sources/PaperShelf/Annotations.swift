@@ -458,6 +458,30 @@ final class Annotator {
         rescanIfNeeded()
     }
 
+    /// The mark under a point in the preview, if there is one.
+    ///
+    /// The point arrives from SwiftUI, which measures from the top, and `PDFView` is an
+    /// ordinary AppKit view measuring from the bottom -- the same flip `selectionChanged`
+    /// makes in the other direction.
+    func mark(atViewPoint point: CGPoint) -> Mark? {
+        guard let view else { return nil }
+        let inView = CGPoint(x: point.x, y: view.bounds.height - point.y)
+        guard let page = view.page(for: inView, nearest: false) else { return nil }
+        let onPage = view.convert(inView, to: page)
+        // Last rather than first: marks overlap where a passage was marked twice, and the
+        // one drawn on top is the one being pointed at.
+        return marks.last { $0.annotation.page === page && $0.annotation.bounds.contains(onPage) }
+    }
+
+    /// Where a mark sits in the preview, in the same top-down space as `selectionRect`,
+    /// so a bar can be put against it the way one is put against a selection.
+    func rect(of mark: Mark) -> CGRect? {
+        guard let view, let page = mark.annotation.page else { return nil }
+        let box = view.convert(mark.annotation.bounds, from: page)
+        return CGRect(x: box.minX, y: view.bounds.height - box.maxY,
+                      width: box.width, height: box.height)
+    }
+
     /// Scrolls to a mark and selects the text under it, which is what makes it findable:
     /// a highlight on a page you are not looking at is invisible by definition.
     func jump(to mark: Mark) {
