@@ -58,7 +58,6 @@ enum Metric {
     // selected row in a source list by about five points and leaves most other things
     // square, and this window should read the same way.
     static let keyCap: CGFloat = 3
-    static let cover: CGFloat = 4
     static let control: CGFloat = 4
     static let group: CGFloat = 4
     static let card: CGFloat = 5
@@ -67,7 +66,16 @@ enum Metric {
     /// The shelf: a cover keeps a book's proportions rather than being letterboxed into a
     /// fixed band, so the grid asks for a width and derives the height.
     static let coverWidth: CGFloat = 176
-    static let coverAspect: CGFloat = 1.32
+    /// US Letter, and deliberately the widest paper anybody shelves here rather than a
+    /// number chosen to look right.
+    ///
+    /// A cover fills its box's height only if the box is at least as wide as the page,
+    /// and covers that all fill their height are what makes a row of them line up. At the
+    /// old 1.32 a letter page (1.29) stopped short of the box and an A4 one (1.41) ran
+    /// the full height, so the two sat at different heights with their titles at
+    /// different heights under them. At letter's own ratio both fill the height and only
+    /// the width differs, which is what a row of books actually looks like.
+    static let coverAspect: CGFloat = 11.0 / 8.5
 
     /// The grid's 18pt outer padding is part of its width budget. Keeping it here makes
     /// the shelf stop claiming a second card until two ideal cards actually fit.

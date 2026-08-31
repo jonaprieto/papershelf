@@ -90,9 +90,20 @@ extension CatalogueLayoutTests {
     }
 
     func testCoverHeightFollowsTheWidth() {
-        XCTAssertEqual(Metric.coverHeight(forWidth: 100), 132)
-        XCTAssertEqual(Metric.coverHeight(forWidth: 176), 232)
-        XCTAssertEqual(Metric.coverHeight(forWidth: 200), 264)
+        XCTAssertEqual(Metric.coverHeight(forWidth: 100), 129)
+        XCTAssertEqual(Metric.coverHeight(forWidth: 176), 228)
+        XCTAssertEqual(Metric.coverHeight(forWidth: 200), 259)
+    }
+
+    /// The box has to be at least as wide as the widest page anybody shelves, or that page
+    /// fits by width, stops short of the box's height, and stands lower than the card
+    /// beside it with its title lower too. That is the bug the ratio exists to prevent, so
+    /// it is the ratio that gets asserted rather than the number.
+    func testTheCoverBoxIsAtLeastAsWideAsThePagesThatGoInIt() {
+        let letter = 11.0 / 8.5
+        let a4 = 297.0 / 210.0
+        XCTAssertLessThanOrEqual(Metric.coverAspect, letter, "a letter page would stop short")
+        XCTAssertLessThanOrEqual(Metric.coverAspect, a4, "an A4 page would stop short")
     }
 
     /// A grid mid-resize will propose nonsense; a negative frame is a crash, not a layout.

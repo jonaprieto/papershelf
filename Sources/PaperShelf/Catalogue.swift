@@ -831,11 +831,16 @@ struct ResultsPane: View {
             // confirm every name from there is offering to accept names nobody has read.
             if prefs.viewMode == .list, !runner.results.isEmpty {
                 if aiReady {
-                    Toggle("Ask AI as I go", isOn: $prefs.autoIdentify)
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .fixedSize()
-                        .tip("Ask the model for a name on each file as you reach it")
+                    // A toolbar's label style is icon-only, so a `Toggle`'s title never
+                    // drew and this was a bare unlabelled switch beside two buttons that
+                    // did carry words. A toggle button is what a macOS toolbar uses for
+                    // an on-off setting anyway, and it can say what it is.
+                    Toggle(isOn: $prefs.autoIdentify) {
+                        Label("Ask as I go", systemImage: "wand.and.sparkles")
+                    }
+                    .toggleStyle(.button)
+                    .labelStyle(.titleAndIcon)
+                    .tip("Ask the model for a name on each file as you reach it")
 
                     if runner.pendingCount > 0 {
                         Button { confirmingBatchAI = true } label: {
@@ -3089,14 +3094,25 @@ struct PlanCountPill: View {
 /// The state of one row, on the right of it.
 struct PlanPill: View {
     let state: PlanState
+    /// Whether the list is painting its own selection colour behind this.
+    ///
+    /// A pill drawn in its own ink at a sixth opacity vanishes into that: "Reviewing" is
+    /// blue, the selected row is blue, and the one word saying what the row is doing was
+    /// the least readable thing on screen. On the selected row the pill borrows the row's
+    /// own foreground, the way the tag chips beside it already do, and the word carries
+    /// the meaning the colour was carrying everywhere else.
+    var onSelection = false
 
     var body: some View {
         Text(state.label)
             .font(Face.caption.weight(.semibold))
-            .foregroundStyle(state.colour)
+            .foregroundStyle(onSelection ? AnyShapeStyle(.primary) : AnyShapeStyle(state.colour))
             .padding(.horizontal, Space.step)
             .padding(.vertical, Space.hair)
-            .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
+            .fittedBackground(onSelection
+                              ? AnyShapeStyle(.secondary.opacity(0.28))
+                              : AnyShapeStyle(state.colour.opacity(Ink.fill)),
+                              in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
     }
 }
@@ -3155,7 +3171,7 @@ struct ResultRow: View {
 
             Spacer(minLength: Space.step)
 
-            PlanPill(state: state)
+            PlanPill(state: state, onSelection: isCurrent)
         }
         .padding(.vertical, Space.tight)
         .opacity(decision == .skipped ? 0.55 : 1)
@@ -3278,35 +3294,46 @@ struct CoverCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.step) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(.quaternary.opacity(0.5))
-                if let cover {
-                    Image(nsImage: cover)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
-                } else if unreadable, item.status != .locked {
-                    // A cover that will not come is not a cover still coming. Same amber
-                    // the sidebar uses for a source it cannot read, and the same cause:
-                    // usually a disk that has stopped serving its own bytes.
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Ink.amber)
-                        .help("This file could not be read. The disk may be failing, or "
-                              + "the PDF may be damaged.")
-                } else {
-                    Image(systemName: item.status == .locked ? "lock.fill" : "book.closed")
-                        .font(.system(size: 26))
-                        .foregroundStyle(.tertiary)
+            // `Color.clear` carries the box, not the cover.
+            //
+            // A resizable image has no size of its own until something proposes one, and
+            // in a vertical grid nothing proposes a height -- so the ZStack that used to
+            // be here took its height from whichever page it happened to hold, and a card
+            // holding an A4 page stood taller than one holding a letter page with its
+            // title ten points further down. An empty flexible view takes the box's ratio
+            // and nothing else, and the cover is laid inside what it decides.
+            Color.clear
+                .aspectRatio(1 / Metric.coverAspect, contentMode: .fit)
+                .overlay {
+                    if let cover {
+                        Image(nsImage: cover)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: Metric.card))
+                            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                    } else {
+                        RoundedRectangle(cornerRadius: Metric.card)
+                            .fill(.quaternary.opacity(0.5))
+                            .overlay {
+                                if unreadable, item.status != .locked {
+                                    // A cover that will not come is not a cover still
+                                    // coming. Same amber the sidebar uses for a source it
+                                    // cannot read, and usually the same cause: a disk
+                                    // that has stopped serving its own bytes.
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 22))
+                                        .foregroundStyle(Ink.amber)
+                                        .help("This file could not be read. The disk may "
+                                              + "be failing, or the PDF may be damaged.")
+                                } else {
+                                    Image(systemName: item.status == .locked
+                                          ? "lock.fill" : "book.closed")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                    }
                 }
-            }
-            // As wide as its cell and as tall as a book of that width. It was 168 points
-            // whatever the width, which is why a tall book sat in a letterbox and a wide
-            // one was cropped: the band was a constant and a book is not.
-            .frame(maxWidth: .infinity)
-            .aspectRatio(1 / Metric.coverAspect, contentMode: .fit)
             .overlay(alignment: .topTrailing) { badges }
             .task(id: "\(item.key)#\(covers.generation)") {
                 if let hit = covers.cached(item) { cover = hit; unreadable = false; return }
