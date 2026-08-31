@@ -118,7 +118,7 @@ func stubEnvironment(members: [Int64: [ProjectMember]] = [:],
         },
         setSection: { _, _, _ in },
         removeMember: { _, _ in },
-        tags: { _ in [] },
+        tags: { _ in [:] },
         addTag: { _, _ in },
         removeTag: { _, _ in },
         rankedDocuments: { _, hashes in hashes },
@@ -197,7 +197,9 @@ MainActor.assumeIsolated {
                                     markdown: "<!-- page:3 -->\nSome text about the question.")]
         let env = stubEnvironment()
         for width in widths {
-            let height = fittedHeight(ProjectConversationView(project: project, documents: docs, env: env), width: width)
+            let model = ProjectConversationModel(project: project, env: env)
+            let height = fittedHeight(ProjectConversationView(documents: docs, model: model),
+                                      width: width)
             check("conversation at width \(Int(width)) settles to a finite, positive height",
                  height.isFinite && height > 0, "\(height)")
         }

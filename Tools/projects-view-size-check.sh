@@ -26,6 +26,7 @@ swiftc -O -swift-version 5 \
     -I "$MODULES" \
     "$OUT/main.swift" \
     Sources/PaperShelf/Projects.swift \
+    Sources/PaperShelf/Tokens.swift \
     "$COREOBJS"/*.swift.o \
     -o "$OUT/check"
 "$OUT/check"
