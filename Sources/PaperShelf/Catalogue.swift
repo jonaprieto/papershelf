@@ -1860,7 +1860,15 @@ struct ResultsPane: View {
     }
 
     private func catalogueGrid(columns: Int) -> some View {
-        let layout = Array(repeating: GridItem(.flexible(), spacing: Space.gutter), count: columns)
+        // `.topLeading`, because a `GridItem` centres its content in the row's height by
+        // default and the cards are not all the same height: a document whose PDF names
+        // no author has one line fewer than one that does. Centred, that card sat ten
+        // points lower than its neighbours -- cover, title and everything under it -- and
+        // a shelf read as though the covers were misaligned when what was uneven was the
+        // text beneath them.
+        let layout = Array(repeating: GridItem(.flexible(), spacing: Space.gutter,
+                                               alignment: .topLeading),
+                           count: columns)
         let keys = visibleKeys
         let shown = shownFilter.items(matching: visibilitySignature) {
             runner.results.filter { keys?.contains($0.key) ?? true }
