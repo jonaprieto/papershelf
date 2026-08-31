@@ -447,18 +447,12 @@ struct NotesRail: View {
                 }
             }
 
-            if !marks.isEmpty {
+            if !marks.isEmpty || !fileMarks.isEmpty {
                 Divider()
                 exportBar
             }
         }
         .background(.background.secondary)
-        // Both of these were set by buttons in the old header and read by nothing: the
-        // export wrote no file and the trash removed no marks.
-        .fileExporter(isPresented: $exporting,
-                      document: TextDocument(text: notesMarkdown),
-                      contentType: .plainText,
-                      defaultFilename: (title as NSString).deletingPathExtension + " notes") { _ in }
         .confirmationDialog("Remove every mark from this document?",
                             isPresented: $clearing) {
             Button("Remove \(marks.count) marks", role: .destructive) {
@@ -503,10 +497,13 @@ struct NotesRail: View {
     /// rather than chosen: there is one, and a menu of one is a menu that lies.
     private var exportBar: some View {
         HStack(spacing: Space.step) {
+            // A save panel rather than `fileExporter`. The shelf already carries one of
+            // those for the bibliography, and a second in the same hierarchy presented
+            // nothing at all: the button set its flag and no panel ever appeared.
             Button {
-                exporting = true
+                exportNotes()
             } label: {
-                Label("Export notes", systemImage: "square.and.arrow.up")
+                Label("Export as Markdown", systemImage: "square.and.arrow.up")
             }
             .tip("Write these notes to a file")
 
@@ -515,16 +512,16 @@ struct NotesRail: View {
 
             Spacer(minLength: Space.snug)
 
-            Button(role: .destructive) { clearing = true } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Remove every mark from this document")
-
-            Text("Markdown")
-                .font(Face.control)
+            // Only for the document in front of you. Removing every mark means rewriting
+            // the file, and the file is not open.
+            if documentIsOpen {
+                Button(role: .destructive) { clearing = true } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
+                .help("Remove every mark from this document")
+            }
         }
         .controlSize(.small)
         .padding(.horizontal, Space.roomy)
@@ -534,21 +531,38 @@ struct NotesRail: View {
     }
 
     @State private var clearing = false
-    @State private var exporting = false
     /// Which meaning the list is narrowed to, or nil for all of them.
     @State private var filter: String?
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
     private var notesMarkdown: String {
-        markdownNotes(
-            title: (title as NSString).deletingPathExtension,
-            source: source,
-            marks: marks.map {
+        // Either list: the marks of the open document, or the ones read off the file of a
+        // document merely selected. Exporting worked only for the first, which meant the
+        // button was there and did nothing on every other paper on the shelf.
+        let exported: [MarkExport] = documentIsOpen
+            ? marks.map {
                 MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                            meaning: palette.meaning(for: $0.colour))
             }
-        )
+            : fileMarks.map {
+                MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
+                           meaning: palette.meaning(for: $0.colour))
+            }
+        return markdownNotes(title: (title as NSString).deletingPathExtension,
+                             source: source, marks: exported)
+    }
+
+    /// Straight to a save panel, and the file is written here rather than by a document
+    /// type the presentation would have had to carry.
+    private func exportNotes() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = (title as NSString).deletingPathExtension + " notes.md"
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        panel.message = "Where these notes go"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? notesMarkdown.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func copyNotes() {
