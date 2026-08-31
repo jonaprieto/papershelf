@@ -99,11 +99,29 @@ extension CatalogueLayoutTests {
     /// fits by width, stops short of the box's height, and stands lower than the card
     /// beside it with its title lower too. That is the bug the ratio exists to prevent, so
     /// it is the ratio that gets asserted rather than the number.
-    func testTheCoverBoxIsAtLeastAsWideAsThePagesThatGoInIt() {
-        let letter = 11.0 / 8.5
-        let a4 = 297.0 / 210.0
-        XCTAssertLessThanOrEqual(Metric.coverAspect, letter, "a letter page would stop short")
-        XCTAssertLessThanOrEqual(Metric.coverAspect, a4, "an A4 page would stop short")
+    ///
+    /// A page fills the box's height exactly when its own height-over-width is at least
+    /// the box's. Absolute size does not come into it: a cover is scaled to the box, so an
+    /// A5 page and an A3 one draw the same thumbnail -- the A series all share the same
+    /// ratio. What does not fill the box is anything *wider* than letter, and those are
+    /// centred in it rather than cropped to fit: a 16:9 slide squeezed into a portrait box
+    /// is a vertical slice out of the middle of a slide, which is not a picture of the
+    /// document.
+    func testEveryOrdinaryPageFillsTheCoverBox() {
+        func fillsHeight(_ pageAspect: CGFloat) -> Bool { pageAspect >= Metric.coverAspect }
+
+        XCTAssertTrue(fillsHeight(11.0 / 8.5), "US Letter")
+        XCTAssertTrue(fillsHeight(14.0 / 8.5), "US Legal")
+        for (name, short, long) in [("A3", 297.0, 420.0), ("A4", 210.0, 297.0),
+                                    ("A5", 148.0, 210.0), ("A6", 105.0, 148.0),
+                                    ("B5", 176.0, 250.0)] {
+            XCTAssertTrue(fillsHeight(long / short), "\(name) portrait")
+        }
+
+        // Deliberately not: a document that is wider than paper is drawn as what it is.
+        XCTAssertFalse(fillsHeight(1.0), "a square scan")
+        XCTAssertFalse(fillsHeight(3.0 / 4.0), "4:3 slides")
+        XCTAssertFalse(fillsHeight(9.0 / 16.0), "16:9 slides")
     }
 
     /// A grid mid-resize will propose nonsense; a negative frame is a crash, not a layout.
