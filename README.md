@@ -546,3 +546,11 @@ search, responsive layout arithmetic and the end-to-end naming pipeline.
 
 The app is unsandboxed and ad-hoc signed, which is enough for local use. macOS asks
 once for access to Desktop, Documents and Downloads.
+
+## Licence
+
+PaperShelf is MIT licensed; see `LICENSE`. It bundles no third-party code: everything it
+draws, reads and searches with ships with macOS. The Markdown converters it can call
+(Marker, Docling, MarkItDown, pdftotext) are separate programs you install yourself, each
+under its own licence, and none of them is required. About PaperShelf says the same, in
+the app.

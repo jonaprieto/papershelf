@@ -59,12 +59,20 @@ final class Chrome: ObservableObject {
 @main
 struct PaperShelfApp: App {
     @StateObject private var chrome = Chrome()
+    @Environment(\.openWindow) private var openWindow
+
+    private func openAbout() { openWindow(id: AboutWindow.windowID) }
 
     var body: some Scene {
         Window("PaperShelf", id: "main") {
             ContentView(chrome: chrome)
         }
         .commands {
+            // The stock panel says a name, a version and a line of copyright. What this
+            // app is, what you may do with it and what else is involved take a window.
+            CommandGroup(replacing: .appInfo) {
+                Button("About PaperShelf") { openAbout() }
+            }
             CommandGroup(replacing: .newItem) {}
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
@@ -91,6 +99,11 @@ struct PaperShelfApp: App {
                     .keyboardShortcut("b", modifiers: .command)
             }
         }
+
+        Window("About PaperShelf", id: AboutWindow.windowID) {
+            AboutWindow()
+        }
+        .windowResizability(.contentSize)
 
         // Settings are a window again. ⌘, is wired to this scene by the platform, which
         // is also what puts the item in the app menu where people look for it.
