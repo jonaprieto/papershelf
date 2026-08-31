@@ -78,6 +78,7 @@ struct CommandPalette: View {
 
     private enum Entry: Identifiable {
         case starter(Mode)
+        case setting(PaletteSetting)
         case place(PalettePlace)
         case command(Command)
         case document(Item)
@@ -87,6 +88,7 @@ struct CommandPalette: View {
         var id: String {
             switch self {
             case .starter(let mode): return "s:" + String(mode.rawValue)
+            case .setting(let setting): return "g:" + setting.id
             case .place(let place): return "p:" + place.id
             case .command(let c): return "c:" + c.rawValue
             case .document(let item): return "d:" + item.key
@@ -135,6 +137,7 @@ struct CommandPalette: View {
         case .command(let command): return command.title
         case .place(let place): return place.title
         case .document(let item): return item.destinationName
+        case .setting(let setting): return setting.title
         case .starter, .page, .text: return nil
         }
     }
@@ -171,6 +174,13 @@ struct CommandPalette: View {
 
     private func matches(_ text: String) -> Bool {
         needle.isEmpty || text.lowercased().contains(needle)
+    }
+
+    /// The preferences, findable by name and flipped where they stand. A setting nobody
+    /// can remember the pane of is a setting nobody changes.
+    private var matchingSettings: [PaletteSetting] {
+        guard mode == nil || mode == .commands, !needle.isEmpty else { return [] }
+        return PaletteSettings.all().filter { matches($0.title) }.prefix(5).map { $0 }
     }
 
     private var matchingCommands: [Command] {
@@ -229,6 +239,7 @@ struct CommandPalette: View {
             + elsewhereInLibrary.map(Entry.place)
             + textHits.map(Entry.text)
             + matchingCommands.map(Entry.command)
+            + matchingSettings.map(Entry.setting)
     }
 
     var body: some View {
@@ -356,6 +367,7 @@ struct CommandPalette: View {
                         textHits.map(Entry.text)))
         }
         if !matchingCommands.isEmpty { out.append(("Commands", matchingCommands.map(Entry.command))) }
+        if !matchingSettings.isEmpty { out.append(("Settings", matchingSettings.map(Entry.setting))) }
         return out
     }
 
@@ -393,6 +405,15 @@ struct CommandPalette: View {
                 Text(starter?.detail ?? "")
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
+            case .setting(let setting):
+                Image(systemName: setting.opensSettings ? "gearshape" : "switch.2")
+                    .font(Face.micro)
+                    .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                Text(setting.title).lineLimit(1)
+                Spacer(minLength: Space.step)
+                Text(setting.value())
+                    .font(Face.caption.weight(setting.opensSettings ? .regular : .semibold))
+                    .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
             case .place(let place):
                 Image(systemName: place.kind.icon)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
@@ -474,6 +495,14 @@ struct CommandPalette: View {
             query = String(mode.rawValue)
             return
         }
+        if case .setting(let setting) = entry {
+            // A setting you can see the state of is one you may want to flip twice, so the
+            // field stays where it is. Handing over to the Settings window closes, since
+            // that window is now the one in front.
+            setting.act()
+            if setting.opensSettings { dismiss() }
+            return
+        }
         if case .text(let hit) = entry {
             // Matching a text hit to a document is an async round trip to the
             // library (see `matchingItem`), so it cannot dismiss up front the way
@@ -490,7 +519,7 @@ struct CommandPalette: View {
         case .document(let item): open(item)
         case .place(let place): place.go()
         case .page(let hit): hit.go()
-        case .text, .starter: break
+        case .text, .starter, .setting: break
         }
     }
 

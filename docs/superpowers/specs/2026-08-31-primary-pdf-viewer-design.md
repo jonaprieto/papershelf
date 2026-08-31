@@ -125,8 +125,15 @@ be wrong, and a panel that is confidently wrong is worse than one that is slow.
 
 ### 8. Settings are commands
 
-Every switch in Settings becomes a `Command` case, so `>` in the palette finds it and
-toggles it in place with its current state on the row.
+Every switch in Settings is findable by name in the palette, which toggles it in place with
+its current state on the row.
+
+Built as their own small table rather than as `Command` cases, which is what this said
+first. A command has a scope, a shortcut and a line in the shelf's dispatch; a preference
+has none of those, and fifteen more cases would each have needed a row in the shortcut
+table and a branch in a switch to express a name, a value and one thing to do about it.
+Settings with a handful of values cycle through them on Return, which is the whole editor a
+choice of three needs.
 
 Settings that take a value get an input line in the palette: `> AI model ⟩ ` completes over
 the allowed values. Settings whose value is free text (API keys, contact email, naming
