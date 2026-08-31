@@ -132,10 +132,13 @@ See "What the trace said" below. The measurement did not support it.
 becomes `@State`. A view then re-renders when a property it read changes, and not when
 some other property on the same object did.
 
-### Phase 5 -- identity and labels
+### Phase 5 -- labels
 
-The four `id: \.offset` uses take a stable identity. Every icon-only button gets an
-`accessibilityLabel` and, where the label is not self-evident, a `.help()`.
+The identity half of this phase was withdrawn; see finding G. What is left is the nine
+unnamed icons. A cover's decision badge gets the sentence `Decision.explanation` already
+gives its tooltip, as both the tooltip and the accessibility label. Four buttons get
+names. The chevron beside a resolved citation is hidden from VoiceOver, since the row it
+sits in already says the citation resolves.
 
 ## What the trace said
 

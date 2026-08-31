@@ -10,10 +10,10 @@ func color(_ r: Int, _ g: Int, _ b: Int) -> CGColor {
     CGColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
 }
 
-let plateTop = color(88, 108, 232)
-let plateBottom = color(38, 44, 122)
-let paper = color(252, 252, 254)
-let shelf = color(226, 231, 248)
+let plateTop = color(38, 41, 48)
+let plateBottom = color(11, 12, 15)
+let paper = color(250, 250, 251)
+let shelf = color(197, 201, 209)
 let bookmark = color(255, 197, 61)
 
 func draw(into ctx: CGContext, side: CGFloat) {
@@ -33,24 +33,34 @@ func draw(into ctx: CGContext, side: CGFloat) {
                            end: CGPoint(x: 0, y: 90), options: [])
     ctx.restoreGState()
 
-    // Three spines of unequal height on a shelf rule, seen edge-on. Solid shapes with
-    // wide gaps, so the mark still separates into three books at 16pt.
+    // Three spines of unequal height standing on a shelf rule, seen edge-on. They sit
+    // on the shelf rather than floating above it, and the short one leans, which is what
+    // keeps the row from reading as a bar chart at 16pt.
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 30,
                   color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.30))
-    for (rect, fill) in [(CGRect(x: 272, y: 272, width: 120, height: 480), paper),
-                         (CGRect(x: 452, y: 272, width: 120, height: 580), paper),
-                         (CGRect(x: 632, y: 272, width: 120, height: 400), bookmark)] {
-        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 60, cornerHeight: 60, transform: nil))
+    for (rect, fill) in [(CGRect(x: 287, y: 246, width: 123, height: 369), paper),
+                         (CGRect(x: 430, y: 246, width: 123, height: 471), paper)] {
+        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 31, cornerHeight: 31, transform: nil))
         ctx.setFillColor(fill)
         ctx.fillPath()
     }
+
+    // The leaning one, pivoted where it meets the shelf.
+    let pivot = CGPoint(x: 635, y: 246)
+    var tilt = CGAffineTransform(translationX: pivot.x, y: pivot.y)
+        .rotated(by: -10 * .pi / 180)
+        .translatedBy(x: -pivot.x, y: -pivot.y)
+    ctx.addPath(CGPath(roundedRect: CGRect(x: 573, y: 246, width: 123, height: 430),
+                       cornerWidth: 31, cornerHeight: 31, transform: &tilt))
+    ctx.setFillColor(bookmark)
+    ctx.fillPath()
     ctx.restoreGState()
 
-    // The shelf the books stand on, held slightly cooler than the spines so the row
-    // reads as objects sitting on a surface rather than one comb-shaped blob.
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 232, y: 152, width: 560, height: 70),
-                       cornerWidth: 35, cornerHeight: 35, transform: nil))
+    // The shelf itself, held slightly cooler than the spines so the row reads as objects
+    // sitting on a surface rather than one comb-shaped blob.
+    ctx.addPath(CGPath(roundedRect: CGRect(x: 225, y: 174, width: 574, height: 72),
+                       cornerWidth: 36, cornerHeight: 36, transform: nil))
     ctx.setFillColor(shelf)
     ctx.fillPath()
 }
