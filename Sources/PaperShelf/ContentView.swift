@@ -40,6 +40,9 @@ struct ContentView: View {
     private let libraryStatus: LibraryStatus = .shared
     @State private var projects: [ProjectSummary] = []
     @State private var namingProject = false
+    /// The project a menu just asked to remove, held until the confirmation decides.
+    @State private var projectBeingDeleted: ProjectSummary?
+    @State private var deletingProject = false
     /// The source row under the pointer, so its remove button is only there when it is
     /// being looked at.
     @State private var hoveredSource: URL?
@@ -822,6 +825,15 @@ struct ContentView: View {
                     }
                     .tip("Ask a question across these \(project.documentCount) documents. "
                          + "Drop a PDF here to add it.")
+                    // A project could be made and filled and never removed: the sidebar
+                    // row had no menu, and the only delete in the app was on a projects
+                    // sheet the sidebar replaced.
+                    .contextMenu {
+                        Button("Delete Project", role: .destructive) {
+                            projectBeingDeleted = project
+                            deletingProject = true
+                        }
+                    }
                 }
             }
             if namingProject {
@@ -840,6 +852,30 @@ struct ContentView: View {
             }
         }
         .task(id: runner.revision) { await reloadProjects() }
+        .confirmationDialog("Delete Project", isPresented: $deletingProject,
+                            presenting: projectBeingDeleted) { project in
+            Button("Delete", role: .destructive) { Task { await performDeleteProject(project) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { project in
+            Text("Deleting \"\(project.name)\" removes the project and its list of "
+                 + "\(project.documentCount) document\(project.documentCount == 1 ? "" : "s"). "
+                 + "The documents themselves are left alone. This cannot be undone.")
+        }
+    }
+
+    /// Removes the project and every membership row. The documents are not touched: a
+    /// project is a list of them, not a place they live.
+    ///
+    /// `Library.deleteProject` is a hard SQL delete with no undo anywhere in the app,
+    /// which is why the menu item goes through a confirmation rather than straight here.
+    private func performDeleteProject(_ project: ProjectSummary) async {
+        guard let library = Library.shared else { return }
+        try? await library.deleteProject(id: project.id)
+        if openProject?.id == project.id {
+            openProject = nil
+            sidebarTarget = .shelf(shelves.current)
+        }
+        await reloadProjects()
     }
 
     /// The palette can name a project the sidebar would have to be scrolled to.
