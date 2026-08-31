@@ -120,7 +120,7 @@ struct SettingsPanel: View {
                     if !availableModels.contains(prefs.aiModel) { Text(prefs.aiModel).tag(prefs.aiModel) }
                     ForEach(availableModels, id: \.self) { Text($0).tag($0) }
                 }
-                Toggle("Ask on each new file as I reach it", isOn: $prefs.autoIdentify)
+                Toggle("Name each new file as I reach it", isOn: $prefs.autoIdentify)
             } header: {
                 Text("Model")
             } footer: {

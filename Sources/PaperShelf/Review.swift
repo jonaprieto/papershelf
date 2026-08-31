@@ -35,7 +35,6 @@ struct ReviewInspector: View {
     /// A raw exchange with the model, for correcting one entry. A closure because the
     /// client lives with the view that owns the settings, not with this one.
     let improveCitation: (String, String) async throws -> String
-    @Binding var autoIdentify: Bool
     let moveTo: () -> Void
     let aiReady: Bool
     let markDeleted: () -> Void

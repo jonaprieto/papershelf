@@ -822,47 +822,12 @@ struct ResultsPane: View {
                 .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
             }
 
-            // While there is a plan being worked through, the bar is about the plan: what
-            // the model can do to what is left, what confirming the rest would do, and
-            // what applying would. `autoIdentify` lives here rather than in the panel
-            // because it is a setting for the whole run, not a decision about one file.
-            //
-            // The reviewer only. On the shelf you are looking at covers, and offering to
-            // confirm every name from there is offering to accept names nobody has read.
-            if prefs.viewMode == .list, !runner.results.isEmpty {
-                if aiReady {
-                    // A toolbar's label style is icon-only, so a `Toggle`'s title never
-                    // drew and this was a bare unlabelled switch beside two buttons that
-                    // did carry words. A toggle button is what a macOS toolbar uses for
-                    // an on-off setting anyway, and it can say what it is.
-                    Toggle(isOn: $prefs.autoIdentify) {
-                        Label("Ask as I go", systemImage: "wand.and.sparkles")
-                    }
-                    .toggleStyle(.button)
-                    .labelStyle(.titleAndIcon)
-                    .tip("Ask the model for a name on each file as you reach it")
-
-                    if runner.pendingCount > 0 {
-                        Button { confirmingBatchAI = true } label: {
-                            Label("Ask AI for \(runner.pendingCount)", systemImage: "sparkles")
-                        }
-                        .labelStyle(.titleAndIcon)
-                        .tip("One request per undecided file. You are billed by the provider.")
-                    }
-                }
-
-                if runner.pendingCount > 0 {
-                    Button {
-                        runner.confirmAllPending()
-                        ensureSelection()
-                    } label: {
-                        Label("Confirm all", systemImage: "checkmark.circle")
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .keyboardShortcut(.return, modifiers: [.command, .shift])
-                    .tip("Take every name still pending as it stands", key: "⌘⇧Return")
-                }
-            }
+            // Naming files is one of the things this app does, not the thing it is, and
+            // "Ask as I go", "Ask AI for N" and "Confirm all" led the toolbar on every
+            // screen. They belong to the plan on screen, so they moved to the plan's own
+            // bar -- see `planActions` -- with the rest of what is true only while a plan
+            // is being reviewed. `Apply` stays here: it is the one that touches the disk,
+            // and it already only appears when there is something to carry out.
 
             // Only when there is something to carry out. A permanently visible, permanently
             // dimmed blue button is a promise the app cannot keep, and it is the loudest
@@ -2215,7 +2180,6 @@ struct ResultsPane: View {
                 improveCitation: { system, user in
                     try await aiClient.ask(system: system, user: user, feature: .bibtex)
                 },
-                autoIdentify: $prefs.autoIdentify,
                 moveTo: { choosingMoveTarget = true },
                 aiReady: aiReady,
                 markDeleted: markDeleted,
@@ -2337,6 +2301,8 @@ struct ResultsPane: View {
                     .font(Face.caption)
                     .fixedSize()
                     .tip("Hide everything already confirmed, skipped or trashed")
+
+                planActions
             }
 
             sortMenu
@@ -2460,6 +2426,49 @@ struct ResultsPane: View {
     /// The two ways a search can quietly answer the wrong question: a field that does not
     /// exist, which the grammar turns into a literal word, and a question about the inside
     /// of documents nothing has read. Neither is worth an alert; both are worth saying.
+    /// What can be done to the plan on screen, in the bar that describes it.
+    ///
+    /// These were the first three things in the window toolbar. Renaming is a feature of
+    /// this app rather than the whole of it, and a toolbar is read before anything else;
+    /// putting them here also gives the setting room to be a switch with its name beside
+    /// it, which a toolbar's icon-only label style would not draw.
+    ///
+    /// "Name as I go" rather than "Ask as I go", because it sat next to "Ask AI for 3"
+    /// and the two read as the same offer.
+    @ViewBuilder
+    private var planActions: some View {
+        if !runner.results.isEmpty {
+            Divider().frame(height: 16)
+
+            if aiReady {
+                Toggle("Name as I go", isOn: $prefs.autoIdentify)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(Face.caption)
+                    .fixedSize()
+                    .tip("Ask the model for a name on each file as you reach it")
+
+                if runner.pendingCount > 0 {
+                    Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
+                        .controlSize(.small)
+                        .fixedSize()
+                        .tip("One request per undecided file. You are billed by the provider.")
+                }
+            }
+
+            if runner.pendingCount > 0 {
+                Button("Confirm all") {
+                    runner.confirmAllPending()
+                    ensureSelection()
+                }
+                .controlSize(.small)
+                .fixedSize()
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .tip("Take every name still pending as it stands", key: "⌘⇧Return")
+            }
+        }
+    }
+
     @ViewBuilder
     private var searchWarning: some View {
         let unknown = Query.unknownFields(in: query)
