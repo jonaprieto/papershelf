@@ -102,6 +102,11 @@ final class Prefs {
     var lastHighlightColour: String = Store.text("lastHighlightColour", "") {
         didSet { Store.put("lastHighlightColour", lastHighlightColour) }
     }
+    /// Whether selecting text in the reader window pops the row of highlighters beside it.
+    /// On by default: the keys are faster once you know them, and nothing says they exist.
+    var selectionPalette: Bool = Store.flag("selectionPalette", true) {
+        didSet { Store.put("selectionPalette", selectionPalette) }
+    }
 
     // MARK: - Sources
 

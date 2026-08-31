@@ -430,6 +430,18 @@ struct ContentView: View {
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
             NSApp.appearance = prefs.appearance.nsAppearance
+        }
+        // The shelf's own work, held back a beat.
+        //
+        // A file opened from Finder builds no library window, but SwiftUI still makes the
+        // scene when the app is activated, and the delegate closes it again a moment later
+        // (see `AppDelegate`). Everything below used to start in `onAppear`, which meant a
+        // window nobody would ever see had already begun scanning source folders and had
+        // started a file watcher. As a task it is cancelled when the window goes away, and
+        // the sleep is what gives the cancellation time to arrive.
+        .task {
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
             restoreSources()
             startWatching()
             if !selection.isEmpty {

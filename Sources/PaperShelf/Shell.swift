@@ -78,6 +78,9 @@ final class Chrome {
 struct PaperShelfApp: App {
     @State private var chrome = Chrome()
     @Environment(\.openWindow) private var openWindow
+    // Finder's files arrive here, and the reader windows they open are the delegate's.
+    // See `AppDelegate` for why they are not a scene.
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     private func openAbout() { openWindow(id: AboutWindow.windowID) }
 
@@ -115,6 +118,14 @@ struct PaperShelfApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .keyboardShortcut("b", modifiers: .command)
+                Divider()
+                // Reading a file opened from Finder no longer builds a library window, so
+                // there has to be a way to ask for one.
+                Button("Library") {
+                    AppDelegate.current?.wantsLibrary = true
+                    openWindow(id: "main")
+                }
+                    .keyboardShortcut("0", modifiers: .command)
             }
         }
 
