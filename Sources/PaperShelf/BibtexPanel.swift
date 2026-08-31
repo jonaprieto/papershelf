@@ -88,7 +88,6 @@ extension ReviewInspector {
                     if citationDraft != generatedCitation {
                         Button("Reset") {
                             citationDraft = generatedCitation
-                            citationStored = false
                             // Back to the generated entry, which the model did not write:
                             // keeping the flag would record it as the model's work.
                             citationImprovedByAI = false
@@ -129,6 +128,14 @@ extension ReviewInspector {
 
     /// True while the entry on screen is worth keeping and has not been kept: the model
     /// changed it, or you did.
+    /// Whether the draft on screen is the entry that is kept with the document.
+    ///
+    /// Derived rather than remembered, so an edit in the editor makes it false the moment
+    /// it stops being true and Store comes back on its own.
+    var citationStored: Bool {
+        !storedCitation.isEmpty && storedCitation == citationDraft
+    }
+
     var needsKeeping: Bool {
         !citationStored && !citationDraft.isEmpty && citationDraft != generatedCitation
     }
@@ -180,7 +187,6 @@ extension ReviewInspector {
                 }
                 citationDraft = improved
                 citationImprovedByAI = true
-                citationStored = false
                 citationNote = improved == current
                     ? "The model left it as it was."
                     : "Changed by the model. Check it before you keep it."
@@ -212,13 +218,13 @@ extension ReviewInspector {
                                                             .resolvingSymlinksInPath().path)?.id,
            let stored = try? await library.bibtex(forDocument: documentID) {
             citationDraft = stored.entry
-            citationStored = true
+            storedCitation = stored.entry
             citationNote = "Kept \(stored.updatedAt.formatted(date: .abbreviated, time: .shortened))"
                 + " from \(stored.origin)."
             return
         }
         citationDraft = generatedCitation
-        citationStored = false
+        storedCitation = ""
     }
 
     private func storeCitation() {
@@ -254,7 +260,7 @@ extension ReviewInspector {
                 KeptBibtex.shared.remember(entry, at: places + [path, asked])
                 runner.note(.edited, subject: item.relativePath, detail: "citation kept")
                 guard asked == item.key else { return }
-                citationStored = true
+                storedCitation = entry
                 citationNote = "Kept with the document."
             } catch {
                 guard asked == item.key else { return }

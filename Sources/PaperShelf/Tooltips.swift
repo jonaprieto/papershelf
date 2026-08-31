@@ -20,8 +20,13 @@ extension View {
     /// of the raw modifier for any background that exists to trace a chip, pill or badge
     /// around single-line content; keep using the raw modifier where the background is
     /// meant to fill its container, such as a card behind wrapped or multi-line text.
+    ///
+    /// Vertically only. A bare `.fixedSize()` also pins the width, so in a narrow pane the
+    /// chip refused to give any of it up and drew straight over whatever was beside it --
+    /// the `@inproceedings` badge over the lookup button in a narrowed bibliography list.
+    /// The height is the part that needed pinning; the width can truncate like any text.
     func fittedBackground(_ style: some ShapeStyle, in shape: some Shape) -> some View {
-        background(style, in: shape).fixedSize()
+        background(style, in: shape).fixedSize(horizontal: false, vertical: true)
     }
 }
 

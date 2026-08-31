@@ -68,7 +68,13 @@ struct ReviewInspector: View {
     /// Non-nil while the confirmation for a single entry is up. Every other billed call in
     /// the app asks first; this one did not.
     @State var confirmingImprove = false
-    @State var citationStored = false
+    /// The entry as it is kept with the document, or empty when nothing is.
+    ///
+    /// Not a `citationStored` flag. A flag was set when Store succeeded and cleared only
+    /// when something in code replaced the draft, so typing in the editor left it saying
+    /// "Stored" over an entry that no longer matched what was stored, with the button
+    /// disabled and no way to keep the edit.
+    @State var storedCitation = ""
     @State var citationImproving = false
     @State var citationImprovedByAI = false
     @State var citationNote: String?
@@ -477,14 +483,14 @@ struct ReviewInspector: View {
             builtFromSection
             readFromDocumentSection
 
+            // Ask AI only. Copying a citation is what the Cite tab is for, and its own
+            // Copy button carries the same B; a second one here made the rename panel
+            // answer a question it was not being asked. The shortcut still works.
             HStack(spacing: Space.step) {
                 Button(action: identify) { KeyLabel("G", "Ask AI") }
                     .disabled(!aiReady || runner.ai.isThinking(item))
                     .tip(aiReady ? "Read the opening pages and suggest a title"
                                  : "Add an API key in Settings first", key: "G")
-                Button(action: copyCitation) { KeyLabel("B", "Copy citation") }
-                    .tip("Copy its BibTeX entry, asking the model if fields are missing",
-                         key: "B")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
