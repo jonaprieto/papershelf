@@ -39,21 +39,13 @@ struct ResultsPane: View {
     private var hasSources: Bool { sourceCount > 0 }
 
 
-    @AppStorage("viewMode") private var mode: ViewMode = .catalogue
-    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
-    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
-    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
-    @AppStorage("autoIdentify") private var autoIdentify = false
-    @AppStorage("sortOrder") private var sortOrder: ItemSort = .folder
-    @AppStorage("bibStandard") private var bibStandard: BibStandard = .biblatex
+    @Bindable private var prefs = Prefs.shared
     @ObservedObject private var kept: KeptBibtex = .shared
     /// The inspector's width when the current divider drag began. Nil when nothing is
     /// being dragged.
     @State private var dragAnchor: CGFloat?
-    @AppStorage("sortDescending") private var sortDescending = false
     /// Hides everything already decided, so what is left is what is still asking for a
     /// decision. A filter like any other, and it says so in the filter bar.
-    @AppStorage("onlyUndecided") private var onlyUndecided = false
     /// Kept in step with the grid so the arrow keys can move by a row.
     @State private var gridColumns = 1
     /// Whether the row now selected was clicked. A click needs no scrolling: the row is
@@ -73,17 +65,11 @@ struct ResultsPane: View {
     /// width of a panel; the region it names now also holds the page, and the old 460
     /// left the page 140 points once the panel had taken its 320. The default is the
     /// design's own proportion — a page you can read a paragraph across, and the panel.
-    @AppStorage("documentRegionWidth") private var inspectorWidth: Double = 840
     /// How wide the inspector is where there is no page beside it — the shelf, the
     /// bibliography, the duplicates view. Its own preference, because the region it names
     /// holds one column of controls rather than a page and a column.
-    @AppStorage("inspectorPanelWidth") private var panelOnlyWidth: Double = 340
-    @AppStorage("contentsShown") private var contentsShown = false
     /// The same two keys the inspector reads, so the toolbar's note button lands on the
     /// tab it names rather than on whichever one was last open.
-    @AppStorage("inspectorPanel") private var inspectorPanel: InspectorPanel = .details
-    @AppStorage("lastHighlightColour") private var lastColourID = ""
-    @AppStorage("inspectorCollapsed") private var inspectorCollapsed = false
     @State private var addingNote = false
     @State private var noteText = ""
     @StateObject private var tagIndex = CatalogueTags()
@@ -125,43 +111,28 @@ struct ResultsPane: View {
     @State private var backPlaces: [Place] = []
     @State private var forwardPlaces: [Place] = []
 
-    @AppStorage("bibOrder") private var bibOrder: BibOrder = .alphabetical
-    @AppStorage("bibCompleteOnly") private var bibCompleteOnly = false
-    @AppStorage("bibType") private var bibType: BibType = .book
     @State private var choosingMoveTarget = false
-    @AppStorage("bibLineWidth") private var bibLineWidth = 80
-    @AppStorage("bibIndent") private var bibIndent = 2
-    @AppStorage("bibAlign") private var bibAlign = true
-    @AppStorage("bibDelimiter") private var bibDelimiter: BibStyle.Delimiter = .braces
-    @AppStorage("bibTrailingComma") private var bibTrailingComma = true
-    @AppStorage("bibBlankLines") private var bibBlankLines = true
-    @AppStorage("bibSortFields") private var bibSortFields = false
-    @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
     // The default for this key is also declared in ContentView.swift and
     // SettingsWindow.swift; all three must agree, since whichever view registers first
     // wins and a mismatch here would make BibTeX output disagree with the Settings toggle.
-    @AppStorage("bibOmitFile") private var bibOmitFile = true
     /// Shared with `BibFileView`, which draws the file these two decide the shape of.
-    @AppStorage("bibWrapped") private var bibWrapped = true
     /// The file the bibliography pane has built, so the toolbar can copy or save it
     /// without building the same text again.
     @ObservedObject private var builtBib: BuiltBibliography = .shared
     @State private var bibCopied = false
     @State private var savingBib = false
-    @AppStorage("bibValidOnly") private var bibValidOnly = false
 
     private var bibStyle: BibStyle {
-        BibStyle(lineWidth: bibLineWidth,
-                 indent: String(repeating: " ", count: max(0, bibIndent)),
-                 align: bibAlign,
-                 delimiter: bibDelimiter,
-                 trailingComma: bibTrailingComma,
-                 blankLines: bibBlankLines,
-                 sortFields: bibSortFields,
-                 dropAllCaps: bibDropAllCaps,
-                 omit: bibOmitFile ? ["file"] : [])
+        BibStyle(lineWidth: prefs.bibLineWidth,
+                 indent: String(repeating: " ", count: max(0, prefs.bibIndent)),
+                 align: prefs.bibAlign,
+                 delimiter: prefs.bibDelimiter,
+                 trailingComma: prefs.bibTrailingComma,
+                 blankLines: prefs.bibBlankLines,
+                 sortFields: prefs.bibSortFields,
+                 dropAllCaps: prefs.bibDropAllCaps,
+                 omit: prefs.bibOmitFile ? ["file"] : [])
     }
-    @AppStorage("bibShowsFile") private var bibShowsFile = false
     @State private var draft = ""
     /// The suggestion the draft started from, so an edit of yours can be told apart from
     /// a name you simply have not touched.
@@ -194,7 +165,7 @@ struct ResultsPane: View {
     /// click away in another view is the long way round. The bibliography and the
     /// duplicates view have their own second pane and keep it.
     private var showsPage: Bool {
-        reader != nil || reading || mode == .list || mode == .catalogue
+        reader != nil || reading || prefs.viewMode == .list || prefs.viewMode == .catalogue
     }
 
     /// Whether the browser keeps the middle. Reading mode and the reader both take it.
@@ -210,7 +181,7 @@ struct ResultsPane: View {
     private func openReader(_ key: String?) {
         guard let key else { return }
         if reader != key {
-            navigate(to: Place(mode: mode, shelf: shelves.current,
+            navigate(to: Place(mode: prefs.viewMode, shelf: shelves.current,
                                folderPath: folderScope?.path, query: query, reader: key))
         }
         selected = key
@@ -223,7 +194,7 @@ struct ResultsPane: View {
     }
 
     private var currentPlace: Place {
-        Place(mode: mode, shelf: shelves.current, folderPath: folderScope?.path,
+        Place(mode: prefs.viewMode, shelf: shelves.current, folderPath: folderScope?.path,
               query: query, reader: reader)
     }
 
@@ -248,7 +219,7 @@ struct ResultsPane: View {
     }
 
     private func show(_ destination: Place) {
-        mode = destination.mode
+        prefs.viewMode = destination.mode
         shelves.current = destination.shelf
         folderScope = destination.folderPath.map { URL(fileURLWithPath: $0) }
         query = destination.query
@@ -345,7 +316,7 @@ struct ResultsPane: View {
             tags: tagIndex.revision,
             query: query,
             scope: folderScope,
-            undecidedOnly: onlyUndecided && mode == .list,
+            undecidedOnly: prefs.onlyUndecided && prefs.viewMode == .list,
             decisions: runner.reviewed,
             list: shelves.current,
             lists: shelves.revision
@@ -389,7 +360,7 @@ struct ResultsPane: View {
             let base = current ?? runner.results
             current = base.filter { shelves.contains($0, in: shelves.current) }
         }
-        if onlyUndecided && mode == .list {
+        if prefs.onlyUndecided && prefs.viewMode == .list {
             let base = current ?? runner.results
             current = base.filter { runner.decision(for: $0) == nil }
         }
@@ -455,7 +426,7 @@ struct ResultsPane: View {
         // Whichever way you were reading the collection, you are still reading it: a
         // folder narrows the list or the shelf you are on rather than moving you to the
         // shelf. Only the two views that are not about files at all switch.
-        let showing = mode == .list ? ViewMode.list : .catalogue
+        let showing = prefs.viewMode == .list ? ViewMode.list : .catalogue
         navigate(to: Place(mode: showing, shelf: shelves.current, folderPath: url.path,
                            query: query, reader: nil))
     }
@@ -477,13 +448,13 @@ struct ResultsPane: View {
         // Spelled out rather than derived from the current place: `replacing(reader: nil)`
         // read as "close the reader" and meant "keep whichever one is open", since a nil
         // argument is exactly how that helper spelled "leave this alone".
-        navigate(to: Place(mode: mode, shelf: shelf, folderPath: folderScope?.path,
+        navigate(to: Place(mode: prefs.viewMode, shelf: shelf, folderPath: folderScope?.path,
                            query: query, reader: nil))
     }
 
     private var aiClient: AIClient {
-        AIClient(baseURL: aiBaseURL, model: aiModel,
-                 apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+        AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel,
+                 apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
     private var aiReady: Bool { !aiClient.apiKey.isEmpty }
@@ -570,16 +541,16 @@ struct ResultsPane: View {
         }
         // A restyle rewrites the suggestions under the current selection.
             .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
-            .onChange(of: sortOrder) { _, order in
-            sortDescending = order.descendsByDefault
-            runner.sortResults(by: order, descending: sortDescending)
+            .onChange(of: prefs.sortOrder) { _, order in
+            prefs.sortDescending = order.descendsByDefault
+            runner.sortResults(by: order, descending: prefs.sortDescending)
         }
-            .onChange(of: sortDescending) { _, down in
-            runner.sortResults(by: sortOrder, descending: down)
+            .onChange(of: prefs.sortDescending) { _, down in
+            runner.sortResults(by: prefs.sortOrder, descending: down)
         }
             .onChange(of: runner.results.count) { _, count in
-            guard count > 0, sortOrder != .folder else { return }
-            runner.sortResults(by: sortOrder, descending: sortDescending)
+            guard count > 0, prefs.sortOrder != .folder else { return }
+            runner.sortResults(by: prefs.sortOrder, descending: prefs.sortDescending)
         }
             .onDisappear(perform: removeKeyMonitor)
         // Which regions are actually drawn, so ⌃⇥ skips what is not on screen and ⌃1-⌃5
@@ -587,8 +558,8 @@ struct ResultsPane: View {
             .onChange(of: regionSignature, initial: true) { _, _ in
             var drawn: Set<Region> = [.document, .status]
             if !reading { drawn.insert(.sidebar) }
-            if !inspectorCollapsed { drawn.insert(.inspector) }
-            if showsPage && contentsShown && annotator.hasPages { drawn.insert(.contents) }
+            if !prefs.inspectorCollapsed { drawn.insert(.inspector) }
+            if showsPage && prefs.contentsShown && annotator.hasPages { drawn.insert(.contents) }
             regions.available = drawn
         }
             .onChange(of: regions.focused) { _, region in
@@ -640,7 +611,7 @@ struct ResultsPane: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("One request per file, each carrying the filename and the first pages' text. "
-                 + "You are billed by \(aiModel)'s provider.")
+                 + "You are billed by \(prefs.aiModel)'s provider.")
         }
             .alert("The service could not be reached", isPresented: aiErrorShown) {
             Button("OK") { runner.ai.error = nil }
@@ -680,11 +651,11 @@ struct ResultsPane: View {
                 }
                 .tip(reading ? "Show the shelf again" : "Hide everything but the page",
                      key: "⌘⇧R")
-                Button { inspectorCollapsed.toggle() } label: {
-                    Label("Inspector", systemImage: inspectorCollapsed
+                Button { prefs.inspectorCollapsed.toggle() } label: {
+                    Label("Inspector", systemImage: prefs.inspectorCollapsed
                           ? "sidebar.right" : "sidebar.trailing")
                 }
-                .tip(inspectorCollapsed
+                .tip(prefs.inspectorCollapsed
                      ? "Show info, rename, notes and the citation"
                      : "Hide the inspector", key: "⌥⌘I")
                 SettingsLink {
@@ -715,7 +686,7 @@ struct ResultsPane: View {
 
     /// The colour the next highlight will be painted with, and what it means.
     private var currentStyle: HighlightStyle? {
-        palette.styles.first { $0.id.uuidString == lastColourID } ?? palette.styles.first
+        palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
     }
 
     /// The rail beside the page, from the same group as the sidebar button, because it is
@@ -725,14 +696,14 @@ struct ResultsPane: View {
     @ViewBuilder
     private var contentsToggle: some View {
         if showsPage && annotator.hasPages {
-            Button { contentsShown.toggle() } label: {
+            Button { prefs.contentsShown.toggle() } label: {
                 Label("Contents", systemImage: "sidebar.squares.left")
             }
-            .foregroundStyle(contentsShown ? Color.accentColor : .secondary)
-            .tip(contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
+            .foregroundStyle(prefs.contentsShown ? Color.accentColor : .secondary)
+            .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
             .popover(isPresented: Binding(
-                get: { contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
-                set: { contentsShown = $0 }
+                get: { prefs.contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
+                set: { prefs.contentsShown = $0 }
             ), arrowEdge: .bottom) {
                 ContentsRail(annotator: annotator)
                     .frame(width: 300, height: 420)
@@ -747,7 +718,7 @@ struct ResultsPane: View {
         Menu {
             ForEach(palette.styles) { style in
                 Button {
-                    lastColourID = style.id.uuidString
+                    prefs.lastHighlightColour = style.id.uuidString
                     if annotator.hasSelection { annotator.highlightSelection(colour: style.nsColor) }
                 } label: {
                     // A drawn swatch, not a symbol: a symbol in a menu item is treated as
@@ -777,8 +748,8 @@ struct ResultsPane: View {
             if annotator.hasSelection, let style = currentStyle {
                 annotator.highlightSelection(colour: style.nsColor)
             }
-            inspectorPanel = .notes
-            inspectorCollapsed = false
+            prefs.inspectorPanel = .notes
+            prefs.inspectorCollapsed = false
         } label: {
             Label("Note", systemImage: "bubble.left")
         }
@@ -801,7 +772,7 @@ struct ResultsPane: View {
     /// one menu behind it.
     @ViewBuilder
     private var contextualActions: some View {
-        switch mode {
+        switch prefs.viewMode {
         case .bibliography:
             // The two things anybody does with a bibliography, where the actions are,
             // rather than inside the pane that happens to render the file.
@@ -858,9 +829,9 @@ struct ResultsPane: View {
             //
             // The reviewer only. On the shelf you are looking at covers, and offering to
             // confirm every name from there is offering to accept names nobody has read.
-            if mode == .list, !runner.results.isEmpty {
+            if prefs.viewMode == .list, !runner.results.isEmpty {
                 if aiReady {
-                    Toggle("Ask AI as I go", isOn: $autoIdentify)
+                    Toggle("Ask AI as I go", isOn: $prefs.autoIdentify)
                         .toggleStyle(.switch)
                         .controlSize(.mini)
                         .fixedSize()
@@ -951,7 +922,7 @@ struct ResultsPane: View {
         var places: [PalettePlace] = SmartList.allCases.map { list in
             PalettePlace(id: "list:" + list.rawValue, title: list.title,
                          detail: list.explanation, kind: .list) {
-                navigate(to: Place(mode: mode, shelf: list, folderPath: nil,
+                navigate(to: Place(mode: prefs.viewMode, shelf: list, folderPath: nil,
                                    query: query, reader: nil))
             }
         }
@@ -1127,7 +1098,7 @@ struct ResultsPane: View {
         if !onATable {
             // In a grid a row is a row: up and down cross `gridColumns` items, while left
             // and right move to the neighbour.
-            let row = mode == .catalogue ? max(1, gridColumns) : 1
+            let row = prefs.viewMode == .catalogue ? max(1, gridColumns) : 1
             switch event.keyCode {
             case 125: step(by: row); return true    // down
             case 126: step(by: -row); return true   // up
@@ -1169,7 +1140,7 @@ struct ResultsPane: View {
 
     /// Everything that decides which regions exist right now.
     private var regionSignature: String {
-        "\(reading)\(inspectorCollapsed)\(contentsShown)\(annotator.hasPages)\(showsPage)"
+        "\(reading)\(prefs.inspectorCollapsed)\(prefs.contentsShown)\(annotator.hasPages)\(showsPage)"
     }
 
     /// One key, always meaning "out of this, into what contains it".
@@ -1256,7 +1227,7 @@ struct ResultsPane: View {
         case .confirm:
             // On the shelf ⏎ opens the book: a shelf is for reading, and the name is
             // decided in the list, where the page is beside it.
-            if mode == .catalogue, reader == nil, let item = selectedItem {
+            if prefs.viewMode == .catalogue, reader == nil, let item = selectedItem {
                 openReader(item.key)
             } else {
                 confirm()
@@ -1293,13 +1264,13 @@ struct ResultsPane: View {
             regions.focus(.sidebar)
         case .focusContents:
             guard annotator.hasPages else { return false }
-            contentsShown = true
+            prefs.contentsShown = true
             regions.focus(.contents)
         case .focusDocument:
             listFocused = true
             regions.focus(.document)
         case .focusInspector:
-            inspectorCollapsed = false
+            prefs.inspectorCollapsed = false
             regions.focus(.inspector)
         case .focusStatus: regions.focus(.status)
         case .nextRegion: focusRegion(by: 1)
@@ -1318,9 +1289,9 @@ struct ResultsPane: View {
         let next = Regions.next(from: regions.focused, by: delta, available: regions.available)
         switch next {
         case .sidebar: focusSidebar()
-        case .contents: contentsShown = true
+        case .contents: prefs.contentsShown = true
         case .document: listFocused = true
-        case .inspector: inspectorCollapsed = false
+        case .inspector: prefs.inspectorCollapsed = false
         case .status: break
         }
         regions.focus(next)
@@ -1388,7 +1359,7 @@ struct ResultsPane: View {
     /// looked at asks the model for a name. Guarded on all three, so browsing back over
     /// files already dealt with costs nothing.
     private func askOnArrival() {
-        guard autoIdentify, aiReady, let item = selectedItem,
+        guard prefs.autoIdentify, aiReady, let item = selectedItem,
               runner.decision(for: item) == nil,
               runner.ai.guesses[item.key] == nil,
               !runner.ai.isThinking(item)
@@ -1582,7 +1553,7 @@ struct ResultsPane: View {
     /// Taken before a decision is recorded, so it still holds the file being decided and
     /// "the next one" means the row under it rather than the top of what is left.
     private var onScreenOrder: [String] {
-        switch mode {
+        switch prefs.viewMode {
         case .list, .bibliography:
             return listRows.compactMap { $0.node.itemKey }
         case .catalogue, .duplicates:
@@ -1608,7 +1579,7 @@ struct ResultsPane: View {
         if visibleKeys?.isEmpty == true {
             noMatches
         } else {
-            switch mode {
+            switch prefs.viewMode {
             case .catalogue: catalogue
             case .list: list
             case .bibliography: bibliography
@@ -1662,24 +1633,24 @@ struct ResultsPane: View {
                         bibEntryList
                             .frame(width: max(380, geometry.size.width * 0.42))
                         Divider()
-                        BibFileView(entries: visibleBib, name: bibFileName, order: $bibOrder,
-                                    completeOnly: $bibCompleteOnly, style: bibStyle)
+                        BibFileView(entries: visibleBib, name: bibFileName, order: $prefs.bibOrder,
+                                    completeOnly: $prefs.bibCompleteOnly, style: bibStyle)
                             .frame(maxWidth: .infinity)
                     }
-                } else if bibShowsFile {
-                    BibFileView(entries: visibleBib, name: bibFileName, order: $bibOrder,
-                                completeOnly: $bibCompleteOnly, style: bibStyle)
+                } else if prefs.bibShowsFile {
+                    BibFileView(entries: visibleBib, name: bibFileName, order: $prefs.bibOrder,
+                                completeOnly: $prefs.bibCompleteOnly, style: bibStyle)
                 } else {
                     bibEntryList
                 }
             }
         }
         .onAppear {
-            runner.bibType = bibType
+            runner.bibType = prefs.bibType
             runner.ensureBib()
         }
         .onChange(of: runner.revision) { _, _ in runner.ensureBib() }
-        .onChange(of: bibType) { _, new in
+        .onChange(of: prefs.bibType) { _, new in
             runner.bibType = new
             runner.ensureBib()
         }
@@ -1795,7 +1766,7 @@ struct ResultsPane: View {
     }
 
     private var bibDocument: String {
-        bibtexDocument(runner.bib, includeIncomplete: !bibCompleteOnly, order: bibOrder)
+        bibtexDocument(runner.bib, includeIncomplete: !prefs.bibCompleteOnly, order: prefs.bibOrder)
     }
 
     /// The bibliography's own bar: how the entries are ordered, what is filtered out,
@@ -1808,7 +1779,7 @@ struct ResultsPane: View {
     private var bibBar: some View {
       ScrollView(.horizontal) {
         HStack(spacing: Space.step) {
-            Picker("Order", selection: $bibOrder) {
+            Picker("Order", selection: $prefs.bibOrder) {
                 ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
@@ -1816,19 +1787,19 @@ struct ResultsPane: View {
             .fixedSize()
             .tip("By citation key, or grouped the way the folders are")
 
-            Toggle("Complete only", isOn: $bibCompleteOnly)
+            Toggle("Complete only", isOn: $prefs.bibCompleteOnly)
                 .toggleStyle(.checkbox)
                 .tip("Leave out anything missing a title, author or year")
-            Toggle("Wrap", isOn: $bibWrapped)
+            Toggle("Wrap", isOn: $prefs.bibWrapped)
                 .toggleStyle(.checkbox)
                 .tip("Fold long lines into the pane; the file itself is unchanged")
             // Only when it has something to say. It is a second, stricter filter than
             // "Complete only", and a bar carrying both at all times reads as two ways of
             // saying the same thing.
-            if bibValidOnly || !bibShortfall.isEmpty {
-                Toggle("Valid only", isOn: $bibValidOnly)
+            if prefs.bibValidOnly || !bibShortfall.isEmpty {
+                Toggle("Valid only", isOn: $prefs.bibValidOnly)
                     .toggleStyle(.checkbox)
-                    .tip("Leave out anything missing a field \(bibStandard.label) requires")
+                    .tip("Leave out anything missing a field \(prefs.bibStandard.label) requires")
             }
 
             if !bibShortfall.isEmpty {
@@ -1850,7 +1821,7 @@ struct ResultsPane: View {
             // entries and the file they generate are side by side, and a switch between
             // two things already on screen is a switch that does nothing.
             if viewPaneWidth < 900 {
-                Picker("", selection: $bibShowsFile) {
+                Picker("", selection: $prefs.bibShowsFile) {
                     Text("Entries").tag(false)
                     Text("File").tag(true)
                 }
@@ -1861,7 +1832,7 @@ struct ResultsPane: View {
             }
 
             FillGapsButton(entries: bibShortfallEntries, passwords: passwords,
-                           client: aiClient, standard: bibStandard, style: bibStyle)
+                           client: aiClient, standard: prefs.bibStandard, style: bibStyle)
         }
         .padding(.horizontal, Space.gutter)
         .padding(.vertical, Space.step)
@@ -1882,7 +1853,7 @@ struct ResultsPane: View {
     /// The entries as the list draws them: in the order chosen in the bar, grouped by the
     /// folder each document sits in.
     private var bibShown: [BibGroup] {
-        bibGroups(bibtexOrdered(visibleBib, order: bibOrder)) { entry in
+        bibGroups(bibtexOrdered(visibleBib, order: prefs.bibOrder)) { entry in
             guard let item = runner.item(entry.itemKey) else { return "Elsewhere" }
             let folders = item.relativePath.split(separator: "/").dropLast()
             return folders.last.map(String.init) ?? item.root.lastPathComponent
@@ -1891,7 +1862,7 @@ struct ResultsPane: View {
 
     /// Every entry the standard is not satisfied by, and what each one is short of.
     private var bibShortfall: BibGaps {
-        bibGaps(in: visibleBib, kept: kept, standard: bibStandard)
+        bibGaps(in: visibleBib, kept: kept, standard: prefs.bibStandard)
     }
 
     private var bibShortfallEntries: [BibEntry] {
@@ -1995,7 +1966,7 @@ struct ResultsPane: View {
         // The contents rail is nested inside the document region, not a sibling here, so
         // it only needs to widen that region's own floor, not the outer reservation
         // `inspectorMaximum` makes for the browser.
-        let contentsOpen = contentsShown && annotator.hasPages
+        let contentsOpen = prefs.contentsShown && annotator.hasPages
         let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
         let maximum = SplitLayout.inspectorMaximum(
             available: available, contentsShown: contentsOpen)
@@ -2003,7 +1974,7 @@ struct ResultsPane: View {
         // when the window is narrower than the floor, and the pane is then drawn at a
         // width the window cannot show.
         let width = SplitLayout.inspectorWidth(
-            preferred: inspectorWidth, available: available, contentsShown: contentsOpen)
+            preferred: prefs.documentRegionWidth, available: available, contentsShown: contentsOpen)
         return HStack(spacing: 0) {
             if showsBrowser {
                 collection.region(.document)
@@ -2024,18 +1995,18 @@ struct ResultsPane: View {
         // metadata does not.
         let floor = selectedDuplicateGroup == nil ? Metric.inspectorMin : 420
         let maximum = max(floor, available - SplitLayout.contentFloor)
-        let width = min(max(panelOnlyWidth, floor), maximum)
+        let width = min(max(prefs.inspectorPanelWidth, floor), maximum)
         return HStack(spacing: 0) {
             collection.region(.document)
-            if !inspectorCollapsed && !overlays {
-                divider(width: width, minimum: floor, maximum: maximum, store: $panelOnlyWidth)
+            if !prefs.inspectorCollapsed && !overlays {
+                divider(width: width, minimum: floor, maximum: maximum, store: $prefs.inspectorPanelWidth)
                 documentRegion(paneWidth: width)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
             }
         }
         .overlay(alignment: .trailing) {
-            if !inspectorCollapsed && overlays {
+            if !prefs.inspectorCollapsed && overlays {
                 floatingPanel(width: SplitLayout.panelWidth(paneWidth: available))
             }
         }
@@ -2051,7 +2022,7 @@ struct ResultsPane: View {
             // Only over the views the bar is about. The bibliography and the duplicates
             // view carry their own bars, and a second one asking whether to show only
             // undecided files is a row about a question those views do not have.
-            if !reading && (mode == .list || mode == .catalogue) {
+            if !reading && (prefs.viewMode == .list || prefs.viewMode == .catalogue) {
                 filterBar
                 Divider()
             }
@@ -2071,7 +2042,7 @@ struct ResultsPane: View {
 
     private func divider(width: CGFloat, minimum: CGFloat, maximum: CGFloat,
                          store: Binding<Double>? = nil) -> some View {
-        let target = store ?? $inspectorWidth
+        let target = store ?? $prefs.documentRegionWidth
         return dividerBody(width: width, minimum: minimum, maximum: maximum, store: target)
     }
 
@@ -2202,7 +2173,7 @@ struct ResultsPane: View {
 
     /// The group the selected file belongs to, if it is one of a set of copies.
     private var selectedDuplicateGroup: DuplicateGroup? {
-        guard mode == .duplicates, let selected else { return nil }
+        guard prefs.viewMode == .duplicates, let selected else { return nil }
         return runner.duplicates.first { group in
             group.items.contains { $0.key == selected }
         }
@@ -2238,7 +2209,7 @@ struct ResultsPane: View {
                 improveCitation: { system, user in
                     try await aiClient.ask(system: system, user: user, feature: .bibtex)
                 },
-                autoIdentify: $autoIdentify,
+                autoIdentify: $prefs.autoIdentify,
                 moveTo: { choosingMoveTarget = true },
                 aiReady: aiReady,
                 markDeleted: markDeleted,
@@ -2350,11 +2321,11 @@ struct ResultsPane: View {
                 .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
                 .fixedSize()
 
-            if mode == .list {
+            if prefs.viewMode == .list {
                 // A switch, not a button that looks pressed. It answers yes or no to one
                 // question -- show me only what I have not decided -- which is what a
                 // switch is for, and it reads as on or off from across the window.
-                Toggle("Only undecided", isOn: $onlyUndecided)
+                Toggle("Only undecided", isOn: $prefs.onlyUndecided)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .font(Face.caption)
@@ -2411,7 +2382,7 @@ struct ResultsPane: View {
                 ?? (item.destinationName as NSString).deletingPathExtension
         }
         let terms = Query(query).terms
-        switch mode {
+        switch prefs.viewMode {
         case .bibliography: return "Bibliography"
         case .duplicates: return "Duplicates"
         case .list where !runner.results.isEmpty:
@@ -2445,7 +2416,7 @@ struct ResultsPane: View {
             return [author, guess?.year, where_]
                 .compactMap { $0 }.joined(separator: " · ")
         }
-        switch mode {
+        switch prefs.viewMode {
         case .list where !runner.results.isEmpty:
             let total = runner.results.count
             let done = runner.reviewed
@@ -2542,18 +2513,18 @@ struct ResultsPane: View {
         Menu {
             ForEach(ItemSort.allCases) { order in
                 Button {
-                    sortOrder = order
+                    prefs.sortOrder = order
                 } label: {
-                    if order == sortOrder { Label(order.label, systemImage: "checkmark") }
+                    if order == prefs.sortOrder { Label(order.label, systemImage: "checkmark") }
                     else { Text(order.label) }
                 }
             }
             Divider()
-            Toggle("Largest or newest first", isOn: $sortDescending)
+            Toggle("Largest or newest first", isOn: $prefs.sortDescending)
         } label: {
             HStack(spacing: Space.tight) {
-                Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
-                Text(sortOrder.label)
+                Image(systemName: prefs.sortDescending ? "arrow.down" : "arrow.up")
+                Text(prefs.sortOrder.label)
             }
             .font(Face.caption)
         }
@@ -2580,11 +2551,11 @@ struct ResultsPane: View {
                         .help("\(option.label)  (⌘\(index + 1))")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(option == mode ? Color.accentColor : .secondary)
-                .background(option == mode ? Color.accentColor.opacity(0.15) : .clear,
+                .foregroundStyle(option == prefs.viewMode ? Color.accentColor : .secondary)
+                .background(option == prefs.viewMode ? Color.accentColor.opacity(0.15) : .clear,
                             in: RoundedRectangle(cornerRadius: Metric.control))
                 .accessibilityLabel(option.label)
-                .accessibilityAddTraits(option == mode ? .isSelected : [])
+                .accessibilityAddTraits(option == prefs.viewMode ? .isSelected : [])
                 .tip(option.label, key: "⌘\(index + 1)")
             }
         }
@@ -2603,10 +2574,10 @@ struct ResultsPane: View {
                 }
             }
         } label: {
-            Text(mode.label).help("Which view of the same files  (⌘1 to ⌘4)")
+            Text(prefs.viewMode.label).help("Which view of the same files  (⌘1 to ⌘4)")
         }
         .menuStyle(.borderlessButton)
-        .accessibilityLabel("View: \(mode.label)")
+        .accessibilityLabel("View: \(prefs.viewMode.label)")
         .fixedSize()
         .tip("Which view of the same files", key: "⌘1 to ⌘4")
     }

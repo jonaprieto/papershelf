@@ -121,7 +121,7 @@ extension ReviewInspector {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("One billed request, sending this entry and the document's opening pages "
-                 + "to \(URL(string: aiEndpoint)?.host ?? aiEndpoint). A model can be "
+                 + "to \(URL(string: prefs.aiBaseURL)?.host ?? prefs.aiBaseURL). A model can be "
                  + "confidently wrong: what comes back is yours to check, and it is not "
                  + "kept until you press Store.")
         }
@@ -138,11 +138,11 @@ extension ReviewInspector {
     @ViewBuilder private var warning: some View {
         if citationDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             EmptyView()
-        } else if let gaps = bibtexGaps(in: citationDraft, standard: bibStandard) {
+        } else if let gaps = bibtexGaps(in: citationDraft, standard: prefs.bibStandard) {
             if !gaps.isEmpty {
                 Note(icon: "exclamationmark.triangle.fill", tint: .orange,
                      text: "\(parseBibtexEntry(citationDraft)?.rawType ?? "this entry") wants "
-                           + gaps.joined(separator: ", ") + ". \(bibStandard.label) will complain.",
+                           + gaps.joined(separator: ", ") + ". \(prefs.bibStandard.label) will complain.",
                      size: .caption)
                     .fixedSize(horizontal: false, vertical: true)
             }

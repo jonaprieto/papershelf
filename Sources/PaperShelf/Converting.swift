@@ -62,10 +62,10 @@ struct MarkdownSheet: View {
     let passwords: [String]
     @ObservedObject var converting: Converting
     @Environment(\.dismiss) private var dismiss
-    /// By name, because a Picker tag has to be Hashable and a converter carries a closure.
-    /// Starts on whatever Settings › Integrations picked, so the choice is made once
-    /// rather than on every sheet.
-    @AppStorage("defaultConverter") private var chosen: String = ""
+    /// The converter is picked by name, because a Picker tag has to be Hashable and a
+    /// converter carries a closure. It is the same setting Settings › Integrations
+    /// shows, so the choice is made once rather than on every sheet.
+    @Bindable private var prefs = Prefs.shared
     @State private var saving = false
     /// True once this Markdown has been kept as the document's text, so the button says
     /// what happened rather than inviting the same write again.
@@ -75,7 +75,7 @@ struct MarkdownSheet: View {
     /// The same resolution a project uses (see `engine(named:)`): a name picks that
     /// tool, the two built-in names pick one of those on purpose, and an empty preference
     /// means take the best answer available for the document in front of you.
-    private var picked: MarkdownEngine { engine(named: chosen) }
+    private var picked: MarkdownEngine { engine(named: prefs.defaultConverter) }
 
     /// What the chosen engine is for, said where it is chosen.
     private var engineNote: String {
@@ -100,7 +100,7 @@ struct MarkdownSheet: View {
             }
 
             HStack(spacing: Space.step) {
-                Picker("Converter", selection: $chosen) {
+                Picker("Converter", selection: $prefs.defaultConverter) {
                     Text("Automatic (best for the document)").tag("")
                     Text("Built-in reader").tag(builtInReaderName)
                     Text("Built-in OCR").tag(builtInOCRName)

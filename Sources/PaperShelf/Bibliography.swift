@@ -212,20 +212,17 @@ struct BibRow: View {
 
     @ObservedObject private var lookup: BibLookupStore = .shared
     @ObservedObject private var kept: KeptBibtex = .shared
-    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
-    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
-    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
-    @AppStorage("bibStandard") private var standard: BibStandard = .biblatex
+    private let prefs = Prefs.shared
 
     private var merged: BibEntry { lookup.apply(to: entry) }
     private var keptText: String? { kept.text(for: entry) }
     private var keptEntry: ParsedBibEntry? { keptText.flatMap(parseBibtexEntry) }
-    private var gaps: [String] { bibGaps(entry, kept: kept, standard: standard) }
+    private var gaps: [String] { bibGaps(entry, kept: kept, standard: prefs.bibStandard) }
     private var status: BibLookupStatus { lookup.status[entry.itemKey] ?? .idle }
     private var changed: [String] { changedBibFields(entry, merged) }
 
     private var aiClient: AIClient {
-        AIClient(baseURL: aiBaseURL, model: aiModel, apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+        AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel, apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
     var body: some View {
@@ -288,7 +285,7 @@ struct BibRow: View {
                 .padding(.horizontal, Space.step)
                 .padding(.vertical, Space.hair)
                 .fittedBackground(bibWarnColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
-                .help("Missing \(gaps.joined(separator: ", ")), which \(standard.label) requires")
+                .help("Missing \(gaps.joined(separator: ", ")), which \(prefs.bibStandard.label) requires")
         } else {
             Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
                 .font(Face.mono)
@@ -297,8 +294,8 @@ struct BibRow: View {
                 .padding(.vertical, Space.hair)
                 .fittedBackground(bibGoodColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
                 .help(keptText == nil
-                      ? "Complete for \(standard.label)"
-                      : "Kept with the document, and complete for \(standard.label)")
+                      ? "Complete for \(prefs.bibStandard.label)"
+                      : "Kept with the document, and complete for \(prefs.bibStandard.label)")
         }
     }
 
@@ -306,7 +303,7 @@ struct BibRow: View {
     private var shortfall: String {
         let missing = gaps.joined(separator: ", ")
         if gaps == ["a readable entry"] { return "the entry kept here does not parse" }
-        return "no \(missing) · \(standard.label) will complain"
+        return "no \(missing) · \(prefs.bibStandard.label) will complain"
     }
 
     @ViewBuilder private var lookupFooter: some View {
@@ -373,17 +370,12 @@ struct BibFileView: View {
     let style: BibStyle
     var passwords: [String] = []
 
-    @AppStorage("bibWrapped") private var wrapped = true
-    @AppStorage("bibStandard") private var standard: BibStandard = .biblatex
+    private let prefs = Prefs.shared
     /// Deliberately separate from `completeOnly`: that toggle already means "this app's own
     /// title/author/year floor" to Catalogue.swift's own Markdown export, which reads the
     /// same @AppStorage key straight off `entry.isComplete`. Silently redefining what that
     /// key means here would make the same checkbox lie to whichever of the two screens
     /// last set it.
-    @AppStorage("bibValidOnly") private var validOnly = false
-    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
-    @AppStorage("aiBaseURL") private var aiBaseURL = "https://api.openai.com/v1"
-    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
     @ObservedObject private var lookup: BibLookupStore = .shared
     @ObservedObject private var kept: KeptBibtex = .shared
     @State private var blocks: [String] = []
@@ -391,7 +383,7 @@ struct BibFileView: View {
     @State private var confirmingLookup = false
 
     private var aiClient: AIClient {
-        AIClient(baseURL: aiBaseURL, model: aiModel, apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+        AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel, apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
     /// Every entry as it will actually export: Runner's own build, with anything a lookup
@@ -405,11 +397,11 @@ struct BibFileView: View {
         if completeOnly { out = out.filter { kept.text(for: $0) != nil || $0.isComplete } }
         // A kept entry is judged by its own text, so an entry corrected by hand is not
         // filtered out by a check against the guess it replaced.
-        if validOnly { out = out.filter { bibGaps($0, kept: kept, standard: standard).isEmpty } }
+        if prefs.bibValidOnly { out = out.filter { bibGaps($0, kept: kept, standard: prefs.bibStandard).isEmpty } }
         return out
     }
     private var invalidCount: Int {
-        merged.filter { !bibGaps($0, kept: kept, standard: standard).isEmpty }.count
+        merged.filter { !bibGaps($0, kept: kept, standard: prefs.bibStandard).isEmpty }.count
     }
     /// What a batch run would actually fetch: everything not already resolved by an
     /// earlier lookup or guess.
@@ -426,12 +418,12 @@ struct BibFileView: View {
 
     private var signature: String {
         [
-            order.rawValue, "\(completeOnly)", "\(validOnly)", "\(entries.count)",
+            order.rawValue, "\(completeOnly)", "\(prefs.bibValidOnly)", "\(entries.count)",
             entries.first?.key ?? "", entries.last?.key ?? "",
             "\(style.lineWidth)", style.indent, "\(style.align)", style.delimiter.rawValue,
             "\(style.trailingComma)", "\(style.blankLines)", "\(style.sortFields)",
             "\(style.dropAllCaps)", style.omit.sorted().joined(separator: ","),
-            standard.rawValue, "\(lookup.metadata.count)", "\(lookup.guesses.count)",
+            prefs.bibStandard.rawValue, "\(lookup.metadata.count)", "\(lookup.guesses.count)",
             "\(lookup.reverted.values.reduce(0) { $0 + $1.count })",
             // Keeping or improving an entry has to rebuild the file, or the change the
             // user just made is not in what they copy.
@@ -459,7 +451,7 @@ struct BibFileView: View {
                                 .textSelection(.enabled)
                                 // Wrapped, a long path folds into the pane instead of
                                 // running off it. Unwrapped, the layout is the file's own.
-                                .fixedSize(horizontal: !wrapped, vertical: false)
+                                .fixedSize(horizontal: !prefs.bibWrapped, vertical: false)
                         }
                     }
                     .padding(Space.roomy)
@@ -474,7 +466,7 @@ struct BibFileView: View {
             let snapshot = shown
             let currentOrder = order
             let currentStyle = style
-            let currentStandard = standard
+            let currentStandard = prefs.bibStandard
             // The kept text is read here, on the main actor, since it is published state.
             let keptText = Dictionary(uniqueKeysWithValues: snapshot.compactMap { entry in
                 kept.text(for: entry).map { (entry.itemKey, $0) }
@@ -534,9 +526,9 @@ struct BibFileView: View {
             dot
             // A menu that reads as the label it is: the standard is a fact about this
             // file, and also the one thing here worth changing from here.
-            Menu(standard.label) {
+            Menu(prefs.bibStandard.label) {
                 ForEach(BibStandard.allCases) { option in
-                    Button(option.label) { standard = option }
+                    Button(option.label) { prefs.bibStandard = option }
                 }
             }
             .menuStyle(.borderlessButton)

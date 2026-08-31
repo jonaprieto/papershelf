@@ -124,23 +124,13 @@ final class Palette: ObservableObject {
         return styles.min { $0.distance(to: colour) < $1.distance(to: colour) }
     }
 
-    /// Whether a mark made in another app is named after the nearest colour here.
-    ///
-    /// A preference rather than always-on: a person who highlights in Preview with
-    /// whatever colour it offered does not necessarily mean "definition" by blue, and a
-    /// note that says so is worse than one that says "Highlight".
-    static let labelForeignMarksKey = "labelForeignMarks"
-
-    private var labelsForeignMarks: Bool {
-        UserDefaults.standard.object(forKey: Palette.labelForeignMarksKey) as? Bool ?? true
-    }
 
     func meaning(for colour: NSColor?) -> String {
         let match = nearest(to: colour)
         // A mark this app made carries one of these colours exactly. A mark made in
         // Preview or Skim is near one at best, and whether that near miss is worth a name
         // is the preference: turned off, only an exact colour is named.
-        let limit = labelsForeignMarks ? 0.02 : 0.0002
+        let limit = Prefs.shared.labelForeignMarks ? 0.02 : 0.0002
         guard let match, match.distance(to: colour ?? .clear) < limit else { return "Highlight" }
         return match.meaning.isEmpty ? "Highlight" : match.meaning
     }

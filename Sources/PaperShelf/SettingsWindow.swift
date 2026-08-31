@@ -75,7 +75,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 }
 
 struct SettingsWindowView: View {
-    @AppStorage("settingsPane") private var pane: SettingsPane = .general
+    private let prefs = Prefs.shared
     @ObservedObject private var palette: Palette = .shared
     @State private var search = ""
 
@@ -103,8 +103,8 @@ struct SettingsWindowView: View {
 
     private var paneList: some View {
             List(shown, selection: Binding(
-                get: { Optional(pane) },
-                set: { if let new = $0 { pane = new } }
+                get: { Optional(prefs.settingsPane) },
+                set: { if let new = $0 { prefs.settingsPane = new } }
             )) { item in
                 Label(item.title, systemImage: item.icon).tag(item)
             }
@@ -113,7 +113,7 @@ struct SettingsWindowView: View {
 
     private var detail: some View {
             Group {
-                switch pane {
+                switch prefs.settingsPane {
                 case .general: GeneralSettings()
                 case .files: FileSettings()
                 case .naming: NameRulesSettings()
@@ -125,34 +125,28 @@ struct SettingsWindowView: View {
                 }
             }
             .frame(minWidth: 560, minHeight: 420)
-            .navigationTitle(pane.title)
+            .navigationTitle(prefs.settingsPane.title)
     }
 }
 
 // MARK: - General
 
 struct GeneralSettings: View {
-    @AppStorage("appearance") private var appearance: Appearance = .system
-    @AppStorage("watchSources") private var watchSources = true
-    @AppStorage("autoPreview") private var autoPreview = true
-    @AppStorage("viewMode") private var mode: ViewMode = .catalogue
-    @AppStorage("readingTint") private var readingTint = false
-    @AppStorage("returnAppliesRename") private var returnApplies = true
-    @AppStorage("sources") private var storedSources = ""
+    @Bindable private var prefs = Prefs.shared
     @State private var addingSource = false
 
     private var sources: [URL] {
-        storedSources.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+        prefs.sources.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
     }
 
     var body: some View {
         Form {
             Section {
-                Picker("Theme", selection: $appearance) {
+                Picker("Theme", selection: $prefs.appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Toggle("Tint the page while reading in the dark", isOn: $readingTint)
+                Toggle("Tint the page while reading in the dark", isOn: $prefs.readingTint)
             } header: {
                 Text("Appearance")
             } footer: {
@@ -248,10 +242,10 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Toggle("Watch the sources for changes", isOn: $watchSources)
-                Toggle("Plan as soon as a source is added", isOn: $autoPreview)
-                Toggle("Return in the name field renames the file", isOn: $returnApplies)
-                Picker("Open in", selection: $mode) {
+                Toggle("Watch the sources for changes", isOn: $prefs.watchSources)
+                Toggle("Plan as soon as a source is added", isOn: $prefs.autoPreview)
+                Toggle("Return in the name field renames the file", isOn: $prefs.returnAppliesRename)
+                Picker("Open in", selection: $prefs.viewMode) {
                     ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
                 }
             } header: {
@@ -304,7 +298,7 @@ struct GeneralSettings: View {
     /// lists disagree about what is being scanned.
     private func add(_ urls: [URL]) {
         let merged = mergedSources(sources, adding: urls)
-        storedSources = merged.map(\.path).joined(separator: "\n")
+        prefs.sources = merged.map(\.path).joined(separator: "\n")
     }
 
     /// Removing a source here forgets what it brought, exactly as removing one from the
@@ -327,7 +321,7 @@ struct GeneralSettings: View {
     }
 
     private func removeFromList(_ url: URL) {
-        storedSources = sources.filter { $0 != url }.map(\.path).joined(separator: "\n")
+        prefs.sources = sources.filter { $0 != url }.map(\.path).joined(separator: "\n")
     }
 }
 
@@ -335,7 +329,7 @@ struct GeneralSettings: View {
 
 struct HighlighterSettings: View {
     @ObservedObject var palette: Palette
-    @AppStorage(Palette.labelForeignMarksKey) private var labelForeignMarks = true
+    @Bindable private var prefs = Prefs.shared
 
     var body: some View {
         Form {
@@ -400,7 +394,7 @@ struct HighlighterSettings: View {
             }
 
             Section {
-                Toggle("Label them with the nearest colour I use", isOn: $labelForeignMarks)
+                Toggle("Label them with the nearest colour I use", isOn: $prefs.labelForeignMarks)
             } header: {
                 Text("Marks made in other apps")
             } footer: {
@@ -626,24 +620,15 @@ struct KeyboardSettings: View {
 // MARK: - BibTeX
 
 struct BibtexSettings: View {
-    @AppStorage("bibType") private var type: BibType = .book
-    @AppStorage("bibLineWidth") private var lineWidth = 80
-    @AppStorage("bibIndent") private var indent = 2
-    @AppStorage("bibAlign") private var align = true
-    @AppStorage("bibDelimiter") private var delimiter: BibStyle.Delimiter = .braces
-    @AppStorage("bibTrailingComma") private var trailingComma = true
-    @AppStorage("bibBlankLines") private var blankLines = true
-    @AppStorage("bibSortFields") private var sortFields = false
-    @AppStorage("bibDropAllCaps") private var dropAllCaps = false
-    @AppStorage("bibOmitFile") private var omitFile = true
+    @Bindable private var prefs = Prefs.shared
 
     var body: some View {
         Form {
             Section {
-                Picker("Entry type", selection: $type) {
+                Picker("Entry type", selection: $prefs.bibType) {
                     ForEach(BibType.allCases) { Text("@\($0.rawValue)").tag($0) }
                 }
-                Toggle("Omit the file field", isOn: $omitFile)
+                Toggle("Omit the file field", isOn: $prefs.bibOmitFile)
             } header: {
                 Text("Entries")
             } footer: {
@@ -659,28 +644,28 @@ struct BibtexSettings: View {
                 LabeledContent("Line width") {
                     HStack {
                         Slider(value: Binding(
-                            get: { Double(lineWidth) },
-                            set: { lineWidth = Int($0) }
+                            get: { Double(prefs.bibLineWidth) },
+                            set: { prefs.bibLineWidth = Int($0) }
                         ), in: 0...200, step: 10)
-                        Text(lineWidth == 0 ? "off" : "\(lineWidth)")
+                        Text(prefs.bibLineWidth == 0 ? "off" : "\(prefs.bibLineWidth)")
                             .monospacedDigit()
                             .frame(width: 30, alignment: .trailing)
                     }
                 }
-                Picker("Indent", selection: $indent) {
+                Picker("Indent", selection: $prefs.bibIndent) {
                     Text("2 spaces").tag(2)
                     Text("4 spaces").tag(4)
                     Text("None").tag(0)
                 }
-                Picker("Values in", selection: $delimiter) {
+                Picker("Values in", selection: $prefs.bibDelimiter) {
                     Text("{braces}").tag(BibStyle.Delimiter.braces)
                     Text("\"quotes\"").tag(BibStyle.Delimiter.quotes)
                 }
-                Toggle("Align the equals signs", isOn: $align)
-                Toggle("Trailing comma", isOn: $trailingComma)
-                Toggle("Blank line between entries", isOn: $blankLines)
-                Toggle("Sort fields alphabetically", isOn: $sortFields)
-                Toggle("Lowercase ALL-CAPS values", isOn: $dropAllCaps)
+                Toggle("Align the equals signs", isOn: $prefs.bibAlign)
+                Toggle("Trailing comma", isOn: $prefs.bibTrailingComma)
+                Toggle("Blank line between entries", isOn: $prefs.bibBlankLines)
+                Toggle("Sort fields alphabetically", isOn: $prefs.bibSortFields)
+                Toggle("Lowercase ALL-CAPS values", isOn: $prefs.bibDropAllCaps)
             } header: {
                 Text("Formatting")
             } footer: {
@@ -700,9 +685,7 @@ struct BibtexSettings: View {
 /// Where the MCP server finally has a face. It has shipped inside the app for a while and
 /// the only way to find out how to point an editor at it was the README.
 struct IntegrationSettings: View {
-    @AppStorage("defaultConverter") private var defaultConverter = ""
-    @AppStorage("offerChatGPT") private var offerChatGPT = true
-    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
+    @Bindable private var prefs = Prefs.shared
     @State private var installed: Set<String> = []
 
     private var server: URL? { ChatGPTPlugin.serverExecutableURL() }
@@ -757,7 +740,7 @@ struct IntegrationSettings: View {
             SettingsPanel(sections: .plugin)
 
             Section {
-                Picker("Converter", selection: $defaultConverter) {
+                Picker("Converter", selection: $prefs.defaultConverter) {
                     Text("Automatic (best for the document)").tag("")
                     Text("Built-in reader").tag(builtInReaderName)
                     Text("Built-in OCR").tag(builtInOCRName)
@@ -785,9 +768,9 @@ struct IntegrationSettings: View {
             }
 
             Section {
-                Toggle("Offer “Open in ChatGPT” beside a highlight", isOn: $offerChatGPT)
+                Toggle("Offer “Open in ChatGPT” beside a highlight", isOn: $prefs.offerChatGPT)
                     .disabled(!ChatGPTHandoff.isInstalled)
-                Toggle("Also offer “Copy for ChatGPT”", isOn: $offerChatGPTCopy)
+                Toggle("Also offer “Copy for ChatGPT”", isOn: $prefs.offerChatGPTCopy)
                     .disabled(!ChatGPTHandoff.isInstalled)
                 if !ChatGPTHandoff.isInstalled {
                     Text("ChatGPT is not installed, so neither is offered.")
@@ -847,24 +830,20 @@ struct IntegrationSettings: View {
 // MARK: - Files and passwords
 
 struct FileSettings: View {
-    @AppStorage("passwords") private var passwordsText = ""
-    @AppStorage("moveOriginals") private var moveOriginals = true
-    @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
-    @AppStorage("backupCustomPath") private var backupCustomPath = ""
-    @AppStorage("encryptOutput") private var encryptOutput = false
+    @Bindable private var prefs = Prefs.shared
     @ObservedObject private var secret = SessionSecret.shared
     @State private var choosingBackupFolder = false
     @FocusState private var focused: Int?
 
-    private var rows: [String] { PasswordList.rows(passwordsText) }
+    private var rows: [String] { PasswordList.rows(prefs.passwords) }
 
     private func binding(_ index: Int) -> Binding<String> {
         Binding(
             get: {
-                let rows = PasswordList.rows(passwordsText)
+                let rows = PasswordList.rows(prefs.passwords)
                 return rows.indices.contains(index) ? rows[index] : ""
             },
-            set: { passwordsText = PasswordList.setting(index, to: $0, in: passwordsText) }
+            set: { prefs.passwords = PasswordList.setting(index, to: $0, in: prefs.passwords) }
         )
     }
 
@@ -881,7 +860,7 @@ struct FileSettings: View {
                             .textFieldStyle(.roundedBorder)
                             .focused($focused, equals: index)
                         Button {
-                            passwordsText = PasswordList.removing(index, from: passwordsText)
+                            prefs.passwords = PasswordList.removing(index, from: prefs.passwords)
                         } label: {
                             Image(systemName: "minus.circle.fill")
                         }
@@ -890,8 +869,8 @@ struct FileSettings: View {
                     }
                 }
                 Button {
-                    let added = PasswordList.addingRow(to: passwordsText)
-                    passwordsText = added.text
+                    let added = PasswordList.addingRow(to: prefs.passwords)
+                    prefs.passwords = added.text
                     DispatchQueue.main.async { focused = added.focus }
                 } label: {
                     Label("Add password", systemImage: "plus.circle")
@@ -908,11 +887,11 @@ struct FileSettings: View {
             }
 
             Section {
-                Toggle("Keep the originals", isOn: $moveOriginals)
-                if moveOriginals {
-                    if backupCustomPath.isEmpty {
+                Toggle("Keep the originals", isOn: $prefs.moveOriginals)
+                if prefs.moveOriginals {
+                    if prefs.backupCustomPath.isEmpty {
                         LabeledContent("Folder") {
-                            TextField("", text: $backupFolderName)
+                            TextField("", text: $prefs.backupFolderName)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 200)
                         }
@@ -921,11 +900,11 @@ struct FileSettings: View {
                     } else {
                         LabeledContent("Folder") {
                             HStack {
-                                Text(backupCustomPath)
+                                Text(prefs.backupCustomPath)
                                     .font(Face.mono)
                                     .lineLimit(1).truncationMode(.middle)
                                 Button("Change…") { choosingBackupFolder = true }
-                                Button("Use a folder per source") { backupCustomPath = "" }
+                                Button("Use a folder per source") { prefs.backupCustomPath = "" }
                             }
                         }
                     }
@@ -941,8 +920,8 @@ struct FileSettings: View {
             }
 
             Section {
-                Toggle("Lock the output with a password", isOn: $encryptOutput)
-                if encryptOutput {
+                Toggle("Lock the output with a password", isOn: $prefs.encryptOutput)
+                if prefs.encryptOutput {
                     LabeledContent("Password") {
                         SecureField("", text: $secret.encryptPassword, prompt: Text("required"))
                             .textFieldStyle(.roundedBorder)
@@ -968,7 +947,7 @@ struct FileSettings: View {
         .formStyle(.grouped)
         .fileImporter(isPresented: $choosingBackupFolder,
                       allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { backupCustomPath = url.path }
+            if case .success(let url) = result { prefs.backupCustomPath = url.path }
         }
     }
 }

@@ -7,7 +7,9 @@ import PaperShelfCore
 struct ReviewInspector: View {
     /// Return in the name field renames the file on disk. Off means it confirms the name
     /// into the plan instead, to be applied with everything else later.
-    @AppStorage("returnAppliesRename") private var returnApplies = true
+    /// Not `private`: the BibTeX side of this inspector lives in BibtexPanel.swift,
+    /// and `private` is file-scoped.
+    @Bindable var prefs = Prefs.shared
 
     /// Whether the page is one of the panes here.
     ///
@@ -54,16 +56,13 @@ struct ReviewInspector: View {
 
     @ObservedObject var annotator: Annotator
     @ObservedObject var palette: Palette
-    @AppStorage("inspectorPanel") private var panel: InspectorPanel = .details
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
     /// The same preference the bibliography tab uses, so one entry is never judged by a
     /// different standard from the file it will end up in.
-    @AppStorage("bibStandard") var bibStandard: BibStandard = .biblatex
 
     /// Where a per-entry improvement would be sent, so the confirmation can say it. The
     /// same key the rest of the app reads, never a copy of the string.
-    @AppStorage("aiBaseURL") var aiEndpoint = "https://api.openai.com/v1"
 
     @State var citationDraft = ""
     /// Non-nil while the confirmation for a single entry is up. Every other billed call in
@@ -75,23 +74,16 @@ struct ReviewInspector: View {
     @State var citationNote: String?
     /// How tall the entry is, measured by the editor that draws it.
     @State var citationHeight: CGFloat = 40
-    @AppStorage("inspectorCollapsed") private var collapsed = false
-    @AppStorage("contentsShown") private var contentsShown = false
-    @AppStorage("pageFit") private var pageFit: PageFit = .width
-    @AppStorage("readingTint") private var readingTint = false
-    @AppStorage("offerChatGPT") private var offerChatGPT = true
-    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
     @Environment(\.colorScheme) private var colourScheme
     private var isDark: Bool { colourScheme == .dark }
     @State private var addingNote = false
     @State private var noteText = ""
-    @AppStorage("lastHighlightColour") private var lastColourID = ""
     @State private var hovered: UUID?
     @State private var hoveringNote = false
     @State private var hoveringChatGPT = false
 
     private var lastStyle: HighlightStyle? {
-        palette.styles.first { $0.id.uuidString == lastColourID } ?? palette.styles.first
+        palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
     }
 
     private var hoveredMeaning: String? {
@@ -106,7 +98,7 @@ struct ReviewInspector: View {
     /// ⌥⌘I and ⌘⇧N all did nothing while reading: the mode hid the panel, so flipping the
     /// switch changed a value nothing was reading. Reading mode puts the panel away by
     /// entering (see `Chrome.toggleReading`) rather than by holding it shut.
-    private var showsPanel: Bool { !collapsed }
+    private var showsPanel: Bool { !prefs.inspectorCollapsed }
 
     /// Below `SplitLayout.inspectorOverlaysBelow` the panel is drawn over the page rather
     /// than beside it. Nothing is lost at a narrow width; it stops costing the page room
@@ -205,7 +197,7 @@ struct ReviewInspector: View {
         // not the page that is squeezed to nothing, or worse, pushed off the edge.
         GeometryReader { page in
             HStack(spacing: 0) {
-                if contentsShown && hasContents && !contentsIsPopover {
+                if prefs.contentsShown && hasContents && !contentsIsPopover {
                     ContentsRail(annotator: annotator)
                         .frame(width: SplitLayout.contentsRailWidth(
                             inspectorWidth: page.size.width))
@@ -213,7 +205,7 @@ struct ReviewInspector: View {
                     Divider()
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords,
-                           annotator: annotator, fit: pageFit)
+                           annotator: annotator, fit: prefs.pageFit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The page is an AppKit view hosted in SwiftUI, and a hosted view does
                 // not honour the frame it was given while it is being resized: squeezed
@@ -224,7 +216,7 @@ struct ReviewInspector: View {
                 .overlay(alignment: .topTrailing) { lockedOverlay }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
                 .overlay(alignment: .bottom) {
-                    PageBar(annotator: annotator, fit: $pageFit)
+                    PageBar(annotator: annotator, fit: $prefs.pageFit)
                         .padding(.bottom, Space.roomy)
                 }
             }
@@ -251,12 +243,12 @@ struct ReviewInspector: View {
             // their own at the top and another at the bottom, and inside this scroll view
             // both bars scrolled away with the marks -- the export bar sat below the fold
             // of a pane it was supposed to be pinned to.
-            if panel == .notes {
+            if prefs.inspectorPanel == .notes {
                 notesPanel
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Space.step) {
-                        switch panel {
+                        switch prefs.inspectorPanel {
                         case .rename: renamePanel
                         case .details:
                             MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
@@ -272,11 +264,11 @@ struct ReviewInspector: View {
                 // Pinned, like the notes tab's export bar. A reviewer presses one of these
                 // on every file; they should not be below however much this particular
                 // document had to say about itself.
-                if panel == .rename {
+                if prefs.inspectorPanel == .rename {
                     Divider()
                     renameActions
                 }
-                if panel == .details {
+                if prefs.inspectorPanel == .details {
                     Divider()
                     infoActions
                 }
@@ -292,7 +284,7 @@ struct ReviewInspector: View {
     /// with it so they tint the paper instead of glowing off it.
     @ViewBuilder
     private var nightTint: some View {
-        if readingTint && isDark {
+        if prefs.readingTint && isDark {
             Color(red: 0.42, green: 0.40, blue: 0.36)
                 .blendMode(.multiply)
                 .allowsHitTesting(false)
@@ -322,12 +314,12 @@ struct ReviewInspector: View {
 
             // Drawn while reading too. The panel is only here at all if it was asked for,
             // and a panel you can open on a tab you cannot leave is a dead end.
-            Picker("", selection: $panel) {
+            Picker("", selection: $prefs.inspectorPanel) {
                 ForEach(InspectorPanel.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .disabled(collapsed)
+            .disabled(prefs.inspectorCollapsed)
             .tip("Rename this file, read what it says about itself, or take its citation")
         }
         .padding(.horizontal, Space.roomy)
@@ -347,7 +339,7 @@ struct ReviewInspector: View {
             GeometryReader { geometry in
                 // Wider when the ChatGPT menu is in it: the bar's width is fixed, so a
                 // new target has to be paid for rather than squeezed out of the swatches.
-                let handoff = ChatGPTHandoff.isInstalled && (offerChatGPT || offerChatGPTCopy)
+                let handoff = ChatGPTHandoff.isInstalled && (prefs.offerChatGPT || prefs.offerChatGPTCopy)
                 let bar = CGSize(width: handoff ? 284 : 250, height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
@@ -369,9 +361,9 @@ struct ReviewInspector: View {
             ForEach(palette.styles) { style in
                 Button {
                     annotator.highlightSelection(colour: style.nsColor)
-                    lastColourID = style.id.uuidString
-                    panel = .notes
-                    collapsed = false
+                    prefs.lastHighlightColour = style.id.uuidString
+                    prefs.inspectorPanel = .notes
+                    prefs.inspectorCollapsed = false
                 } label: {
                     Circle()
                         .fill(style.swatch)
@@ -389,8 +381,8 @@ struct ReviewInspector: View {
             Divider().frame(height: 16)
 
             Button {
-                panel = .notes
-                collapsed = false
+                prefs.inspectorPanel = .notes
+                prefs.inspectorCollapsed = false
                 addingNote = true
             } label: {
                 Image(systemName: "text.bubble")
@@ -402,12 +394,12 @@ struct ReviewInspector: View {
             // carries the swatches, a divider and the note button. Hover is reported into
             // the same immediate label the rest of the bar uses, since `.help` waits a
             // second or two before saying anything.
-            if ChatGPTHandoff.isInstalled && (offerChatGPT || offerChatGPTCopy) {
+            if ChatGPTHandoff.isInstalled && (prefs.offerChatGPT || prefs.offerChatGPTCopy) {
                 Menu {
-                    if offerChatGPT {
+                    if prefs.offerChatGPT {
                         Button("Open in ChatGPT") { handOffSelection(copyOnly: false) }
                     }
-                    if offerChatGPTCopy {
+                    if prefs.offerChatGPTCopy {
                         Button("Copy for ChatGPT") { handOffSelection(copyOnly: true) }
                     }
                 } label: {
@@ -464,7 +456,7 @@ struct ReviewInspector: View {
     /// second way to do the same thing rather than the only way. Someone building a plan
     /// to apply in one go wants the other behaviour, so it is a setting.
     private func submit() {
-        if returnApplies {
+        if prefs.returnAppliesRename {
             applyNow()
         } else {
             confirm()

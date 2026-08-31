@@ -17,60 +17,22 @@ struct ContentView: View {
 
     // Seeded empty on purpose: a real password does not belong in source. The sidebar
     // warns while the list is empty, and what you type is kept in UserDefaults.
-    @AppStorage("passwords") private var passwordsText = ""
-    @AppStorage("moveOriginals") private var moveOriginals = true
-    @AppStorage("encryptOutput") private var encryptOutput = false
+    private let prefs = Prefs.shared
     /// Kept in memory only, and shared with the settings window rather than owned here.
     /// A password written into a preferences plist is not a password.
     @ObservedObject private var secret = SessionSecret.shared
-    @AppStorage("backupFolderName") private var backupFolderName = defaultBackupFolderName
-    @AppStorage("backupCustomPath") private var backupCustomPath = ""
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
     @State private var choosingBackupFolder = false
     @State private var watcher: FolderWatcher?
     @ObservedObject private var palette: Palette = .shared
-    @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
-    @AppStorage("useMetadataDate") private var useMetadataDate = true
-    @AppStorage("useFileDate") private var useFileDate = false
-    @AppStorage("appearance") private var appearance: Appearance = .system
-    @AppStorage("ruleCasing") private var ruleCasing: NameRules.Casing = .lowercase
-    @AppStorage("ruleSeparator") private var ruleSeparator: NameRules.Separator = .keep
-    @AppStorage("ruleStripSymbols") private var ruleStripSymbols = false
-    @AppStorage("ruleStripDiacritics") private var ruleStripDiacritics = false
-    @AppStorage("ruleAsciiOnly") private var ruleAsciiOnly = false
-    @AppStorage("ruleDropArticles") private var ruleDropArticles = false
-    @AppStorage("ruleMaxLength") private var ruleMaxLength = 0
-    @AppStorage("ruleDatePosition") private var ruleDatePosition: NameRules.DatePosition = .prefix
-    @AppStorage("ruleDateFormat") private var ruleDateFormat: NameRules.DateFormat = .dashed
     /// The arrangeable pattern's own two fields. `elements` round-trips through the
     /// bracket text (NamePattern.text/init(parsing:)); maxTotalLength has no spelling in
     /// that grammar, so it needs a key of its own.
-    @AppStorage("namePattern") private var namePatternText = ""
-    @AppStorage("namePatternMaxLength") private var namePatternMaxLength = 0
     @State private var draggingElementIndex: Int?
     @State private var editingElementIndex: Int?
 
-    @AppStorage("sources") private var storedSources = ""
-    @AppStorage("autoPreview") private var autoPreview = true
-    @AppStorage("watchSources") private var watchSources = true
-    @AppStorage("viewMode") private var mode: ViewMode = .catalogue
-    @AppStorage("aiModel") private var aiModel = "gpt-4o-mini"
     /// Which Markdown converter a project reads its documents with, chosen in Settings.
-    @AppStorage("defaultConverter") private var defaultConverter = ""
-    @AppStorage("aiBaseURL") var aiBaseURL = "https://api.openai.com/v1"
-    @AppStorage("aiUseEnvironment") private var aiUseEnvironment = true
-    @AppStorage("autoIdentify") private var autoIdentify = false
-    @AppStorage("bibLineWidth") private var bibLineWidth = 80
-    @AppStorage("bibIndent") private var bibIndent = 2
-    @AppStorage("bibAlign") private var bibAlign = true
-    @AppStorage("bibDelimiter") private var bibDelimiter: BibStyle.Delimiter = .braces
-    @AppStorage("bibTrailingComma") private var bibTrailingComma = true
-    @AppStorage("bibBlankLines") private var bibBlankLines = true
-    @AppStorage("bibSortFields") private var bibSortFields = false
-    @AppStorage("bibDropAllCaps") private var bibDropAllCaps = false
-    @AppStorage("bibOmitFile") private var bibOmitFile = true
-    @AppStorage("bibType") private var bibType: BibType = .book
     @State private var availableModels: [String] = []
     @ObservedObject private var priceBook: PriceBook = .shared
     @ObservedObject private var spendSignal: SpendSignal = .shared
@@ -136,37 +98,37 @@ struct ContentView: View {
     @FocusState private var sidebarFocused: Bool
     @ObservedObject var chrome: Chrome
 
-    private var passwords: [String] { PasswordList.active(passwordsText) }
-    private var passwordRows: [String] { PasswordList.rows(passwordsText) }
+    private var passwords: [String] { PasswordList.active(prefs.passwords) }
+    private var passwordRows: [String] { PasswordList.rows(prefs.passwords) }
 
     /// Adds a row and puts the caret in it, so Add is one click and then typing.
     private func addPassword() {
-        let added = PasswordList.addingRow(to: passwordsText)
-        passwordsText = added.text
+        let added = PasswordList.addingRow(to: prefs.passwords)
+        prefs.passwords = added.text
         DispatchQueue.main.async { focusedPassword = added.focus }
     }
 
     private func passwordBinding(_ index: Int) -> Binding<String> {
         Binding(
             get: {
-                let rows = PasswordList.rows(self.passwordsText)
+                let rows = PasswordList.rows(self.prefs.passwords)
                 return rows.indices.contains(index) ? rows[index] : ""
             },
-            set: { self.passwordsText = PasswordList.setting(index, to: $0, in: self.passwordsText) }
+            set: { self.prefs.passwords = PasswordList.setting(index, to: $0, in: self.prefs.passwords) }
         )
     }
 
     private var backup: BackupSettings {
         BackupSettings(
-            enabled: moveOriginals,
-            folderName: backupFolderName,
-            customLocation: backupCustomPath.isEmpty ? nil : URL(fileURLWithPath: backupCustomPath)
+            enabled: prefs.moveOriginals,
+            folderName: prefs.backupFolderName,
+            customLocation: prefs.backupCustomPath.isEmpty ? nil : URL(fileURLWithPath: prefs.backupCustomPath)
         )
     }
 
     var aiClient: AIClient {
-        AIClient(baseURL: aiBaseURL, model: aiModel,
-                 apiKey: resolvedKey(useEnvironment: aiUseEnvironment))
+        AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel,
+                 apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
     private var aiReady: Bool { !aiClient.apiKey.isEmpty }
@@ -188,11 +150,11 @@ struct ContentView: View {
     }
 
     private var rules: NameRules {
-        NameRules(casing: ruleCasing, separator: ruleSeparator,
-                  stripSymbols: ruleStripSymbols, stripDiacritics: ruleStripDiacritics,
-                  asciiOnly: ruleAsciiOnly, dropLeadingArticles: ruleDropArticles,
-                  maxLength: ruleMaxLength, datePosition: ruleDatePosition,
-                  dateFormat: ruleDateFormat)
+        NameRules(casing: prefs.ruleCasing, separator: prefs.ruleSeparator,
+                  stripSymbols: prefs.ruleStripSymbols, stripDiacritics: prefs.ruleStripDiacritics,
+                  asciiOnly: prefs.ruleAsciiOnly, dropLeadingArticles: prefs.ruleDropArticles,
+                  maxLength: prefs.ruleMaxLength, datePosition: prefs.ruleDatePosition,
+                  dateFormat: prefs.ruleDateFormat)
     }
 
     /// Runs once: a user who already had toggles set gets an arranged pattern that
@@ -212,14 +174,14 @@ struct ContentView: View {
     private func seedNamePatternIfNeeded() {
         guard UserDefaults.standard.string(forKey: "namePattern") == nil else { return }
         var date = NameToken(.date)
-        if ruleDateFormat == .compact { date.abbreviation = .compact }
+        if prefs.ruleDateFormat == .compact { date.abbreviation = .compact }
         var title = NameToken(.title)
-        title.maxLength = ruleMaxLength
-        let joiner = ruleSeparator == .underscore ? "_" : "-"
-        let elements: [NameElement] = ruleDatePosition == .prefix
+        title.maxLength = prefs.ruleMaxLength
+        let joiner = prefs.ruleSeparator == .underscore ? "_" : "-"
+        let elements: [NameElement] = prefs.ruleDatePosition == .prefix
             ? [.token(date), .literal(joiner), .token(title)]
             : [.token(title), .literal(joiner), .token(date)]
-        namePatternText = NamePattern(elements: elements).text
+        prefs.namePattern = NamePattern(elements: elements).text
     }
 
 
@@ -229,7 +191,7 @@ struct ContentView: View {
     /// An empty pattern is not an instruction to produce empty names — it is the absence
     /// of one, and the ordinary rename takes over.
     private var activePattern: NamePattern? {
-        let parsed = NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
+        let parsed = NamePattern(parsing: prefs.namePattern, maxTotalLength: prefs.namePatternMaxLength)
         return parsed.elements.isEmpty ? nil : parsed
     }
 
@@ -237,9 +199,9 @@ struct ContentView: View {
         // Subfolders are always included; the preview shows exactly what that reaches.
         Options(passwords: passwords, recursive: true, dryRun: dryRun,
                 backup: backup,
-                encryption: EncryptionSettings(enabled: encryptOutput, password: secret.encryptPassword),
-                useFolderNames: useFolderNames,
-                useMetadataDate: useMetadataDate, useFileDate: useFileDate, rules: rules,
+                encryption: EncryptionSettings(enabled: prefs.encryptOutput, password: secret.encryptPassword),
+                useFolderNames: prefs.useFolderNames,
+                useMetadataDate: prefs.useMetadataDate, useFileDate: prefs.useFileDate, rules: rules,
                 pattern: activePattern)
     }
 
@@ -249,9 +211,9 @@ struct ContentView: View {
     private var fingerprint: String {
         [
             selection.map(\.path).joined(separator: "|"),
-            namePatternText, String(namePatternMaxLength),
+            prefs.namePattern, String(prefs.namePatternMaxLength),
             passwords.joined(separator: "|"),
-            "\(moveOriginals)", backup.safeFolderName, backupCustomPath,
+            "\(prefs.moveOriginals)", backup.safeFolderName, prefs.backupCustomPath,
         ].joined(separator: "\u{1}")
     }
 
@@ -259,19 +221,19 @@ struct ContentView: View {
     /// the list restyles itself instead of asking for another preview.
     private var namingFingerprint: String {
         [
-            "\(useFolderNames)", "\(useMetadataDate)", "\(useFileDate)",
-            ruleCasing.rawValue, ruleSeparator.rawValue,
-            "\(ruleStripSymbols)", "\(ruleStripDiacritics)", "\(ruleAsciiOnly)",
-            "\(ruleDropArticles)", "\(ruleMaxLength)",
-            ruleDatePosition.rawValue, ruleDateFormat.rawValue,
+            "\(prefs.useFolderNames)", "\(prefs.useMetadataDate)", "\(prefs.useFileDate)",
+            prefs.ruleCasing.rawValue, prefs.ruleSeparator.rawValue,
+            "\(prefs.ruleStripSymbols)", "\(prefs.ruleStripDiacritics)", "\(prefs.ruleAsciiOnly)",
+            "\(prefs.ruleDropArticles)", "\(prefs.ruleMaxLength)",
+            prefs.ruleDatePosition.rawValue, prefs.ruleDateFormat.rawValue,
         ].joined(separator: "\u{1}")
     }
 
     private var backupSummary: String {
-        guard moveOriginals else {
+        guard prefs.moveOriginals else {
             return "Originals are replaced in place. Nothing is kept and there is no undo."
         }
-        if backupCustomPath.isEmpty {
+        if prefs.backupCustomPath.isEmpty {
             return "Moved to \(backup.safeFolderName)/ inside each source you pick, "
                  + "mirroring their subfolders."
         }
@@ -293,7 +255,7 @@ struct ContentView: View {
     private func forceRefresh() {
         guard !selection.isEmpty else { return }
         covers.forget()
-        if mode == .catalogue { libraryPreview() } else { preview() }
+        if prefs.viewMode == .catalogue { libraryPreview() } else { preview() }
     }
 
     private func libraryPreview() {
@@ -317,7 +279,7 @@ struct ContentView: View {
     }
 
     private var needsConfirmation: Bool {
-        !moveOriginals || runner.deletedCount > 0
+        !prefs.moveOriginals || runner.deletedCount > 0
     }
 
     private var applyWarnings: [String] {
@@ -326,7 +288,7 @@ struct ContentView: View {
             lines.append("\(runner.deletedCount) file\(runner.deletedCount == 1 ? "" : "s") "
                          + "will be moved to the Trash, recoverable from Finder.")
         }
-        if !moveOriginals && runner.confirmedCount > 0 {
+        if !prefs.moveOriginals && runner.confirmedCount > 0 {
             lines.append("Move originals is off, so no copy of the other "
                          + "\(runner.confirmedCount) is kept. That cannot be undone.")
         }
@@ -355,9 +317,9 @@ struct ContentView: View {
                 ProjectWorkspace(
                     project: openProject,
                     env: liveProjectsEnvironment(library: library, client: aiClient,
-                                                 endpoint: aiBaseURL, model: aiModel,
+                                                 endpoint: prefs.aiBaseURL, model: prefs.aiModel,
                                                  passwords: { passwords },
-                                                 converterName: { defaultConverter }),
+                                                 converterName: { prefs.defaultConverter }),
                     membershipChanged: { Task { await reloadProjects() } },
                     reloadToken: projectContentsRevision,
                     close: {
@@ -378,7 +340,7 @@ struct ContentView: View {
                 passwords: passwords,
                 reading: chrome.reading,
                 setReading: chrome.setReading,
-                watching: watchSources && !selection.isEmpty,
+                watching: prefs.watchSources && !selection.isEmpty,
                 palette: palette,
                 annotator: annotator,
                 rules: rules,
@@ -444,13 +406,13 @@ struct ContentView: View {
         // Sources can be added in Settings › General as well as here, and both write the
         // same preference. Following it means the two lists cannot disagree about what is
         // being scanned.
-        .onChange(of: storedSources) { _, stored in
+        .onChange(of: prefs.sources) { _, stored in
             let wanted = stored.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
             guard wanted.map(\.path) != selection.map(\.path) else { return }
             selection = wanted.filter { FileManager.default.fileExists(atPath: $0.path) }
             startWatching()
             ensureSelectionAfterSourceChange()
-            if !selection.isEmpty { mode == .catalogue ? libraryPreview() : preview() }
+            if !selection.isEmpty { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openProject), perform: revealProject)
         // The pattern editor lives in the settings window now and has no scanner of its
@@ -464,14 +426,14 @@ struct ContentView: View {
             chrome.undo = { runner.undo() }
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
-            NSApp.appearance = appearance.nsAppearance
+            NSApp.appearance = prefs.appearance.nsAppearance
             restoreSources()
             startWatching()
             if !selection.isEmpty {
                 // Show last time's answer at once, then check the disk behind it.
                 let hadCache = runner.showCached(fingerprint: fingerprint)
-                if autoPreview || hadCache {
-                    if mode == .catalogue {
+                if prefs.autoPreview || hadCache {
+                    if prefs.viewMode == .catalogue {
                         libraryPreview(preservingVisibleResults: hadCache)
                     } else {
                         preview()
@@ -480,7 +442,7 @@ struct ContentView: View {
             }
             if aiReady && availableModels.isEmpty { loadModels() }
         }
-        .onChange(of: appearance) { _, new in NSApp.appearance = new.nsAppearance }
+        .onChange(of: prefs.appearance) { _, new in NSApp.appearance = new.nsAppearance }
         .task { await watchSourceAvailability() }
         .task(id: reviewing) { await readSelectionPosition() }
         // Restyling is cheap but not free, so let a run of toggles settle first.
@@ -502,7 +464,7 @@ struct ContentView: View {
             allowsMultipleSelection: false
         ) { outcome in
             if case .success(let urls) = outcome, let folder = urls.first {
-                backupCustomPath = folder.path
+                prefs.backupCustomPath = folder.path
             }
         }
         .fileImporter(
@@ -901,7 +863,7 @@ struct ContentView: View {
         return StatusBar(
             runner: runner,
             activity: runner.activity,
-            watching: watchSources && reachable > 0,
+            watching: prefs.watchSources && reachable > 0,
             sources: reachable,
             unavailableSources: selection.count - reachable,
             spend: sessionSpendLabel,
@@ -918,14 +880,14 @@ struct ContentView: View {
     /// reviewer: the shelf is about a collection, and the bar under it should stay about
     /// the collection.
     private var planFacts: StatusBar.PlanFacts? {
-        guard mode == .list, !runner.results.isEmpty, !chrome.reading else { return nil }
+        guard prefs.viewMode == .list, !runner.results.isEmpty, !chrome.reading else { return nil }
         return StatusBar.PlanFacts(
             total: runner.results.count,
             confirmed: runner.confirmedCount + runner.appliedCount,
             skipped: runner.skippedCount,
             trashed: runner.deletedCount,
             pending: runner.pendingCount,
-            backupFolder: moveOriginals ? backup.safeFolderName : nil,
+            backupFolder: prefs.moveOriginals ? backup.safeFolderName : nil,
             sources: selection.filter(isReachable).count,
             builtAt: runner.builtAt
         )
@@ -950,7 +912,7 @@ struct ContentView: View {
     /// is on screen. Two keys that are the same is the one problem a .bib has that none of
     /// the entries can see on their own, so it is counted where the file is described.
     private var bibliographySummary: String? {
-        guard mode == .bibliography, !runner.bib.isEmpty else { return nil }
+        guard prefs.viewMode == .bibliography, !runner.bib.isEmpty else { return nil }
         var parts = ["\(runner.bib.count) entries"]
         let short = runner.bib.filter { !$0.isComplete }.count
         if short > 0 { parts.append("\(short) incomplete") }
@@ -1203,7 +1165,7 @@ struct ContentView: View {
     /// free, and this app talks to any OpenAI-compatible endpoint, most of which this
     /// table has never heard of.
     @ViewBuilder private var modelPrice: some View {
-        if let price = priceBook.table.price(model: aiModel, endpoint: aiBaseURL) {
+        if let price = priceBook.table.price(model: prefs.aiModel, endpoint: prefs.aiBaseURL) {
             LabeledContent("Price") {
                 VStack(alignment: .trailing, spacing: Space.hair) {
                     Text("\(price.inputPerMillion.formatted(.currency(code: price.currency))) in")
@@ -1254,7 +1216,7 @@ struct ContentView: View {
         guard selection.map(\.path) != before.map(\.path) else { return }
         persistSources()
         startWatching()
-        if autoPreview { mode == .catalogue ? libraryPreview() : preview() }
+        if prefs.autoPreview { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
     }
 
     /// Removing a source takes its files with it, straight away.
@@ -1345,7 +1307,7 @@ struct ContentView: View {
     /// up without being asked for.
     private func startWatching() {
         watcher?.stop()
-        guard watchSources, !selection.isEmpty else {
+        guard prefs.watchSources, !selection.isEmpty else {
             watcher = nil
             return
         }
@@ -1364,25 +1326,25 @@ struct ContentView: View {
                 reachable && sourceAvailability[path] == false
             }
             sourceAvailability = current
-            if remounted, watchSources {
+            if remounted, prefs.watchSources {
                 // Covers that failed against a disconnected volume are not failures of the
                 // files; the ones on the drive that just came back deserve another try.
                 covers.forget()
                 startWatching()
-                if autoPreview { mode == .catalogue ? libraryPreview() : preview() }
+                if prefs.autoPreview { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
             }
             try? await Task.sleep(for: .seconds(3))
         }
     }
 
     private func absorbChanges() async {
-        guard watchSources, !selection.isEmpty else { return }
+        guard prefs.watchSources, !selection.isEmpty else { return }
         await runner.absorbChanges(roots: selection, options: options(dryRun: true),
                                    fingerprint: fingerprint)
     }
 
     private func persistSources() {
-        storedSources = selection.map(\.path).joined(separator: "\n")
+        prefs.sources = selection.map(\.path).joined(separator: "\n")
     }
 
     /// Restores what was picked last time. Anything since moved or deleted is dropped
@@ -1396,7 +1358,7 @@ struct ContentView: View {
         // access is granted again. Dropping them here, and writing the shortened list back,
         // deleted a person's configuration for a condition that clears on its own. The
         // sidebar says which ones it cannot see; nothing is forgotten without being asked.
-        selection = storedSources
+        selection = prefs.sources
             .split(separator: "\n")
             .map { URL(fileURLWithPath: String($0)) }
     }
@@ -1410,7 +1372,7 @@ struct ContentView: View {
     /// Everything the app remembers between launches.
     private func forgetEverything() {
         selection = []
-        storedSources = ""
+        prefs.sources = ""
         expanded = []
         reviewing = nil
         runner.reset()

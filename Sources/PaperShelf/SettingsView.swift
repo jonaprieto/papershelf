@@ -21,14 +21,11 @@ struct SettingsPanel: View {
 
     var sections: Sections = .all
 
-    @AppStorage("aiModel") private var model = "gpt-4o-mini"
-    @AppStorage("aiBaseURL") private var baseURL = "https://api.openai.com/v1"
-    @AppStorage("autoIdentify") private var autoIdentify = false
+    @Bindable private var prefs = Prefs.shared
     /// Read from the endpoint when the key works. Empty until then, which is why the
     /// chosen model is offered as its own row: an endpoint that cannot be reached must
     /// not silently change which model is configured.
     @State private var availableModels: [String] = []
-    @AppStorage("aiUseEnvironment") private var useEnvironment = true
 
     /// The ledger's home. Nil only when the database could not be opened at all, in
     /// which case the spend sections say so rather than showing an empty ledger as though
@@ -63,8 +60,8 @@ struct SettingsPanel: View {
         Group {
             if sections.contains(.ai) {
             Section {
-                Toggle("Use OPENAI_API_KEY from the environment", isOn: $useEnvironment)
-                if useEnvironment {
+                Toggle("Use OPENAI_API_KEY from the environment", isOn: $prefs.aiUseEnvironment)
+                if prefs.aiUseEnvironment {
                     LabeledContent("Environment") {
                         if let found = environmentKey ?? DiscoveredKey.shared.value {
                             Label("Found, ending \(String(found.suffix(4)))",
@@ -78,7 +75,7 @@ struct SettingsPanel: View {
                     }
                 }
                 LabeledContent("API key") {
-                    SecureField("", text: $key, prompt: Text(useEnvironment ? "Optional fallback" : "sk-…"))
+                    SecureField("", text: $key, prompt: Text(prefs.aiUseEnvironment ? "Optional fallback" : "sk-…"))
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(saveKey)
@@ -106,7 +103,7 @@ struct SettingsPanel: View {
             }
 
             Section {
-                TextField("Base URL", text: $baseURL)
+                TextField("Base URL", text: $prefs.aiBaseURL)
                     .font(Face.code)
             } header: {
                 Text("Endpoint")
@@ -119,11 +116,11 @@ struct SettingsPanel: View {
             }
 
             Section {
-                Picker("Model", selection: $model) {
-                    if !availableModels.contains(model) { Text(model).tag(model) }
+                Picker("Model", selection: $prefs.aiModel) {
+                    if !availableModels.contains(prefs.aiModel) { Text(prefs.aiModel).tag(prefs.aiModel) }
                     ForEach(availableModels, id: \.self) { Text($0).tag($0) }
                 }
-                Toggle("Ask on each new file as I reach it", isOn: $autoIdentify)
+                Toggle("Ask on each new file as I reach it", isOn: $prefs.autoIdentify)
             } header: {
                 Text("Model")
             } footer: {
@@ -162,7 +159,7 @@ struct SettingsPanel: View {
             Section {
                 priceRow
             } header: {
-                Text("Price for \(model)")
+                Text("Price for \(prefs.aiModel)")
             } footer: {
                 Text("Seeded prices are dated, not guaranteed current. Edit one here if it "
                      + "has changed, or add one for an endpoint that is not OpenAI's own.")
@@ -200,8 +197,8 @@ struct SettingsPanel: View {
         .task {
             guard sections.contains(.ai) else { return }
             await loadEntries()
-            let client = AIClient(baseURL: baseURL, model: model,
-                                  apiKey: resolvedKey(useEnvironment: useEnvironment))
+            let client = AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel,
+                                  apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
             guard !client.apiKey.isEmpty else { return }
             availableModels = (try? await client.models()) ?? []
         }
@@ -210,7 +207,7 @@ struct SettingsPanel: View {
     // MARK: - Price for the currently chosen model
 
     private var currentPrice: ModelPrice? {
-        priceBook.table.price(model: model, endpoint: baseURL)
+        priceBook.table.price(model: prefs.aiModel, endpoint: prefs.aiBaseURL)
     }
 
     @ViewBuilder
@@ -278,7 +275,7 @@ struct SettingsPanel: View {
         let price = ModelPrice(inputPerMillion: input, outputPerMillion: output,
                                 currency: draftCurrency.trimmingCharacters(in: .whitespaces).uppercased(),
                                 recordedAt: Date())
-        priceBook.setCustom(price, endpoint: baseURL, model: model)
+        priceBook.setCustom(price, endpoint: prefs.aiBaseURL, model: prefs.aiModel)
         editingPrice = false
     }
 
@@ -440,7 +437,7 @@ struct SettingsPanel: View {
     private func test() {
         testing = true
         status = .idle
-        let client = AIClient(baseURL: baseURL, model: model, apiKey: resolvedKey(useEnvironment: useEnvironment),
+        let client = AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel, apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment),
                                spendRecorder: library)
         Task {
             do {

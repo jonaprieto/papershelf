@@ -10,15 +10,18 @@ import XCTest
 @MainActor
 final class ReadingModeTests: XCTestCase {
 
+    /// Through `Prefs` rather than `UserDefaults`: the store reads each key once at
+    /// launch and holds the value, so clearing the key underneath it changes what the
+    /// next launch sees and nothing about this one.
     override func setUp() {
         super.setUp()
-        UserDefaults.standard.removeObject(forKey: "readingMode")
-        UserDefaults.standard.removeObject(forKey: "inspectorCollapsed")
+        Prefs.shared.readingMode = false
+        Prefs.shared.inspectorCollapsed = false
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "readingMode")
-        UserDefaults.standard.removeObject(forKey: "inspectorCollapsed")
+        Prefs.shared.readingMode = false
+        Prefs.shared.inspectorCollapsed = false
         super.tearDown()
     }
 

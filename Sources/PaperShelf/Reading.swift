@@ -20,8 +20,7 @@ struct MarkRow: View {
     @State private var editing = false
     @State private var hovering = false
     @State private var text = ""
-    @AppStorage("offerChatGPT") private var offerChatGPT = true
-    @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
+    private let prefs = Prefs.shared
 
     /// The colour it was actually painted with, whatever palette that came from.
     private var colour: Color { Color(nsColor: mark.colour) }
@@ -137,13 +136,13 @@ struct MarkRow: View {
     /// until you are looking at the mark they belong to.
     @ViewBuilder
     private var rowActions: some View {
-        if ChatGPTHandoff.isInstalled, offerChatGPT || offerChatGPTCopy,
+        if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy,
            !mark.quoted.isEmpty || !mark.note.isEmpty {
             Menu {
-                if offerChatGPT {
+                if prefs.offerChatGPT {
                     Button("Open in ChatGPT") { ChatGPTHandoff.open(handoffPrompt) }
                 }
-                if offerChatGPTCopy {
+                if prefs.offerChatGPTCopy {
                     Button("Copy for ChatGPT") { ChatGPTHandoff.copy(handoffPrompt) }
                 }
             } label: {
@@ -529,7 +528,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
 /// with its pages as thumbnails behind the same switch.
 struct ContentsRail: View {
     @ObservedObject var annotator: Annotator
-    @AppStorage("contentsRailMode") private var railMode: ContentsRailMode = .outline
+    @Bindable private var prefs = Prefs.shared
 
     /// The chapter you are inside: the last one that starts at or before the page on
     /// screen. A table of contents that does not say where you are is a list of links.
@@ -541,7 +540,7 @@ struct ContentsRail: View {
     /// rail is the pages, and the switch would be a choice between a list and nothing.
     private var hasOutline: Bool { !annotator.contents.isEmpty }
 
-    private var shown: ContentsRailMode { hasOutline ? railMode : .thumbnails }
+    private var shown: ContentsRailMode { hasOutline ? prefs.contentsRailMode : .thumbnails }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -549,7 +548,7 @@ struct ContentsRail: View {
                 Text(shown.label).font(Face.headline)
                 Spacer(minLength: Space.tight)
                 if hasOutline {
-                    Picker("", selection: $railMode) {
+                    Picker("", selection: $prefs.contentsRailMode) {
                         ForEach(ContentsRailMode.allCases) { mode in
                             Image(systemName: mode.icon)
                                 .accessibilityLabel(mode.label)

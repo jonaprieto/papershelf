@@ -12,12 +12,29 @@ final class Chrome: ObservableObject {
     /// Set by the window so the menu can reach the runner without owning it.
     @Published var undo: () -> Void = {}
     @Published var canUndo = false
-    /// Hides everything that is about deciding, leaving the page.
-    @AppStorage("readingMode") var reading = false
-    /// Shared with the inspector through the same keys, so the menu can reach them.
-    @AppStorage("contentsShown") var contentsShown = false
-    @AppStorage("inspectorCollapsed") var inspectorCollapsed = false
-    @AppStorage("inspectorPanel") var inspectorPanel: InspectorPanel = .details
+    /// Window state the menu reaches through here, held in `Prefs` so it survives a
+    /// launch and so the panes that draw it are invalidated when the menu changes it.
+    ///
+    /// These were `@AppStorage` on this object, which is not a view: the wrapper wrote
+    /// the key but nothing on `Chrome` published the change, and the panes only redrew
+    /// because they each held a second `@AppStorage` on the same key and `UserDefaults`
+    /// told them separately.
+    var reading: Bool {
+        get { Prefs.shared.readingMode }
+        set { Prefs.shared.readingMode = newValue }
+    }
+    var contentsShown: Bool {
+        get { Prefs.shared.contentsShown }
+        set { Prefs.shared.contentsShown = newValue }
+    }
+    var inspectorCollapsed: Bool {
+        get { Prefs.shared.inspectorCollapsed }
+        set { Prefs.shared.inspectorCollapsed = newValue }
+    }
+    var inspectorPanel: InspectorPanel {
+        get { Prefs.shared.inspectorPanel }
+        set { Prefs.shared.inspectorPanel = newValue }
+    }
 
     /// Showing the notes means opening the inspector on its Notes tab. They were a column
     /// of their own with their own switch; now there is one inspector and ⌘⇧N says which

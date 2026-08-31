@@ -41,20 +41,7 @@ final class NamingPreviewSource: ObservableObject {
 /// form they round-trip through, the tidying rules and the date fallbacks are one subject
 /// and now one pane.
 struct NameRulesSettings: View {
-    @AppStorage("namePattern") private var namePatternText = ""
-    @AppStorage("namePatternMaxLength") private var namePatternMaxLength = 0
-    @AppStorage("ruleCasing") private var ruleCasing: NameRules.Casing = .lowercase
-    @AppStorage("ruleSeparator") private var ruleSeparator: NameRules.Separator = .keep
-    @AppStorage("ruleStripSymbols") private var ruleStripSymbols = false
-    @AppStorage("ruleStripDiacritics") private var ruleStripDiacritics = false
-    @AppStorage("ruleAsciiOnly") private var ruleAsciiOnly = false
-    @AppStorage("ruleDropArticles") private var ruleDropArticles = false
-    @AppStorage("ruleMaxLength") private var ruleMaxLength = 0
-    @AppStorage("ruleDatePosition") private var ruleDatePosition: NameRules.DatePosition = .prefix
-    @AppStorage("ruleDateFormat") private var ruleDateFormat: NameRules.DateFormat = .dashed
-    @AppStorage("useFolderNames") private var useFolderNames = true
-    @AppStorage("useMetadataDate") private var useMetadataDate = true
-    @AppStorage("useFileDate") private var useFileDate = false
+    @Bindable private var prefs = Prefs.shared
 
     @ObservedObject private var source = NamingPreviewSource.shared
     @State private var draggingElementIndex: Int?
@@ -63,11 +50,11 @@ struct NameRulesSettings: View {
     private static let sampleName = "Extracto Se\u{00F1}or_Acme 66 (1)_23_08_2026.pdf"
 
     private var rules: NameRules {
-        NameRules(casing: ruleCasing, separator: ruleSeparator,
-                  stripSymbols: ruleStripSymbols, stripDiacritics: ruleStripDiacritics,
-                  asciiOnly: ruleAsciiOnly, dropLeadingArticles: ruleDropArticles,
-                  maxLength: ruleMaxLength, datePosition: ruleDatePosition,
-                  dateFormat: ruleDateFormat)
+        NameRules(casing: prefs.ruleCasing, separator: prefs.ruleSeparator,
+                  stripSymbols: prefs.ruleStripSymbols, stripDiacritics: prefs.ruleStripDiacritics,
+                  asciiOnly: prefs.ruleAsciiOnly, dropLeadingArticles: prefs.ruleDropArticles,
+                  maxLength: prefs.ruleMaxLength, datePosition: prefs.ruleDatePosition,
+                  dateFormat: prefs.ruleDateFormat)
     }
 
     /// Casing is a no-op on a token that is already digits.
@@ -80,9 +67,9 @@ struct NameRulesSettings: View {
 
     /// The three date switches, in the form the renderer reads them.
     private var fallbacks: DateFallbacks {
-        DateFallbacks(folderNames: useFolderNames,
-                      metadataDate: useMetadataDate,
-                      fileDate: useFileDate)
+        DateFallbacks(folderNames: prefs.useFolderNames,
+                      metadataDate: prefs.useMetadataDate,
+                      fileDate: prefs.useFileDate)
     }
 
     /// Rendered exactly the way Plan will render it — same rules, same fallbacks. A
@@ -103,7 +90,7 @@ struct NameRulesSettings: View {
     }
 
     private var namePattern: NamePattern {
-        NamePattern(parsing: namePatternText, maxTotalLength: namePatternMaxLength)
+        NamePattern(parsing: prefs.namePattern, maxTotalLength: prefs.namePatternMaxLength)
     }
 
     /// Every chip and text-field edit goes through here, so the two stay in sync: both
@@ -114,8 +101,8 @@ struct NameRulesSettings: View {
     private func updateNamePattern(_ transform: (inout NamePattern) -> Void) {
         var updated = namePattern
         transform(&updated)
-        namePatternText = updated.text
-        namePatternMaxLength = updated.maxTotalLength
+        prefs.namePattern = updated.text
+        prefs.namePatternMaxLength = updated.maxTotalLength
     }
 
     private func updateNameToken(at index: Int, _ transform: (inout NameToken) -> Void) {
@@ -195,7 +182,7 @@ struct NameRulesSettings: View {
                     .tip("Drag a field to reorder it, click one to adjust it")
 
                 LabeledContent("Pattern") {
-                    TextField("", text: $namePatternText, prompt: Text("[date]-[title]"))
+                    TextField("", text: $prefs.namePattern, prompt: Text("[date]-[title]"))
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .font(Face.code)
@@ -208,35 +195,35 @@ struct NameRulesSettings: View {
             }
 
             Section {
-                Picker("Case", selection: $ruleCasing) {
+                Picker("Case", selection: $prefs.ruleCasing) {
                     ForEach(NameRules.Casing.allCases) { Text($0.label).tag($0) }
                 }
                 .help("Applied to the whole name, date aside")
-                Picker("Separators", selection: $ruleSeparator) {
+                Picker("Separators", selection: $prefs.ruleSeparator) {
                     ForEach(NameRules.Separator.allCases) { Text($0.label).tag($0) }
                 }
                 .tip("How runs of spaces, dashes and underscores are written")
-                Toggle("Remove symbols", isOn: $ruleStripSymbols)
+                Toggle("Remove symbols", isOn: $prefs.ruleStripSymbols)
                     .tip("Punctuation becomes a separator: report (1)! reads report-1")
-                Toggle("Remove accents", isOn: $ruleStripDiacritics)
+                Toggle("Remove accents", isOn: $prefs.ruleStripDiacritics)
                     .help("señor becomes senor. Separate from Remove symbols, since ñ is a letter")
-                Toggle("ASCII only", isOn: $ruleAsciiOnly)
+                Toggle("ASCII only", isOn: $prefs.ruleAsciiOnly)
                     .tip("Non-ASCII becomes a separator, so words stay apart")
-                Toggle("Drop a leading The, A, El…", isOn: $ruleDropArticles)
+                Toggle("Drop a leading The, A, El…", isOn: $prefs.ruleDropArticles)
                     .help("So a shelf sorts by what the book is called rather than by its article")
-                Picker("Date goes", selection: $ruleDatePosition) {
+                Picker("Date goes", selection: $prefs.ruleDatePosition) {
                     ForEach(NameRules.DatePosition.allCases) { Text($0.label).tag($0) }
                 }
                 .help("Whether the date leads the name or trails it")
-                Picker("Date looks like", selection: $ruleDateFormat) {
+                Picker("Date looks like", selection: $prefs.ruleDateFormat) {
                     ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
                 }
                 LabeledContent("Max length") {
                     HStack(spacing: Space.snug) {
-                        Slider(value: Binding(get: { Double(ruleMaxLength) },
-                                              set: { ruleMaxLength = Int($0) }),
+                        Slider(value: Binding(get: { Double(prefs.ruleMaxLength) },
+                                              set: { prefs.ruleMaxLength = Int($0) }),
                                in: 0...120, step: 5)
-                        Text(ruleMaxLength == 0 ? "off" : "\(ruleMaxLength)")
+                        Text(prefs.ruleMaxLength == 0 ? "off" : "\(prefs.ruleMaxLength)")
                             .monospacedDigit()
                             .frame(width: 26, alignment: .trailing)
                     }
@@ -446,11 +433,11 @@ struct NameRulesSettings: View {
     @ViewBuilder
     private var datesPanel: some View {
             Section {
-                Toggle("Use the folder name", isOn: $useFolderNames)
+                Toggle("Use the folder name", isOn: $prefs.useFolderNames)
                     .tip("Take the date, and a name for scan001, from the folder")
-                Toggle("Use the PDF's creation date", isOn: $useMetadataDate)
+                Toggle("Use the PDF's creation date", isOn: $prefs.useMetadataDate)
                     .tip("When the PDF was written, often long after the period it covers")
-                Toggle("Use the file's modification date", isOn: $useFileDate)
+                Toggle("Use the file's modification date", isOn: $prefs.useFileDate)
                     .tip("Least trustworthy: often just when the file landed here")
             } header: {
                 Text("When the filename has no date")
