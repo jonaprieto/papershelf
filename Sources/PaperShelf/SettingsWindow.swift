@@ -211,7 +211,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                LabeledContent("Documents no longer on disk") {
+                LabeledContent("Documents no source accounts for") {
                     HStack(spacing: 8) {
                         if let vanished {
                             Text("\(vanished)").monospacedDigit().foregroundStyle(.secondary)
@@ -226,12 +226,12 @@ struct GeneralSettings: View {
             } header: {
                 Text("Tidy the library")
             } footer: {
-                Text("A source removed before this app learned to clean up after itself "
-                     + "left its documents in the library, where they still answer "
-                     + "searches and still fill reading projects. This finds documents "
-                     + "whose every known file is gone from a folder that is still there, "
-                     + "and forgets them.\n\n"
-                     + "A document whose folder is missing too is left alone: an "
+                Text("A document belongs here because a source brought it. This finds the "
+                     + "ones no source accounts for any more \u{2014} a folder that stopped "
+                     + "being a source, or a file deleted out of one that did not \u{2014} "
+                     + "and forgets them, along with their tags, notes, place in any "
+                     + "reading project and reading position.\n\n"
+                     + "A file missing from a folder that is missing too is left alone: an "
                      + "unplugged drive is not a deleted library. Nothing on disk is "
                      + "touched either way.")
                 .font(.caption)
@@ -271,7 +271,7 @@ struct GeneralSettings: View {
         .formStyle(.grouped)
     }
 
-    /// How many documents the library holds that are not on disk any more, once asked.
+    /// How many documents the library holds that no source accounts for, once asked.
     /// Nil before anybody asks: a number that appears on its own reads as a problem
     /// rather than as an answer to a question.
     @State private var vanished: Int?
@@ -285,7 +285,8 @@ struct GeneralSettings: View {
         defer { checking = false }
         let known = (try? await library.locationsByDocument()) ?? [:]
         let manager = FileManager.default
-        doomed = vanishedDocuments(known) { manager.fileExists(atPath: $0) }
+        let roots = sources.map { $0.resolvingSymlinksInPath().path }
+        doomed = strayDocuments(known, sources: roots) { manager.fileExists(atPath: $0) }
         vanished = doomed.count
     }
 
@@ -306,7 +307,26 @@ struct GeneralSettings: View {
         storedSources = merged.map(\.path).joined(separator: "\n")
     }
 
+    /// Removing a source here forgets what it brought, exactly as removing one from the
+    /// sidebar does. This edited the preference and nothing else, which is one of the two
+    /// ways a library ended up holding papers from folders nobody watches.
     private func remove(_ url: URL) {
+        forget(url)
+        removeFromList(url)
+    }
+
+    private func forget(_ url: URL) {
+        guard let library = Library.shared else { return }
+        Task {
+            let root = url.resolvingSymlinksInPath().path
+            let doomed = (try? await library.documentsOnly(under: root)) ?? []
+            _ = try? await library.forget(documents: doomed)
+            await LibraryStatus.shared.refresh()
+            await Shelves.shared.refresh()
+        }
+    }
+
+    private func removeFromList(_ url: URL) {
         storedSources = sources.filter { $0 != url }.map(\.path).joined(separator: "\n")
     }
 }
