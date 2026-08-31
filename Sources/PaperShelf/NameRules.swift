@@ -316,7 +316,7 @@ struct NameRulesSettings: View {
                 } else {
                     Text("empty")
                         .font(Face.micro.italic())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
             Button {
@@ -325,7 +325,7 @@ struct NameRulesSettings: View {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 10))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .accessibilityLabel("Remove \(namingLabel(for: token.kind))")
         }
         .padding(.horizontal, 8)
@@ -353,7 +353,7 @@ struct NameRulesSettings: View {
                 Image(systemName: "xmark.circle.fill").font(.system(size: 9))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .accessibilityLabel("Remove separator")
         }
         .padding(.horizontal, 5)

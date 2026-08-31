@@ -203,7 +203,7 @@ struct CommandPalette: View {
                 .onKeyPress(.escape) { dismiss(); return .handled }
             Text("\(documents.count) documents · \(commands.count) commands")
                 .font(Face.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
@@ -232,7 +232,7 @@ struct CommandPalette: View {
                     ForEach(Array(sections.enumerated()), id: \.element.title) { _, section in
                         Text(section.title)
                             .font(Face.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .padding(.horizontal, 12)
                             .padding(.top, 8)
                         ForEach(section.entries) { entry in
@@ -274,7 +274,7 @@ struct CommandPalette: View {
                 Spacer()
             }
             Text("> commands · # tags · @ projects · / in this document · : page · ? help")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .font(Face.caption)
         .foregroundStyle(.secondary)

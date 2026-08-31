@@ -1219,7 +1219,7 @@ private struct TurnView: View {
             if !footnote.isEmpty {
                 Text(footnote)
                     .font(Face.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
         .controlSize(.small)

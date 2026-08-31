@@ -1237,7 +1237,7 @@ struct ContentView: View {
                     Text("\(sessionSpend.calls) call\(sessionSpend.calls == 1 ? "" : "s")"
                          + (sessionSpend.callsWithUnknownCost > 0
                             ? ", \(sessionSpend.callsWithUnknownCost) unpriced" : ""))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 .font(Face.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -1470,7 +1470,7 @@ private struct SidebarSourceLabel: View {
                     Image(systemName: "minus.circle.fill")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .tip("Stop watching this source. Nothing on disk is touched.")
             }
         }
@@ -1515,7 +1515,7 @@ struct SourceRow: View {
                 Image(systemName: "minus.circle.fill")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .tip("Stop working on this source")
             .help("Remove this source")
             .accessibilityLabel("Remove \(url.lastPathComponent)")

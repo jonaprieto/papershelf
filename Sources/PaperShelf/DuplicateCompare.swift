@@ -56,7 +56,7 @@ struct DuplicateCompare: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Text(row.label)
                                     .font(Face.caption)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(.secondary)
                                     .frame(width: 68, alignment: .leading)
                                 ForEach(Array(row.values.enumerated()), id: \.offset) { _, value in
                                     Text(value)
@@ -114,7 +114,7 @@ struct DuplicateCompare: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: isKeeper ? "star.fill" : "star")
-                    .foregroundStyle(isKeeper ? AnyShapeStyle(Ink.green) : AnyShapeStyle(.tertiary))
+                    .foregroundStyle(isKeeper ? AnyShapeStyle(Ink.green) : AnyShapeStyle(.secondary))
                 Text(isKeeper ? "Keeping this one" : "Would go to the Trash")
                     .font(Face.caption.weight(.semibold))
                     .foregroundStyle(isKeeper ? Ink.green : .secondary)
@@ -151,7 +151,7 @@ struct DuplicateCompare: View {
             Spacer(minLength: 0)
             Text("To the Trash on apply, never an outright removal")
                 .font(Face.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)

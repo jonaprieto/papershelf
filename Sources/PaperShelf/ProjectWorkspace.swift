@@ -151,7 +151,7 @@ struct ProjectWorkspace: View {
             HStack(spacing: 8) {
                 Button { previewing = nil } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .tip("Back to the documents in this project")
                 VStack(alignment: .leading, spacing: 1) {
                     Text(preview.title)

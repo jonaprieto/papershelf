@@ -174,7 +174,7 @@ struct GeneralSettings: View {
                         Spacer()
                         Text(url.deletingLastPathComponent().path)
                             .font(Face.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.head)
                         Button {
@@ -183,7 +183,7 @@ struct GeneralSettings: View {
                             Image(systemName: "minus.circle.fill")
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 Button {
@@ -371,7 +371,7 @@ struct HighlighterSettings: View {
                             Image(systemName: "minus.circle.fill")
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .disabled(palette.styles.count < 2)
                         .help(palette.styles.count < 2
                               ? "The last colour stays; without one there is no highlighter"
@@ -536,7 +536,7 @@ struct KeyboardSettings: View {
                 Spacer(minLength: 8)
                 Text(command.scope.label)
                     .font(Face.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 74, alignment: .leading)
 
                 Button {
@@ -550,7 +550,7 @@ struct KeyboardSettings: View {
                         Text(shortcut.display)
                             .font(Face.mono.weight(.semibold))
                     } else {
-                        Text("unbound").font(Face.caption).foregroundStyle(.tertiary)
+                        Text("unbound").font(Face.caption).foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -562,7 +562,7 @@ struct KeyboardSettings: View {
                     Image(systemName: "arrow.uturn.backward")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .opacity(keymap.isCustomised(command) ? 1 : 0)
                 .help("Back to what it shipped with")
             }
@@ -875,7 +875,7 @@ struct FileSettings: View {
                     HStack(spacing: 8) {
                         Text("\(index + 1)")
                             .font(Face.micro.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .frame(width: 14, alignment: .trailing)
                         SecureField("", text: binding(index), prompt: Text("Password"))
                             .textFieldStyle(.roundedBorder)
@@ -886,7 +886,7 @@ struct FileSettings: View {
                             Image(systemName: "minus.circle.fill")
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 Button {

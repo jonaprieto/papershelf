@@ -68,7 +68,7 @@ struct MarkRow: View {
 
                 Text("p. \(mark.page)")
                     .font(Face.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
 
             if !mark.quoted.isEmpty {
@@ -164,7 +164,7 @@ struct MarkRow: View {
             Image(systemName: "square.and.pencil")
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.secondary)
         .opacity(hovering || editing ? 1 : 0)
         .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
         .accessibilityLabel(mark.note.isEmpty
@@ -172,7 +172,7 @@ struct MarkRow: View {
                              : "Edit the note on the mark on page \(mark.page)")
         Button(action: remove) { Image(systemName: "trash") }
             .buttonStyle(.borderless)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .opacity(hovering || editing ? 1 : 0)
             .tip("Remove this mark from the file")
             .accessibilityLabel("Delete the mark on page \(mark.page)")
@@ -229,7 +229,7 @@ struct NotesRail: View {
                     Spacer()
                     Button(action: close) { Image(systemName: "xmark") }
                         .buttonStyle(.borderless)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .tip("Hide the notes", key: "⌘⇧N")
                 }
                 .padding(.horizontal, 12)
@@ -403,12 +403,12 @@ struct NotesRail: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .help("Remove every mark from this document")
 
             Text("Markdown")
                 .font(Face.control)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .controlSize(.small)
         .padding(.horizontal, 12)
@@ -608,7 +608,7 @@ struct ContentsRail: View {
                     if let page = chapter.page {
                         Text("\(page)")
                             .font(Face.caption.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 // Depth by indent: a table of contents is read straight down far more

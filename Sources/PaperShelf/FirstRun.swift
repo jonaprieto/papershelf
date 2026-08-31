@@ -51,7 +51,7 @@ struct FirstRun: View {
                     .controlSize(.large)
                 Text("or drop folders and PDFs anywhere in this window")
                     .font(Face.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(40)

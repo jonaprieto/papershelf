@@ -44,7 +44,7 @@ struct TagStrip: View {
                 if actions.tags.isEmpty {
                     Text(emptyLabel)
                         .font(Face.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 } else {
                     // Wraps rather than scrolls: a file with eight tags should show eight,
                     // not hide six of them behind a swipe in a panel this narrow.

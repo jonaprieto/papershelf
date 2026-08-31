@@ -503,7 +503,7 @@ struct ReviewInspector: View {
         Text(text)
             .font(Face.caption.weight(.semibold))
             .tracking(0.7)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
     }
 
     private var newNameSection: some View {
@@ -557,7 +557,7 @@ struct ReviewInspector: View {
                 FlowLayout(spacing: 6) {
                     ForEach(provenance.parts, id: \.value) { part in
                         HStack(spacing: 5) {
-                            Text(part.label).foregroundStyle(.tertiary)
+                            Text(part.label).foregroundStyle(.secondary)
                             // A title can be the whole name. Held to the panel's width
                             // and truncated in the middle, since both ends of a slug are
                             // what identify it; the field above carries the whole thing.
@@ -1089,13 +1089,13 @@ struct MetadataPanel: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(label)
                     .font(Face.section)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
                     ForEach(rows, id: \.0) { name, value in
                         GridRow {
                             Text(name)
                                 .font(Face.caption)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                                 .gridColumnAlignment(.trailing)
                             Text(value)
                                 .font(Face.caption)
@@ -1134,10 +1134,10 @@ struct MetadataPanel: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Suggested name")
                     .font(Face.section)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 Text(item.sourceName)
                     .font(Face.mono)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .strikethrough()
                     .lineLimit(2)
                     .truncationMode(.middle)

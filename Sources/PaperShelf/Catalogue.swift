@@ -2527,7 +2527,7 @@ struct ResultsPane: View {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
@@ -2631,7 +2631,7 @@ struct ResultsPane: View {
             if query.isEmpty && !searchFocused {
                 Text("/")
                     .font(Face.mono)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .fittedBackground(.quaternary, in: RoundedRectangle(cornerRadius: 3))
@@ -2644,7 +2644,7 @@ struct ResultsPane: View {
                     Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .tip("Clear the search")
             }
         }
@@ -2999,7 +2999,7 @@ struct FolderRow: View {
                 .truncationMode(.middle)
             Text("\u{00B7} \(count)")
                 .font(Face.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .monospacedDigit()
             Spacer(minLength: 0)
         }
@@ -3153,7 +3153,7 @@ struct ResultRow: View {
                 if isRenamed {
                     Text(item.sourceName)
                         .font(Face.mono)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(shownName)
@@ -3164,7 +3164,7 @@ struct ResultRow: View {
                 } else {
                     Text(item.sourceName)
                         .font(Face.mono)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .strikethrough(decision == .deleted)
@@ -3366,11 +3366,11 @@ struct CoverCard: View {
                 .font(Face.mono)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
             Text(physical)
                 .font(Face.micro.monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
             if !tags.isEmpty {
                 FlowRow(spacing: 4) {
@@ -3624,7 +3624,7 @@ struct BusyOverlay: View {
                 .foregroundStyle(.secondary)
             Text(activity.current)
                 .font(Face.mono)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: 480)
