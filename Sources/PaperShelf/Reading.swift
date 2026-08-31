@@ -41,8 +41,13 @@ struct MarkRow: View {
                 Menu {
                     ForEach(styles) { style in
                         Button { recolour(style.nsColor) } label: {
-                            Label(style.meaning.isEmpty ? "Unnamed" : style.meaning,
-                                  systemImage: "circle.fill")
+                            // See the toolbar's picker: a symbol in a menu item is
+                            // repainted, so every choice came out the same colour.
+                            Label {
+                                Text(style.meaning.isEmpty ? "Unnamed" : style.meaning)
+                            } icon: {
+                                swatchImage(style.nsColor, size: 12)
+                            }
                         }
                     }
                 } label: {

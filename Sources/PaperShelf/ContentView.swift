@@ -1655,7 +1655,7 @@ struct ExplorerOutline: View {
                 Button { toggle(node.id) } label: {
                     Image(systemName: expanded.contains(node.id) ? "chevron.down" : "chevron.right")
                         .font(.caption2)
-                        .frame(width: 10)
+                        .frame(width: 12)
                         // Hit testing follows this shape rather than the glyph's own frame,
                         // so folding a folder doesn't need a 20pt-wide column -- the glyph
                         // and the rest of the row stay the size they were.
@@ -1665,11 +1665,10 @@ struct ExplorerOutline: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(expanded.contains(node.id) ? "Fold this folder" : "Unfold this folder")
             } else {
-                Color.clear.frame(width: 10, height: 1)
+                // A file gets the same blank column, so names line up with the folders
+                // above them instead of stepping in and out by a triangle's width.
+                Color.clear.frame(width: 12, height: 1)
             }
-            // The triangle and what it opens were touching. Everything else in a source
-            // list has air between the disclosure and the row it belongs to.
-            Color.clear.frame(width: 2, height: 1)
             Image(systemName: node.itemKey == nil ? "folder" : "doc")
                 .foregroundStyle(node.itemKey == nil ? Color.accentColor : .secondary)
             Text(node.name)
@@ -1677,7 +1676,7 @@ struct ExplorerOutline: View {
                 .truncationMode(.middle)
         }
         .padding(.leading, CGFloat(depth) * 12)
-        .padding(.vertical, 1)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .background(
             node.itemKey != nil && node.itemKey == selected

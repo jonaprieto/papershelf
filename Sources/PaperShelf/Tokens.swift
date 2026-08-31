@@ -57,11 +57,11 @@ enum Metric {
     // selected row in a source list by about five points and leaves most other things
     // square, and this window should read the same way.
     static let keyCap: CGFloat = 3
-    static let cover: CGFloat = 5
-    static let control: CGFloat = 5
-    static let group: CGFloat = 5
-    static let card: CGFloat = 6
-    static let popover: CGFloat = 8
+    static let cover: CGFloat = 4
+    static let control: CGFloat = 4
+    static let group: CGFloat = 4
+    static let card: CGFloat = 5
+    static let popover: CGFloat = 6
 
     /// The shelf: a cover keeps a book's proportions rather than being letterboxed into a
     /// fixed band, so the grid asks for a width and derives the height.

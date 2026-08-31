@@ -750,8 +750,14 @@ struct ResultsPane: View {
                     lastColourID = style.id.uuidString
                     if annotator.hasSelection { annotator.highlightSelection(colour: style.nsColor) }
                 } label: {
-                    Label(style.meaning.isEmpty ? "Unnamed" : style.meaning,
-                          systemImage: "circle.fill")
+                    // A drawn swatch, not a symbol: a symbol in a menu item is treated as
+                    // a template and repainted, so five highlighters came out the same
+                    // colour in the one menu whose whole purpose is picking a colour.
+                    Label {
+                        Text(style.meaning.isEmpty ? "Unnamed" : style.meaning)
+                    } icon: {
+                        swatchImage(style.nsColor, size: 12)
+                    }
                 }
             }
         } label: {
@@ -1030,6 +1036,18 @@ struct ResultsPane: View {
         }
     }
 
+    /// Whether this key event is somebody typing into something.
+    ///
+    /// A table view is the exception: its own type-select is exactly what this monitor
+    /// exists to replace, so a bare letter over a list of files is a command, not a
+    /// search-as-you-type.
+    private func isTyping(_ event: NSEvent) -> Bool {
+        if searchFocused { return true }
+        guard let responder = event.window?.firstResponder else { return false }
+        if responder is NSTableView { return false }
+        return responder is NSTextView || responder is NSControl
+    }
+
     private func removeKeyMonitor() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
@@ -1060,6 +1078,18 @@ struct ResultsPane: View {
         if event.keyCode == 53 { return escape() }   // ⎋
         let match = Keymap.shared.command(for: event, in: activeScope)
             ?? defaultRegionCommand(for: event)
+        let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
+
+        // A key with no modifier on it belongs to whatever is being typed into, wherever
+        // that is, and the check has to come before any command is matched rather than
+        // most of the way down.
+        //
+        // It used to sit below the reader's own decisions, so a note could not contain
+        // the letter D: D is Trash, the reader matched it first, and the file went to the
+        // Trash instead of the letter reaching the field. S, M, A, R and Return did the
+        // same, which is most of the alphabet a note is written with.
+        if bare, isTyping(event) { return false }
+
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
         if reading || reader != nil {
             if handleReaderNavigation(event) { return true }
@@ -1079,20 +1109,10 @@ struct ResultsPane: View {
         }
 
         guard !runner.results.isEmpty, selectedItem != nil else { return false }
-        let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
 
         // Anything carrying a modifier is app-level and must work wherever focus is,
         // including while a name is being typed.
         if let match, !bare { return perform(match) }
-
-        // Past here every binding is a bare key, which belongs to whatever is being typed
-        // into. A table view is the exception: its type-select is exactly what this
-        // monitor exists to replace.
-        if searchFocused { return false }
-        if let responder = event.window?.firstResponder,
-           responder is NSTextView || (responder is NSControl && !(responder is NSTableView)) {
-            return false
-        }
 
         // The lists are table views and move themselves; the catalogue is a grid and has
         // no such thing, so the arrows are handled here when a table is not in charge.

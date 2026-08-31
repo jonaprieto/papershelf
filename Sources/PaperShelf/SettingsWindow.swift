@@ -136,7 +136,7 @@ struct GeneralSettings: View {
     @AppStorage("watchSources") private var watchSources = true
     @AppStorage("autoPreview") private var autoPreview = true
     @AppStorage("viewMode") private var mode: ViewMode = .catalogue
-    @AppStorage("readingTint") private var readingTint = true
+    @AppStorage("readingTint") private var readingTint = false
     @AppStorage("returnAppliesRename") private var returnApplies = true
     @AppStorage("sources") private var storedSources = ""
     @State private var addingSource = false

@@ -78,7 +78,7 @@ struct ReviewInspector: View {
     @AppStorage("inspectorCollapsed") private var collapsed = false
     @AppStorage("contentsShown") private var contentsShown = false
     @AppStorage("pageFit") private var pageFit: PageFit = .width
-    @AppStorage("readingTint") private var readingTint = true
+    @AppStorage("readingTint") private var readingTint = false
     @AppStorage("offerChatGPT") private var offerChatGPT = true
     @AppStorage("offerChatGPTCopy") private var offerChatGPTCopy = true
     @Environment(\.colorScheme) private var colourScheme
@@ -275,6 +275,10 @@ struct ReviewInspector: View {
                 if panel == .rename {
                     Divider()
                     renameActions
+                }
+                if panel == .details {
+                    Divider()
+                    infoActions
                 }
             }
         }
@@ -643,6 +647,36 @@ struct ReviewInspector: View {
         guard let text else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// What can be done with the file, pinned under what it says about itself, in the
+    /// same place the Rename tab keeps its decision.
+    ///
+    /// "Read" is not offered while you are already reading: a button that opens what is
+    /// open is a button that does nothing, and it was the loudest thing on the tab.
+    private var infoActions: some View {
+        VStack(spacing: 8) {
+            if leaveReader == nil {
+                Button(action: read) {
+                    Label("Read", systemImage: "book").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tip("Open the page, its outline and your marks on it", key: "⏎")
+            }
+            HStack(spacing: 7) {
+                Button("Reveal") {
+                    NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
+                }
+                .frame(maxWidth: .infinity)
+                .tip("Show this file in the Finder", key: "⌘R")
+                Button("Quick Look") { QuickLook.show(item.currentURL) }
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     /// The decision, pinned under the panel rather than scrolled with it.
@@ -1018,7 +1052,6 @@ struct MetadataPanel: View {
             suggested
             group("Reading", rows: readingRows)
             opening
-            actions
         }
         .padding(.top, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1165,28 +1198,6 @@ struct MetadataPanel: View {
         }
     }
 
-    private var actions: some View {
-        VStack(spacing: 6) {
-            if let read {
-                Button(action: read) {
-                    Label("Read", systemImage: "book")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tip("Open the page, its outline and your marks on it", key: "⏎")
-            }
-            HStack(spacing: 6) {
-                Button("Reveal") {
-                    NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
-                }
-                .frame(maxWidth: .infinity)
-                Button("Quick Look") { QuickLook.show(item.currentURL) }
-                    .frame(maxWidth: .infinity)
-            }
-            .controlSize(.small)
-        }
-    }
 }
 
 // MARK: - Status
