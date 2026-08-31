@@ -47,6 +47,15 @@ struct HighlightStyle: Codable, Identifiable, Equatable {
 /// keys could hold.
 @MainActor
 final class Palette: ObservableObject {
+    /// One palette, not one per window.
+    ///
+    /// The settings window and the reader each held their own, so adding a highlighter in
+    /// Settings changed the settings window's copy, wrote it to preferences, and left the
+    /// reader's copy exactly as it was: the new colour appeared in neither the toolbar's
+    /// picker nor the bar over the page until the app was launched again. Both observe
+    /// this one now, so a colour added is a colour available.
+    static let shared = Palette()
+
     @Published private(set) var styles: [HighlightStyle] = []
 
     private let key = "highlightPalette"
@@ -60,7 +69,7 @@ final class Palette: ObservableObject {
         HighlightStyle(red: 0.78, green: 0.66, blue: 1.00, meaning: "Follow up"),
     ]
 
-    init() { load() }
+    private init() { load() }
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: key),

@@ -76,7 +76,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
 struct SettingsWindowView: View {
     @AppStorage("settingsPane") private var pane: SettingsPane = .general
-    @StateObject private var palette = Palette()
+    @ObservedObject private var palette: Palette = .shared
     @State private var search = ""
 
     var body: some View {

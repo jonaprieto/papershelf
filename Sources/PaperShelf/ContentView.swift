@@ -28,7 +28,7 @@ struct ContentView: View {
     /// Deliberately not @AppStorage: a password does not belong in a preferences plist.
     @State private var choosingBackupFolder = false
     @State private var watcher: FolderWatcher?
-    @StateObject private var palette = Palette()
+    @ObservedObject private var palette: Palette = .shared
     @AppStorage("useFolderNames") private var useFolderNames = true
     // On by default so a file nearly always ends up with a year in front of it.
     @AppStorage("useMetadataDate") private var useMetadataDate = true
