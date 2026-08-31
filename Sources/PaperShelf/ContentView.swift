@@ -103,6 +103,9 @@ struct ContentView: View {
     /// The project row a drag is currently over, so exactly one row lights up.
     @State private var dropProject: Int64?
     @State private var importing = false
+    /// The source about to be removed, and how many documents would be forgotten with it.
+    /// Nil unless the question is on screen.
+    @State private var removing: (url: URL, documents: Int)?
     /// Folders start closed. Only what has been opened, or opened for you to reach the
     /// selected file, is in here.
     @State private var tagCounts: [TagCount] = []
@@ -422,6 +425,20 @@ struct ContentView: View {
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
+        }
+        .confirmationDialog(removing.map { "Remove \($0.url.lastPathComponent)?" } ?? "",
+                            isPresented: Binding(get: { removing != nil },
+                                                 set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible) {
+            if let removing {
+                Button("Remove the source", role: .destructive) {
+                    removeSource(removing.url, forgetting: [])
+                    self.removing = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { removing = nil }
+        } message: {
+            Text(removeMessage)
         }
         .onChange(of: runner.canUndo) { _, can in chrome.canUndo = can }
         // Sources can be added in Settings › General as well as here, and both write the
@@ -1157,7 +1174,7 @@ struct ContentView: View {
             hovered: hoveredSource == url,
             focus: { showFolder(url.path) },
             setHovered: { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) },
-            remove: { removeSource(url) }
+            remove: { askToRemove(url) }
         )
     }
 
@@ -1241,13 +1258,67 @@ struct ContentView: View {
     }
 
     /// Removing a source takes its files with it, straight away.
-    private func removeSource(_ url: URL) {
+    /// What removing this source costs, said before it happens.
+    private var removeMessage: String {
+        guard let removing else { return "" }
+        let count = removing.documents
+        guard count > 0 else {
+            return "Nothing on disk is touched. The library holds nothing from this "
+                + "folder, so nothing is forgotten."
+        }
+        return "\(count) document\(count == 1 ? "" : "s") "
+            + "\(count == 1 ? "is" : "are") known only from this folder. "
+            + "\(count == 1 ? "It leaves" : "They leave") the library with it, along with "
+            + "\(count == 1 ? "its" : "their") tags, notes, place in any reading project "
+            + "and reading position. Nothing on disk is touched."
+    }
+
+    /// Asks before removing, because this is not only a list the source leaves.
+    ///
+    /// Everything the library learned from those documents goes with them: their tags,
+    /// their notes, their place in a reading project, how far you had read. None of that
+    /// can be typed back in, so the question says how many are involved first.
+    private func askToRemove(_ url: URL) {
+        guard let library = Library.shared else {
+            removeSource(url, forgetting: [])
+            return
+        }
+        Task {
+            let root = url.resolvingSymlinksInPath().path
+            let doomed = (try? await library.documentsOnly(under: root)) ?? []
+            removing = (url, doomed.count)
+        }
+    }
+
+    /// Takes the source out of the list, out of the run, and out of the library.
+    ///
+    /// It used to do the first two only. The folder stopped being scanned and the app went
+    /// on holding every document it had brought, so a file from a source nobody watches
+    /// still answered a search, still filled a reading project and still counted on a
+    /// shelf. Nothing on disk is touched: this forgets, it does not delete.
+    private func removeSource(_ url: URL, forgetting documents: [String]) {
         selection.removeAll { $0 == url }
         persistSources()
         runner.removeSource(url, fingerprint: fingerprint)
         startWatching()
         expanded = []
         ensureSelectionAfterSourceChange()
+
+        guard let library = Library.shared else { return }
+        Task {
+            let root = url.resolvingSymlinksInPath().path
+            let doomed = documents.isEmpty
+                ? ((try? await library.documentsOnly(under: root)) ?? [])
+                : documents
+            _ = try? await library.forget(documents: doomed)
+            // Everything drawn from the library is now describing a shelf that has
+            // changed underneath it.
+            await reloadProjects()
+            await reloadTagCounts()
+            await shelves.refresh()
+            await libraryStatus.refresh()
+            projectContentsRevision += 1
+        }
     }
 
     private func ensureSelectionAfterSourceChange() {

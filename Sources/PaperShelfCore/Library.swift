@@ -1444,6 +1444,80 @@ extension Library {
         }
     }
 
+    // MARK: Forgetting a source
+
+    /// The documents whose every known location is under `root`.
+    ///
+    /// A document that also lives under another watched folder is not one of these: the
+    /// identity here is the document, not the path, and a book filed in two places is one
+    /// book. It keeps its other location and stays.
+    public func documentsOnly(under root: String) throws -> [String] {
+        let prefix = root.hasSuffix("/") ? String(root.dropLast()) : root
+        let inside = try locatedDocuments(under: prefix)
+        guard !inside.isEmpty else { return [] }
+        var only: [String] = []
+        for id in inside where try locationCount(of: id, outside: prefix) == 0 {
+            only.append(id)
+        }
+        return only
+    }
+
+    /// Forgets documents outright: the row, and everything hung off it.
+    ///
+    /// Every table that references a document cascades from `documents(id)` and foreign
+    /// keys are on, so this one delete takes the locations, the tags, the notes, the
+    /// extracted text and its search index, the reading position, the citation and the
+    /// project memberships with it. Nothing on disk is touched.
+    @discardableResult
+    public func forget(documents ids: [String]) throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        try transaction {
+            for id in ids {
+                try run("DELETE FROM documents WHERE id = ?;") { statement in
+                    bindText(statement, 1, id)
+                }
+            }
+        }
+        return ids.count
+    }
+
+    /// Every document with a location at `prefix` itself or anywhere under it.
+    ///
+    /// Compared as a range rather than matched with `LIKE`: a path is free to contain `%`
+    /// and `_`, which `LIKE` would read as wildcards, and "/" is followed by "0" in
+    /// ASCII, so everything under `prefix + "/"` sorts below `prefix + "0"`.
+    private func locatedDocuments(under prefix: String) throws -> [String] {
+        try withStatement("""
+            SELECT DISTINCT document_id FROM locations
+            WHERE path = ?1 OR (path >= ?2 AND path < ?3);
+            """, bind: { statement in
+                bindText(statement, 1, prefix)
+                bindText(statement, 2, prefix + "/")
+                bindText(statement, 3, prefix + "0")
+            }) { statement in
+            var found: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let id = columnText(statement, 0) { found.append(id) }
+            }
+            return found
+        }
+    }
+
+    /// How many places this document is known at that are not under `prefix`.
+    private func locationCount(of id: String, outside prefix: String) throws -> Int {
+        try withStatement("""
+            SELECT COUNT(*) FROM locations
+            WHERE document_id = ?1 AND NOT (path = ?2 OR (path >= ?3 AND path < ?4));
+            """, bind: { statement in
+                bindText(statement, 1, id)
+                bindText(statement, 2, prefix)
+                bindText(statement, 3, prefix + "/")
+                bindText(statement, 4, prefix + "0")
+            }) { statement in
+            sqlite3_step(statement) == SQLITE_ROW ? Int(sqlite3_column_int64(statement, 0)) : 0
+        }
+    }
+
     /// Removes a tag from every document and from the list.
     public func deleteTag(_ name: String) throws {
         try transaction {
