@@ -103,22 +103,52 @@ enum Metric {
 /// The type scale.
 ///
 /// One face for the interface and a serif for anything that came out of a document — page
-/// text, a quoted highlight, a book's own title on its cover. The sizes are the ones the
-/// app already used most; naming them is what stops a caption being 11 points in one view
-/// and 12 in the next.
+/// text, a quoted highlight, a book's own title on its cover.
+///
+/// Written on the platform's own text styles rather than on point sizes. The sizes come
+/// out the same — `.body` is thirteen points on macOS, `.subheadline` eleven, `.caption`
+/// ten — so nothing on screen moves; what changes is that there is one name for a size
+/// instead of two. Before this, half the app said `Face.caption` and meant eleven points
+/// and the other half said `.font(.caption)` and meant ten, which is how a label came to
+/// be a different size in the shelf than in the panel beside it.
+///
+/// This is not Dynamic Type. macOS has no system-wide text-size setting, so these
+/// resolve to fixed sizes today. Naming them this way means the app follows the platform
+/// if that changes, rather than having to be found and edited.
 enum Face {
-    static let title = Font.system(size: 22, weight: .semibold)
-    static let headline = Font.system(size: 13, weight: .semibold)
-    static let body = Font.system(size: 13)
-    static let control = Font.system(size: 12)
-    static let caption = Font.system(size: 11)
-    static let section = Font.system(size: 11, weight: .semibold)
-    static let micro = Font.system(size: 10)
-    /// Filenames, paths and anything else where a character's identity matters more than
-    /// how the line looks.
-    static let mono = Font.system(size: 11.5, design: .monospaced)
+    /// 22, semibold. A window's own name for itself.
+    static let title = Font.title.weight(.semibold)
+    /// 17, semibold. A sheet's heading.
+    static let title2 = Font.title2.weight(.semibold)
+    /// 15. The one size above the interface's own: a heading inside a sheet, and the
+    /// command palette's field, which is a thing you type a sentence into rather than a
+    /// control.
+    static let title3 = Font.title3
+    /// 13, semibold.
+    static let headline = Font.headline
+    /// 13.
+    static let body = Font.body
+    /// 12. The size a control's own label is.
+    static let control = Font.callout
+    /// 11.
+    static let caption = Font.subheadline
+    /// 11, semibold. A heading over a group of rows.
+    static let section = Font.subheadline.weight(.semibold)
+    /// 10. The floor: a count, a unit, a keyboard shortcut. Never a sentence, and never
+    /// in `.tertiary` — ten points at a quarter opacity is not text anybody can read.
+    static let micro = Font.caption
+    /// 11, monospaced. A filename, a path, a key inside a row: anything where a
+    /// character's identity matters more than how the line looks.
+    static let mono = Font.system(.subheadline, design: .monospaced)
+    /// 12, monospaced. A block of it — a BibTeX entry, a rendered Markdown preview, a
+    /// pattern being built — which is read a line at a time rather than glanced at.
+    ///
+    /// There were five monospaced sizes before these two: ten points in four different
+    /// spellings, eleven and a half, twelve and thirteen. Two is what the app was
+    /// actually distinguishing between: inside a row, and a paragraph of its own.
+    static let code = Font.system(.callout, design: .monospaced)
     /// Anything the document itself said.
-    static let page = Font.system(size: 13.5, design: .serif)
+    static let page = Font.system(.body, design: .serif)
 }
 
 /// A filled dot in a colour of its own, for a highlighter swatch.

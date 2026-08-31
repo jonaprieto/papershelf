@@ -209,9 +209,9 @@ struct ProjectsListView: View {
             ForEach(store.projects) { project in
                 NavigationLink(value: project) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(project.name).font(.headline)
+                        Text(project.name).font(Face.headline)
                         Text("\(project.documentCount) document\(project.documentCount == 1 ? "" : "s")")
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -280,7 +280,7 @@ private struct NewProjectSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("New Reading Project").font(.headline)
+            Text("New Reading Project").font(Face.headline)
             TextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { onCreate(name) }
@@ -529,7 +529,7 @@ struct ProjectDetailView: View {
                     Text(member.document.title)
                     if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
                         Text(detail)
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -607,7 +607,7 @@ private struct TagRow: View {
         HStack(spacing: 6) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
-                    .font(.caption)
+                    .font(Face.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(.secondary.opacity(0.15)))
@@ -616,7 +616,7 @@ private struct TagRow: View {
             }
             TextField("Add tag", text: $draft)
                 .textFieldStyle(.plain)
-                .font(.caption)
+                .font(Face.caption)
                 .frame(width: 90)
                 .onSubmit { onAdd(draft) }
         }
@@ -646,7 +646,7 @@ struct AddDocumentsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Add Documents").font(.headline)
+            Text("Add Documents").font(Face.headline)
             TextField("Search your library", text: $query)
                 .textFieldStyle(.roundedBorder)
             if filtered.isEmpty {
@@ -665,7 +665,7 @@ struct AddDocumentsSheet: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(member.document.title)
                                 if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
-                                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                                    Text(detail).font(Face.caption).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer()
@@ -692,7 +692,7 @@ struct AddDocumentsSheet: View {
                 .tip("Leave blank to file these under nothing")
             HStack {
                 if !selected.isEmpty {
-                    Text("\(selected.count) selected").font(.caption).foregroundStyle(.secondary)
+                    Text("\(selected.count) selected").font(Face.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -920,7 +920,7 @@ struct ProjectConversationView: View {
                                 HStack(spacing: 6) {
                                     Text("Ask")
                                     Text("\u{2318}\u{21A9}")
-                                        .font(.caption2.weight(.bold).monospaced())
+                                        .font(Face.mono.weight(.bold))
                                         .padding(.horizontal, 3)
                                         .background(.white.opacity(0.22),
                                                     in: RoundedRectangle(cornerRadius: 3))
@@ -1128,7 +1128,7 @@ private struct TurnView: View {
                 out += AttributedString(text)
             case .mark(let number):
                 var mark = AttributedString(" \(number) ")
-                mark.font = .caption2.weight(.semibold).monospacedDigit()
+                mark.font = Face.micro.weight(.semibold).monospacedDigit()
                 mark.foregroundColor = Ink.blue
                 mark.backgroundColor = Ink.blue.opacity(0.14)
                 out += mark
@@ -1187,7 +1187,7 @@ private struct TurnView: View {
                 Spacer(minLength: 6)
                 if resolved {
                     Image(systemName: "chevron.right")
-                        .font(.caption2)
+                        .font(Face.micro)
                         .foregroundStyle(.tertiary)
                 }
             }

@@ -235,7 +235,7 @@ struct BibRow: View {
             // calls it.
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.key)
-                    .font(.system(.callout, design: .monospaced))
+                    .font(Face.code)
                     .foregroundStyle(gaps.isEmpty ? Ink.blue : Ink.amber)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -247,7 +247,7 @@ struct BibRow: View {
                 // go wrong because of it.
                 if !gaps.isEmpty {
                     Text(shortfall)
-                        .font(.caption)
+                        .font(Face.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -275,7 +275,7 @@ struct BibRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .font(.callout)
+        .font(Face.control)
     }
 
     /// What the entry is, or what it is short of. One or the other: an entry that will
@@ -283,7 +283,7 @@ struct BibRow: View {
     @ViewBuilder private var badge: some View {
         if let missing = gaps.first {
             Text("needs \(missing)")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(bibWarnColor)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -291,7 +291,7 @@ struct BibRow: View {
                 .help("Missing \(gaps.joined(separator: ", ")), which \(standard.label) requires")
         } else {
             Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
-                .font(.system(.caption, design: .monospaced))
+                .font(Face.mono)
                 .foregroundStyle(bibGoodColor)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -316,7 +316,7 @@ struct BibRow: View {
                 Text(changed.isEmpty
                      ? "Looked up on \(lookupSourceLabel(source)), nothing new"
                      : "Filled in \(changed.joined(separator: ", ")) from \(lookupSourceLabel(source))")
-                    .font(.caption2)
+                    .font(Face.micro)
                     .foregroundStyle(bibGoodColor)
                 if !changed.isEmpty {
                     Menu("Keep original…") {
@@ -325,17 +325,17 @@ struct BibRow: View {
                         }
                     }
                     .menuStyle(.borderlessButton)
-                    .font(.caption2)
+                    .font(Face.micro)
                     .fixedSize()
                 }
             }
         case .guessed:
             Text("No registry knew this one; the model filled in what it could")
-                .font(.caption2)
+                .font(Face.micro)
                 .foregroundStyle(.secondary)
         case .notFound:
             Text("No record found on doi.org, Crossref, arXiv or Open Library")
-                .font(.caption2)
+                .font(Face.micro)
                 .foregroundStyle(.secondary)
         case .idle, .loading:
             EmptyView()
@@ -445,7 +445,7 @@ struct BibFileView: View {
             Divider()
             if edited != nil {
                 TextEditor(text: Binding(get: { edited ?? "" }, set: { edited = $0 }))
-                    .font(.system(.callout, design: .monospaced))
+                    .font(Face.code)
                     .scrollContentBackground(.hidden)
                     .padding(8)
             } else if blocks.isEmpty {
@@ -455,7 +455,7 @@ struct BibFileView: View {
                     LazyVStack(alignment: .leading, spacing: 14) {
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                             Text(highlighted(block))
-                                .font(.system(.callout, design: .monospaced))
+                                .font(Face.code)
                                 .textSelection(.enabled)
                                 // Wrapped, a long path folds into the pane instead of
                                 // running off it. Unwrapped, the layout is the file's own.
@@ -527,7 +527,7 @@ struct BibFileView: View {
       ScrollView(.horizontal) {
         HStack(spacing: 8) {
             Text(name)
-                .font(.system(.callout, design: .monospaced))
+                .font(Face.code)
                 .foregroundStyle(.secondary)
             dot
             Text("\(shown.count) entries").foregroundStyle(.secondary)
@@ -562,7 +562,7 @@ struct BibFileView: View {
                     .tip("Take the text over by hand; ordering freezes")
             }
         }
-        .font(.callout)
+        .font(Face.control)
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
       }
@@ -579,7 +579,7 @@ struct BibFileView: View {
             HStack(spacing: 6) {
                 ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
                     .frame(width: 80)
-                Text("\(progress.done)/\(progress.total)").font(.caption).monospacedDigit()
+                Text("\(progress.done)/\(progress.total)").font(Face.caption).monospacedDigit()
                 Button("Cancel") { lookup.cancelBatch() }.controlSize(.small)
             }
         } else {
@@ -644,10 +644,10 @@ struct BibGapChip: View {
         Button(action: select) {
             HStack(spacing: 4) {
                 Text(key)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Face.mono)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Image(systemName: "chevron.right").font(.caption2)
+                Image(systemName: "chevron.right").font(Face.micro)
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -681,7 +681,7 @@ struct FillGapsButton: View {
             HStack(spacing: 6) {
                 ProgressView(value: Double(running.done), total: Double(max(running.total, 1)))
                     .frame(width: 80)
-                Text("\(running.done)/\(running.total)").font(.caption).monospacedDigit()
+                Text("\(running.done)/\(running.total)").font(Face.caption).monospacedDigit()
                 Button("Stop") { batch.cancel() }.controlSize(.small)
             }
         } else {

@@ -448,7 +448,7 @@ struct ReviewInspector: View {
             ?? (hoveringNote ? "Highlight and attach a note" : nil)
             ?? (hoveringChatGPT ? "Ask ChatGPT about this passage" : nil) {
             Text(text)
-                .font(.caption)
+                .font(Face.caption)
                 .lineLimit(1)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -690,7 +690,7 @@ struct ReviewInspector: View {
                     HStack(spacing: 6) {
                         Text("Confirm and continue")
                         Text("\u{21A9}")
-                            .font(.caption2.weight(.bold).monospaced())
+                            .font(Face.mono.weight(.bold))
                             .padding(.horizontal, 3)
                             .background(.white.opacity(0.22),
                                         in: RoundedRectangle(cornerRadius: 3))
@@ -742,7 +742,7 @@ struct ReviewInspector: View {
     private var lockedOverlay: some View {
         if item.status == .locked {
             Label("No password matched, cannot be shown", systemImage: "lock.fill")
-                .font(.caption.weight(.medium))
+                .font(Face.caption.weight(.medium))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
                 .fittedBackground(.regularMaterial, in: Capsule())
@@ -766,7 +766,7 @@ struct KeyLabel: View {
     var body: some View {
         HStack(spacing: 5) {
             Text(key)
-                .font(.caption2.weight(.bold).monospaced())
+                .font(Face.mono.weight(.bold))
                 .frame(minWidth: 14, minHeight: 14)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
             Text(title)

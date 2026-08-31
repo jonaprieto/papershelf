@@ -1209,7 +1209,7 @@ struct ContentView: View {
                     Text("\(price.inputPerMillion.formatted(.currency(code: price.currency))) in")
                     Text("\(price.outputPerMillion.formatted(.currency(code: price.currency))) out")
                 }
-                .font(.caption.monospacedDigit())
+                .font(Face.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             }
             .tip("Per million tokens. Recorded "
@@ -1218,7 +1218,7 @@ struct ContentView: View {
         } else {
             LabeledContent("Price") {
                 Text("unknown")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(Ink.amber)
             }
             .tip("No price is known for this model at this endpoint. Calls are still "
@@ -1239,7 +1239,7 @@ struct ContentView: View {
                             ? ", \(sessionSpend.callsWithUnknownCost) unpriced" : ""))
                         .foregroundStyle(.tertiary)
                 }
-                .font(.caption.monospacedDigit())
+                .font(Face.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             }
             .tip("What this run of the app has spent. Settings has the whole ledger.")
@@ -1505,7 +1505,7 @@ struct SourceRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(url.deletingLastPathComponent().path)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -1736,7 +1736,7 @@ struct ExplorerOutline: View {
             if node.children != nil {
                 Button { toggle(node.id) } label: {
                     Image(systemName: expanded.contains(node.id) ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
+                        .font(Face.micro)
                         .frame(width: 12)
                         // Hit testing follows this shape rather than the glyph's own frame,
                         // so folding a folder doesn't need a 20pt-wide column -- the glyph
@@ -1884,7 +1884,7 @@ struct ShortcutsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Keyboard").font(.title3.weight(.semibold))
+                Text("Keyboard").font(Face.title2)
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
             }
@@ -1897,12 +1897,12 @@ struct ShortcutsSheet: View {
                     ForEach(groups, id: \.0) { title, rows in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(title)
-                                .font(.callout.weight(.semibold))
+                                .font(Face.control.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             ForEach(rows, id: \.0) { key, meaning in
                                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                                     Text(key)
-                                        .font(.system(.callout, design: .monospaced))
+                                        .font(Face.code)
                                         .frame(width: 110, alignment: .leading)
                                     Text(meaning)
                                     Spacer(minLength: 0)
@@ -1912,7 +1912,7 @@ struct ShortcutsSheet: View {
                     }
                     Text("Letters work whenever the name field is not focused. Anything with "
                          + "Command works regardless.")
-                        .font(.caption)
+                        .font(Face.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

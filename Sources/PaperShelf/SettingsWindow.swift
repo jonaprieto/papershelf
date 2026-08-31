@@ -159,7 +159,7 @@ struct GeneralSettings: View {
                 Text("Tinting rather than inverting, so figures and scanned plates stay "
                      + "readable. Highlights drop to 30% so they tint the paper instead of "
                      + "glowing off it.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -173,7 +173,7 @@ struct GeneralSettings: View {
                         Label(url.lastPathComponent, systemImage: "folder")
                         Spacer()
                         Text(url.deletingLastPathComponent().path)
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -199,7 +199,7 @@ struct GeneralSettings: View {
                      + "anything already selected inside it — a file reachable from two "
                      + "roots would be attributed to whichever was scanned first, and that "
                      + "root decides where its originals land.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -234,7 +234,7 @@ struct GeneralSettings: View {
                      + "A file missing from a folder that is missing too is left alone: an "
                      + "unplugged drive is not a deleted library. Nothing on disk is "
                      + "touched either way.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -263,7 +263,7 @@ struct GeneralSettings: View {
                      + "The watcher checks each new file against what is already known rather "
                      + "than rescanning the shelf, which is what lets it notice a copy of "
                      + "something you already own as it arrives.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -359,7 +359,7 @@ struct HighlighterSettings: View {
                         // rather than the colour: reorder them and the keys reorder too.
                         if index < 9 {
                             Text("\(index + 1)")
-                                .font(.caption2.weight(.bold).monospaced())
+                                .font(Face.mono.weight(.bold))
                                 .frame(width: 16, height: 16)
                                 .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
                                 .foregroundStyle(.secondary)
@@ -394,7 +394,7 @@ struct HighlighterSettings: View {
                 Text("Shown beside the bar as you highlight and next to every mark, so the "
                      + "convention is legible where it is used rather than remembered. The "
                      + "number keys follow this order.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -408,7 +408,7 @@ struct HighlighterSettings: View {
                      + "decides what those colours are called in your notes. Anything "
                      + "further away than a close match stays plain “Highlight”, and "
                      + "nothing is ever repainted.")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -417,7 +417,7 @@ struct HighlighterSettings: View {
                 ForEach(palette.styles) { style in
                     HStack(spacing: 10) {
                         Text(style.meaning.isEmpty ? "Highlight" : style.meaning)
-                            .font(.system(.body, design: .serif))
+                            .font(Face.page)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(style.swatch.opacity(0.38),
@@ -501,7 +501,7 @@ struct KeyboardSettings: View {
             Text("Letters work whenever a text field is not focused; anything with ⌘ works "
                  + "regardless. A command with no shortcut is still reachable — every row "
                  + "here is also a line in the command palette.")
-            .font(.caption)
+            .font(Face.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -535,7 +535,7 @@ struct KeyboardSettings: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(command.scope.label)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.tertiary)
                     .frame(width: 74, alignment: .leading)
 
@@ -544,13 +544,13 @@ struct KeyboardSettings: View {
                 } label: {
                     if recording == command {
                         Text("Press the keys you want…")
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(Color.accentColor)
                     } else if let shortcut = keymap.shortcut(for: command) {
                         Text(shortcut.display)
-                            .font(.system(.caption, design: .monospaced).weight(.semibold))
+                            .font(Face.mono.weight(.semibold))
                     } else {
-                        Text("unbound").font(.caption).foregroundStyle(.tertiary)
+                        Text("unbound").font(Face.caption).foregroundStyle(.tertiary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -581,7 +581,7 @@ struct KeyboardSettings: View {
                     }
                     Button("Cancel") { self.clash = nil }
                 }
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(Ink.amber)
                 .padding(8)
                 .background(Ink.amber.opacity(0.10), in: RoundedRectangle(cornerRadius: Metric.control))
@@ -651,7 +651,7 @@ struct BibtexSettings: View {
                      + "institution are never written and never reported as missing, because "
                      + "nothing here can read them off a PDF and a complaint you cannot act "
                      + "on is just noise.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -687,7 +687,7 @@ struct BibtexSettings: View {
                 Text("A value longer than the line wraps onto indented continuations; a "
                      + "single word longer than the budget is left whole, since breaking a "
                      + "path to satisfy a column is worse than exceeding it.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -725,7 +725,7 @@ struct IntegrationSettings: View {
                     LabeledContent("Server") {
                         HStack {
                             Text(server.path)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(Face.mono)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Button("Copy") { copy(server.path) }
@@ -750,7 +750,7 @@ struct IntegrationSettings: View {
                 Text("list_documents, search_documents, read_document, bibliography and "
                      + "find_duplicates. A separate binary that holds no state, so every "
                      + "call names the folder it works on, and nothing leaves the machine.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -780,7 +780,7 @@ struct IntegrationSettings: View {
                      + "then OCR for a document that has none. This is what the "
                      + "conversion sheet starts on, and what a reading project reads its "
                      + "own documents with.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -791,7 +791,7 @@ struct IntegrationSettings: View {
                     .disabled(!ChatGPTHandoff.isInstalled)
                 if !ChatGPTHandoff.isInstalled {
                     Text("ChatGPT is not installed, so neither is offered.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Face.caption).foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Hand-off while reading")
@@ -799,7 +799,7 @@ struct IntegrationSettings: View {
                 Text("Neither sends anything on its own: the passage lands in the composer "
                      + "and you decide. The app can address a new thread but not one you "
                      + "already have open, which is why copying is offered as well.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -808,7 +808,7 @@ struct IntegrationSettings: View {
                     LabeledContent("Database") {
                         HStack {
                             Text(database.path)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(Face.mono)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Button("Show in Finder") {
@@ -824,7 +824,7 @@ struct IntegrationSettings: View {
             } footer: {
                 Text("SQLite rather than a JSON file because two processes use it: the app "
                      + "writes while the MCP server reads.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -874,7 +874,7 @@ struct FileSettings: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, _ in
                     HStack(spacing: 8) {
                         Text("\(index + 1)")
-                            .font(.caption2.monospacedDigit())
+                            .font(Face.micro.monospacedDigit())
                             .foregroundStyle(.tertiary)
                             .frame(width: 14, alignment: .trailing)
                         SecureField("", text: binding(index), prompt: Text("Password"))
@@ -903,7 +903,7 @@ struct FileSettings: View {
                 Text("Tried in order; the first that opens a file wins. A file that no "
                      + "password opened is passed through untouched and marked Locked "
                      + "rather than skipped silently.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -922,7 +922,7 @@ struct FileSettings: View {
                         LabeledContent("Folder") {
                             HStack {
                                 Text(backupCustomPath)
-                                    .font(.system(.caption, design: .monospaced))
+                                    .font(Face.mono)
                                     .lineLimit(1).truncationMode(.middle)
                                 Button("Change…") { choosingBackupFolder = true }
                                 Button("Use a folder per source") { backupCustomPath = "" }
@@ -936,7 +936,7 @@ struct FileSettings: View {
                 Text("Point everything at one folder and each source still gets its own "
                      + "subfolder there, so two roots holding the same relative path cannot "
                      + "collide. Delete always means the Trash, never an outright removal.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -950,7 +950,7 @@ struct FileSettings: View {
                     }
                     if secret.encryptPassword.isEmpty {
                         Text("Nothing will be written until this has a value.")
-                            .font(.caption)
+                            .font(Face.caption)
                             .foregroundStyle(Ink.amber)
                     }
                 }
@@ -961,7 +961,7 @@ struct FileSettings: View {
                      + "to be given again each launch. A file that no password opened is "
                      + "passed through as it is rather than being sealed with a new one, "
                      + "since that would strand it behind a password it never had.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }

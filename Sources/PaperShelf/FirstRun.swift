@@ -18,10 +18,10 @@ struct FirstRun: View {
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.tint)
                 Text("A calm home for your PDFs")
-                    .font(.title2.weight(.semibold))
+                    .font(Face.title2)
                 Text("Keep papers named, searchable, and annotated. Point PaperShelf at the "
                      + "folders your PDFs already live in; nothing moves until you say so.")
-                    .font(.callout)
+                    .font(Face.control)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -50,7 +50,7 @@ struct FirstRun: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 Text("or drop folders and PDFs anywhere in this window")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -68,9 +68,9 @@ struct FirstRun: View {
                 .foregroundStyle(.tint)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(.semibold))
+                Text(title).font(Face.control.weight(.semibold))
                 Text(body)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

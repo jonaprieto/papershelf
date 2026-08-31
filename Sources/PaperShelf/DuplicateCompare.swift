@@ -55,12 +55,12 @@ struct DuplicateCompare: View {
                             let differs = Set(row.values).count > 1
                             HStack(alignment: .top, spacing: 12) {
                                 Text(row.label)
-                                    .font(.caption)
+                                    .font(Face.caption)
                                     .foregroundStyle(.tertiary)
                                     .frame(width: 68, alignment: .leading)
                                 ForEach(Array(row.values.enumerated()), id: \.offset) { _, value in
                                     Text(value)
-                                        .font(.caption)
+                                        .font(Face.caption)
                                         .lineLimit(2)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -83,7 +83,7 @@ struct DuplicateCompare: View {
     private var header: some View {
         HStack(spacing: 9) {
             Text(group.keeper.destinationName)
-                .font(.callout.weight(.semibold))
+                .font(Face.control.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
             claim
@@ -103,7 +103,7 @@ struct DuplicateCompare: View {
         case .likely: text = "Similar names"; colour = Ink.grey
         }
         return Text(text)
-            .font(.caption.weight(.semibold))
+            .font(Face.caption.weight(.semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .fittedBackground(colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
@@ -116,11 +116,11 @@ struct DuplicateCompare: View {
                 Image(systemName: isKeeper ? "star.fill" : "star")
                     .foregroundStyle(isKeeper ? AnyShapeStyle(Ink.green) : AnyShapeStyle(.tertiary))
                 Text(isKeeper ? "Keeping this one" : "Would go to the Trash")
-                    .font(.caption.weight(.semibold))
+                    .font(Face.caption.weight(.semibold))
                     .foregroundStyle(isKeeper ? Ink.green : .secondary)
             }
             Text(item.sourceName)
-                .font(.system(.caption, design: .monospaced))
+                .font(Face.mono)
                 .lineLimit(2)
                 .truncationMode(.middle)
             if !isKeeper {
@@ -150,7 +150,7 @@ struct DuplicateCompare: View {
 
             Spacer(minLength: 0)
             Text("To the Trash on apply, never an outright removal")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
         }

@@ -38,7 +38,7 @@ struct DuplicateReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(headline)
-                .font(.headline)
+                .font(Face.headline)
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 20) {
                     ForEach(group.items) { item in
@@ -83,8 +83,8 @@ struct DuplicateReviewView: View {
                     .fill(.quaternary)
                     .frame(width: 200, height: 240)
             }
-            Text(item.sourceName).font(.subheadline.bold()).lineLimit(2)
-            Text(item.relativePath).font(.caption).foregroundStyle(.secondary)
+            Text(item.sourceName).font(Face.caption.bold()).lineLimit(2)
+            Text(item.relativePath).font(Face.caption).foregroundStyle(.secondary)
             LabeledContent("Size", value: formattedSize(item.byteCount))
             LabeledContent("Pages", value: item.pageCount.map(String.init) ?? "unknown")
             if let modified = item.modifiedDate {
@@ -92,7 +92,7 @@ struct DuplicateReviewView: View {
             }
             if item.key == group.keeper.key {
                 Label("Looks like the better copy", systemImage: "star.fill")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.green)
             }
             Button(group.items.count == 2 ? "Keep this, trash now" : "Keep this, trash the rest now") {

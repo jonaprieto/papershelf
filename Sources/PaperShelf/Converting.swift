@@ -94,7 +94,7 @@ struct MarkdownSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(item.destinationName).font(.headline).lineLimit(1).truncationMode(.middle)
+                Text(item.destinationName).font(Face.headline).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
@@ -143,16 +143,16 @@ struct MarkdownSheet: View {
                 // nothing wrong, there is simply nothing else installed.
                 Text("No external converter found. Install one (marker, docling or markitdown) "
                      + "to keep headings and tables; the built-in reader works without it.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(Face.caption).foregroundStyle(.secondary)
             }
 
             if let result = converting.result {
                 if let tool = converting.usedTool {
-                    Text("Converted by \(tool).").font(.caption).foregroundStyle(.secondary)
+                    Text("Converted by \(tool).").font(Face.caption).foregroundStyle(.secondary)
                 }
                 ScrollView {
                     Text(result)
-                        .font(.system(.body, design: .monospaced))
+                        .font(Face.code)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)

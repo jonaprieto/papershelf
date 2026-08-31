@@ -100,20 +100,20 @@ struct SettingsPanel: View {
                      + "file anything running as you can read. A Finder-launched app inherits "
                      + "launchd's environment rather than a shell's, so when the variable is "
                      + "not visible the login shell is asked once, in memory only.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
                 TextField("Base URL", text: $baseURL)
-                    .font(.system(.callout, design: .monospaced))
+                    .font(Face.code)
             } header: {
                 Text("Endpoint")
             } footer: {
                 Text("Any OpenAI-compatible endpoint. The model list is read from it, "
                      + "and picked in the AI panel of the sidebar.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -129,7 +129,7 @@ struct SettingsPanel: View {
             } footer: {
                 Text("Only for a file that is undecided and has never been asked about, so "
                      + "browsing back over files already dealt with costs nothing.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -154,7 +154,7 @@ struct SettingsPanel: View {
                 Text("Renaming with AI sends the filename and the first pages' text to the "
                      + "service above. It never sends the file itself, and never runs unless "
                      + "you ask for it.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -166,7 +166,7 @@ struct SettingsPanel: View {
             } footer: {
                 Text("Seeded prices are dated, not guaranteed current. Edit one here if it "
                      + "has changed, or add one for an endpoint that is not OpenAI's own.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -190,7 +190,7 @@ struct SettingsPanel: View {
                      + "reviewed, or leaves this machine: the ChatGPT app only reads these "
                      + "files locally. It has to be restarted afterwards to notice; this does "
                      + "not restart it for you.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -222,7 +222,7 @@ struct SettingsPanel: View {
                 LabeledContent("Cached input") { Text(perMillion(cached, price.currency)) }
             }
             Text("Recorded \(price.recordedAt.formatted(date: .abbreviated, time: .omitted))")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
         } else {
             Label("Cost unknown for this model", systemImage: "questionmark.circle")
@@ -302,14 +302,14 @@ struct SettingsPanel: View {
             totalsRow(label: "This session", totals: spendTotals(for: entries, since: sessionStart))
 
             Divider()
-            Text("By model").font(.caption).foregroundStyle(.secondary)
+            Text("By model").font(Face.caption).foregroundStyle(.secondary)
             let byModel = spendTotals(for: entries, groupedBy: \.model)
             ForEach(byModel.keys.sorted(), id: \.self) { key in
                 totalsRow(label: key, totals: byModel[key]!)
             }
 
             Divider()
-            Text("By feature").font(.caption).foregroundStyle(.secondary)
+            Text("By feature").font(Face.caption).foregroundStyle(.secondary)
             let byFeature = spendTotals(for: entries, groupedBy: \.feature)
             ForEach(AIFeature.allCases, id: \.self) { feature in
                 if let totals = byFeature[feature] {
@@ -330,7 +330,7 @@ struct SettingsPanel: View {
                 Text(costSummary(totals))
             }
             Text(callSummary(totals))
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.secondary)
         }
     }

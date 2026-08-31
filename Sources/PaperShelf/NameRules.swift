@@ -198,7 +198,7 @@ struct NameRulesSettings: View {
                     TextField("", text: $namePatternText, prompt: Text("[date]-[title]"))
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(.callout, design: .monospaced))
+                        .font(Face.code)
                 }
                 .tip("Chips and this text describe the same pattern; edit whichever is easier")
             } header: {
@@ -258,7 +258,7 @@ struct NameRulesSettings: View {
                         Text(normalizedName(for: Self.sampleName, rules: rules))
                     }
                 }
-                .font(.caption.monospaced())
+                .font(Face.mono)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.top, 2)
@@ -305,17 +305,17 @@ struct NameRulesSettings: View {
         return HStack(spacing: 5) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(namingLabel(for: token.kind))
-                    .font(.caption2.weight(.semibold))
+                    .font(Face.micro.weight(.semibold))
                 if let preview, !preview.isEmpty {
                     Text(preview.value)
-                        .font(.caption2)
+                        .font(Face.micro)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: 90, alignment: .leading)
                 } else {
                     Text("empty")
-                        .font(.caption2.italic())
+                        .font(Face.micro.italic())
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -345,7 +345,7 @@ struct NameRulesSettings: View {
     private func literalChip(_ text: String, at index: Int) -> some View {
         HStack(spacing: 3) {
             Text(text.isEmpty ? "·" : text)
-                .font(.system(.caption2, design: .monospaced))
+                .font(Face.mono)
                 .foregroundStyle(.secondary)
             Button {
                 updateNamePattern { $0.elements.remove(at: index) }
@@ -439,7 +439,7 @@ struct NameRulesSettings: View {
                 }
             }
         }
-        .font(.caption.monospaced())
+        .font(Face.mono)
         .padding(.top, 2)
     }
 
@@ -457,7 +457,7 @@ struct NameRulesSettings: View {
             } footer: {
                 Text("Tried in this order. A date already in the filename always wins, "
                      + "since it is the only one the document itself states.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
             }
     }

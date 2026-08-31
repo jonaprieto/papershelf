@@ -1724,7 +1724,7 @@ struct ResultsPane: View {
             if runner.findingDuplicates {
                 VStack(spacing: 10) {
                     ProgressView().controlSize(.large)
-                    Text("Comparing \(runner.results.count) files").font(.headline)
+                    Text("Comparing \(runner.results.count) files").font(Face.headline)
                     Text("Hashing what shares a size, then reading opening pages")
                         .foregroundStyle(.secondary)
                 }
@@ -1768,11 +1768,11 @@ struct ResultsPane: View {
         return HStack(spacing: 10) {
             Text("\(identical) identical, \(sameText) same pages, "
                  + "\(groups.count - identical - sameText) by name")
-                .font(.callout)
+                .font(Face.control)
                 .foregroundStyle(.secondary)
             Text(ByteCountFormatter.string(fromByteCount: Int64(reclaimable), countStyle: .file)
                  + " in spare copies")
-                .font(.callout)
+                .font(Face.control)
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Recheck") { runner.findDuplicates(passwords: passwords) }
@@ -1833,7 +1833,7 @@ struct ResultsPane: View {
 
             if !bibShortfall.isEmpty {
                 Text(bibShortfall.sentence)
-                    .font(.callout.weight(.medium))
+                    .font(Face.control.weight(.medium))
                     .foregroundStyle(Ink.amber)
                     .fixedSize()
                 ForEach(bibShortfall.byEntry, id: \.itemKey) { gap in
@@ -2339,14 +2339,14 @@ struct ResultsPane: View {
 
             if selection.count > 1 {
                 Text("\(selection.count) selected")
-                    .font(.caption.monospacedDigit())
+                    .font(Face.caption.monospacedDigit())
                     .foregroundStyle(Color.accentColor)
                     .fixedSize()
                     .tip("Skip, trash and Move to act on all of them")
             }
 
             Text(shownLabel)
-                .font(.caption.monospacedDigit())
+                .font(Face.caption.monospacedDigit())
                 .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
                 .fixedSize()
 
@@ -2357,7 +2357,7 @@ struct ResultsPane: View {
                 Toggle("Only undecided", isOn: $onlyUndecided)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
-                    .font(.caption)
+                    .font(Face.caption)
                     .fixedSize()
                     .tip("Hide everything already confirmed, skipped or trashed")
             }
@@ -2488,7 +2488,7 @@ struct ResultsPane: View {
         let unknown = Query.unknownFields(in: query)
         if let field = unknown.first {
             Label("no field called \(field)", systemImage: "questionmark.circle")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(Ink.amber)
                 .fixedSize()
                 .tip("Fields are title, author, abstract, text, name, was, folder, tag, "
@@ -2496,14 +2496,14 @@ struct ResultsPane: View {
         } else if Query(query).needsText, runner.unindexedInSearch > 0 {
             HStack(spacing: 5) {
                 Text("\(runner.unindexedInSearch) not indexed")
-                    .font(.caption.monospacedDigit())
+                    .font(Face.caption.monospacedDigit())
                     .foregroundStyle(Ink.amber)
                 if runner.activity.indexing {
-                    Text("reading…").font(.caption).foregroundStyle(.secondary)
+                    Text("reading…").font(Face.caption).foregroundStyle(.secondary)
                 } else {
                     Button("Index") { runner.indexText(passwords: passwords) }
                         .buttonStyle(.plain)
-                        .font(.caption)
+                        .font(Face.caption)
                         .foregroundStyle(Color.accentColor)
                 }
             }
@@ -2521,8 +2521,8 @@ struct ResultsPane: View {
     /// A filter, with the ✕ that takes it off. Nothing here is a state you cannot leave.
     private func chip(_ text: String, icon: String?, remove: @escaping () -> Void) -> some View {
         HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.caption2) }
-            Text(text).font(.caption).lineLimit(1)
+            if let icon { Image(systemName: icon).font(Face.micro) }
+            Text(text).font(Face.caption).lineLimit(1)
             Button(action: remove) {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
             }
@@ -2555,7 +2555,7 @@ struct ResultsPane: View {
                 Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
                 Text(sortOrder.label)
             }
-            .font(.caption)
+            .font(Face.caption)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -2630,7 +2630,7 @@ struct ResultsPane: View {
             // have to remember. A key is worth one cap of space in the field it belongs to.
             if query.isEmpty && !searchFocused {
                 Text("/")
-                    .font(.caption.monospaced())
+                    .font(Face.mono)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -2703,7 +2703,7 @@ struct ResultsPane: View {
     private var duplicateControls: some View {
         if runner.findingDuplicates {
             ProgressView().controlSize(.small)
-            Text("Comparing…").font(.callout).foregroundStyle(.secondary)
+            Text("Comparing…").font(Face.control).foregroundStyle(.secondary)
         } else if runner.duplicates.isEmpty {
             Button("Find duplicates") { runner.findDuplicates() }
                 .controlSize(.small)
@@ -2712,7 +2712,7 @@ struct ResultsPane: View {
             let sameText = runner.duplicates.filter { $0.kind == .sameText }.count
             let likely = runner.duplicates.count - identical - sameText
             Text("\(identical) identical, \(sameText) same pages, \(likely) by name")
-                .font(.callout)
+                .font(Face.control)
                 .foregroundStyle(.secondary)
             Button("Trash \(runner.identicalExtras) spare copies") {
                 runner.markIdenticalExtras()
@@ -2874,7 +2874,7 @@ private struct NewTagSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("New Tag").font(.headline)
+            Text("New Tag").font(Face.headline)
             TextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { onAdd(name) }
@@ -2983,7 +2983,7 @@ struct FolderRow: View {
         HStack(spacing: 6) {
             Button(action: toggle) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
-                    .font(.caption2)
+                    .font(Face.micro)
                     .frame(width: 12)
                     .contentShape(Rectangle())
             }
@@ -3091,7 +3091,7 @@ enum PlanState: String {
     /// The mark down the left of the plan, which is the column a reviewer scans.
     var glyph: some View {
         Image(systemName: icon)
-            .font(.caption)
+            .font(Face.caption)
             .foregroundStyle(colour)
             .help(explanation)
     }
@@ -3238,7 +3238,7 @@ struct ResultRow: View {
         HStack(spacing: 4) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
-                    .font(.caption2)
+                    .font(Face.micro)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(.secondary.opacity(0.15)))
@@ -3376,7 +3376,7 @@ struct CoverCard: View {
                 FlowRow(spacing: 4) {
                     ForEach(tags, id: \.self) { tag in
                         Text(tag)
-                            .font(.caption2)
+                            .font(Face.micro)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -3426,7 +3426,7 @@ struct CoverCard: View {
             case nil: EmptyView()
             }
         }
-        .font(.body)
+        .font(Face.body)
         .padding(5)
     }
 }
@@ -3441,7 +3441,7 @@ struct StatusPill: View {
         } icon: {
             Image(systemName: icon)
         }
-        .font(.caption.weight(.semibold))
+        .font(Face.caption.weight(.semibold))
         .foregroundStyle(color)
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
@@ -3499,7 +3499,7 @@ struct DuplicateSection: View {
         } header: {
             HStack(spacing: 8) {
                 Label(duplicateLabel(group.kind), systemImage: duplicateIcon(group.kind))
-                    .font(.callout.weight(.semibold))
+                    .font(Face.control.weight(.semibold))
                     .foregroundStyle(duplicateColour(group.kind))
                     .help(duplicateExplanation(group.kind))
                 Text("\(group.items.count) copies")
@@ -3515,7 +3515,7 @@ struct DuplicateSection: View {
                 .tip("Keeps the starred copy, trashes the rest of this group")
                 .tint(Ink.red)
             }
-            .font(.callout)
+            .font(Face.control)
             .padding(.vertical, 2)
         }
     }
@@ -3574,7 +3574,7 @@ struct DuplicateRow: View {
                     .truncationMode(.middle)
                     .strikethrough(decision == .deleted)
                 Text(item.relativePath)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -3583,12 +3583,12 @@ struct DuplicateRow: View {
             Spacer(minLength: 8)
 
             Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount ?? 0), countStyle: .file))
-                .font(.caption.monospacedDigit())
+                .font(Face.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
             if decision == .deleted {
                 Label("Trash", systemImage: "trash.fill")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(Ink.red)
             } else if !isKeeper {
                 Button("Keep this one", action: keep)
@@ -3616,14 +3616,14 @@ struct BusyOverlay: View {
         VStack(spacing: 10) {
             ProgressView().controlSize(.large)
             Text(scanning ? "Looking for PDFs" : "Processing files")
-                .font(.headline)
+                .font(Face.headline)
             Text(scanning
                  ? "\(activity.found) found so far"
                  : "\(activity.done) of \(activity.total)")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
             Text(activity.current)
-                .font(.caption.monospaced())
+                .font(Face.mono)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.head)

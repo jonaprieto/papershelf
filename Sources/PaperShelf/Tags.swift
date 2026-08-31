@@ -43,7 +43,7 @@ struct TagStrip: View {
             HStack(spacing: 6) {
                 if actions.tags.isEmpty {
                     Text(emptyLabel)
-                        .font(.caption)
+                        .font(Face.caption)
                         .foregroundStyle(.tertiary)
                 } else {
                     // Wraps rather than scrolls: a file with eight tags should show eight,
@@ -89,10 +89,10 @@ private struct TagChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "tag").font(.caption2)
-            Text(name).font(.caption)
+            Image(systemName: "tag").font(Face.micro)
+            Text(name).font(Face.caption)
             if hovering {
-                Button(action: remove) { Image(systemName: "xmark").font(.caption2) }
+                Button(action: remove) { Image(systemName: "xmark").font(Face.micro) }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .tip("Remove this tag from the file")

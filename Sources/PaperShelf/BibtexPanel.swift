@@ -96,18 +96,18 @@ extension ReviewInspector {
                         .buttonStyle(.link)
                     }
                 }
-                .font(.callout)
+                .font(Face.control)
 
                 if let citationNote {
                     Text(citationNote)
-                        .font(.caption)
+                        .font(Face.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("No entry yet. The bibliography is built from the plan, so run a "
                      + "plan first.")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
             }
         }

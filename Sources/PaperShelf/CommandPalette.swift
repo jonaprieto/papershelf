@@ -193,7 +193,7 @@ struct CommandPalette: View {
                 .foregroundStyle(mode == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
             TextField("", text: $query, prompt: Text("Go to anything, or type a prefix"))
                 .textFieldStyle(.plain)
-                .font(.title3)
+                .font(Face.title3)
                 .focused($fieldFocused)
                 .onSubmit(runSelected)
                 // The field owns first responder while the palette is open, so the
@@ -202,7 +202,7 @@ struct CommandPalette: View {
                 .onKeyPress(.upArrow) { move(-1) }
                 .onKeyPress(.escape) { dismiss(); return .handled }
             Text("\(documents.count) documents · \(commands.count) commands")
-                .font(.caption)
+                .font(Face.caption)
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 16)
@@ -213,7 +213,7 @@ struct CommandPalette: View {
     private var results: some View {
         if mode == .help {
             Text("Every shortcut, over whatever you were doing.")
-                .font(.callout)
+                .font(Face.control)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
@@ -222,7 +222,7 @@ struct CommandPalette: View {
             Text(needle.isEmpty
                  ? "Type to search. Every command is here, whether or not it has a key."
                  : "Nothing matches “\(needle)”.")
-            .font(.callout)
+            .font(Face.control)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -231,7 +231,7 @@ struct CommandPalette: View {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(Array(sections.enumerated()), id: \.element.title) { _, section in
                         Text(section.title)
-                            .font(.caption.weight(.semibold))
+                            .font(Face.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 12)
                             .padding(.top, 8)
@@ -276,7 +276,7 @@ struct CommandPalette: View {
             Text("> commands · # tags · @ projects · / in this document · : page · ? help")
                 .foregroundStyle(.tertiary)
         }
-        .font(.caption)
+        .font(Face.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -292,7 +292,7 @@ struct CommandPalette: View {
                 Text(place.title).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(place.detail)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
             case .document(let item):
                 Image(systemName: "doc.text")
@@ -300,17 +300,17 @@ struct CommandPalette: View {
                 Text(item.destinationName).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(item.root.lastPathComponent)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
             case .text(let hit):
                 Image(systemName: "text.magnifyingglass")
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text("“\(hit.snippet)”")
-                    .font(.system(.callout, design: .serif))
+                    .font(Face.page)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text([hit.author, hit.page.map { "p. \($0)" }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
             case .page(let hit):
                 Image(systemName: "book.pages")
@@ -318,20 +318,20 @@ struct CommandPalette: View {
                 Text(hit.line).lineLimit(1)
                 Spacer(minLength: 8)
                 Text("p. \(hit.page)")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
             case .command(let command):
                 Image(systemName: "chevron.right")
-                    .font(.caption2)
+                    .font(Face.micro)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(command.title).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(command.scope.label)
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
                 if let shortcut = Keymap.shared.shortcut(for: command) {
                     Text(shortcut.display)
-                        .font(.system(.caption, design: .monospaced).weight(.semibold))
+                        .font(Face.mono.weight(.semibold))
                         .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
                 }
             }
@@ -346,7 +346,7 @@ struct CommandPalette: View {
     private func hint(_ key: String, _ meaning: String) -> some View {
         HStack(spacing: 4) {
             Text(key)
-                .font(.system(.caption2, design: .monospaced).weight(.bold))
+                .font(Face.mono.weight(.bold))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))

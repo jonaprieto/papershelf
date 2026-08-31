@@ -25,10 +25,10 @@ struct ActivityLog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Activity").font(.headline)
+                Text("Activity").font(Face.headline)
                 Spacer()
                 Text("\(entries.count) recorded")
-                    .font(.caption)
+                    .font(Face.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 14)
@@ -51,20 +51,20 @@ struct ActivityLog: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
                                     Text(entry.kind.rawValue)
-                                        .font(.caption.weight(.semibold))
+                                        .font(Face.caption.weight(.semibold))
                                         .foregroundStyle(colour(entry.kind))
                                     Text(entry.at, style: .time)
-                                        .font(.caption)
+                                        .font(Face.caption)
                                         .foregroundStyle(.secondary)
                                         .monospacedDigit()
                                 }
                                 Text(entry.subject)
-                                    .font(.caption)
+                                    .font(Face.caption)
                                     .lineLimit(1)
                                     .truncationMode(.head)
                                 if !entry.detail.isEmpty {
                                     Text(entry.detail)
-                                        .font(.caption)
+                                        .font(Face.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
