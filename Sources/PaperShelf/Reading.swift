@@ -202,16 +202,27 @@ struct NotesRail: View {
     /// the inspector, which already has one of those and does not need two.
     var showsHeader: Bool = true
 
-    /// Whether a document is actually open. Marks are read off the live `PDFView`, so
-    /// with no page mounted there is nothing to read -- which is not the same as a
-    /// document having no marks, and the panel used to say it was.
-    private var documentIsOpen: Bool { annotator.url != nil }
+    /// Whether the document this panel is about is the one the reader has open.
+    ///
+    /// Marks are read off the live `PDFView`, and the annotator holds whichever document
+    /// was opened last. The panel never checked that it was the same one, so selecting a
+    /// paper on the shelf left the previous paper's highlights listed underneath it --
+    /// nine passages about linearisability shown as though they had been marked on a
+    /// document that has never been opened. Wrong is worse than empty.
+    private var documentIsOpen: Bool {
+        guard let open = annotator.url, !source.isEmpty else { return false }
+        return open.resolvingSymlinksInPath().path
+            == URL(fileURLWithPath: source).resolvingSymlinksInPath().path
+    }
+
+    /// The marks to show: the annotator's, but only when they belong to this document.
+    private var marks: [Annotator.Mark] { documentIsOpen ? annotator.marks : [] }
 
     /// What is on this document, counted the two ways a reader counts it: passages picked
     /// out, and passages written about.
     private var tally: String {
-        let highlights = annotator.marks.count
-        let notes = annotator.marks.filter { !$0.note.isEmpty }.count
+        let highlights = marks.count
+        let notes = marks.filter { !$0.note.isEmpty }.count
         guard documentIsOpen else { return "Marks live in the document" }
         guard highlights > 0 else { return "No marks yet" }
         return "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
@@ -222,7 +233,7 @@ struct NotesRail: View {
     /// than the whole palette.
     private var meaningsPresent: [String] {
         var seen: [String] = []
-        for mark in annotator.marks {
+        for mark in marks {
             let meaning = palette.meaning(for: mark.colour)
             if !seen.contains(meaning) { seen.append(meaning) }
         }
@@ -230,8 +241,8 @@ struct NotesRail: View {
     }
 
     private var shownMarks: [Annotator.Mark] {
-        guard let filter else { return annotator.marks }
-        return annotator.marks.filter { palette.meaning(for: $0.colour) == filter }
+        guard let filter else { return marks }
+        return marks.filter { palette.meaning(for: $0.colour) == filter }
     }
 
     var body: some View {
@@ -284,7 +295,7 @@ struct NotesRail: View {
                         .listRowBackground(Color.clear)
                     }
 
-                    if annotator.marks.isEmpty && !addingNote {
+                    if marks.isEmpty && !addingNote {
                         // Two different emptinesses. The panel said "No marks yet" over a
                         // paper with nine highlights on it, because nothing was open to
                         // read them from; saying which of the two is true costs a
@@ -350,7 +361,7 @@ struct NotesRail: View {
                 }
             }
 
-            if !annotator.marks.isEmpty {
+            if !marks.isEmpty {
                 Divider()
                 exportBar
             }
@@ -364,7 +375,7 @@ struct NotesRail: View {
                       defaultFilename: (title as NSString).deletingPathExtension + " notes") { _ in }
         .confirmationDialog("Remove every mark from this document?",
                             isPresented: $clearing) {
-            Button("Remove \(annotator.marks.count) marks", role: .destructive) {
+            Button("Remove \(marks.count) marks", role: .destructive) {
                 annotator.removeAll()
             }
             Button("Cancel", role: .cancel) {}
@@ -447,7 +458,7 @@ struct NotesRail: View {
         markdownNotes(
             title: (title as NSString).deletingPathExtension,
             source: source,
-            marks: annotator.marks.map {
+            marks: marks.map {
                 MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                            meaning: palette.meaning(for: $0.colour))
             }
