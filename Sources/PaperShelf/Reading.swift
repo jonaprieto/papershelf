@@ -202,11 +202,17 @@ struct NotesRail: View {
     /// the inspector, which already has one of those and does not need two.
     var showsHeader: Bool = true
 
+    /// Whether a document is actually open. Marks are read off the live `PDFView`, so
+    /// with no page mounted there is nothing to read -- which is not the same as a
+    /// document having no marks, and the panel used to say it was.
+    private var documentIsOpen: Bool { annotator.url != nil }
+
     /// What is on this document, counted the two ways a reader counts it: passages picked
     /// out, and passages written about.
     private var tally: String {
         let highlights = annotator.marks.count
         let notes = annotator.marks.filter { !$0.note.isEmpty }.count
+        guard documentIsOpen else { return "Marks live in the document" }
         guard highlights > 0 else { return "No marks yet" }
         return "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
             + "\(notes) note\(notes == 1 ? "" : "s")"
@@ -279,7 +285,13 @@ struct NotesRail: View {
                     }
 
                     if annotator.marks.isEmpty && !addingNote {
-                        Text("Select text on the page to highlight it or attach a note.")
+                        // Two different emptinesses. The panel said "No marks yet" over a
+                        // paper with nine highlights on it, because nothing was open to
+                        // read them from; saying which of the two is true costs a
+                        // sentence.
+                        Text(documentIsOpen
+                             ? "Select text on the page to highlight it or attach a note."
+                             : "Open this document to see the passages marked in it.")
                             .font(Face.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
