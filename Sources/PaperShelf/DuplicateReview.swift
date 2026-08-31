@@ -36,16 +36,16 @@ struct DuplicateReviewView: View {
     @State private var actedOn: Set<String> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Space.gutter) {
             Text(headline)
                 .font(Face.headline)
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 20) {
+                HStack(alignment: .top, spacing: Space.gutter) {
                     ForEach(group.items) { item in
                         fileColumn(item)
                     }
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, Space.tight)
             }
             Divider()
             HStack {
@@ -58,7 +58,7 @@ struct DuplicateReviewView: View {
                 Button("Ask me later") { onFinished() }
             }
         }
-        .padding(20)
+        .padding(Space.gutter)
         .frame(minWidth: 560, minHeight: 360)
     }
 
@@ -72,7 +72,7 @@ struct DuplicateReviewView: View {
 
     @ViewBuilder
     private func fileColumn(_ item: Item) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.snug) {
             if let image = thumbnail(item) {
                 Image(nsImage: image)
                     .resizable().scaledToFit()

@@ -29,7 +29,7 @@ private struct StatusBarChrome: ViewModifier {
             .font(Face.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Space.roomy)
             .frame(height: Metric.statusBar)
             .frame(maxWidth: .infinity)
             .background(.bar)
@@ -166,7 +166,7 @@ struct StatusBar: View {
     /// holds, which are the wrong two facts to have in front of you while deciding four
     /// hundred filenames one at a time.
     private func planBar(_ plan: PlanFacts) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.step) {
             ProgressView(value: plan.fraction)
                 .progressViewStyle(.linear)
                 .frame(width: 110)
@@ -176,7 +176,7 @@ struct StatusBar: View {
             separator
             Text(plan.originals)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
 
             if runner.phase != .idle || activity.indexing || activity.absorbing {
                 runningNow
@@ -206,14 +206,14 @@ struct StatusBar: View {
     /// Reading: what is open, how big it is, what is on it, and the two facts about the
     /// app itself that are true whatever is on screen.
     private func readerBar(_ document: DocumentFacts) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.step) {
             Text(shorten(document.path))
                 .truncationMode(.middle)
                 .tip(document.path)
             separator
             Text(document.physical)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
 
             // Only while it is doing something. Idle, this is a button about the
             // collection, and the bar under a page is not the place for it.
@@ -239,7 +239,7 @@ struct StatusBar: View {
     }
 
     private var collectionBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.step) {
             runningNow
 
             if let bibliography {
@@ -252,7 +252,7 @@ struct StatusBar: View {
 
             planState
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
 
             if activity.showingCached {
                 Label("From last time, rechecking the disk", systemImage: "clock.arrow.circlepath")
@@ -290,7 +290,7 @@ struct StatusBar: View {
     }
 
     private var watchingDot: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: Space.tight) {
             Circle()
                 .fill(watching ? Color.green : unavailableSources > 0 ? Ink.amber : Color.secondary.opacity(0.5))
                 .frame(width: 6, height: 6)
@@ -352,12 +352,12 @@ struct StatusBar: View {
     private var runningNow: some View {
         switch runner.phase {
         case .scanning:
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12)
                 Text("Scanning — \(activity.found) PDF\(activity.found == 1 ? "" : "s") found")
             }
         case .processing:
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 ProgressView(value: Double(activity.done), total: Double(max(activity.total, 1)))
                     .progressViewStyle(.linear)
                     .frame(width: 120)
@@ -368,7 +368,7 @@ struct StatusBar: View {
             // Reading documents' text so a search can look inside them. The shelf is
             // usable throughout, so this is a line rather than an overlay, and it says
             // how to stop.
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 ProgressView(value: Double(activity.indexed),
                              total: Double(max(activity.indexTotal, 1)))
                     .progressViewStyle(.linear)
@@ -382,7 +382,7 @@ struct StatusBar: View {
         case .idle where activity.absorbing:
             // The watcher taking in files it just noticed. Its own line until now, in a
             // second bar underneath this one.
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12)
                 Text(activity.total > 0
                      ? "Reading \(activity.done) of \(activity.total) new files"
@@ -390,7 +390,7 @@ struct StatusBar: View {
             }
         case .idle:
             Button { showingActivity.toggle() } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.snug) {
                     Image(systemName: "clock.arrow.circlepath")
                     Text(idleLabel)
                 }

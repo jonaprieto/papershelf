@@ -292,24 +292,10 @@ enum Appearance: String, CaseIterable, Identifiable {
     }
 }
 
-extension Color {
-    /// Resolves per appearance, so it follows both the system theme and an explicit
-    /// override set on `NSApp.appearance`.
-    init(light: NSColor, dark: NSColor) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        })
-    }
-}
-
 extension Notification.Name {
     /// Posted by ⌘, and by anything else offering a way into the settings, which are a tab
     /// in the sidebar rather than a window of their own.
     static let showSettings = Notification.Name("PaperShelf.showSettings")
-}
-
-func srgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor {
-    NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
 }
 
 // MARK: - Content

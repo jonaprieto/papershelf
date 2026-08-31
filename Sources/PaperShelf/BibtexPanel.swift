@@ -10,7 +10,7 @@ import PaperShelfCore
 extension ReviewInspector {
 
     @ViewBuilder var bibtexPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.step) {
             if runner.bibLoading {
                 ProgressView("Preparing citation…")
                     .controlSize(.small)
@@ -29,11 +29,11 @@ extension ReviewInspector {
                 // says how tall it is (see `BibtexEditor.report`).
                 BibtexEditor(text: $citationDraft) { citationHeight = $0 }
                     .frame(height: max(citationHeight, 40))
-                    .padding(4)
+                    .padding(Space.tight)
                 .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
 
-                HStack(spacing: 8) {
+                HStack(spacing: Space.step) {
                     Button("Copy") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(citationDraft + "\n", forType: .string)
@@ -59,7 +59,7 @@ extension ReviewInspector {
                         confirmingImprove = true
                     } label: {
                         if citationImproving {
-                            HStack(spacing: 5) {
+                            HStack(spacing: Space.tight) {
                                 ProgressView().controlSize(.small)
                                 Text("Asking…")
                             }

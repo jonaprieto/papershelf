@@ -84,8 +84,8 @@ struct SettingsWindowView: View {
             VStack(spacing: 0) {
                 TextField("Search settings", text: $search)
                     .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Space.step)
+                    .padding(.vertical, Space.step)
                 paneList
             }
         } detail: {
@@ -212,7 +212,7 @@ struct GeneralSettings: View {
 
             Section {
                 LabeledContent("Documents no source accounts for") {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.step) {
                         if let vanished {
                             Text("\(vanished)").monospacedDigit().foregroundStyle(.secondary)
                         }
@@ -341,7 +341,7 @@ struct HighlighterSettings: View {
         Form {
             Section {
                 ForEach(Array(palette.styles.enumerated()), id: \.element.id) { index, style in
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.step) {
                         ColorPicker("", selection: Binding(
                             get: { style.swatch },
                             set: { palette.setColour($0, on: style) }
@@ -415,11 +415,11 @@ struct HighlighterSettings: View {
 
             Section {
                 ForEach(palette.styles) { style in
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.step) {
                         Text(style.meaning.isEmpty ? "Highlight" : style.meaning)
                             .font(Face.page)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, Space.snug)
+                            .padding(.vertical, Space.hair)
                             .background(style.swatch.opacity(0.38),
                                         in: RoundedRectangle(cornerRadius: 3))
                         Spacer(minLength: 0)
@@ -470,7 +470,7 @@ struct KeyboardSettings: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 TextField("Filter commands", text: $filter)
                     .textFieldStyle(.roundedBorder)
                 Spacer(minLength: 0)
@@ -480,8 +480,8 @@ struct KeyboardSettings: View {
                     .help("Copies every command, where it works and what it answers to, "
                           + "as Markdown")
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.step)
 
             Divider()
 
@@ -505,8 +505,8 @@ struct KeyboardSettings: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.step)
         }
         .onChange(of: recording) { startOrStopRecording() }
         .onDisappear { stopMonitoring() }
@@ -529,11 +529,11 @@ struct KeyboardSettings: View {
 
     @ViewBuilder
     private func row(for command: Command) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.snug) {
+            HStack(spacing: Space.roomy) {
                 Text(command.title)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text(command.scope.label)
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
@@ -568,7 +568,7 @@ struct KeyboardSettings: View {
             }
 
             if let clash, clash.command == command {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.step) {
                     Image(systemName: "exclamationmark.triangle.fill")
                     Text("\(clash.shortcut.display) already means “\(clash.taken.title)”. "
                          + "Two commands cannot share a key in the same place.")
@@ -583,11 +583,11 @@ struct KeyboardSettings: View {
                 }
                 .font(Face.caption)
                 .foregroundStyle(Ink.amber)
-                .padding(8)
+                .padding(Space.step)
                 .background(Ink.amber.opacity(0.10), in: RoundedRectangle(cornerRadius: Metric.control))
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.hair)
     }
 
     // MARK: Recording
@@ -872,7 +872,7 @@ struct FileSettings: View {
         Form {
             Section {
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, _ in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.step) {
                         Text("\(index + 1)")
                             .font(Face.micro.monospacedDigit())
                             .foregroundStyle(.secondary)

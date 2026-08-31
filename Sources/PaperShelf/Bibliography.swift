@@ -229,11 +229,11 @@ struct BibRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Space.step) {
             // The key first and on its own line: a .bib is read and cited by key, and it
             // is what every other view of this entry, the chips in the bar included,
             // calls it.
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(entry.key)
                     .font(Face.code)
                     .foregroundStyle(gaps.isEmpty ? Ink.blue : Ink.amber)
@@ -254,18 +254,18 @@ struct BibRow: View {
 
                 lookupFooter
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
             badge
             lookupButton
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
     }
 
     /// Author and title on one line, the way a bibliography is read.
     private var credit: some View {
         let author = keptEntry?.value("author") ?? merged.author
         let title = keptEntry?.value("title") ?? (merged.title.isEmpty ? "" : merged.title)
-        return HStack(spacing: 4) {
+        return HStack(spacing: Space.tight) {
             Text(author ?? "")
                 .lineLimit(1)
             Text("—").foregroundStyle(.tertiary)
@@ -285,16 +285,16 @@ struct BibRow: View {
             Text("needs \(missing)")
                 .font(Face.caption)
                 .foregroundStyle(bibWarnColor)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.hair)
                 .fittedBackground(bibWarnColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
                 .help("Missing \(gaps.joined(separator: ", ")), which \(standard.label) requires")
         } else {
             Text("@\(keptEntry?.rawType ?? entry.type.rawValue)")
                 .font(Face.mono)
                 .foregroundStyle(bibGoodColor)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.hair)
                 .fittedBackground(bibGoodColor.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
                 .help(keptText == nil
                       ? "Complete for \(standard.label)"
@@ -312,7 +312,7 @@ struct BibRow: View {
     @ViewBuilder private var lookupFooter: some View {
         switch status {
         case .found(let source):
-            HStack(spacing: 4) {
+            HStack(spacing: Space.tight) {
                 Text(changed.isEmpty
                      ? "Looked up on \(lookupSourceLabel(source)), nothing new"
                      : "Filled in \(changed.joined(separator: ", ")) from \(lookupSourceLabel(source))")
@@ -344,7 +344,7 @@ struct BibRow: View {
 
     @ViewBuilder private var lookupButton: some View {
         if status == .loading {
-            ProgressView().controlSize(.small).padding(.top, 2)
+            ProgressView().controlSize(.small).padding(.top, Space.hair)
         } else if let item {
             Button {
                 Task {
@@ -447,12 +447,12 @@ struct BibFileView: View {
                 TextEditor(text: Binding(get: { edited ?? "" }, set: { edited = $0 }))
                     .font(Face.code)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .padding(Space.step)
             } else if blocks.isEmpty {
                 ContentUnavailableView("Nothing to write yet", systemImage: "text.quote")
             } else {
                 ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(alignment: .leading, spacing: 14) {
+                    LazyVStack(alignment: .leading, spacing: Space.roomy) {
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                             Text(highlighted(block))
                                 .font(Face.code)
@@ -462,7 +462,7 @@ struct BibFileView: View {
                                 .fixedSize(horizontal: !wrapped, vertical: false)
                         }
                     }
-                    .padding(14)
+                    .padding(Space.roomy)
                 }
             }
         }
@@ -525,7 +525,7 @@ struct BibFileView: View {
     /// both panes; what is left here is about this file.
     private var controls: some View {
       ScrollView(.horizontal) {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Text(name)
                 .font(Face.code)
                 .foregroundStyle(.secondary)
@@ -546,7 +546,7 @@ struct BibFileView: View {
             dot
             Text("\(style.lineWidth) columns").foregroundStyle(.secondary)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: Space.roomy)
 
             lookupControl
 
@@ -563,8 +563,8 @@ struct BibFileView: View {
             }
         }
         .font(Face.control)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.snug)
       }
       .scrollIndicators(.hidden)
       .fixedSize(horizontal: false, vertical: true)
@@ -576,7 +576,7 @@ struct BibFileView: View {
 
     @ViewBuilder private var lookupControl: some View {
         if let progress = lookup.progress {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.snug) {
                 ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
                     .frame(width: 80)
                 Text("\(progress.done)/\(progress.total)").font(Face.caption).monospacedDigit()
@@ -642,15 +642,15 @@ struct BibGapChip: View {
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.tight) {
                 Text(key)
                     .font(Face.mono)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.right").font(Face.micro)
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
+            .padding(.horizontal, Space.step)
+            .padding(.vertical, Space.tight)
             .fittedBackground(Ink.amber.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
         }
         .buttonStyle(.plain)
@@ -678,7 +678,7 @@ struct FillGapsButton: View {
 
     var body: some View {
         if let running = batch.progress {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.snug) {
                 ProgressView(value: Double(running.done), total: Double(max(running.total, 1)))
                     .frame(width: 80)
                 Text("\(running.done)/\(running.total)").font(Face.caption).monospacedDigit()
@@ -752,20 +752,6 @@ func highlighted(_ text: String) -> AttributedString {
         out += piece
     }
     return out
-}
-
-struct TextDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText] }
-    var text: String
-
-    init(text: String) { self.text = text }
-    init(configuration: ReadConfiguration) throws {
-        text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? ""
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: Data(text.utf8))
-    }
 }
 
 // MARK: - Entries the user decided on

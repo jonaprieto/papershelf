@@ -236,7 +236,7 @@ struct SettingsPanel: View {
     }
 
     private var priceEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.snug) {
             HStack {
                 TextField("Input $/1M", text: $draftInput).textFieldStyle(.roundedBorder)
                 TextField("Output $/1M", text: $draftOutput).textFieldStyle(.roundedBorder)
@@ -323,7 +323,7 @@ struct SettingsPanel: View {
     }
 
     private func totalsRow(label: String, totals: SpendTotals) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.hair) {
             HStack {
                 Text(label)
                 Spacer()

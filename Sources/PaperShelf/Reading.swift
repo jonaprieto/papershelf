@@ -36,8 +36,8 @@ struct MarkRow: View {
         // page says, and what you thought about it. The old row led with the quotation
         // and put the meaning underneath in small grey type, which made a column of marks
         // read as a column of unattributed quotations.
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.step) {
+            HStack(spacing: Space.step) {
                 Menu {
                     ForEach(styles) { style in
                         Button { recolour(style.nsColor) } label: {
@@ -64,7 +64,7 @@ struct MarkRow: View {
                     .font(Face.headline)
                     .lineLimit(1)
 
-                Spacer(minLength: 6)
+                Spacer(minLength: Space.snug)
 
                 Text("p. \(mark.page)")
                     .font(Face.caption.monospacedDigit())
@@ -78,8 +78,8 @@ struct MarkRow: View {
                     .font(Face.page)
                     .lineLimit(8)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Space.step)
+                    .padding(.vertical, Space.step)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(colour.opacity(0.42), in: RoundedRectangle(cornerRadius: Metric.card))
             }
@@ -106,8 +106,8 @@ struct MarkRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Edge to edge rather than a rounded card inset from the panel: the marks are a
         // list, and a selected row in a list is a band, not a floating tile.
@@ -117,12 +117,12 @@ struct MarkRow: View {
         // or key term" was drawn as "Definition or key…" on every mark, all the time, to
         // make room for buttons nobody could see.
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 2) { rowActions }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+            HStack(spacing: Space.hair) { rowActions }
+                .padding(.horizontal, Space.snug)
+                .padding(.vertical, Space.tight)
                 .background(.regularMaterial, in: Capsule())
-                .padding(.trailing, 8)
-                .padding(.top, 5)
+                .padding(.trailing, Space.step)
+                .padding(.top, Space.tight)
                 .opacity(hovering || editing ? 1 : 0)
                 .allowsHitTesting(hovering || editing)
         }
@@ -232,8 +232,8 @@ struct NotesRail: View {
                         .foregroundStyle(.secondary)
                         .tip("Hide the notes", key: "⌘⇧N")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Space.roomy)
+                .padding(.vertical, Space.step)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
                 .background(.bar)
@@ -249,7 +249,7 @@ struct NotesRail: View {
             ScrollViewReader { notes in
                 List {
                     if addingNote {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Space.snug) {
                             Text("Note on the selection")
                                 .font(Face.caption).foregroundStyle(.secondary)
                             TextField("What is worth remembering", text: $noteText, axis: .vertical)
@@ -266,7 +266,7 @@ struct NotesRail: View {
                                 Button("Cancel") { noteText = ""; addingNote = false }
                             }
                         }
-                        .padding(12)
+                        .padding(Space.roomy)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
@@ -276,7 +276,7 @@ struct NotesRail: View {
                             .font(Face.body)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(12)
+                            .padding(Space.roomy)
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
@@ -303,7 +303,7 @@ struct NotesRail: View {
                             .font(Face.caption)
                             .foregroundStyle(Ink.red)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(12)
+                            .padding(Space.roomy)
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
@@ -356,12 +356,12 @@ struct NotesRail: View {
 
     /// What the document holds, and the one control that changes what is listed.
     private var summaryBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Text(filter ?? tally)
                 .font(Face.control)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.tight)
             Menu {
                 Button("All marks") { filter = nil }
                 if !meaningsPresent.isEmpty { Divider() }
@@ -378,15 +378,15 @@ struct NotesRail: View {
             .foregroundStyle(filter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
             .tip("Show only one kind of mark")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .frame(maxWidth: .infinity)
     }
 
     /// What leaves the app with these notes, and in what shape. The format is stated
     /// rather than chosen: there is one, and a menu of one is a menu that lies.
     private var exportBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Button {
                 exporting = true
             } label: {
@@ -397,7 +397,7 @@ struct NotesRail: View {
             Button("Copy all") { copyNotes() }
                 .tip("Every mark on this document, as text")
 
-            Spacer(minLength: 6)
+            Spacer(minLength: Space.snug)
 
             Button(role: .destructive) { clearing = true } label: {
                 Image(systemName: "trash")
@@ -411,8 +411,8 @@ struct NotesRail: View {
                 .foregroundStyle(.secondary)
         }
         .controlSize(.small)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .frame(maxWidth: .infinity)
         .background(.bar)
     }
@@ -456,7 +456,7 @@ struct PageBar: View {
 
     var body: some View {
         if total > 0 {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 step(-1, "chevron.left", "Previous page")
                 Text("\(annotator.page) / \(total)")
                     .font(Face.control.monospacedDigit())
@@ -478,8 +478,8 @@ struct PageBar: View {
                 .fixedSize()
                 .tip("How big the page is drawn")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(.separator.opacity(0.6)))
             .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
@@ -545,9 +545,9 @@ struct ContentsRail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 Text(shown.label).font(Face.headline)
-                Spacer(minLength: 4)
+                Spacer(minLength: Space.tight)
                 if hasOutline {
                     Picker("", selection: $railMode) {
                         ForEach(ContentsRailMode.allCases) { mode in
@@ -562,8 +562,8 @@ struct ContentsRail: View {
                     .tip("The chapters, or the pages themselves")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity)
             .background(.bar)
@@ -597,14 +597,14 @@ struct ContentsRail: View {
             Button {
                 annotator.go(to: chapter)
             } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
                     // The same two sizes the sidebar uses for a row and its count:
                     // a chapter is a place you can go, exactly as a shelf is.
                     Text(chapter.label)
                         .font(chapter.level == 0 ? Face.body.weight(.medium) : Face.caption)
                         .foregroundStyle(chapter.level == 0 ? .primary : .secondary)
                         .lineLimit(2)
-                    Spacer(minLength: 4)
+                    Spacer(minLength: Space.tight)
                     if let page = chapter.page {
                         Text("\(page)")
                             .font(Face.caption.monospacedDigit())
@@ -614,8 +614,8 @@ struct ContentsRail: View {
                 // Depth by indent: a table of contents is read straight down far more
                 // often than it is folded.
                 .padding(.leading, CGFloat(chapter.level) * 11)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
+                .padding(.horizontal, Space.snug)
+                .padding(.vertical, Space.tight)
                 .contentShape(Rectangle())
                 .background(chapter.id == currentChapter
                             ? Color.accentColor.opacity(0.13) : .clear,

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import PaperShelfCore
 
 /// The app's colours, in one place.
@@ -100,6 +101,37 @@ enum Metric {
 }
 
 
+/// The gaps.
+///
+/// There were nineteen padding values and seventeen spacings, from one point to forty,
+/// with 3 and 4 and 5 all in use and 7 used sixteen times. A gap nobody can tell from the
+/// one beside it is not a decision, it is a number that happened to get typed; and enough
+/// of them is why a row in one pane sits differently from the same row in the next.
+///
+/// Seven steps, four points apart at the top and two at the bottom, because this is a
+/// dense window and the difference between two and four points around a pill is visible
+/// where the difference between twenty and twenty-four is not. Nothing on screen moved
+/// more than two points when the old values were mapped onto these, except one margin
+/// that moved four and one that moved eight.
+enum Space {
+    /// 2. Between a label and the number under it.
+    static let hair: CGFloat = 2
+    /// 4. Inside a pill, a chip, a keycap.
+    static let tight: CGFloat = 4
+    /// 6. Between the icon and the words next to it.
+    static let snug: CGFloat = 6
+    /// 8. The ordinary gap between two things in a row.
+    static let step: CGFloat = 8
+    /// 12. Between one group of rows and the next.
+    static let roomy: CGFloat = 12
+    /// 16. A panel's own inset from its edge.
+    static let gutter: CGFloat = 16
+    /// 24. Around something standing on its own: a sheet's content, an empty state.
+    static let margin: CGFloat = 24
+    /// 32. The one step above a margin, for the first-run window and the about box.
+    static let bay: CGFloat = 32
+}
+
 /// The type scale.
 ///
 /// One face for the interface and a serif for anything that came out of a document — page
@@ -182,4 +214,37 @@ final class SessionSecret: ObservableObject {
     static let shared = SessionSecret()
     @Published var encryptPassword = ""
     private init() {}
+}
+
+extension Color {
+    /// Resolves per appearance, so it follows both the system theme and an explicit
+    /// override set on `NSApp.appearance`.
+    init(light: NSColor, dark: NSColor) {
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
+}
+
+func srgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor {
+    NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
+}
+
+/// A file of plain text on its way out of the app: an exported note, a saved answer, a
+/// BibTeX file written somewhere the app does not manage.
+///
+/// It lived in the middle of Bibliography.swift, which is not where anybody exporting a
+/// Markdown note from a reading project would look for it.
+struct TextDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+    var text: String
+
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? ""
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
 }

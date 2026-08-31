@@ -577,10 +577,10 @@ struct ContentView: View {
         @ViewBuilder label: () -> Label,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.snug) {
             label()
                 .lineLimit(1)
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.tight)
             trailing()
                 .monospacedDigit()
                 .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8))
@@ -589,8 +589,8 @@ struct ContentView: View {
         // No font of its own. A source list has a type size on macOS and setting one
         // here is how a sidebar ends up not quite matching every other sidebar.
         .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, Space.snug)
+        .padding(.vertical, Space.tight)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background(selected ? Color.accentColor : .clear,
@@ -606,11 +606,11 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
                     .onExitCommand { sourceFilter = ""; filteringSources = false }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, Space.step)
+                    .padding(.bottom, Space.snug)
             }
             Divider()
-            HStack(spacing: 10) {
+            HStack(spacing: Space.step) {
                 Button { importing = true } label: { Image(systemName: "plus") }
                     .buttonStyle(.borderless)
                     .tip("Watch another folder, or add one PDF")
@@ -625,13 +625,13 @@ struct ContentView: View {
                 .foregroundStyle(filteringSources ? Color.accentColor : .secondary)
                 .tip("Show only folders whose name matches")
 
-                Spacer(minLength: 6)
+                Spacer(minLength: Space.snug)
 
                 Text("\(selection.count) source\(selection.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
             }
             .font(Face.control)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Space.step)
             .frame(height: Metric.statusBar)
         }
     }
@@ -1058,14 +1058,14 @@ struct ContentView: View {
             sidebarTarget = .tag(tag.name)
         } label: {
             sidebarRow(sidebarTarget == .tag(tag.name)) {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.snug) {
                     // A dot in the tag's own colour rather than a tag glyph on every row:
                     // a column of identical icons carries no information, and a colour
                     // makes a tag recognisable before its name is read.
                     Circle()
                         .fill(tagColour(tag.name))
                         .frame(width: 9, height: 9)
-                        .padding(.horizontal, 2)
+                        .padding(.horizontal, Space.hair)
                     Text(tag.name)
                 }
             } trailing: {
@@ -1123,7 +1123,7 @@ struct ContentView: View {
                 if selection.isEmpty {
                     Text("Nothing added yet")
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, Space.hair)
                 }
                 ForEach(selection, id: \.self) { url in
                     sourceRow(url)
@@ -1205,7 +1205,7 @@ struct ContentView: View {
     @ViewBuilder private var modelPrice: some View {
         if let price = priceBook.table.price(model: aiModel, endpoint: aiBaseURL) {
             LabeledContent("Price") {
-                VStack(alignment: .trailing, spacing: 1) {
+                VStack(alignment: .trailing, spacing: Space.hair) {
                     Text("\(price.inputPerMillion.formatted(.currency(code: price.currency))) in")
                     Text("\(price.outputPerMillion.formatted(.currency(code: price.currency))) out")
                 }
@@ -1227,7 +1227,7 @@ struct ContentView: View {
 
         if let sessionSpend, sessionSpend.calls > 0 {
             LabeledContent("This session") {
-                VStack(alignment: .trailing, spacing: 1) {
+                VStack(alignment: .trailing, spacing: Space.hair) {
                     // Currencies are listed, never added together: a rate typed in for a
                     // provider that does not bill in dollars is not dollars.
                     Text(sessionSpend.byCurrency.isEmpty
@@ -1443,7 +1443,7 @@ private struct SidebarSourceLabel: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.snug) {
             // Only when something is wrong. A folder glyph on every source is a column of
             // identical icons beside a disclosure triangle that already says "folder";
             // the warning is the one state worth a symbol.
@@ -1455,7 +1455,7 @@ private struct SidebarSourceLabel: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(reachable ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            Spacer(minLength: 6)
+            Spacer(minLength: Space.snug)
             if !reachable {
                 Text("cannot be read")
                     .font(Face.caption)
@@ -1497,10 +1497,10 @@ struct SourceRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Image(systemName: isFolder ? "folder.fill" : "doc.fill")
                 .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(url.lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1510,7 +1510,7 @@ struct SourceRow: View {
                     .lineLimit(1)
                     .truncationMode(.head)
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.tight)
             Button(action: remove) {
                 Image(systemName: "minus.circle.fill")
             }
@@ -1588,7 +1588,7 @@ struct Note: View {
     var size: Font = .callout
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.step) {
             Image(systemName: icon).foregroundStyle(tint)
             Text(text)
         }
@@ -1730,7 +1730,7 @@ struct ExplorerOutline: View {
     }
 
     private func rowLabel(_ node: ExplorerNode, depth: Int) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.snug) {
             // The triangle a `DisclosureGroup` used to draw. Flat rows have to draw their
             // own, and a file gets the same width of blank so the names line up.
             if node.children != nil {
@@ -1758,7 +1758,7 @@ struct ExplorerOutline: View {
                 .truncationMode(.middle)
         }
         .padding(.leading, CGFloat(depth) * 12)
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
         .contentShape(Rectangle())
         .background(
             node.itemKey != nil && node.itemKey == selected
@@ -1888,19 +1888,19 @@ struct ShortcutsSheet: View {
                 Spacer()
                 Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
             }
-            .padding(16)
+            .padding(Space.gutter)
 
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: Space.gutter) {
                     ForEach(groups, id: \.0) { title, rows in
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Space.snug) {
                             Text(title)
                                 .font(Face.control.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             ForEach(rows, id: \.0) { key, meaning in
-                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                HStack(alignment: .firstTextBaseline, spacing: Space.roomy) {
                                     Text(key)
                                         .font(Face.code)
                                         .frame(width: 110, alignment: .leading)
@@ -1916,7 +1916,7 @@ struct ShortcutsSheet: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(16)
+                .padding(Space.gutter)
             }
         }
         .frame(width: 520, height: 560)

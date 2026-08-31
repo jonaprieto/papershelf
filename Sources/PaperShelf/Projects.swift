@@ -208,7 +208,7 @@ struct ProjectsListView: View {
             }
             ForEach(store.projects) { project in
                 NavigationLink(value: project) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Space.hair) {
                         Text(project.name).font(Face.headline)
                         Text("\(project.documentCount) document\(project.documentCount == 1 ? "" : "s")")
                             .font(Face.caption)
@@ -279,7 +279,7 @@ private struct NewProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             Text("New Reading Project").font(Face.headline)
             TextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
@@ -523,9 +523,9 @@ struct ProjectDetailView: View {
 
     @ViewBuilder
     private func memberRow(_ member: ProjectMember) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.tight) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Space.hair) {
                     Text(member.document.title)
                     if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
                         Text(detail)
@@ -604,12 +604,12 @@ private struct TagRow: View {
     let onRemove: (String) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.snug) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
                     .font(Face.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Space.snug)
+                    .padding(.vertical, Space.hair)
                     .background(Capsule().fill(.secondary.opacity(0.15)))
                     .onTapGesture { onRemove(tag) }
                     .help("Click to remove this tag")
@@ -645,7 +645,7 @@ struct AddDocumentsSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.step) {
             Text("Add Documents").font(Face.headline)
             TextField("Search your library", text: $query)
                 .textFieldStyle(.roundedBorder)
@@ -659,10 +659,10 @@ struct AddDocumentsSheet: View {
                     Button {
                         toggle(member)
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Space.step) {
                             Image(systemName: selected.contains(member.id) ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(selected.contains(member.id) ? Color.accentColor : Color.secondary)
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: Space.hair) {
                                 Text(member.document.title)
                                 if let detail = recognitionDetail(author: member.author, pageCount: member.pageCount) {
                                     Text(detail).font(Face.caption).foregroundStyle(.secondary)
@@ -678,7 +678,7 @@ struct AddDocumentsSheet: View {
             }
             if !knownSections.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.snug) {
                         ForEach(knownSections, id: \.self) { name in
                             Button(name) { section = name }
                                 .buttonStyle(.bordered)
@@ -879,7 +879,7 @@ struct ProjectConversationView: View {
     var body: some View {
         ScrollView {
             // Not lazy. A conversation is tens of turns, so laziness buys nothing.
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Space.gutter) {
                 if model.turns.isEmpty {
                     Text("Ask a question below. Every answer cites the document and page it came from.")
                         .foregroundStyle(.secondary)
@@ -903,9 +903,9 @@ struct ProjectConversationView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
-                VStack(spacing: 10) {
+                VStack(spacing: Space.step) {
                     outbound
-                    HStack(alignment: .bottom, spacing: 10) {
+                    HStack(alignment: .bottom, spacing: Space.step) {
                         TextField("Ask across this project…",
                                   text: $model.pendingQuestion, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
@@ -917,11 +917,11 @@ struct ProjectConversationView: View {
                             if model.isPreparing {
                                 ProgressView().controlSize(.small)
                             } else {
-                                HStack(spacing: 6) {
+                                HStack(spacing: Space.snug) {
                                     Text("Ask")
                                     Text("\u{2318}\u{21A9}")
                                         .font(Face.mono.weight(.bold))
-                                        .padding(.horizontal, 3)
+                                        .padding(.horizontal, Space.tight)
                                         .background(.white.opacity(0.22),
                                                     in: RoundedRectangle(cornerRadius: 3))
                                 }
@@ -934,7 +934,7 @@ struct ProjectConversationView: View {
                                   || askReadiness(of: documents) != .ready)
                     }
                 }
-                .padding(14)
+                .padding(Space.roomy)
             }
             .background(.bar)
         }
@@ -1004,17 +1004,17 @@ struct ProjectConversationView: View {
     /// person reads while deciding what to ask, and it says the same three things the
     /// dialog did -- how much text, to which host, answered by which model.
     private var outbound: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: Space.step) {
             Image(systemName: "info.circle")
                 .foregroundStyle(askReadiness(of: documents) == .ready
                                  ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Ink.amber))
             Text(outboundLine)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 6)
+            Spacer(minLength: Space.snug)
         }
         .font(Face.caption)
         .foregroundStyle(.secondary)
-        .padding(10)
+        .padding(Space.step)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.card))
     }
@@ -1081,8 +1081,8 @@ private struct TurnView: View {
     private var sources: [NumberedCitation] { numberedCitations(turn.citations) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.step) {
                 // Who asked. A conversation with no speakers on it reads as a document,
                 // and the question stops being a question you asked.
                 Text(initials)
@@ -1096,16 +1096,16 @@ private struct TurnView: View {
             }
 
             if turn.isLoading {
-                ProgressView().controlSize(.small).padding(.leading, 32)
+                ProgressView().controlSize(.small).padding(.leading, Space.bay)
             } else if let error = turn.error {
-                Text(error).foregroundStyle(Ink.red).padding(.leading, 32)
+                Text(error).foregroundStyle(Ink.red).padding(.leading, Space.bay)
             } else {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Space.roomy) {
                     answer
                     if !sources.isEmpty { sourceList }
                     actions
                 }
-                .padding(.leading, 32)
+                .padding(.leading, Space.bay)
             }
         }
     }
@@ -1146,7 +1146,7 @@ private struct TurnView: View {
                 sourceRow(source)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Space.tight)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.card))
     }
 
@@ -1160,14 +1160,14 @@ private struct TurnView: View {
         Button {
             if resolved { onOpen(citation) }
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: Space.step) {
                 Text("\(source.number)")
                     .font(Face.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(resolved ? Ink.blue : Color.secondary)
                     .frame(width: 18, height: 18)
                     .background((resolved ? Ink.blue : Color.secondary).opacity(0.14), in: Circle())
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: Space.tight) {
                     Text("\(citation.documentTitle) \u{00B7} p. \(citation.page)")
                         .font(Face.caption.weight(.semibold))
                         .strikethrough(!resolved)
@@ -1184,15 +1184,15 @@ private struct TurnView: View {
                             .foregroundStyle(Ink.amber)
                     }
                 }
-                Spacer(minLength: 6)
+                Spacer(minLength: Space.snug)
                 if resolved {
                     Image(systemName: "chevron.right")
                         .font(Face.micro)
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1209,13 +1209,13 @@ private struct TurnView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Button("Copy with citations", action: copyWithCitations)
             Button("Save as Markdown\u{2026}", action: saveAsNote)
             if let askWithAll {
                 Button("Ask again with all", action: askWithAll)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
             if !footnote.isEmpty {
                 Text(footnote)
                     .font(Face.caption)

@@ -41,8 +41,8 @@ struct DuplicateCompare: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: Space.roomy) {
+                    HStack(alignment: .top, spacing: Space.roomy) {
                         ForEach(Array(group.items.enumerated()), id: \.element.key) { index, item in
                             column(item, isKeeper: index == 0)
                         }
@@ -53,7 +53,7 @@ struct DuplicateCompare: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(rows, id: \.label) { row in
                             let differs = Set(row.values).count > 1
-                            HStack(alignment: .top, spacing: 12) {
+                            HStack(alignment: .top, spacing: Space.roomy) {
                                 Text(row.label)
                                     .font(Face.caption)
                                     .foregroundStyle(.secondary)
@@ -65,14 +65,14 @@ struct DuplicateCompare: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, Space.snug)
+                            .padding(.vertical, Space.tight)
                             .background(differs ? Ink.amber.opacity(0.10) : .clear,
                                         in: RoundedRectangle(cornerRadius: Metric.control))
                         }
                     }
                 }
-                .padding(14)
+                .padding(Space.roomy)
             }
 
             Divider()
@@ -81,7 +81,7 @@ struct DuplicateCompare: View {
     }
 
     private var header: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Space.step) {
             Text(group.keeper.destinationName)
                 .font(Face.control.weight(.semibold))
                 .lineLimit(1)
@@ -89,8 +89,8 @@ struct DuplicateCompare: View {
             claim
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .background(.bar)
     }
 
@@ -104,15 +104,15 @@ struct DuplicateCompare: View {
         }
         return Text(text)
             .font(Face.caption.weight(.semibold))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
+            .padding(.horizontal, Space.step)
+            .padding(.vertical, Space.hair)
             .fittedBackground(colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .foregroundStyle(colour)
     }
 
     private func column(_ item: Item, isKeeper: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: Space.snug) {
+            HStack(spacing: Space.tight) {
                 Image(systemName: isKeeper ? "star.fill" : "star")
                     .foregroundStyle(isKeeper ? AnyShapeStyle(Ink.green) : AnyShapeStyle(.secondary))
                 Text(isKeeper ? "Keeping this one" : "Would go to the Trash")
@@ -129,7 +129,7 @@ struct DuplicateCompare: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(9)
+        .padding(Space.step)
         .background(isKeeper ? Ink.green.opacity(0.07) : Color.clear,
                     in: RoundedRectangle(cornerRadius: Metric.card))
         .overlay(
@@ -140,7 +140,7 @@ struct DuplicateCompare: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             Button(role: .destructive) { trashExtras() } label: {
                 Label("Trash the other \(group.extras.count)", systemImage: "trash")
             }
@@ -154,8 +154,8 @@ struct DuplicateCompare: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .background(.bar)
     }
 }

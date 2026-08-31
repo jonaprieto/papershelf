@@ -188,7 +188,7 @@ struct CommandPalette: View {
     }
 
     private var field: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Space.step) {
             Image(systemName: mode == nil ? "magnifyingglass" : "chevron.right")
                 .foregroundStyle(mode == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
             TextField("", text: $query, prompt: Text("Go to anything, or type a prefix"))
@@ -205,8 +205,8 @@ struct CommandPalette: View {
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.roomy)
     }
 
     @ViewBuilder
@@ -216,7 +216,7 @@ struct CommandPalette: View {
                 .font(Face.control)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+                .padding(Space.gutter)
                 .onAppear { sources.help(); dismiss() }
         } else if entries.isEmpty {
             Text(needle.isEmpty
@@ -225,16 +225,16 @@ struct CommandPalette: View {
             .font(Face.control)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(Space.gutter)
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
+                LazyVStack(alignment: .leading, spacing: Space.hair) {
                     ForEach(Array(sections.enumerated()), id: \.element.title) { _, section in
                         Text(section.title)
                             .font(Face.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.top, 8)
+                            .padding(.horizontal, Space.roomy)
+                            .padding(.top, Space.step)
                         ForEach(section.entries) { entry in
                             let position = entries.firstIndex { $0.id == entry.id } ?? 0
                             row(entry, selected: position == index)
@@ -243,7 +243,7 @@ struct CommandPalette: View {
                         }
                     }
                 }
-                .padding(6)
+                .padding(Space.snug)
             }
             .frame(maxHeight: 380)
         }
@@ -266,8 +266,8 @@ struct CommandPalette: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            HStack(spacing: Space.roomy) {
                 hint("↩", "open")
                 hint("↑↓", "move")
                 hint("⎋", "close")
@@ -278,19 +278,19 @@ struct CommandPalette: View {
         }
         .font(Face.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
     }
 
     @ViewBuilder
     private func row(_ entry: Entry, selected: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.step) {
             switch entry {
             case .place(let place):
                 Image(systemName: place.kind.icon)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(place.title).lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text(place.detail)
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -298,7 +298,7 @@ struct CommandPalette: View {
                 Image(systemName: "doc.text")
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(item.destinationName).lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text(item.root.lastPathComponent)
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -308,7 +308,7 @@ struct CommandPalette: View {
                 Text("“\(hit.snippet)”")
                     .font(Face.page)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text([hit.author, hit.page.map { "p. \($0)" }].compactMap { $0 }.joined(separator: " · "))
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -316,7 +316,7 @@ struct CommandPalette: View {
                 Image(systemName: "book.pages")
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(hit.line).lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text("p. \(hit.page)")
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -325,7 +325,7 @@ struct CommandPalette: View {
                     .font(Face.micro)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(command.title).lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.step)
                 Text(command.scope.label)
                     .font(Face.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
@@ -336,19 +336,19 @@ struct CommandPalette: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.step)
         .background(selected ? Color.accentColor : .clear,
                     in: RoundedRectangle(cornerRadius: Metric.control))
         .foregroundStyle(selected ? Color.white : Color.primary)
     }
 
     private func hint(_ key: String, _ meaning: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Space.tight) {
             Text(key)
                 .font(Face.mono.weight(.bold))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
+                .padding(.horizontal, Space.tight)
+                .padding(.vertical, Space.hair)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
             Text(meaning)
         }

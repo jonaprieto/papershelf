@@ -1722,7 +1722,7 @@ struct ResultsPane: View {
     private var duplicatesView: some View {
         Group {
             if runner.findingDuplicates {
-                VStack(spacing: 10) {
+                VStack(spacing: Space.step) {
                     ProgressView().controlSize(.large)
                     Text("Comparing \(runner.results.count) files").font(Face.headline)
                     Text("Hashing what shares a size, then reading opening pages")
@@ -1765,7 +1765,7 @@ struct ResultsPane: View {
         let identical = groups.filter { $0.kind == .identical }.count
         let sameText = groups.filter { $0.kind == .sameText }.count
         let reclaimable = groups.reduce(0) { $0 + $1.reclaimable }
-        return HStack(spacing: 10) {
+        return HStack(spacing: Space.step) {
             Text("\(identical) identical, \(sameText) same pages, "
                  + "\(groups.count - identical - sameText) by name")
                 .font(Face.control)
@@ -1787,8 +1787,8 @@ struct ResultsPane: View {
             .tint(Ink.red)
             .disabled(runner.identicalExtras == 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.step)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .background(.bar)
@@ -1807,7 +1807,7 @@ struct ResultsPane: View {
     /// pane keeps only what is about the file.
     private var bibBar: some View {
       ScrollView(.horizontal) {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.step) {
             Picker("Order", selection: $bibOrder) {
                 ForEach(BibOrder.allCases) { Text($0.label).tag($0) }
             }
@@ -1844,7 +1844,7 @@ struct ResultsPane: View {
                 }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: Space.roomy)
 
             // Only where the two panes cannot be shown at once. Above that width the
             // entries and the file they generate are side by side, and a switch between
@@ -1863,8 +1863,8 @@ struct ResultsPane: View {
             FillGapsButton(entries: bibShortfallEntries, passwords: passwords,
                            client: aiClient, standard: bibStandard, style: bibStyle)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.step)
       }
       .scrollIndicators(.hidden)
       .fixedSize(horizontal: false, vertical: true)
@@ -1918,14 +1918,14 @@ struct ResultsPane: View {
     }
 
     private func catalogueGrid(columns: Int) -> some View {
-        let layout = Array(repeating: GridItem(.flexible(), spacing: 18), count: columns)
+        let layout = Array(repeating: GridItem(.flexible(), spacing: Space.gutter), count: columns)
         let keys = visibleKeys
         let shown = shownFilter.items(matching: visibilitySignature) {
             runner.results.filter { keys?.contains($0.key) ?? true }
         }
         return ScrollViewReader { scroll in
             ScrollView {
-                LazyVGrid(columns: layout, alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: layout, alignment: .leading, spacing: Space.gutter) {
                     ForEach(shown) { item in
                         CoverCard(
                             item: item,
@@ -1955,7 +1955,7 @@ struct ResultsPane: View {
                         .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
                     }
                 }
-                .padding(18)
+                .padding(Space.gutter)
             }
             .onChange(of: selected) { _, new in
                 guard let new, !claimPointerPick() else { return }
@@ -2304,9 +2304,9 @@ struct ResultsPane: View {
     }
 
     private var filterBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             ScrollView(.horizontal) {
-                HStack(spacing: 7) {
+                HStack(spacing: Space.step) {
                     if shelves.current != .all {
                         chip(shelves.current.title, icon: shelves.current.icon) {
                             shelves.current = .all
@@ -2326,14 +2326,14 @@ struct ResultsPane: View {
                         PlanCountPill(state: state, count: count)
                     }
                 }
-                .padding(.vertical, 1)
+                .padding(.vertical, Space.hair)
             }
             .scrollIndicators(.hidden)
             // The chips give way, never the counts and the order: a scroll view takes
             // every point it is offered, and what it took here was the word "Date".
             .layoutPriority(-1)
 
-            Spacer(minLength: 6)
+            Spacer(minLength: Space.snug)
 
             searchWarning
 
@@ -2364,7 +2364,7 @@ struct ResultsPane: View {
 
             sortMenu
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Space.roomy)
         .frame(height: Metric.filterBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
@@ -2494,7 +2494,7 @@ struct ResultsPane: View {
                 .tip("Fields are title, author, abstract, text, name, was, folder, tag, "
                      + "year, pages and size. Anything else is searched for as written.")
         } else if Query(query).needsText, runner.unindexedInSearch > 0 {
-            HStack(spacing: 5) {
+            HStack(spacing: Space.tight) {
                 Text("\(runner.unindexedInSearch) not indexed")
                     .font(Face.caption.monospacedDigit())
                     .foregroundStyle(Ink.amber)
@@ -2520,7 +2520,7 @@ struct ResultsPane: View {
 
     /// A filter, with the ✕ that takes it off. Nothing here is a state you cannot leave.
     private func chip(_ text: String, icon: String?, remove: @escaping () -> Void) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Space.tight) {
             if let icon { Image(systemName: icon).font(Face.micro) }
             Text(text).font(Face.caption).lineLimit(1)
             Button(action: remove) {
@@ -2529,8 +2529,8 @@ struct ResultsPane: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.tight)
         .background(Color.accentColor.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: Metric.control))
         .foregroundStyle(Color.accentColor)
@@ -2551,7 +2551,7 @@ struct ResultsPane: View {
             Divider()
             Toggle("Largest or newest first", isOn: $sortDescending)
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.tight) {
                 Image(systemName: sortDescending ? "arrow.down" : "arrow.up")
                 Text(sortOrder.label)
             }
@@ -2566,7 +2566,7 @@ struct ResultsPane: View {
     /// view and says nothing about which views exist; the row is one click and reads as a
     /// row of choices, which is what it is.
     private var viewIcons: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.hair) {
             ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { index, option in
                 Button {
                     choose(option)
@@ -2612,7 +2612,7 @@ struct ResultsPane: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: Space.tight) {
             fieldsMenu
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
@@ -2632,8 +2632,8 @@ struct ResultsPane: View {
                 Text("/")
                     .font(Face.mono)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, Space.tight)
+                    .padding(.vertical, Space.hair)
                     .fittedBackground(.quaternary, in: RoundedRectangle(cornerRadius: 3))
             }
             if !query.isEmpty {
@@ -2648,8 +2648,8 @@ struct ResultsPane: View {
                 .tip("Clear the search")
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.tight)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
         .frame(width: SplitLayout.searchFieldWidth(paneWidth: viewPaneWidth))
         .tip("Search names, or narrow by field: title, author, abstract, text, folder, "
@@ -2873,7 +2873,7 @@ private struct NewTagSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             Text("New Tag").font(Face.headline)
             TextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
@@ -2980,7 +2980,7 @@ struct FolderRow: View {
     let show: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.snug) {
             Button(action: toggle) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
                     .font(Face.micro)
@@ -3004,7 +3004,7 @@ struct FolderRow: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(.secondary)
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.hair)
         .padding(.leading, CGFloat(depth) * 14)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: show)
@@ -3107,8 +3107,8 @@ struct PlanCountPill: View {
             .font(Face.caption.weight(.semibold))
             .monospacedDigit()
             .foregroundStyle(state.colour)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
+            .padding(.horizontal, Space.step)
+            .padding(.vertical, Space.hair)
             .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
     }
@@ -3122,8 +3122,8 @@ struct PlanPill: View {
         Text(state.label)
             .font(Face.caption.weight(.semibold))
             .foregroundStyle(state.colour)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
+            .padding(.horizontal, Space.step)
+            .padding(.vertical, Space.hair)
             .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
     }
@@ -3146,10 +3146,10 @@ struct ResultRow: View {
     /// and dates are in the inspector: a plan is read down the column of names, and
     /// anything else on the row is something to read past.
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            state.glyph.frame(width: 15).padding(.top, 2)
+        HStack(alignment: .top, spacing: Space.step) {
+            state.glyph.frame(width: 15).padding(.top, Space.hair)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 if isRenamed {
                     Text(item.sourceName)
                         .font(Face.mono)
@@ -3181,11 +3181,11 @@ struct ResultRow: View {
                 if !tags.isEmpty { tagChips }
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
 
             PlanPill(state: state)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
         .opacity(decision == .skipped ? 0.55 : 1)
     }
 
@@ -3235,12 +3235,12 @@ struct ResultRow: View {
     /// (see `CatalogueTags`), so a row full of files costs one lookup each, not one
     /// round trip to the library each.
     private var tagChips: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Space.tight) {
             ForEach(tags, id: \.self) { tag in
                 Text(tag)
                     .font(Face.micro)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, Space.tight)
+                    .padding(.vertical, Space.hair)
                     .background(Capsule().fill(.secondary.opacity(0.15)))
             }
         }
@@ -3305,7 +3305,7 @@ struct CoverCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: Space.step) {
             ZStack {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(.quaternary.opacity(0.5))
@@ -3373,19 +3373,19 @@ struct CoverCard: View {
                 .foregroundStyle(.secondary)
 
             if !tags.isEmpty {
-                FlowRow(spacing: 4) {
+                FlowRow(spacing: Space.tight) {
                     ForEach(tags, id: \.self) { tag in
                         Text(tag)
                             .font(Face.micro)
                             .lineLimit(1)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, Space.tight)
+                            .padding(.vertical, Space.hair)
                             .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: Metric.control))
                     }
                 }
             }
         }
-        .padding(7)
+        .padding(Space.step)
         .background(
             RoundedRectangle(cornerRadius: Metric.card)
                 .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
@@ -3408,7 +3408,7 @@ struct CoverCard: View {
 
     @ViewBuilder
     private var badges: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: Space.tight) {
             if let duplicate {
                 Image(systemName: duplicateIcon(duplicate))
                     .foregroundStyle(duplicateColour(duplicate))
@@ -3427,7 +3427,7 @@ struct CoverCard: View {
             }
         }
         .font(Face.body)
-        .padding(5)
+        .padding(Space.tight)
     }
 }
 
@@ -3443,8 +3443,8 @@ struct StatusPill: View {
         }
         .font(Face.caption.weight(.semibold))
         .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.hair)
         .fittedBackground(color.opacity(0.16), in: RoundedRectangle(cornerRadius: Metric.control))
         .tip(status.explanation)
     }
@@ -3497,7 +3497,7 @@ struct DuplicateSection: View {
                 .id(item.key)
             }
         } header: {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 Label(duplicateLabel(group.kind), systemImage: duplicateIcon(group.kind))
                     .font(Face.control.weight(.semibold))
                     .foregroundStyle(duplicateColour(group.kind))
@@ -3516,7 +3516,7 @@ struct DuplicateSection: View {
                 .tint(Ink.red)
             }
             .font(Face.control)
-            .padding(.vertical, 2)
+            .padding(.vertical, Space.hair)
         }
     }
 }
@@ -3560,15 +3560,15 @@ struct DuplicateRow: View {
     let keep: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Space.step) {
             Image(systemName: isKeeper ? "star.fill" : "circle")
                 .foregroundStyle(isKeeper
                                  ? Ink.green
                                  : Color.secondary.opacity(0.5))
-                .padding(.top, 2)
+                .padding(.top, Space.hair)
                 .help(isKeeper ? "The copy to keep" : "A spare copy")
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(item.sourceName)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -3580,7 +3580,7 @@ struct DuplicateRow: View {
                     .truncationMode(.head)
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: Space.step)
 
             Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount ?? 0), countStyle: .file))
                 .font(Face.caption.monospacedDigit())
@@ -3596,7 +3596,7 @@ struct DuplicateRow: View {
                     .tip("Make this the copy the group keeps")
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, Space.tight)
         .opacity(decision == .deleted ? 0.55 : 1)
     }
 }
@@ -3613,7 +3613,7 @@ struct BusyOverlay: View {
     let scanning: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Space.step) {
             ProgressView().controlSize(.large)
             Text(scanning ? "Looking for PDFs" : "Processing files")
                 .font(Face.headline)

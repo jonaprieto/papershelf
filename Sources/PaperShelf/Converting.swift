@@ -92,14 +92,14 @@ struct MarkdownSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             HStack {
                 Text(item.destinationName).font(Face.headline).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 Picker("Converter", selection: $chosen) {
                     Text("Automatic (best for the document)").tag("")
                     Text("Built-in reader").tag(builtInReaderName)
@@ -155,14 +155,14 @@ struct MarkdownSheet: View {
                         .font(Face.code)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                        .padding(Space.step)
                 }
                 .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
             } else {
                 Spacer()
             }
         }
-        .padding(16)
+        .padding(Space.gutter)
         .frame(minWidth: 620, minHeight: 460)
         .onChange(of: converting.result) { _, _ in kept = false }
         .task {

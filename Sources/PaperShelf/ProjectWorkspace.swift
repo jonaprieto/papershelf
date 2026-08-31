@@ -148,12 +148,12 @@ struct ProjectWorkspace: View {
     /// The cited page, with the way back to the document list above it.
     private func citationPreview(_ preview: Previewing) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 Button { previewing = nil } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .tip("Back to the documents in this project")
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Space.hair) {
                     Text(preview.title)
                         .font(Face.caption.weight(.semibold))
                         .lineLimit(1)
@@ -162,7 +162,7 @@ struct ProjectWorkspace: View {
                         .font(Face.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 4)
+                Spacer(minLength: Space.tight)
                 Button { env.openAtPage(preview.hash, preview.page) } label: {
                     Image(systemName: "arrow.up.forward.app")
                 }
@@ -170,8 +170,8 @@ struct ProjectWorkspace: View {
                 .foregroundStyle(.secondary)
                 .tip("Open this page in the default PDF viewer")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
             .frame(maxWidth: .infinity)
             .background(.bar)
             Divider()
@@ -226,12 +226,12 @@ struct ProjectWorkspace: View {
     /// documents have no text yet -- those contribute nothing but a title to an answer.
     private var documents: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.step) {
                 Text("In this project").font(Face.headline)
                 Text("\(model.members.count) document\(model.members.count == 1 ? "" : "s")")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
+                Spacer(minLength: Space.snug)
                 if !choosable.isEmpty {
                     Button(allChosen ? "Select none" : "Select all") {
                         chosen = allChosen ? [] : Set(choosable.map(\.document.contentHash))
@@ -241,8 +241,8 @@ struct ProjectWorkspace: View {
                     .tip("Which documents this question goes across")
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
             .frame(maxWidth: .infinity)
             .background(.bar)
             Divider()
@@ -270,7 +270,7 @@ struct ProjectWorkspace: View {
                         // nothing to ask across and no way forward from this screen.
                         HStack {
                             Text("Not yet indexed \u{00B7} \(notIndexed.count)")
-                            Spacer(minLength: 6)
+                            Spacer(minLength: Space.snug)
                             Button {
                                 Task { await model.readUnindexed() }
                             } label: {
@@ -322,7 +322,7 @@ struct ProjectWorkspace: View {
                 else { chosen.remove(member.document.contentHash) }
             }
         )) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(member.document.title).font(Face.body).lineLimit(2)
                 Text(detail(member))
                     .font(Face.caption)
@@ -342,7 +342,7 @@ struct ProjectWorkspace: View {
     /// across and no sign of why.
     private func unreadableRow(_ member: ProjectMember) -> some View {
         Toggle(isOn: .constant(false)) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(member.document.title)
                     .font(Face.body)
                     .foregroundStyle(.secondary)

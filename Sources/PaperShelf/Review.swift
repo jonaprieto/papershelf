@@ -225,7 +225,7 @@ struct ReviewInspector: View {
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
                 .overlay(alignment: .bottom) {
                     PageBar(annotator: annotator, fit: $pageFit)
-                        .padding(.bottom, 14)
+                        .padding(.bottom, Space.roomy)
                 }
             }
             .clipped()
@@ -255,7 +255,7 @@ struct ReviewInspector: View {
                 notesPanel
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: Space.step) {
                         switch panel {
                         case .rename: renamePanel
                         case .details:
@@ -266,7 +266,7 @@ struct ReviewInspector: View {
                         case .notes: EmptyView()
                         }
                     }
-                    .padding(14)
+                    .padding(Space.roomy)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 // Pinned, like the notes tab's export bar. A reviewer presses one of these
@@ -311,7 +311,7 @@ struct ReviewInspector: View {
     /// the contents rail and the panel itself are toolbar buttons, Reveal and Open are
     /// ⌘R and O, and Notes is one of the tabs.
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.step) {
             if let leaveReader {
                 Button(action: leaveReader) {
                     Image(systemName: "chevron.left")
@@ -330,8 +330,8 @@ struct ReviewInspector: View {
             .disabled(collapsed)
             .tip("Rename this file, read what it says about itself, or take its citation")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .background(.bar)
@@ -365,7 +365,7 @@ struct ReviewInspector: View {
     }
 
     private var selectionBar: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: Space.step) {
             ForEach(palette.styles) { style in
                 Button {
                     annotator.highlightSelection(colour: style.nsColor)
@@ -420,8 +420,8 @@ struct ReviewInspector: View {
                 .accessibilityLabel("Send the selected passage to ChatGPT")
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.snug)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metric.card))
         .overlay(alignment: .top) { meaningLabel }
         .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
@@ -450,8 +450,8 @@ struct ReviewInspector: View {
             Text(text)
                 .font(Face.caption)
                 .lineLimit(1)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.tight)
                 .fittedBackground(.regularMaterial, in: Capsule())
                 .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
                 .offset(y: -24)
@@ -479,12 +479,12 @@ struct ReviewInspector: View {
     /// were the loudest thing in the panel and the reasoning behind the name was not in it
     /// at all, so agreeing with a name meant taking it on trust.
     private var renamePanel: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: Space.gutter) {
             newNameSection
             builtFromSection
             readFromDocumentSection
 
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 Button(action: identify) { KeyLabel("G", "Ask AI") }
                     .disabled(!aiReady || runner.ai.isThinking(item))
                     .tip(aiReady ? "Read the opening pages and suggest a title"
@@ -507,7 +507,7 @@ struct ReviewInspector: View {
     }
 
     private var newNameSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.snug) {
             sectionLabel("NEW NAME")
             TextField("Name", text: $draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
@@ -521,7 +521,7 @@ struct ReviewInspector: View {
                 }
                 .strikethrough(decision == .deleted)
 
-            HStack(spacing: 6) {
+            HStack(spacing: Space.snug) {
                 if isEdited {
                     Text("edited").foregroundStyle(Ink.blue)
                     Button("Reset", action: reset).buttonStyle(.link)
@@ -552,11 +552,11 @@ struct ReviewInspector: View {
     private var builtFromSection: some View {
         let provenance = nameProvenance(for: item, guess: runner.ai.guesses[item.key])
         if !provenance.isEmpty {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: Space.step) {
                 sectionLabel("BUILT FROM")
-                FlowLayout(spacing: 6) {
+                FlowLayout(spacing: Space.snug) {
                     ForEach(provenance.parts, id: \.value) { part in
-                        HStack(spacing: 5) {
+                        HStack(spacing: Space.tight) {
                             Text(part.label).foregroundStyle(.secondary)
                             // A title can be the whole name. Held to the panel's width
                             // and truncated in the middle, since both ends of a slug are
@@ -569,8 +569,8 @@ struct ReviewInspector: View {
                         .font(Face.caption)
                         .frame(maxWidth: 230, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, Space.step)
+                        .padding(.vertical, Space.tight)
                         .background(.quaternary.opacity(0.45),
                                     in: RoundedRectangle(cornerRadius: Metric.control))
                     }
@@ -591,11 +591,11 @@ struct ReviewInspector: View {
     private var readFromDocumentSection: some View {
         let rows = documentRows
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: Space.step) {
                 sectionLabel("READ FROM THE DOCUMENT")
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Space.tight) {
                     ForEach(rows, id: \.0) { row in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.step) {
                             Text(row.0)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 52, alignment: .leading)
@@ -655,7 +655,7 @@ struct ReviewInspector: View {
     /// "Read" is not offered while you are already reading: a button that opens what is
     /// open is a button that does nothing, and it was the loudest thing on the tab.
     private var infoActions: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Space.step) {
             if leaveReader == nil {
                 Button(action: read) {
                     Label("Read", systemImage: "book").frame(maxWidth: .infinity)
@@ -664,7 +664,7 @@ struct ReviewInspector: View {
                 .controlSize(.large)
                 .tip("Open the page, its outline and your marks on it", key: "⏎")
             }
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 Button("Reveal") {
                     NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
                 }
@@ -674,8 +674,8 @@ struct ReviewInspector: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .background(.bar)
     }
 
@@ -684,14 +684,14 @@ struct ReviewInspector: View {
     /// A reviewer presses one of these on every file, so they belong where the pointer
     /// already is instead of below however much the document had to say about itself.
     private var renameActions: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Space.step) {
             if decision == nil {
                 Button(action: confirm) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.snug) {
                         Text("Confirm and continue")
                         Text("\u{21A9}")
                             .font(Face.mono.weight(.bold))
-                            .padding(.horizontal, 3)
+                            .padding(.horizontal, Space.tight)
                             .background(.white.opacity(0.22),
                                         in: RoundedRectangle(cornerRadius: 3))
                     }
@@ -707,7 +707,7 @@ struct ReviewInspector: View {
                 .tip("Undo this decision and look at the file again", key: "R")
             }
 
-            HStack(spacing: 7) {
+            HStack(spacing: Space.step) {
                 Button(action: skip) { KeyLabel("S", "Skip") }
                     .tip("Leave this file exactly as it is", key: "S")
                 Button(action: skipFolder) { KeyLabel("F", "Folder") }
@@ -721,8 +721,8 @@ struct ReviewInspector: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
         .background(.bar)
     }
 
@@ -743,10 +743,10 @@ struct ReviewInspector: View {
         if item.status == .locked {
             Label("No password matched, cannot be shown", systemImage: "lock.fill")
                 .font(Face.caption.weight(.medium))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.tight)
                 .fittedBackground(.regularMaterial, in: Capsule())
-                .padding(10)
+                .padding(Space.step)
         }
     }
 
@@ -764,7 +764,7 @@ struct KeyLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: Space.tight) {
             Text(key)
                 .font(Face.mono.weight(.bold))
                 .frame(minWidth: 14, minHeight: 14)
@@ -1046,20 +1046,20 @@ struct MetadataPanel: View {
     }
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             heading
             group("File", rows: fileRows)
             suggested
             group("Reading", rows: readingRows)
             opening
         }
-        .padding(.top, 2)
+        .padding(.top, Space.hair)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// What the book calls itself, in its own voice, with the tags under it.
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.tight) {
             Text(title)
                 .font(Face.page)
                 .fontWeight(.semibold)
@@ -1086,7 +1086,7 @@ struct MetadataPanel: View {
     @ViewBuilder
     private func group(_ label: String, rows: [(String, String)]) -> some View {
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: Space.tight) {
                 Text(label)
                     .font(Face.section)
                     .foregroundStyle(.secondary)
@@ -1131,7 +1131,7 @@ struct MetadataPanel: View {
     @ViewBuilder
     private var suggested: some View {
         if item.destinationName != item.sourceName {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: Space.tight) {
                 Text("Suggested name")
                     .font(Face.section)
                     .foregroundStyle(.secondary)
@@ -1183,7 +1183,7 @@ struct MetadataPanel: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(4)
                 .textSelection(.enabled)
-                .padding(8)
+                .padding(Space.step)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metric.control))
                 // Keep stale/oversized text from painting over the actions below it.

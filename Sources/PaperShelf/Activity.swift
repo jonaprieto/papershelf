@@ -31,8 +31,8 @@ struct ActivityLog: View {
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
 
             Divider()
 
@@ -40,7 +40,7 @@ struct ActivityLog: View {
                 Text("Nothing yet")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(24)
+                    .padding(Space.margin)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -48,8 +48,8 @@ struct ActivityLog: View {
                         // check. Two hundred is what a person scrolls; the rest is what
                         // Save is for.
                         ForEach(entries.reversed().prefix(200)) { entry in
-                            VStack(alignment: .leading, spacing: 1) {
-                                HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: Space.hair) {
+                                HStack(spacing: Space.snug) {
                                     Text(entry.kind.rawValue)
                                         .font(Face.caption.weight(.semibold))
                                         .foregroundStyle(colour(entry.kind))
@@ -71,11 +71,11 @@ struct ActivityLog: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, Space.roomy)
+                            .padding(.vertical, Space.tight)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, Space.tight)
                 }
             }
 
@@ -91,8 +91,8 @@ struct ActivityLog: View {
                 Button("Save…") { saving = true }
                     .disabled(entries.isEmpty)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
         }
         .frame(width: 420, height: 460)
         .fileExporter(isPresented: $saving,

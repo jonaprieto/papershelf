@@ -37,8 +37,8 @@ struct AboutWindow: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Space.gutter)
+            .padding(.vertical, Space.step)
             Divider()
 
             ScrollView {
@@ -49,7 +49,7 @@ struct AboutWindow: View {
                     case .thirdParty: thirdPartyBody
                     }
                 }
-                .padding(20)
+                .padding(Space.gutter)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -60,7 +60,7 @@ struct AboutWindow: View {
 
     /// The part the stock panel already got right, and the two lines it was missing.
     private var identity: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: Space.snug) {
             if let icon = NSApp.applicationIconImage {
                 Image(nsImage: icon)
                     .resizable()
@@ -76,13 +76,13 @@ struct AboutWindow: View {
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.top, Space.gutter)
+        .padding(.bottom, Space.roomy)
         .frame(maxWidth: .infinity)
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             text("PaperShelf reads, renames, files and searches a library of PDFs, and "
                  + "answers questions across the ones you group into a reading project. "
                  + "Every answer cites the document and page it came from.")
@@ -98,7 +98,7 @@ struct AboutWindow: View {
     /// An acknowledgements screen listing libraries an app does not actually ship is worse
     /// than no screen: it is a licence notice that is not true.
     private var thirdPartyBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: Space.roomy) {
             section("Bundled software", "PaperShelf bundles no third-party code. It is "
                     + "built entirely on frameworks that ship with macOS \u{2014} SwiftUI, "
                     + "AppKit, PDFKit, Vision, CryptoKit, UserNotifications and the "
@@ -111,9 +111,9 @@ struct AboutWindow: View {
                     + "none is required, and each is separate software under its own "
                     + "licence and its own authors' terms:")
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.snug) {
                 ForEach(markdownConverters, id: \.name) { converter in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.step) {
                         Text(converter.name)
                             .font(Face.body.weight(.medium))
                             .frame(width: 96, alignment: .leading)
@@ -123,7 +123,7 @@ struct AboutWindow: View {
                     }
                 }
             }
-            .padding(.leading, 4)
+            .padding(.leading, Space.tight)
 
             section("Models", "Answers and suggested names come from whichever model and "
                     + "endpoint you configure in Settings. That service is not part of "
@@ -133,7 +133,7 @@ struct AboutWindow: View {
     }
 
     private func section(_ title: String, _ body: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Space.tight) {
             Text(title).font(Face.headline)
             text(body)
         }

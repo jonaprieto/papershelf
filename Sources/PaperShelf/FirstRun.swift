@@ -12,8 +12,8 @@ struct FirstRun: View {
     let chooseFiles: () -> Void
 
     var body: some View {
-        VStack(spacing: 22) {
-            VStack(spacing: 7) {
+        VStack(spacing: Space.margin) {
+            VStack(spacing: Space.step) {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.tint)
@@ -28,7 +28,7 @@ struct FirstRun: View {
                     .frame(maxWidth: 460)
             }
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Space.roomy) {
                 point("books.vertical.fill", "One home for every paper",
                       "Browse the folders you already use, or add one PDF. Sources stay "
                       + "separate, searchable, and easy to revisit.")
@@ -45,7 +45,7 @@ struct FirstRun: View {
             }
             .frame(maxWidth: 520, alignment: .leading)
 
-            VStack(spacing: 6) {
+            VStack(spacing: Space.snug) {
                 Button("Add a folder or PDF…", action: chooseFiles)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -54,7 +54,7 @@ struct FirstRun: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(40)
+        .padding(Space.bay)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The whole pane is the target, not just the button.
         .contentShape(Rectangle())
@@ -62,12 +62,12 @@ struct FirstRun: View {
     }
 
     private func point(_ icon: String, _ title: String, _ body: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Space.roomy) {
             Image(systemName: icon)
                 .font(.system(size: 15))
                 .foregroundStyle(.tint)
                 .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(title).font(Face.control.weight(.semibold))
                 Text(body)
                     .font(Face.caption)

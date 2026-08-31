@@ -179,7 +179,7 @@ struct NameRulesSettings: View {
     @ViewBuilder
     private var namingPanel: some View {
             Section {
-                HStack(spacing: 6) {
+                HStack(spacing: Space.snug) {
                     ForEach(NamePattern.presets) { preset in
                         Button(preset.name) {
                             updateNamePattern { $0 = preset.pattern }
@@ -189,7 +189,7 @@ struct NameRulesSettings: View {
                         .help(preset.summary)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, Space.hair)
 
                 namingChipRow
                     .tip("Drag a field to reorder it, click one to adjust it")
@@ -232,7 +232,7 @@ struct NameRulesSettings: View {
                     ForEach(NameRules.DateFormat.allCases) { Text($0.label).tag($0) }
                 }
                 LabeledContent("Max length") {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Space.snug) {
                         Slider(value: Binding(get: { Double(ruleMaxLength) },
                                               set: { ruleMaxLength = Int($0) }),
                                in: 0...120, step: 5)
@@ -249,10 +249,10 @@ struct NameRulesSettings: View {
                 // same `NameRules` the renderer is handed.
                 Text("Tidying")
             } footer: {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Space.hair) {
                     Text(Self.sampleName)
                         .foregroundStyle(.secondary)
-                    HStack(spacing: 3) {
+                    HStack(spacing: Space.tight) {
                         Image(systemName: "arrow.turn.down.right")
                             .foregroundStyle(.tertiary)
                         Text(normalizedName(for: Self.sampleName, rules: rules))
@@ -261,12 +261,12 @@ struct NameRulesSettings: View {
                 .font(Face.mono)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.top, 2)
+                .padding(.top, Space.hair)
             }
     }
 
     private var namingChipRow: some View {
-        FlowLayout(spacing: 6) {
+        FlowLayout(spacing: Space.snug) {
             ForEach(Array(namePattern.elements.enumerated()), id: \.offset) { index, element in
                 chipView(for: element, at: index)
                     .onDrag {
@@ -302,7 +302,7 @@ struct NameRulesSettings: View {
 
     private func tokenChip(_ token: NameToken, at index: Int) -> some View {
         let preview = namePatternChipPreview(atElementIndex: index)
-        return HStack(spacing: 5) {
+        return HStack(spacing: Space.tight) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(namingLabel(for: token.kind))
                     .font(Face.micro.weight(.semibold))
@@ -328,8 +328,8 @@ struct NameRulesSettings: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove \(namingLabel(for: token.kind))")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, Space.step)
+        .padding(.vertical, Space.tight)
         .background(RoundedRectangle(cornerRadius: Metric.card).fill(.quaternary.opacity(0.5)))
         .overlay(RoundedRectangle(cornerRadius: Metric.card).strokeBorder(.tertiary.opacity(0.35)))
         .contentShape(Rectangle())
@@ -343,7 +343,7 @@ struct NameRulesSettings: View {
     }
 
     private func literalChip(_ text: String, at index: Int) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: Space.tight) {
             Text(text.isEmpty ? "·" : text)
                 .font(Face.mono)
                 .foregroundStyle(.secondary)
@@ -356,8 +356,8 @@ struct NameRulesSettings: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove separator")
         }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 4)
+        .padding(.horizontal, Space.tight)
+        .padding(.vertical, Space.tight)
     }
 
     @ViewBuilder
@@ -383,7 +383,7 @@ struct NameRulesSettings: View {
                 set: { newValue in updateNameToken(at: index) { $0.maxLength = newValue } }
             ), in: 0...80, step: 5)
         }
-        .padding(14)
+        .padding(Space.roomy)
         .frame(width: 230)
     }
 
@@ -417,7 +417,7 @@ struct NameRulesSettings: View {
     @ViewBuilder
     private var namingPreviewFooter: some View {
         let samples = source.samples
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Space.tight) {
             if samples.isEmpty {
                 Text("The plan appears once files are found.")
                     .foregroundStyle(.secondary)
@@ -426,7 +426,7 @@ struct NameRulesSettings: View {
                     let rendered = PaperShelfCore.preview(
                         namePattern, for: item, guess: source.guesses[item.key],
                         under: item.root, rules: rules, fallbacks: fallbacks)
-                    HStack(spacing: 4) {
+                    HStack(spacing: Space.tight) {
                         Text(rendered.originalName)
                             .foregroundStyle(.secondary)
                         Image(systemName: "arrow.right")
@@ -440,7 +440,7 @@ struct NameRulesSettings: View {
             }
         }
         .font(Face.mono)
-        .padding(.top, 2)
+        .padding(.top, Space.hair)
     }
 
     @ViewBuilder

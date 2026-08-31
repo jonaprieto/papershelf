@@ -40,7 +40,7 @@ struct TagStrip: View {
 
     var body: some View {
         if actions.isAvailable {
-            HStack(spacing: 6) {
+            HStack(spacing: Space.snug) {
                 if actions.tags.isEmpty {
                     Text(emptyLabel)
                         .font(Face.caption)
@@ -48,7 +48,7 @@ struct TagStrip: View {
                 } else {
                     // Wraps rather than scrolls: a file with eight tags should show eight,
                     // not hide six of them behind a swipe in a panel this narrow.
-                    FlowRow(spacing: 6) {
+                    FlowRow(spacing: Space.snug) {
                         ForEach(actions.tags, id: \.self) { tag in
                             TagChip(name: tag) { actions.remove(tag) }
                         }
@@ -88,7 +88,7 @@ private struct TagChip: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: Space.tight) {
             Image(systemName: "tag").font(Face.micro)
             Text(name).font(Face.caption)
             if hovering {
@@ -98,8 +98,8 @@ private struct TagChip: View {
                     .tip("Remove this tag from the file")
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
+        .padding(.horizontal, Space.snug)
+        .padding(.vertical, Space.hair)
         .background(.quaternary.opacity(0.55), in: Capsule())
         .onHover { hovering = $0 }
     }
