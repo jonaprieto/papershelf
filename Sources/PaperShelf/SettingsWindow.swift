@@ -211,6 +211,43 @@ struct GeneralSettings: View {
             }
 
             Section {
+                LabeledContent("Documents no longer on disk") {
+                    HStack(spacing: 8) {
+                        if let vanished {
+                            Text("\(vanished)").monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        Button(checking ? "Checking\u{2026}" : "Check") { Task { await check() } }
+                            .disabled(checking)
+                        if let vanished, vanished > 0 {
+                            Button("Forget them\u{2026}", role: .destructive) { confirmingTidy = true }
+                        }
+                    }
+                }
+            } header: {
+                Text("Tidy the library")
+            } footer: {
+                Text("A source removed before this app learned to clean up after itself "
+                     + "left its documents in the library, where they still answer "
+                     + "searches and still fill reading projects. This finds documents "
+                     + "whose every known file is gone from a folder that is still there, "
+                     + "and forgets them.\n\n"
+                     + "A document whose folder is missing too is left alone: an "
+                     + "unplugged drive is not a deleted library. Nothing on disk is "
+                     + "touched either way.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .confirmationDialog("Forget \(vanished ?? 0) document\((vanished ?? 0) == 1 ? "" : "s")?",
+                                isPresented: $confirmingTidy, titleVisibility: .visible) {
+                Button("Forget them", role: .destructive) { Task { await tidy() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Their tags, notes, place in any reading project and reading position "
+                     + "go with them. Nothing on disk is touched.")
+            }
+
+            Section {
                 Toggle("Watch the sources for changes", isOn: $watchSources)
                 Toggle("Plan as soon as a source is added", isOn: $autoPreview)
                 Toggle("Return in the name field renames the file", isOn: $returnApplies)
@@ -232,6 +269,33 @@ struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// How many documents the library holds that are not on disk any more, once asked.
+    /// Nil before anybody asks: a number that appears on its own reads as a problem
+    /// rather than as an answer to a question.
+    @State private var vanished: Int?
+    @State private var checking = false
+    @State private var confirmingTidy = false
+    @State private var doomed: [String] = []
+
+    private func check() async {
+        guard let library = Library.shared else { return }
+        checking = true
+        defer { checking = false }
+        let known = (try? await library.locationsByDocument()) ?? [:]
+        let manager = FileManager.default
+        doomed = vanishedDocuments(known) { manager.fileExists(atPath: $0) }
+        vanished = doomed.count
+    }
+
+    private func tidy() async {
+        guard let library = Library.shared, !doomed.isEmpty else { return }
+        _ = try? await library.forget(documents: doomed)
+        doomed = []
+        vanished = 0
+        await LibraryStatus.shared.refresh()
+        await Shelves.shared.refresh()
     }
 
     /// The same merge the sidebar does, through the same preference: a source added here

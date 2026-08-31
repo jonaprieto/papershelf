@@ -1446,6 +1446,23 @@ extension Library {
 
     // MARK: Forgetting a source
 
+    /// Every document, with every path it is known at.
+    ///
+    /// For the one question the store cannot answer on its own: which of these still
+    /// exist. That is the filesystem's to answer, and this actor does not touch it.
+    public func locationsByDocument() throws -> [String: [String]] {
+        try withStatement("SELECT document_id, path FROM locations;", bind: { _ in }) { statement in
+            var found: [String: [String]] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let id = columnText(statement, 0),
+                      let path = columnText(statement, 1) else { continue }
+                found[id, default: []].append(path)
+            }
+            return found
+        }
+    }
+
+
     /// The documents whose every known location is under `root`.
     ///
     /// A document that also lives under another watched folder is not one of these: the
