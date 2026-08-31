@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "ios-application-dev": {
+      "source": "minimax-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/ios-application-dev/SKILL.md",
+      "computedHash": "62e475d290a760e8a24085a35381258e7595297da16157ac8bc11aea340c2d9a"
+    },
+    "ios-hig-design": {
+      "source": "wondelai/skills",
+      "sourceType": "github",
+      "skillPath": "ios-hig-design/SKILL.md",
+      "computedHash": "5268ebaccbd0730875f68bf240caecfaec7c737976ed259e68681215d1844be5"
+    }
+  }
+}
