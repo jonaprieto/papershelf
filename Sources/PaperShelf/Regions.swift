@@ -51,6 +51,14 @@ final class Regions {
 
     private init() {}
 
+    /// Whether this region has the arrow keys.
+    ///
+    /// Every pane that draws its own selection asks, and draws it in the accent colour
+    /// when the answer is yes and in grey when it is no. That is what a macOS list does
+    /// for free when it is the first responder, and what this app has to do by hand
+    /// because it decides for itself where focus is.
+    func hasKeys(_ region: Region) -> Bool { focused == region }
+
     func focus(_ region: Region) {
         focused = region
         rowFocused = false
@@ -92,12 +100,14 @@ final class Regions {
 }
 
 
-/// The 2pt ring that says which region has the keys.
+/// Clicking inside a region gives it the keys.
 ///
-/// Focus is never invisible: without this, the difference between "the sidebar has the
-/// arrow keys" and "the shelf has them" was whatever the last click happened to leave
-/// behind, and the only way to find out was to press a key and see what moved.
-struct RegionRing: ViewModifier {
+/// It used to draw the answer as well: first a box around the whole pane, then, when that
+/// proved far too loud, a 2pt accent bar down its leading edge. Both were chrome the
+/// platform does not have, permanently on screen, saying something every macOS list
+/// already says by drawing its own selection in the accent colour while it has the keys
+/// and in grey while it does not. `Regions.hasKeys(_:)` is how the panes say it now.
+struct RegionFocus: ViewModifier {
     let region: Region
     private let regions = Regions.shared
 
@@ -105,17 +115,6 @@ struct RegionRing: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // A bar down the leading edge rather than a box around everything. The box
-            // said the right thing and said it far too loudly: two accent-coloured
-            // rectangles nested inside each other, drawn over content, on every screen.
-            // The edge marks the same region and stays out of the way of what is in it.
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: 2)
-                    .opacity(regions.focused == region ? 0.85 : 0)
-                    .allowsHitTesting(false)
-            }
             // Simultaneous, not a gesture of its own: clicking inside a region should
             // focus it and still do whatever the click was for.
             .simultaneousGesture(TapGesture().onEnded { regions.focus(region) })
@@ -123,5 +122,5 @@ struct RegionRing: ViewModifier {
 }
 
 extension View {
-    func region(_ region: Region) -> some View { modifier(RegionRing(region)) }
+    func region(_ region: Region) -> some View { modifier(RegionFocus(region)) }
 }

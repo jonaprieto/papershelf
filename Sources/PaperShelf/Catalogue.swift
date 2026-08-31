@@ -3285,6 +3285,10 @@ struct CoverCard: View {
         "\(bookTitle). \(decision?.explanation ?? undecidedExplanation). \(item.status.explanation)"
     }
 
+    private var selectionTint: Color {
+        Regions.shared.hasKeys(.document) ? Color.accentColor : Color.secondary
+    }
+
     private var physical: String {
         [
             item.pageCount.map { "\($0) pp" },
@@ -3385,13 +3389,15 @@ struct CoverCard: View {
             }
         }
         .padding(Space.step)
+        // Accent while the shelf has the arrow keys, grey while they are somewhere else.
+        // The shelf is always `.document`; a card is only ever drawn here.
         .background(
             RoundedRectangle(cornerRadius: Metric.card)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+                .fill(isSelected ? selectionTint.opacity(0.18) : .clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metric.card)
-                .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
+                .strokeBorder(isSelected ? selectionTint : .clear, lineWidth: 1.5)
         )
         .opacity(decision == .skipped ? 0.5 : 1)
         .contentShape(Rectangle())

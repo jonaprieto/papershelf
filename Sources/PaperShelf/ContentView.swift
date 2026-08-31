@@ -545,17 +545,26 @@ struct ContentView: View {
             Spacer(minLength: Space.tight)
             trailing()
                 .monospacedDigit()
-                .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.8))
-                                          : AnyShapeStyle(.secondary))
+                .foregroundStyle(selected && Regions.shared.hasKeys(.sidebar)
+                                 ? AnyShapeStyle(.white.opacity(0.8))
+                                 : AnyShapeStyle(.secondary))
         }
         // No font of its own. A source list has a type size on macOS and setting one
         // here is how a sidebar ends up not quite matching every other sidebar.
-        .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+        // White only while the row is filled with the accent colour. A grey selection
+        // keeps its ordinary text, the way an unfocused source list does everywhere else.
+        .foregroundStyle(selected && Regions.shared.hasKeys(.sidebar)
+                         ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         .padding(.horizontal, Space.snug)
         .padding(.vertical, Space.tight)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .background(selected ? Color.accentColor : .clear,
+        // Accent while the sidebar has the keys, grey while it does not. This is the
+        // signal the accent bar down the pane's edge used to carry, said the way the
+        // platform says it.
+        .background(selected ? (Regions.shared.hasKeys(.sidebar)
+                                ? Color.accentColor : Color.secondary.opacity(0.25))
+                             : .clear,
                     in: RoundedRectangle(cornerRadius: Metric.control))
     }
 
@@ -1404,6 +1413,16 @@ private struct SidebarSourceLabel: View {
     let setHovered: (Bool) -> Void
     let remove: () -> Void
 
+    /// Accent while the sidebar has the arrow keys, grey while it does not. Named rather
+    /// than written inline: a nested conditional inside a modifier chain this long is
+    /// more than the type checker will solve.
+    private var highlight: Color {
+        guard focused else { return .clear }
+        return Regions.shared.hasKeys(.sidebar)
+            ? Color.accentColor.opacity(0.12)
+            : Color.secondary.opacity(0.12)
+    }
+
     var body: some View {
         HStack(spacing: Space.snug) {
             // Only when something is wrong. A folder glyph on every source is a column of
@@ -1437,8 +1456,7 @@ private struct SidebarSourceLabel: View {
             }
         }
         .contentShape(Rectangle())
-        .background(focused ? Color.accentColor.opacity(0.12) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 5))
+        .background(highlight, in: RoundedRectangle(cornerRadius: Metric.card))
         .accessibilityAddTraits(focused ? .isSelected : [])
         .onTapGesture(perform: focus)
         .onHover(perform: setHovered)
@@ -1724,11 +1742,14 @@ struct ExplorerOutline: View {
         .contentShape(Rectangle())
         .background(
             node.itemKey != nil && node.itemKey == selected
-                ? Color.accentColor.opacity(0.15) : .clear
+                ? (Regions.shared.hasKeys(.sidebar)
+                   ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.15))
+                : .clear
         )
         .background(node.url.path == focusedPath
-                    ? Color.accentColor.opacity(0.12)
-                    : .clear, in: RoundedRectangle(cornerRadius: 5))
+                    ? (Regions.shared.hasKeys(.sidebar)
+                       ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.12))
+                    : .clear, in: RoundedRectangle(cornerRadius: Metric.card))
         .accessibilityAddTraits((node.itemKey == selected || node.url.path == focusedPath)
                                 ? .isSelected : [])
         .onTapGesture {
