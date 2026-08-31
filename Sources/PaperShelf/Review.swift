@@ -153,6 +153,20 @@ struct ReviewInspector: View {
                   title: item.destinationName,
                   source: item.currentURL.path,
                   close: {},
+                  openAtPage: { page in
+                      // A mark on a document the reader does not have open is a way into
+                      // it. Opening is what attaches the annotator, and the page cannot be
+                      // turned to before the document is there, so the jump waits for it.
+                      read()
+                      Task { @MainActor in
+                          for _ in 0..<40 {
+                              if annotator.hasPages { break }
+                              try? await Task.sleep(for: .milliseconds(50))
+                          }
+                          guard annotator.hasPages else { return }
+                          annotator.go(toPage: page)
+                      }
+                  },
                   showsHeader: false)
     }
 

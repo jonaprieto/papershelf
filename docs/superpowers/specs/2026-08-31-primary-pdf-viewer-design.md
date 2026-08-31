@@ -113,12 +113,15 @@ rendering, source scans, the file watcher, BibTeX refresh.
 
 ### 7. Marks are read off the file, not remembered separately
 
-A `MarkReader` actor: given a URL, loads the PDF off the main actor, returns its highlight
-annotations, caches by path and modification date, drops the cache when either changes.
+The panel loads the selected document into a second `Annotator`, bound to a `PDFView` that
+is never added to a window. The file is parsed off the main thread; everything after that
+is the machinery the reader already has.
 
-The Notes panel asks it whenever the selection changes and no document is open, which
-fixes the panel that says "Open this document to see the passages marked in it" over a
-paper with nine highlights on it. Clicking a mark opens the document at that page.
+Built this way rather than as a read-only `MarkReader` returning its own kind of mark,
+which is what this said first and what was tried. That gave the panel a second row type
+with none of a row's abilities: no colour menu, no note editor, no delete, no handoff, and
+nothing to click. A view with no superview is cheaper than a second implementation of all
+of that. Clicking a mark on a document the reader does not have open opens it at that page.
 
 No second copy in the database. The PDF is the record; a mirror would be a thing that can
 be wrong, and a panel that is confidently wrong is worse than one that is slow.

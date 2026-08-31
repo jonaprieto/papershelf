@@ -198,6 +198,9 @@ struct NotesRail: View {
     let title: String
     let source: String
     let close: () -> Void
+    /// Opening this document at a page, for a mark on a document the reader does not have
+    /// open. Nil where there is nothing to open onto.
+    var openAtPage: ((Int) -> Void)?
     /// Its own bar, with the count, the export menu and the way out. Off when it sits in
     /// the inspector, which already has one of those and does not need two.
     var showsHeader: Bool = true
@@ -215,27 +218,33 @@ struct NotesRail: View {
             == URL(fileURLWithPath: source).resolvingSymlinksInPath().path
     }
 
-    /// The marks to show: the annotator's, but only when they belong to this document.
-    private var marks: [Annotator.Mark] { documentIsOpen ? annotator.marks : [] }
+    /// The marks to show, from whichever annotator holds this document.
+    private var marks: [Annotator.Mark] { live.marks }
 
-    /// The marks of a document that is selected but not open, read off the file itself.
-    /// Highlights live in the PDF, so a panel that could only ask the open document had
-    /// nothing to say about the other one on the shelf.
-    @State private var fileMarks: [MarkReader.Mark] = []
+    /// The document that is selected but not open, read into an annotator of its own.
+    ///
+    /// Not a second kind of mark with a second kind of row. Highlights live in the PDF, so
+    /// the panel needs the file loaded either way; loading it into an `Annotator` bound to
+    /// a `PDFView` nothing shows means the rows, the colour menu, the note editor, the
+    /// delete and the handoff are the same component here as they are beside the page.
+    @State private var shadow = Annotator()
+    @State private var shadowView = PDFView()
     @State private var readingFile = false
+
+    /// Whichever annotator holds the document the panel is about: the reader's when it has
+    /// this document open, the shadow one when the shelf merely has it selected.
+    private var live: Annotator { documentIsOpen ? annotator : shadow }
 
     /// What is on this document, counted the two ways a reader counts it: passages picked
     /// out, and passages written about.
     private var tally: String {
-        guard documentIsOpen else {
-            if readingFile { return "Reading the file" }
-            guard !fileMarks.isEmpty else { return "No marks in this document" }
-            let notes = fileMarks.filter { !$0.note.isEmpty }.count
-            return count(fileMarks.count, notes) + " · read from the file"
-        }
+        if !documentIsOpen && readingFile { return "Reading the file" }
         let highlights = marks.count
-        guard highlights > 0 else { return "No marks yet" }
-        return count(highlights, marks.filter { !$0.note.isEmpty }.count)
+        guard highlights > 0 else {
+            return documentIsOpen ? "No marks yet" : "No marks in this document"
+        }
+        let counted = count(highlights, marks.filter { !$0.note.isEmpty }.count)
+        return documentIsOpen ? counted : counted + " · read from the file"
     }
 
     private func count(_ highlights: Int, _ notes: Int) -> String {
@@ -243,65 +252,32 @@ struct NotesRail: View {
             + "\(notes) note\(notes == 1 ? "" : "s")"
     }
 
-    /// One row per mark found in the file, set the way an open document's marks are set:
-    /// what the colour means, which page it is on, and the passage on its own highlight.
-    /// A mark read off a file you have not opened is still the same kind of thing, and it
-    /// looked like a different one when it was a stripe and some grey text.
+    /// Loads the selected document into the shadow annotator, so its marks are the same
+    /// marks the reader would show, in the same rows, with the same things you can do to
+    /// them.
     ///
-    /// Read-only, though: recolouring or deleting means writing to a document nothing has
-    /// open, and the way to edit a mark is to open the paper it is in.
-    private func fileRow(_ mark: MarkReader.Mark) -> some View {
-        VStack(alignment: .leading, spacing: Space.step) {
-            HStack(spacing: Space.step) {
-                swatchImage(mark.colour, size: 13)
-                Text(palette.meaning(for: mark.colour))
-                    .font(Face.headline)
-                    .lineLimit(1)
-                Spacer(minLength: Space.snug)
-                Text("p. \(mark.page)")
-                    .font(Face.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            if !mark.quoted.isEmpty {
-                Text("\u{201C}\(mark.quoted)\u{201D}")
-                    .font(Face.page)
-                    .lineLimit(8)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Space.step)
-                    .padding(.vertical, Space.step)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: mark.colour).opacity(0.42),
-                                in: RoundedRectangle(cornerRadius: Metric.card))
-            }
-
-            if !mark.note.isEmpty {
-                Text(mark.note)
-                    .font(Face.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, Space.roomy)
-        .padding(.vertical, Space.step)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Reads the file when the selection lands on a document nobody has open. Keyed on the
-    /// path, so walking the shelf reads each document once and the actor's cache answers
-    /// on the way back.
-    private func readMarksFromFile() async {
-        guard !documentIsOpen, !source.isEmpty else {
-            fileMarks = []
-            return
-        }
+    /// The file is parsed off the main thread, which is where a two hundred page thesis
+    /// costs a tenth of a second, and handed to a `PDFView` that is never added to a
+    /// window: `Annotator` works through a view, and a view with no superview is a cheaper
+    /// thing to give it than a second implementation of everything it does.
+    private func loadSelectedDocument() async {
+        guard !documentIsOpen, !source.isEmpty else { return }
+        let url = URL(fileURLWithPath: source)
+        guard shadow.url?.resolvingSymlinksInPath() != url.resolvingSymlinksInPath() else { return }
         readingFile = true
         defer { readingFile = false }
-        let url = URL(fileURLWithPath: source)
         let passwords = PasswordList.active(Prefs.shared.passwords)
-        let found = await MarkReader.shared.marks(in: url, passwords: passwords)
-        guard !Task.isCancelled else { return }
-        fileMarks = found
+        let document = await Task.detached { () -> PDFDocument? in
+            guard let document = PDFDocument(url: url) else { return nil }
+            if document.isLocked {
+                for password in passwords where document.unlock(withPassword: password) { break }
+                guard !document.isLocked else { return nil }
+            }
+            return document
+        }.value
+        guard !Task.isCancelled, let document else { return }
+        shadowView.document = document
+        shadow.attach(shadowView, url: url)
     }
 
     /// The meanings actually on this document, so the filter offers what is there rather
@@ -322,8 +298,11 @@ struct NotesRail: View {
 
     var body: some View {
         panel
-            .task(id: source) { await readMarksFromFile() }
-            .task(id: documentIsOpen) { await readMarksFromFile() }
+            .task(id: source) { await loadSelectedDocument() }
+            .task(id: documentIsOpen) { await loadSelectedDocument() }
+            // Whatever the shadow document still owes the disk it owes now, rather than
+            // whenever the panel happens to be torn down.
+            .onDisappear { shadow.flush() }
     }
 
     private var panel: some View {
@@ -376,15 +355,7 @@ struct NotesRail: View {
                         .listRowBackground(Color.clear)
                     }
 
-                    if !documentIsOpen {
-                        ForEach(fileMarks) { mark in
-                            fileRow(mark)
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                        }
-                    }
-
-                    if marks.isEmpty && !addingNote && (documentIsOpen || fileMarks.isEmpty) {
+                    if marks.isEmpty && !addingNote {
                         Text(documentIsOpen
                              ? "Select text on the page to highlight it or attach a note."
                              : (readingFile ? "Reading the file."
@@ -401,11 +372,14 @@ struct NotesRail: View {
                     ForEach(shownMarks) { mark in
                         MarkRow(
                             mark: mark,
-                            isSelected: annotator.selectedMark == mark.id,
-                            jump: { annotator.jump(to: mark) },
-                            remove: { annotator.remove(mark) },
-                            save: { annotator.setNote($0, on: mark) },
-                            recolour: { annotator.setColour($0, on: mark) },
+                            isSelected: live.selectedMark == mark.id,
+                            jump: {
+                                if documentIsOpen { annotator.jump(to: mark) }
+                                else { openAtPage?(mark.page) }
+                            },
+                            remove: { live.remove(mark) },
+                            save: { live.setNote($0, on: mark) },
+                            recolour: { live.setColour($0, on: mark) },
                             styles: palette.styles,
                             meaning: palette.meaning(for: mark.colour),
                             documentTitle: title
@@ -414,7 +388,7 @@ struct NotesRail: View {
                         .listRowBackground(Color.clear)
                     }
 
-                    if let problem = annotator.lastError {
+                    if let problem = live.lastError {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
                             .font(Face.caption)
                             .foregroundStyle(Ink.red)
@@ -447,7 +421,7 @@ struct NotesRail: View {
                 }
             }
 
-            if !marks.isEmpty || !fileMarks.isEmpty {
+            if !marks.isEmpty {
                 Divider()
                 exportBar
             }
@@ -537,18 +511,10 @@ struct NotesRail: View {
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
     private var notesMarkdown: String {
-        // Either list: the marks of the open document, or the ones read off the file of a
-        // document merely selected. Exporting worked only for the first, which meant the
-        // button was there and did nothing on every other paper on the shelf.
-        let exported: [MarkExport] = documentIsOpen
-            ? marks.map {
-                MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
-                           meaning: palette.meaning(for: $0.colour))
-            }
-            : fileMarks.map {
-                MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
-                           meaning: palette.meaning(for: $0.colour))
-            }
+        let exported = marks.map {
+            MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
+                       meaning: palette.meaning(for: $0.colour))
+        }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported)
     }
