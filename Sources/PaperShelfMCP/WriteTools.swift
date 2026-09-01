@@ -442,6 +442,9 @@ let writeTools: [Tool] = [
             let done = process(jobs: jobs, options: options)
             let moved = done.filter(\.carriedOut)
             let failed = done.filter { $0.status == .failed }
+            // `process` only ever touches files; recording what actually moved is this
+            // caller's job, the same as the app's own run loop (see `recordMoves`).
+            recordMoves(moved)
             try? FileManager.default.removeItem(at: try planURL(token: plan.token))
 
             // Precise about which files actually moved and which did not, rather than a

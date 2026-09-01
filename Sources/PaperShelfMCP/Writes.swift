@@ -61,3 +61,47 @@ func openLibraryForWriting() throws -> Library {
         throw ToolFailure("could not open the library for writing: \(error)")
     }
 }
+
+/// Folds the renames `apply_file_changes` just carried out into the library, the way the
+/// GUI app folds a real run's renames in, in `Runner.syncLibrary`
+/// (`PaperShelf/LibrarySync.swift`). `process(jobs:options:)` (`PaperShelfCore/Hammer.swift`)
+/// only ever touches files on disk; the comment on `Item.currentURL` there is explicit that
+/// it deliberately never calls the library itself, and that whichever caller actually asked
+/// for the move is the one that has to record it afterward. `apply_file_changes` used to be
+/// the one caller that did not, so `locations.path` kept naming a file by the name it had
+/// before the move until somebody happened to open PaperShelf and it rescanned the folder --
+/// which needs the app to be running at all -- and until then, `resolveDocument` would hand
+/// a since-moved path to `list_highlights`, `read_document` and `read_page`, none of which
+/// had any way to tell a stale path from a correct one.
+///
+/// Best-effort and silent about its own failures to the caller, the same as the app's own
+/// version: the files have already moved by the time this runs, so a library that has not
+/// been indexed yet, or a lookup or write that fails, means the library's bookkeeping falls
+/// behind, not that the rename itself should be reported as having failed. `note` records
+/// what happened to stderr, for whoever is watching the server's diagnostics, rather than
+/// silently swallowing it outright.
+func recordMoves(_ items: [Item]) {
+    let moved = items.filter(\.carriedOut)
+    guard !moved.isEmpty else { return }
+    guard let library = try? openLibraryForWriting() else { return }
+    for item in moved {
+        let current = item.currentURL.resolvingSymlinksInPath().path
+        // `item.key` is resolved the same way (see its own doc comment), so this only
+        // skips a job that did not actually change the path a lookup would use, such as
+        // a decrypt-in-place that rewrites a file under its own existing name.
+        guard current != item.key else { continue }
+        do {
+            guard let record = try blocking({ try await library.document(atPath: item.key) })
+            else {
+                // The library never knew this file under its old name -- indexed by hand
+                // outside PaperShelf, say -- so there is nothing on record to attach the
+                // new path to. A future scan in the app indexes it fresh under the new
+                // name, the same as any other file the library has not met yet.
+                continue
+            }
+            try blocking { try await library.recordLocation(current, forDocument: record.id) }
+        } catch {
+            note("apply_file_changes: could not update the library for \(current): \(error)")
+        }
+    }
+}

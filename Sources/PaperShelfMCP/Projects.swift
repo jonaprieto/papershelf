@@ -184,6 +184,22 @@ final class LibraryReader {
         }
     }
 
+    /// A project's true membership, independent of any cap a caller elsewhere puts on how
+    /// many of its documents it actually lists. `bibliography`'s "project" scope
+    /// (`LibraryTools.swift`) needs this precisely because `documents(inProject:limit:)`
+    /// above caps at 1000: without a count taken separately from that capped list, a
+    /// project larger than the cap reported exactly as many documents as the cap allowed
+    /// and nothing said the cap had even been hit.
+    func memberCount(ofProject projectID: Int64) throws -> Int {
+        try withStatement("SELECT COUNT(*) FROM project_members WHERE project_id = ?;",
+                          bind: { statement in
+            sqlite3_bind_int64(statement, 1, projectID)
+        }) { statement in
+            sqlite3_step(statement)
+            return Int(sqlite3_column_int64(statement, 0))
+        }
+    }
+
     /// Scopes the same phrase match `Library.fullTextSearch` uses to one project's members,
     /// by joining `project_members` into the query itself rather than filtering results
     /// afterward: filtering afterward would rank against the whole library and then throw
@@ -426,6 +442,21 @@ final class LibraryReader {
                 results.append(documentSummary(from: statement))
             }
             return results
+        }
+    }
+
+    /// As `memberCount(ofProject:)`, for a tag: the true count behind
+    /// `documents(taggedWith:limit:)`'s own 1000-document cap.
+    func documentCount(taggedWith tag: String) throws -> Int {
+        try withStatement("""
+            SELECT COUNT(*) FROM document_tags dt
+            JOIN tags t ON t.id = dt.tag_id
+            WHERE t.name = ? COLLATE NOCASE;
+            """, bind: { statement in
+            bindText(statement, 1, tag)
+        }) { statement in
+            sqlite3_step(statement)
+            return Int(sqlite3_column_int64(statement, 0))
         }
     }
 

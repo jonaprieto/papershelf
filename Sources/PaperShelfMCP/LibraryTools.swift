@@ -115,17 +115,31 @@ func searchLibrary(_ query: String, _ arguments: [String: Any]) throws -> ToolOu
     return ToolOutput(text: text, structured: structured)
 }
 
-/// Either identifier, from either half of the tool surface. The library-backed tools hand
-/// back an id and the folder-backed ones a path; without this, a researcher cannot read a
-/// document a search just found them.
-func resolveDocument(_ arguments: [String: Any]) throws -> (path: String?, id: String?) {
+/// Either identifier, from either half of the tool surface, plus whether a file currently
+/// sits at the path handed back. The library-backed tools hand back an id and the
+/// folder-backed ones a path; without this, a researcher cannot read a document a search
+/// just found them. When both are given, `path` wins, matching the order checked below.
+///
+/// `exists` is computed once, here, rather than by each of `resolveDocument`'s three
+/// callers separately -- but it is left for them to act on, rather than this function
+/// refusing outright, because what a missing file means differs by caller. A document_id
+/// whose only location on record has moved out from under it (renamed by
+/// `apply_file_changes` before this fix recorded the move, or renamed by hand outside
+/// PaperShelf entirely) still has real, useful answers available for two of the three:
+/// `read_document`/`read_page` can serve it from a cached extraction, and `list_highlights`
+/// can still return the notes written about it. Only a caller with nothing else to fall
+/// back on has to treat `exists == false` as the whole answer. What every caller must not
+/// do is treat a stale path as though it still named a readable file: that is exactly how
+/// a renamed document ended up reporting no highlights, as a success, rather than saying
+/// its recorded location no longer holds a file.
+func resolveDocument(_ arguments: [String: Any]) throws -> (path: String?, id: String?, exists: Bool) {
     if let path = arguments["path"] as? String, !path.isEmpty {
         guard FileManager.default.fileExists(atPath: path) else {
             throw ToolFailure("no such file: \(path)")
         }
         let id = (try? LibraryReader.open())
             .flatMap { try? $0?.document(matching: path) }?.id
-        return (path, id)
+        return (path, id, true)
     }
     guard let identifier = arguments["document_id"] as? String, !identifier.isEmpty else {
         throw ToolFailure("give either 'path' or 'document_id'")
@@ -135,7 +149,8 @@ func resolveDocument(_ arguments: [String: Any]) throws -> (path: String?, id: S
         throw ToolFailure("the library has no document with id, path or title "
             + "'\(identifier)'; call search_documents or list_documents first")
     }
-    return (document.path, document.id)
+    let exists = document.path.map(FileManager.default.fileExists(atPath:)) ?? false
+    return (document.path, document.id, exists)
 }
 
 /// The document's text, read from the library when it is there and read from the file and
@@ -149,7 +164,15 @@ func resolveDocument(_ arguments: [String: Any]) throws -> (path: String?, id: S
 /// write; `setExtractedText` is an upsert on the document's id, so the worst outcome is
 /// duplicated extraction work and a last-write-wins overwrite with equivalent text, never a
 /// corrupt row. Acceptable without a lock at the volume one researcher's chat client drives.
-func storedOrExtracted(path: String, documentID: String?) throws -> (markdown: String, extracted: Bool) {
+///
+/// `pathExists` comes from `resolveDocument`, which has already checked it once; it only
+/// matters here on a cache miss, since a cache hit answers from the library and never
+/// touches `path` at all. Without it, a document whose recorded location has moved out
+/// from under it and has nothing cached yet fell into `indexedMarkdown` failing to open a
+/// file that is not there, and reported "it may be locked, or it may be a scan with no
+/// text layer" -- true of a file that exists and cannot be read, and false of one that
+/// simply is not there any more.
+func storedOrExtracted(path: String, documentID: String?, pathExists: Bool) throws -> (markdown: String, extracted: Bool) {
     // `LibraryReader.open()` is itself a throwing function returning an optional; under this
     // project's Swift 5 language mode `try?` flattens that to a single-level optional, so one
     // `let reader = try? LibraryReader.open()` already unwraps it fully. A second `let reader`
@@ -165,6 +188,12 @@ func storedOrExtracted(path: String, documentID: String?) throws -> (markdown: S
        let stored = try? reader.extractedText(forDocument: documentID),
        stored.format != nil, !stored.markdown.isEmpty {
         return (stored.markdown, false)
+    }
+    guard pathExists else {
+        throw ToolFailure("PaperShelf's last known location for that document, \(path), "
+            + "no longer has a file there, and nothing is cached for it either. It may "
+            + "have been moved or renamed since the library last saw it; open PaperShelf "
+            + "so it can rescan, or call this again with the file's current 'path'.")
     }
     guard let read = indexedMarkdown(of: URL(fileURLWithPath: path),
                                      passwords: Prefs.passwords) else {
@@ -233,6 +262,14 @@ struct BibliographyResolution {
     let paths: [String]
     let requested: Int
     let skipped: [String]
+    let uncountedByCap: Int
+
+    init(paths: [String], requested: Int, skipped: [String], uncountedByCap: Int = 0) {
+        self.paths = paths
+        self.requested = requested
+        self.skipped = skipped
+        self.uncountedByCap = uncountedByCap
+    }
 }
 
 /// The files one bibliography scope names. Every scope resolves to paths, because a BibTeX
@@ -261,17 +298,22 @@ func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> Bibl
         let reader = try openLibraryOrFail()
         let project = try resolveProject(try requireString(arguments, "project"), in: reader)
         let documents = try reader.documents(inProject: project.id, limit: 1000).map(\.0)
+        let total = try reader.memberCount(ofProject: project.id)
         return BibliographyResolution(
             paths: documents.compactMap(\.path),
             requested: documents.count,
-            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id })
+            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id },
+            uncountedByCap: max(0, total - documents.count))
     case "tag":
         let reader = try openLibraryOrFail()
-        let documents = try reader.documents(taggedWith: try requireString(arguments, "tag"), limit: 1000)
+        let tag = try requireString(arguments, "tag")
+        let documents = try reader.documents(taggedWith: tag, limit: 1000)
+        let total = try reader.documentCount(taggedWith: tag)
         return BibliographyResolution(
             paths: documents.compactMap(\.path),
             requested: documents.count,
-            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id })
+            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id },
+            uncountedByCap: max(0, total - documents.count))
     default:
         let ids = arguments["document_ids"] as? [String] ?? []
         let reader = try openLibraryOrFail()

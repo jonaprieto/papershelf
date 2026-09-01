@@ -128,9 +128,9 @@ let folderTools: [Tool] = [
         name: "read_document",
         title: "Read a document as Markdown",
         description: "A document's text, page by page. Give it either a path or the "
-            + "document_id a search handed back. A document the library has already read "
-            + "is served from the library; one it has not is read from the file now and "
-            + "kept, so the next question about it is free.",
+            + "document_id a search handed back; path wins if both are given. A document "
+            + "the library has already read is served from the library; one it has not is "
+            + "read from the file now and kept, so the next question about it is free.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -141,12 +141,12 @@ let folderTools: [Tool] = [
             ],
         ],
         run: { arguments in
-            let (path, id) = try resolveDocument(arguments)
+            let (path, id, exists) = try resolveDocument(arguments)
             guard let path else {
                 throw ToolFailure("the library knows that document but not where it is now; "
                     + "call it again with 'path'")
             }
-            let read = try storedOrExtracted(path: path, documentID: id)
+            let read = try storedOrExtracted(path: path, documentID: id, pathExists: exists)
             var markdown = read.markdown
             if let range = arguments["pages"] as? String, !range.isEmpty {
                 markdown = try pageSlice(markdown, range: range)
@@ -259,7 +259,7 @@ let folderTools: [Tool] = [
             + "anything written about the document in PaperShelf's own notes. This is what "
             + "the person reading the document chose to mark, so it is the best starting "
             + "point for discussing the document with them. Give it either a path or a "
-            + "document_id.",
+            + "document_id; path wins if both are given.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -268,16 +268,40 @@ let folderTools: [Tool] = [
             ],
         ],
         run: { arguments in
-            let (path, id) = try resolveDocument(arguments)
+            let (path, id, exists) = try resolveDocument(arguments)
             guard let path else {
                 throw ToolFailure("the library knows that document but not where it is now; "
                     + "call it again with 'path'")
             }
-            let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: Prefs.passwords)
             let notes = id.flatMap { documentID -> [(body: String, createdAt: String)]? in
                 guard let reader = try? LibraryReader.open() else { return nil }
                 return try? reader.notes(forDocument: documentID)
             } ?? []
+            // A renamed or moved document reads as though nothing were marked in it if
+            // this falls through to `pdfMarks`, which cannot open a file that is not
+            // there and answers `[]` exactly the way it would for a document that
+            // genuinely has no marks. Marks come only from the live file -- unlike
+            // `read_document`/`read_page`, there is no cached copy of them to fall back
+            // on -- so a missing file means marks are unknown, not empty, and has to be
+            // said that way rather than folded into the ordinary empty case below.
+            guard exists else {
+                let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
+                guard !notes.isEmpty else {
+                    throw ToolFailure("PaperShelf's last known location for that document, "
+                        + "\(path), no longer has a file there, so its highlights cannot "
+                        + "be checked. It may have been moved or renamed since the "
+                        + "library last saw it; open PaperShelf so it can rescan, or call "
+                        + "this again with the file's current 'path'.")
+                }
+                let text = "That document's file could not be found at its last known "
+                    + "location (\(path)), so its highlights could not be checked. Here "
+                    + "is what has been written about it in PaperShelf:\n"
+                    + notes.map { "  " + $0.body }.joined(separator: "\n")
+                return ToolOutput(text: text,
+                                  structured: ["count": 0, "marks": [], "notes": noteRows,
+                                               "file_missing": true])
+            }
+            let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: Prefs.passwords)
             guard !marks.isEmpty || !notes.isEmpty else {
                 return ToolOutput(text: "Nothing is marked in that document, and nothing "
                                         + "has been written about it.", structured: nil)
@@ -308,7 +332,8 @@ let folderTools: [Tool] = [
         name: "read_page",
         title: "Read one page",
         description: "The text of a single page, for reading around a highlight rather "
-            + "than pulling in the whole document. Give it either a path or a document_id.",
+            + "than pulling in the whole document. Give it either a path or a "
+            + "document_id; path wins if both are given.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -322,12 +347,12 @@ let folderTools: [Tool] = [
             guard let page = arguments["page"] as? Int, page > 0 else {
                 throw ToolFailure("'page' is required and starts at 1")
             }
-            let (path, id) = try resolveDocument(arguments)
+            let (path, id, exists) = try resolveDocument(arguments)
             guard let path else {
                 throw ToolFailure("the library knows that document but not where it is now; "
                     + "call it again with 'path'")
             }
-            let read = try storedOrExtracted(path: path, documentID: id)
+            let read = try storedOrExtracted(path: path, documentID: id, pathExists: exists)
             let text = try pageSlice(read.markdown, range: "\(page)")
             return ToolOutput(text: text, structured: ["page": page])
         }
