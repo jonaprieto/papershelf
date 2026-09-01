@@ -73,11 +73,17 @@ check(
 
 # Task 9: the server already has the app's passwords through Prefs, so no tool should still
 # be asking the caller to type one in.
+# The non-empty assertion is the point of the first clause: `all()` over an empty list is
+# True, and `result()` hands back {} for a reply carrying an error rather than a result, so
+# without it this check would report ok while examining no tools at all. Matched
+# case-insensitively so reintroducing the field as "Password" is caught too.
+listed_tools = result("7").get("tools", [])
 check(
     "no tool asks the caller for a password any more",
-    all(
-        "password" not in json.dumps(tool.get("inputSchema", {}))
-        for tool in result("7").get("tools", [])
+    len(listed_tools) > 0
+    and all(
+        "password" not in json.dumps(tool.get("inputSchema", {})).lower()
+        for tool in listed_tools
     ),
 )
 
