@@ -6,7 +6,7 @@ The file the task named, App.swift, no longer exists: while I was reading it, co
 
 ## Design
 
-Repair list, ranked by how visibly it breaks. All paths are under /Users/jonaprieto/research/papershelf/Sources/PaperShelf/. No rewrite of the view hierarchy is proposed: every fix is a local arithmetic or modifier correction to code the previous two fix commits (e346c19, e29cad8) already established as the right shape.
+Repair list, ranked by how visibly it breaks. All paths are under Sources/PaperShelf/. No rewrite of the view hierarchy is proposed: every fix is a local arithmetic or modifier correction to code the previous two fix commits (e346c19, e29cad8) already established as the right shape.
 
 1. [HIGH — silent, no crash, but defeats the intent of a fix already shipped once] `Catalogue.swift:669` — `split`'s `maximum = max(360, geometry.size.width - 360)` reserves room for the inspector but not for the notes rail, so once `notesShown` is true the effective floor for the browser pane drops from the intended ~360pt to as low as 118pt (360 minus the rail's 240 minus ~2pt of dividers), and the same stale `maximum` is reused by the drag handler at `Catalogue.swift:708`, letting the user drag the inspector to a width that was only ever safe without notes open.
    Fix: thread the reserved width through instead of hardcoding it twice.

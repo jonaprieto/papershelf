@@ -243,7 +243,7 @@ Once every UI call site (ContentView's namingPanel, Runner.identify/identifyPend
   EVIDENCE: Package.swift:1-22
 
 - As of this session the repo went from no-git to a live git history mid task (HEAD 4d6aaea 'refactor: split the app view into files by what it draws'); the naming code (Hammer.swift, BookGuess.swift, Bibtex.swift) was untouched by that refactor, but an earlier commit (cada1ca) dropped output encryption from Hammer.swift, removing EncryptionSettings, writeOptions, and the .encrypted Status case that an initial read of the file still showed.
-  EVIDENCE: git log --oneline -5 in /Users/jonaprieto/research/papershelf; diff between two Hammer.swift reads in this session (1416 lines vs 1374 lines)
+  EVIDENCE: git log --oneline -5 at the repository root; diff between two Hammer.swift reads in this session (1416 lines vs 1374 lines)
 
 - Zotero 7's file renaming templates use `{{ variable param="value" }}` mustache style blocks: documented variables include authors, authorsCount, editors, creators, firstCreator, itemType, year, plus any item field (title, DOI, ISBN, citationKey); documented parameters include start, truncate, prefix, suffix, case, join, initialize, match, replaceFrom, replaceTo, regexOpts; if/elseif/else/endif blocks with ==, <, <=, >, >= handle conditional inclusion (used specifically to branch on itemType or to test a value with `match` before falling back to something else).
   EVIDENCE: https://www.zotero.org/support/file_renaming (fetched); example quoted verbatim: `{{ if itemType == "book" }} {{ISBN}} {{ elseif itemType == "preprint" }} {{ DOI }} ... {{ else }} {{ title }} {{ endif }}`
