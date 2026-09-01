@@ -5,13 +5,13 @@ import AppKit
 /// label shown beside it and in exported notes.
 enum HighlightMeaningScope: Hashable, Identifiable {
     case library
-    case document(String)
+    case document(id: String, name: String)
     case project(id: Int64, name: String)
 
     var id: String {
         switch self {
         case .library: return "library"
-        case .document(let path): return "document:" + path
+        case .document(let id, _): return "document:" + id
         case .project(let id, _): return "project:\(id)"
         }
     }
@@ -19,7 +19,7 @@ enum HighlightMeaningScope: Hashable, Identifiable {
     var label: String {
         switch self {
         case .library: return "Whole library"
-        case .document(let path): return URL(fileURLWithPath: path).lastPathComponent
+        case .document(_, let name): return name
         case .project(_, let name): return name
         }
     }
@@ -34,8 +34,9 @@ enum HighlightMeaningScope: Hashable, Identifiable {
 
     fileprivate var storageKey: String { id }
 
-    static func forDocument(_ url: URL) -> Self {
-        .document(url.resolvingSymlinksInPath().path)
+    static func forDocument(_ url: URL, id: String? = nil) -> Self {
+        .document(id: id ?? url.resolvingSymlinksInPath().path,
+                  name: url.lastPathComponent)
     }
 }
 
@@ -210,19 +211,28 @@ final class Palette {
     }
 
     func meaning(for colour: NSColor?, scope: HighlightMeaningScope?) -> String {
+        meaning(for: colour, scopes: scope.map { [$0] } ?? [])
+    }
+
+    func meaning(for colour: NSColor?, scopes: [HighlightMeaningScope]) -> String {
         let match = nearest(to: colour)
         // A mark this app made carries one of these colours exactly. A mark made in
         // Preview or Skim is near one at best, and whether that near miss is worth a name
         // is the preference: turned off, only an exact colour is named.
         let limit = Prefs.shared.labelForeignMarks ? 0.02 : 0.0002
         guard let match, match.distance(to: colour ?? .clear) < limit else { return "Highlight" }
-        return meaning(for: match, scope: scope)
+        return meaning(for: match, scopes: scopes)
     }
 
     func meaning(for style: HighlightStyle, scope: HighlightMeaningScope? = nil) -> String {
-        if let scope, scope != .library,
-           let override = scopedMeanings[scope.storageKey]?[style.id.uuidString] {
-            return override
+        meaning(for: style, scopes: scope.map { [$0] } ?? [])
+    }
+
+    func meaning(for style: HighlightStyle, scopes: [HighlightMeaningScope]) -> String {
+        for scope in scopes where scope != .library {
+            if let override = scopedMeanings[scope.storageKey]?[style.id.uuidString] {
+                return override
+            }
         }
         return style.meaning.isEmpty ? "Highlight" : style.meaning
     }

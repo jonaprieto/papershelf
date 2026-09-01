@@ -24,6 +24,7 @@ struct ReaderWindow: View {
     /// The row this file has in the library, made when it is opened. Opening records; it
     /// never renames, moves or files anything.
     @State private var documentID: String?
+    @State private var documentProjectScopes: [HighlightMeaningScope] = []
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the delegate is the one that builds this window.
     private var palette: Palette { Palette.shared }
@@ -40,7 +41,8 @@ struct ReaderWindow: View {
                     NotesRail(annotator: annotator, palette: palette,
                               addingNote: $addingNote, noteText: $noteText,
                               lastColour: nextColour, title: title, source: url.path,
-                              close: { showsNotes = false })
+                              close: { showsNotes = false }, documentID: documentID,
+                              effectiveProjectScopes: documentProjectScopes)
                     .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
                 }
             Divider()
@@ -94,6 +96,8 @@ struct ReaderWindow: View {
         }
         guard let record else { return }
         documentID = record.id
+        let projects = (try? await library.projects(containingDocument: record.id)) ?? []
+        documentProjectScopes = projects.map { .project(id: $0.id, name: $0.name) }
 
         guard let position = try? await library.readingPosition(forDocument: record.id),
               position.page > 1 else { return }

@@ -207,6 +207,11 @@ struct NotesRail: View {
     var showsHeader: Bool = true
     /// Projects are optional because the standalone reader is not attached to the shelf.
     var projectScopes: [HighlightMeaningScope] = []
+    /// The library identity keeps a paper override attached when its filename changes.
+    var documentID: String? = nil
+    /// Only memberships of this paper participate in automatic project precedence. The
+    /// separate `projectScopes` list remains available for the explicit scope picker.
+    var effectiveProjectScopes: [HighlightMeaningScope] = []
 
     /// Whether the document this panel is about is the one the reader has open.
     ///
@@ -288,7 +293,7 @@ struct NotesRail: View {
     private var meaningsPresent: [String] {
         var seen: [String] = []
         for mark in marks {
-            let meaning = palette.meaning(for: mark.colour, scope: currentMeaningScope)
+            let meaning = palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes)
             if !seen.contains(meaning) { seen.append(meaning) }
         }
         return seen
@@ -297,17 +302,22 @@ struct NotesRail: View {
     private var shownMarks: [Annotator.Mark] {
         guard let filter else { return marks }
         return marks.filter {
-            palette.meaning(for: $0.colour, scope: currentMeaningScope) == filter
+            palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes) == filter
         }
     }
 
     private var defaultMeaningScope: HighlightMeaningScope? {
         guard !source.isEmpty else { return nil }
-        return .forDocument(URL(fileURLWithPath: source))
+        return .forDocument(URL(fileURLWithPath: source), id: documentID)
     }
 
     private var currentMeaningScope: HighlightMeaningScope? {
         activeMeaningScope ?? defaultMeaningScope
+    }
+
+    private var effectiveMeaningScopes: [HighlightMeaningScope] {
+        if let activeMeaningScope { return [activeMeaningScope] }
+        return ([defaultMeaningScope].compactMap { $0 } + effectiveProjectScopes + [.library])
     }
 
     private var availableMeaningScopes: [HighlightMeaningScope] {
@@ -413,8 +423,8 @@ struct NotesRail: View {
                             save: { live.setNote($0, on: mark) },
                             recolour: { live.setColour($0, on: mark) },
                             styles: palette.styles,
-                            meaning: palette.meaning(for: mark.colour, scope: currentMeaningScope),
-                            styleMeaning: { palette.meaning(for: $0, scope: currentMeaningScope) },
+                            meaning: palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes),
+                            styleMeaning: { palette.meaning(for: $0, scopes: effectiveMeaningScopes) },
                             documentTitle: title
                         )
                         .listRowInsets(EdgeInsets())
@@ -587,7 +597,7 @@ struct NotesRail: View {
     private var notesMarkdown: String {
         let exported = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
-                       meaning: palette.meaning(for: $0.colour, scope: currentMeaningScope))
+                       meaning: palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes))
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported)

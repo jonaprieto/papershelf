@@ -2286,7 +2286,8 @@ struct ResultsPane: View {
                 palette: palette,
                 projectScopes: projects.map {
                     .project(id: $0.id, name: $0.name)
-                }
+                },
+                documentID: tagIndex.documentID[item.key]
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(

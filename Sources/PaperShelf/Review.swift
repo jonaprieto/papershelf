@@ -72,6 +72,7 @@ struct ReviewInspector: View {
     var annotator: Annotator
     var palette: Palette
     var projectScopes: [HighlightMeaningScope] = []
+    var documentID: String? = nil
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
     /// The same preference the bibliography tab uses, so one entry is never judged by a
@@ -109,19 +110,24 @@ struct ReviewInspector: View {
     @State private var hovered: UUID?
     @State private var hoveringNote = false
     @State private var hoveringChatGPT = false
+    @State private var documentProjectScopes: [HighlightMeaningScope] = []
 
     private var lastStyle: HighlightStyle? {
         palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
     }
 
     private var documentMeaningScope: HighlightMeaningScope {
-        .forDocument(item.currentURL)
+        .forDocument(item.currentURL, id: documentID)
+    }
+
+    private var effectiveMeaningScopes: [HighlightMeaningScope] {
+        [documentMeaningScope] + documentProjectScopes + [.library]
     }
 
     private var hoveredMeaning: String? {
         guard let hovered, let style = palette.styles.first(where: { $0.id == hovered })
         else { return nil }
-        let meaning = palette.meaning(for: style, scope: documentMeaningScope)
+        let meaning = palette.meaning(for: style, scopes: effectiveMeaningScopes)
         return meaning == "Highlight" ? "Unnamed highlighter" : meaning
     }
 
@@ -190,7 +196,9 @@ struct ReviewInspector: View {
                       }
                   },
                   showsHeader: false,
-                  projectScopes: projectScopes)
+                  projectScopes: projectScopes,
+                  documentID: documentID,
+                  effectiveProjectScopes: documentProjectScopes)
     }
 
     var body: some View {
@@ -205,11 +213,26 @@ struct ReviewInspector: View {
             }
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
+        .task(id: item.key + ":" + (documentID ?? "")) { await loadDocumentProjects() }
         .onChange(of: item.key) { _, _ in
             editing = false
             addingNote = false
             noteText = ""
         }
+    }
+
+    private func loadDocumentProjects() async {
+        guard let library = Library.shared else { return }
+        let record: DocumentRecord?
+        if let documentID {
+            record = try? await library.document(id: documentID)
+        } else {
+            let path = item.currentURL.resolvingSymlinksInPath().path
+            record = try? await library.document(atPath: path)
+        }
+        guard let record else { return }
+        let projects = (try? await library.projects(containingDocument: record.id)) ?? []
+        documentProjectScopes = projects.map { .project(id: $0.id, name: $0.name) }
     }
 
     /// The page and the panel beside it, rather than stacked. The panel was a drawer
@@ -509,7 +532,7 @@ struct ReviewInspector: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovered = $0 ? style.id : nil }
-                .accessibilityLabel(palette.meaning(for: style, scope: documentMeaningScope))
+                .accessibilityLabel(palette.meaning(for: style, scopes: effectiveMeaningScopes))
             }
 
             Divider().frame(height: 16)

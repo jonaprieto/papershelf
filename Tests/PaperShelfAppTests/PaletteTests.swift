@@ -52,7 +52,8 @@ final class PaletteTests: XCTestCase {
     func testPaperMeaningOverridesTheLibraryDefaultAndCanInheritAgain() {
         let palette = Palette.shared
         let style = palette.styles[0]
-        let scope = HighlightMeaningScope.document("/tmp/meaning-\(UUID().uuidString).pdf")
+        let scope = HighlightMeaningScope.document(id: "doc-\(UUID().uuidString)",
+                                                   name: "meaning.pdf")
         defer { palette.resetMeanings(in: scope) }
 
         let libraryMeaning = palette.meaning(for: style)
@@ -69,7 +70,9 @@ final class PaletteTests: XCTestCase {
     func testProjectMeaningIsSeparateFromPaperMeaning() {
         let palette = Palette.shared
         let style = palette.styles[0]
-        let paper = HighlightMeaningScope.document("/tmp/paper-\(UUID().uuidString).pdf")
+        let paperID = "paper-\(UUID().uuidString)"
+        let paper = HighlightMeaningScope.document(id: paperID,
+                                                   name: "paper.pdf")
         let project = HighlightMeaningScope.project(id: Int64.random(in: 1...Int64.max),
                                                     name: "Editing")
         defer {
@@ -80,5 +83,12 @@ final class PaletteTests: XCTestCase {
         palette.setMeaning("Rewrite", on: style, scope: project)
         XCTAssertEqual(palette.meaning(for: style, scope: project), "Rewrite")
         XCTAssertEqual(palette.meaning(for: style, scope: paper), palette.meaning(for: style))
+
+        palette.setMeaning("Delete", on: style, scope: paper)
+        XCTAssertEqual(palette.meaning(for: style,
+                                       scopes: [paper, project, .library]), "Delete")
+        let renamedPaper = HighlightMeaningScope.document(id: paperID, name: "renamed.pdf")
+        XCTAssertEqual(palette.meaning(for: style, scope: renamedPaper), "Delete",
+                       "a filename change keeps the paper override")
     }
 }
