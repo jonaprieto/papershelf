@@ -259,6 +259,13 @@ final class Palette {
         saveScopedMeanings()
     }
 
+    /// The raw value shown while editing a scope. Empty means the scope inherits the library
+    /// meaning; the effective value belongs in the reader and notes rail instead.
+    func meaningOverride(for style: HighlightStyle, scope: HighlightMeaningScope) -> String {
+        guard scope != .library else { return style.meaning }
+        return scopedOverrides[scope.storageKey]?[style.id.uuidString]?.meaning ?? ""
+    }
+
     func resetToDefaults() {
         styles = Palette.defaults
         save()
@@ -348,7 +355,7 @@ final class Palette {
     }
 }
 
-/// Edits the same meanings as Settings, but against one paper or project when requested.
+/// Edits the library role list or the overrides for one paper, folder, or project.
 struct HighlightMeaningEditor: View {
     let palette: Palette
     let scope: HighlightMeaningScope
@@ -357,41 +364,111 @@ struct HighlightMeaningEditor: View {
     var body: some View {
         Form {
             Section {
-                ForEach(palette.styles) { style in
-                    TextField(
-                        style.meaning.isEmpty ? "Highlight" : style.meaning,
-                        text: Binding(
-                            get: { palette.meaning(for: style, scope: scope) },
-                            set: { value in
-                                if scope == .library { palette.setMeaning(value, on: style) }
-                                else { palette.setMeaning(value, on: style, scope: scope) }
-                            }
+                ForEach(Array(palette.styles.enumerated()), id: \.element.id) { index, style in
+                    HStack(spacing: Space.step) {
+                        ColorPicker("", selection: Binding(
+                            get: { effectiveStyle(for: style).swatch },
+                            set: { setColour($0, for: style) }
+                        ))
+                        .labelsHidden()
+                        .accessibilityLabel(scope == .library
+                                            ? "Library colour"
+                                            : "Colour override for \(scope.title)")
+
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { palette.meaningOverride(for: style, scope: scope) },
+                                set: { setMeaning($0, for: style) }
+                            ),
+                            prompt: Text(scope == .library
+                                         ? "What it means"
+                                         : (style.meaning.isEmpty
+                                            ? "Library default"
+                                            : "Library: \(style.meaning)"))
                         )
-                    )
-                    .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+
+                        if scope == .library && index < 9 {
+                            Text("\(index + 1)")
+                                .font(Face.mono.weight(.bold))
+                                .frame(width: 16, height: 16)
+                                .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             } header: {
-                Text(scope.title)
+                VStack(alignment: .leading, spacing: Space.tight) {
+                    Text(scope == .library ? "Library roles" : "\(scope.title) overrides")
+                    Text(scope == .library
+                         ? "Define the roles and colours available across your library."
+                         : "Use the same role controls as Settings, limited to this scope.")
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } footer: {
                 Text(scope == .library
-                     ? "These are the defaults used by every paper without its own meaning."
-                     : "Blank fields inherit the whole-library meaning.")
+                     ? "These roles and colours are the defaults used by every paper without an override."
+                     : "Blank fields inherit the library meaning. Colour wells start from the library colour and can be changed here.")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if scope != .library {
-                Button("Reset this scope") { palette.resetMeanings(in: scope) }
+                Section {
+                    Button {
+                        openLibraryRoles()
+                    } label: {
+                        Label("Add or remove roles in Settings", systemImage: "slider.horizontal.3")
+                    }
                     .buttonStyle(.link)
+
+                    Button("Reset all overrides") { palette.resetMeanings(in: scope) }
+                        .buttonStyle(.link)
+                } footer: {
+                    Text("The library owns the role list. Add a role there, then return here to give it this scope's meaning and colour.")
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 360, minHeight: 240)
+        .frame(minWidth: 620, minHeight: 320)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { dismiss() }
             }
         }
+    }
+
+    private func effectiveStyle(for style: HighlightStyle) -> HighlightStyle {
+        palette.styles(for: scope).first { $0.id == style.id } ?? style
+    }
+
+    private func setColour(_ colour: Color, for style: HighlightStyle) {
+        if scope == .library {
+            palette.setColour(colour, on: style)
+        } else {
+            palette.setColour(colour, on: style, scope: scope)
+        }
+    }
+
+    private func setMeaning(_ meaning: String, for style: HighlightStyle) {
+        if scope == .library {
+            palette.setMeaning(meaning, on: style)
+        } else {
+            palette.setMeaning(meaning, on: style, scope: scope)
+        }
+    }
+
+    private func openLibraryRoles() {
+        Prefs.shared.settingsPane = .highlighters
+        dismiss()
+        DispatchQueue.main.async { PaletteSettings.openSettingsWindow() }
     }
 }

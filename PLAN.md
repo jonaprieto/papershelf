@@ -73,6 +73,10 @@ Paper override > Folder override > Project override > Library defaults
 - Give new annotations a stable semantic role/slot.
 - Show semantic labels in the Notes Rail, Markdown exports, and generated sidecars.
 - Changing a paper or project profile should immediately update the display and exports for its highlights.
+- Offer optional library presets such as Reviewer, Study, and Writing editor, each with a
+  preview of its meanings and colours before applying the complete role set.
+- Keep custom roles available after a preset is applied, and make the preset action explicit
+  because it changes the shared library defaults; paper and project overrides remain local.
 
 Relevant areas: `Annotations.swift`, `Prefs.swift`, `PaletteSettings.swift`, `Markdown.swift`,
 `HighlightProfile.swift`, `HighlightTools.swift`, and existing library persistence.

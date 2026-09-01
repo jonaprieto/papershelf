@@ -56,7 +56,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .bibtex:
             return ["citation", "biblatex", "entry", "braces", "wrap", "fields", "cite"]
         case .highlighters:
-            return ["colour", "color", "highlight", "marks", "meaning", "annotations"]
+            return ["colour", "color", "highlight", "marks", "meaning", "semantics", "role",
+                    "annotations"]
         case .keyboard:
             return ["shortcut", "keys", "bindings", "conflict", "rebind"]
         case .ai:
@@ -450,14 +451,14 @@ struct HighlighterSettings: View {
                         .foregroundStyle(.secondary)
                         .disabled(palette.styles.count < 2)
                         .help(palette.styles.count < 2
-                              ? "The last colour stays; without one there is no highlighter"
-                              : "Remove this colour")
+                              ? "The last role stays; without one there is no highlighter"
+                              : "Remove this role")
                     }
                 }
 
                 HStack {
                     Button { palette.add() } label: {
-                        Label("Add a colour", systemImage: "plus.circle")
+                        Label("Add a role", systemImage: "plus.circle")
                     }
                     .buttonStyle(.link)
                     Spacer()
@@ -465,11 +466,11 @@ struct HighlighterSettings: View {
                         .buttonStyle(.link)
                 }
             } header: {
-                Text("Your highlighters")
+                Text("Library roles")
             } footer: {
-                Text("Shown beside the bar as you highlight and next to every mark, so the "
-                     + "convention is legible where it is used rather than remembered. The "
-                     + "number keys follow this order.")
+                Text("These roles and colours are shared by every paper. A paper, folder, or "
+                     + "project can override its meaning and colour without changing the "
+                     + "library vocabulary. The number keys follow this order.")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

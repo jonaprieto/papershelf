@@ -59,13 +59,16 @@ final class PaletteTests: XCTestCase {
 
         let libraryMeaning = palette.meaning(for: style)
         XCTAssertEqual(palette.meaning(for: style, scope: scope), libraryMeaning)
+        XCTAssertEqual(palette.meaningOverride(for: style, scope: scope), "")
 
         palette.setMeaning("Delete", on: style, scope: scope)
         XCTAssertEqual(palette.meaning(for: style, scope: scope), "Delete")
+        XCTAssertEqual(palette.meaningOverride(for: style, scope: scope), "Delete")
         XCTAssertEqual(palette.meaning(for: style), libraryMeaning)
 
         palette.setMeaning("", on: style, scope: scope)
         XCTAssertEqual(palette.meaning(for: style, scope: scope), libraryMeaning)
+        XCTAssertEqual(palette.meaningOverride(for: style, scope: scope), "")
     }
 
     func testProjectMeaningIsSeparateFromPaperMeaning() {
