@@ -774,6 +774,27 @@ final class LibraryTests: XCTestCase {
                 markdown     TEXT NOT NULL,
                 extracted_at TEXT NOT NULL
             );
+
+            CREATE VIRTUAL TABLE extracted_text_fts USING fts5(
+                markdown, content='extracted_text', content_rowid='rowid'
+            );
+
+            CREATE TRIGGER extracted_text_ai AFTER INSERT ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+            END;
+            CREATE TRIGGER extracted_text_ad AFTER DELETE ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+            END;
+            CREATE TRIGGER extracted_text_au AFTER UPDATE ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+                INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+            END;
+            -- This is version 1 and version 4's shape for the tables the remaining
+            -- migrations touch, not a complete version 5 database: version 1's `notes`
+            -- table and version 2 and 3's `spend_ledger`, `dismissed_duplicates`, and
+            -- `bibtex_entries` tables are left out because neither version 6 (which only
+            -- indexes document_tags and project_members) nor version 7 (which only alters
+            -- extracted_text) reads or writes them.
             PRAGMA user_version = 5;
             """
         XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
@@ -930,13 +951,20 @@ final class LibraryBibtexTests: XCTestCase {
                 document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                 first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL
             );
-            -- A real version 2 database has all of version 1's tables, and later
-            -- migrations alter them. A fixture holding only the two tables this test
-            -- reads is not a version 2 database, it is a fiction that migrates
-            -- differently, which is how this test caught itself. The tag tables are
-            -- here for that reason: version 6 indexes them, and a fixture without
+            -- A real version 2 database has all of version 1's tables plus version 2's
+            -- own two, and later migrations alter or index some of them. A fixture
+            -- holding only the two tables this test reads is not a version 2 database,
+            -- it is a fiction that migrates differently, which is how this test caught
+            -- itself. This fixture models only the tables the remaining migrations
+            -- (three through seven) touch or depend on: version 1's `notes` table and
+            -- version 2's `spend_ledger` and `dismissed_duplicates` tables are left out
+            -- on purpose, since nothing from here on reads or writes them. The tag
+            -- tables are here because version 6 indexes them, and a fixture without
             -- them fails a migration a real database of this vintage sails through.
-            -- extracted_text is here for the same reason: version 7 alters it.
+            -- extracted_text is here, together with the FTS5 shadow table and triggers
+            -- version 1 creates alongside it, for the same reason: version 7 alters the
+            -- table, and that has to happen against the genuine version 1 shape rather
+            -- than a bare table that only shares its name.
             CREATE TABLE tags (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE
             );
@@ -959,6 +987,21 @@ final class LibraryBibtexTests: XCTestCase {
                 markdown     TEXT NOT NULL,
                 extracted_at TEXT NOT NULL
             );
+
+            CREATE VIRTUAL TABLE extracted_text_fts USING fts5(
+                markdown, content='extracted_text', content_rowid='rowid'
+            );
+
+            CREATE TRIGGER extracted_text_ai AFTER INSERT ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+            END;
+            CREATE TRIGGER extracted_text_ad AFTER DELETE ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+            END;
+            CREATE TRIGGER extracted_text_au AFTER UPDATE ON extracted_text BEGIN
+                INSERT INTO extracted_text_fts(extracted_text_fts, rowid, markdown) VALUES('delete', old.rowid, old.markdown);
+                INSERT INTO extracted_text_fts(rowid, markdown) VALUES (new.rowid, new.markdown);
+            END;
             PRAGMA user_version = 2;
             """
         XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
