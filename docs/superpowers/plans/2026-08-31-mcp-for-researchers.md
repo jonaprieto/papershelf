@@ -224,20 +224,35 @@ public func needsIndexing(extractedAt: Date?, fileModified: Date?, format: TextF
 
 Delete the old `documentText` function entirely. `needsIndexing(extractedAt:fileModified:)` at line 59 stays exactly as it is.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Fix the one call site, so the package still builds**
 
-Run: `swift test --filter TextIndexTests 2>&1 | tail -20`
+Deleting `documentText` leaves one caller broken, and SwiftPM builds every target before running any test, so nothing in the package runs until it is fixed. Change `Sources/PaperShelf/TextIndexing.swift:90` to:
+
+```swift
+                // The format is dropped for now: there is nowhere in the library to put
+                // it yet. Nil still means the file would not open, which is what the
+                // caller counts as a failure worth retrying.
+                let text = indexedMarkdown(of: job.url, passwords: passwords)?.text
+```
+
+Task 3 rewrites this function properly. This one line is what keeps the commit green.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `swift test --filter TextIndexTests 2>&1 | tail -12`
 Expected: PASS, 5 tests.
 
-Then check nothing else called the old function:
-
 Run: `grep -rn "documentText" Sources/ Tests/ | grep -v storeAsDocumentText`
-Expected: one line only, `Sources/PaperShelf/TextIndexing.swift:90`. That call is fixed in Task 3 and the build is expected to be red until then, which is why this task does not run a full `swift build`.
+Expected: no output. Nothing calls the old function.
 
-- [ ] **Step 5: Commit**
+Run: `swift test 2>&1 | tail -5`
+Expected: PASS, the whole suite. Every commit on this branch is independently green.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add Sources/PaperShelfCore/TextIndex.swift Tests/PaperShelfCoreTests/TextIndexTests.swift
+git add Sources/PaperShelfCore/TextIndex.swift Tests/PaperShelfCoreTests/TextIndexTests.swift \
+        Sources/PaperShelf/TextIndexing.swift
 git commit -m "feat: indexed text says which page it came from"
 ```
 
@@ -436,6 +451,9 @@ return ((try? await library.setExtractedText(markdown, forDocument: document.id,
 Run: `swift test --filter LibraryTests 2>&1 | tail -20`
 Expected: PASS. The whole existing `LibraryTests` suite must still pass; the migration runs against every scratch library those tests build.
 
+Run: `swift test 2>&1 | tail -5`
+Expected: PASS, the whole suite. The two app call sites are part of this task precisely so this stays true.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -532,7 +550,7 @@ In `Sources/PaperShelf/TextIndexing.swift`, the work filter now asks about the f
             }
 ```
 
-and `readText` reads page-marked Markdown:
+and `readText` reads page-marked Markdown, replacing the one-line stopgap Task 1 left there (`indexedMarkdown(of:passwords:)?.text`, which discarded the format because there was nowhere to store it yet):
 
 ```swift
     /// One batch, read across every core. Extraction is the whole cost here and it is all
@@ -575,8 +593,8 @@ The call at line 56, `try await library.setExtractedText(read.stored)`, now reso
 Run: `swift test --filter IndexProducerTests 2>&1 | tail -20`
 Expected: PASS, 2 tests.
 
-Run: `swift build 2>&1 | tail -20`
-Expected: no errors. This is the first task where the whole package builds again.
+Run: `swift test 2>&1 | tail -5`
+Expected: PASS, the whole suite.
 
 - [ ] **Step 5: Commit**
 
@@ -2980,7 +2998,9 @@ Three places where this plan does not do what `docs/superpowers/specs/2026-08-31
 
 ## Notes for whoever runs this
 
-**Order matters between Tasks 1 and 3.** Task 1 deletes `documentText` while `Sources/PaperShelf/TextIndexing.swift:90` still calls it, so the package does not build at the end of Task 1 or Task 2. That is deliberate: the Core change and the app change are separate reviewable units and the alternative is one enormous commit. Task 3 Step 4 is where `swift build` must be green again. If you are running tasks in isolated worktrees, run 1, 2 and 3 in the same one.
+**Every commit builds, including Tasks 1 and 2.** An earlier draft of this plan had Task 1 delete `documentText` and leave `Sources/PaperShelf/TextIndexing.swift:90` calling it until Task 3, on the assumption that `swift test --filter TextIndexTests` would still run. It does not: SwiftPM plans and builds the whole target graph before a filter is applied, `--filter` selects which tests run and nothing else, and `PaperShelfAppTests` depends on `PaperShelf`. A red app target means no test in the package can run at all, so Tasks 1 and 2 would have produced two commits that could not be verified even in principle, against `CLAUDE.md`'s standing rule that every commit on a branch is independently green.
+
+Task 1 therefore also changes that one call site to `indexedMarkdown(of:passwords:)?.text`, discarding the format because there is nowhere to store it until Task 2 adds the column. Task 3 rewrites the same function properly, threading the format through and switching the staleness check. Tasks 1, 2 and 3 still belong in one worktree, but each of them ends green.
 
 **`Tools/mcp-check.sh` gets a new case in almost every task,** and the reply-count assertion at the top of `Tools/mcp-check.py` has to be bumped each time or every check after it reads from the wrong id. The running total: 7 + 5 + 11 at the start, 7 + 5 + 14 after Task 5, 7 + 5 + 18 after Task 7, 7 + 5 + 20 after Task 8, 8 + 5 + 20 after Task 9, 8 + 5 + 25 after Task 10, 8 + 5 + 26 after Task 11, and 8 + 5 + 28 + 1 after Task 12, where the trailing 1 is the fourth server run that Task 12 adds.
 
