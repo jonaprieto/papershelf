@@ -45,4 +45,11 @@ final class WebsiteTests: XCTestCase {
         XCTAssertEqual(pageTools, expected)
         XCTAssertEqual(pageTools.count, 18)
     }
+
+    func testLandingPageExplainsScopedHighlightsAndDuplicateWatcher() throws {
+        let html = try String(contentsOf: repositoryRoot.appendingPathComponent("docs/index.html"), encoding: .utf8)
+        XCTAssertTrue(html.contains("extend, edit, and scope to a paper, project, folder, or whole library"))
+        XCTAssertTrue(html.contains("The watcher catches the next copy"))
+        XCTAssertTrue(html.contains("opens a review before anything is removed"))
+    }
 }
