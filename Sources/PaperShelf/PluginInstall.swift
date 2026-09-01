@@ -222,7 +222,12 @@ enum ChatGPTPlugin {
     /// What the marketplace listing is built from. `interface` is the half that shows: a
     /// listing with no `displayName` and no `shortDescription` renders as a bare folder
     /// name with an empty line under it, next to entries that say what they do.
-    static func pluginManifestData(hasLogo: Bool, installedAt: Date = Date()) throws -> Data {
+    ///
+    /// `appVersion` defaults to `releaseVersion`, which reads the running app's own
+    /// bundle; a test passes an explicit value instead, since a test bundle has a
+    /// `CFBundleShortVersionString` of its own that has nothing to do with PaperShelf's.
+    static func pluginManifestData(hasLogo: Bool, installedAt: Date = Date(),
+                                   appVersion: String = releaseVersion) throws -> Data {
         var interface: [String: Any] = [
             "displayName": "PaperShelf",
             "shortDescription": "Search and cite your own PDFs",
@@ -257,7 +262,7 @@ enum ChatGPTPlugin {
         }
         return try serialize([
             "name": "papershelf",
-            "version": cachebustedVersion(installedAt: installedAt),
+            "version": cachebustedVersion(installedAt: installedAt, appVersion: appVersion),
             "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
             "author": ["name": "PaperShelf"],
             "homepage": "https://github.com/jonaprieto/papershelf",
@@ -285,9 +290,12 @@ enum ChatGPTPlugin {
     }
 
     /// The app's own version, so the plugin cannot claim a different one than the build it
-    /// points at. A command-line build has no Info.plist to read it from.
+    /// points at. A command-line build has no Info.plist to read it from, which is when the
+    /// fallback below is used; it is kept equal to `paperShelfVersion` by a test, the same
+    /// way the checked-in manifest is, so a debug build and a release build never disagree
+    /// about what they are.
     static var releaseVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.7.0"
     }
 
     /// `mcpServers`, not `mcp_servers`: the plugin schema names it in camel case, and a

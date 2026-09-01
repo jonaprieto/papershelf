@@ -1,11 +1,21 @@
 import XCTest
 @testable import PaperShelf
+import PaperShelfCore
 
 /// The merge into `marketplace.json` is the part worth hammering on: it must fold a new
 /// entry into whatever is already there, update rather than duplicate a listing that
 /// exists, and refuse to touch a file it cannot parse. Everything here runs against a
 /// scratch directory, never the real `~/.agents`.
 final class PluginInstallTests: XCTestCase {
+
+    /// The repository root, found from this file rather than from the working directory,
+    /// which is wherever the test runner happens to have started.
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)          // .../Tests/PaperShelfAppTests/PluginInstallTests.swift
+            .deletingLastPathComponent()          // .../Tests/PaperShelfAppTests
+            .deletingLastPathComponent()          // .../Tests
+            .deletingLastPathComponent()          // repository root
+    }
 
     private func scratchPaths() -> ChatGPTPlugin.Paths {
         let root = FileManager.default.temporaryDirectory
@@ -344,6 +354,49 @@ final class PluginInstallTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: paths.marketplace), garbage)
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.destination.path),
                      "the plugin folder must be left in place when its listing could not be removed")
+    }
+
+    // MARK: - Fidelity to Plugin/papershelf/
+
+    /// `pluginManifestData` reproduces `Plugin/papershelf/.codex-plugin/plugin.json` in
+    /// Swift, because a built `.app` has no source checkout to copy the real file from at
+    /// install time. The two drifted apart once already -- 1.1.0 in one, 1.2.3 in the
+    /// other -- with nothing to catch it. This reads the checked-in file and holds the
+    /// Swift copy to it, field for field.
+    func testTheSwiftManifestMatchesTheCheckedInOne() throws {
+        let repoManifest = try readJSON(repositoryRoot
+            .appendingPathComponent("Plugin/papershelf/.codex-plugin/plugin.json"))
+
+        // `appVersion` is given explicitly as `paperShelfVersion` rather than left at its
+        // default: the default reads the running app's own bundle, and in a test bundle
+        // that reports the test runner's own version, not PaperShelf's. `paperShelfVersion`
+        // is the constant a separate test holds Resources/Info.plist to, so passing it here
+        // is what actually chains this manifest's version to the one place it is written.
+        var swiftManifest = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: ChatGPTPlugin.pluginManifestData(hasLogo: true,
+                                                    installedAt: Date(timeIntervalSince1970: 0),
+                                                    appVersion: paperShelfVersion))
+            as? [String: Any])
+
+        // The Swift copy stamps every install with the moment it happened, as semver build
+        // metadata, so a local plugin is never read by ChatGPT as a version it has already
+        // cached. The checked-in file names no such moment; only the released version ahead
+        // of the "+" has to agree with it.
+        let stamped = try XCTUnwrap(swiftManifest["version"] as? String)
+        let released = String(stamped.split(separator: "+", maxSplits: 1)[0])
+        XCTAssertEqual(released, paperShelfVersion,
+                       "the plugin must claim the version this build actually is")
+        XCTAssertEqual(released, repoManifest["version"] as? String,
+                       "Plugin/papershelf/.codex-plugin/plugin.json has drifted from "
+                       + "paperShelfVersion")
+        swiftManifest["version"] = repoManifest["version"]
+
+        let canonical = { (object: [String: Any]) in
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        }
+        XCTAssertEqual(try canonical(swiftManifest), try canonical(repoManifest),
+                       "PluginInstall.swift has drifted from "
+                       + "Plugin/papershelf/.codex-plugin/plugin.json")
     }
 
     func testUninstallWithNoMarketplaceStillRemovesTheFolder() throws {

@@ -54,4 +54,25 @@ final class SupportTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
         XCTAssertEqual(folder.lastPathComponent, "PaperShelf")
     }
+
+    // MARK: - The app and the server agree on what they are
+
+    /// `paperShelfVersion` and the app's own `CFBundleShortVersionString` are two numbers
+    /// written in two files, which is exactly the shape that let the plugin listing drift
+    /// to 1.3.0 while the app moved on to 1.6.0 without anyone noticing. Read from disk
+    /// rather than duplicated as a literal here, so a future bump that misses one of them
+    /// fails this instead of shipping quietly mismatched.
+    func testTheInfoPlistVersionMatchesTheServerVersion() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)   // .../Tests/PaperShelfCoreTests/SupportTests.swift
+            .deletingLastPathComponent()                        // .../Tests/PaperShelfCoreTests
+            .deletingLastPathComponent()                        // .../Tests
+            .deletingLastPathComponent()                        // repository root
+        let plistURL = repositoryRoot.appendingPathComponent("Resources/Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let plist = try XCTUnwrap(try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil) as? [String: Any])
+
+        XCTAssertEqual(plist["CFBundleShortVersionString"] as? String, paperShelfVersion,
+                       "Resources/Info.plist and paperShelfVersion have drifted apart")
+    }
 }
