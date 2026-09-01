@@ -155,6 +155,8 @@ final class TextIndexTests: XCTestCase {
 }
 ```
 
+A sixth test was added during review, because the five above pin the marker's presence but not its number, and a regression from the page index to a running count of emitted markers would shift every page number the app reports. It needs a multi-page fixture with per-page control over whether a page carries text, which neither `makeTextPDF` (one page) nor `makeScratchPDF` (blank pages only) could provide, so `Tests/PaperShelfCoreTests/TestSupport.swift` gained one. The test writes a blank first page and a second page with text, and asserts the output contains `## Page 2` and not `## Page 1`.
+
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `swift test --filter TextIndexTests 2>&1 | tail -20`
