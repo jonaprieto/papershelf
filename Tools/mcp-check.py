@@ -59,6 +59,11 @@ check(
     d.get("_meta", {}).get("io.modelcontextprotocol/serverInfo", {}).get("name")
     == "papershelf",
 )
+check(
+    "the server reports the version the plugin listing claims",
+    d.get("_meta", {}).get("io.modelcontextprotocol/serverInfo", {}).get("version")
+    == json.load(open("Plugin/papershelf/.codex-plugin/plugin.json"))["version"],
+)
 
 i = result("1")
 check(

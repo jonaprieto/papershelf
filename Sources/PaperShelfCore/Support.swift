@@ -1,5 +1,13 @@
 import Foundation
 
+/// The one place a version number is written. The MCP server reports it as its
+/// `serverInfo`, the plugin listing declares it, and `Tools/mcp-check.sh` checks the two
+/// against each other, which is how they drifted to 1.1.0 and 1.2.3 without anyone
+/// noticing. Bumped a minor version over the higher of those two: everything added since
+/// 1.2.3 is a new capability, not a breaking change, since a caller that still names a
+/// folder on every call keeps working exactly as before.
+public let paperShelfVersion = "1.3.0"
+
 /// Where the app keeps what it must not lose: the library, the last run, anything else
 /// that outlives a launch.
 ///

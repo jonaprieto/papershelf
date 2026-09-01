@@ -1,13 +1,23 @@
 import Foundation
+import PaperShelfCore
+
+if CommandLine.arguments.contains("--version") {
+    print(paperShelfVersion)
+    exit(0)
+}
 
 let server = Server(
     tools: folderTools + libraryTools + writeTools,
     name: "papershelf",
-    version: "1.1.0",
-    instructions: "Read and search a local PDF library. Paths are absolute paths on this "
-        + "machine. Start with list_documents on a folder the user names, then "
-        + "read_document to get a document's text as Markdown."
+    version: paperShelfVersion,
+    instructions: "Read, search and organise a local PDF library. Start with "
+        + "list_documents with no arguments, which reports what the library holds; "
+        + "search_documents with no folder searches all of it and quotes the passages it "
+        + "matched with their page numbers. Every result carries a document_id that "
+        + "read_document, read_page, list_highlights, add_to_project and set_tags all "
+        + "accept, so nothing needs a file path. Paths, where they appear, are absolute "
+        + "paths on this machine, and nothing leaves it."
 )
 
-note("papershelf MCP server ready, speaking \(Revision.current) and the initialize handshake")
+note("papershelf \(paperShelfVersion) ready, speaking \(Revision.current) and the initialize handshake")
 server.run()

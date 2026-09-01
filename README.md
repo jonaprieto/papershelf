@@ -385,10 +385,12 @@ composed first, so an accent written as one code point still matches one written
 ## Talking to it from an editor
 
 PaperShelf ships an MCP server, so Claude Code, Codex and anything else that speaks the
-Model Context Protocol can search your library, read a document as Markdown, build a
-bibliography and find duplicates. It is a separate binary inside the app bundle at
-`/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp`, and it holds no state: the
-protocol has no sessions, so every call names the folder it works on.
+Model Context Protocol can read your library without being told where anything is:
+`list_documents` and `search_documents` with no folder read the whole indexed library,
+and a library search quotes the matching passages with the page each one came from. It is
+a separate binary inside the app bundle at
+`/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp`, and it holds no state
+between calls: give a tool a folder and it works on just that folder instead.
 
 Claude Code:
 
@@ -403,8 +405,19 @@ Codex, in `~/.codex/config.toml`:
 command = "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
 ```
 
-The tools are `list_documents`, `search_documents`, `read_document`, `bibliography` and
-`find_duplicates`. Paths are absolute paths on this machine.
+The tools are `list_documents`, `search_documents`, `read_document`, `read_page`,
+`list_highlights`, `bibliography`, `find_duplicates`, `list_projects`,
+`list_project_documents`, `search_project`, `list_tags`, `documents_by_tag`,
+`add_to_project` and `set_tags`. Every result carries a `document_id` that
+`read_document`, `read_page`, `list_highlights`, `add_to_project` and `set_tags` all
+accept, so a document a search found can be read or filed without ever naming its path.
+Paths, where they appear, are absolute paths on this machine.
+
+Two more tools, `propose_file_changes` and `apply_file_changes`, can rename files to match
+PaperShelf's own naming rules. They are off until **Let it rename and move files** is
+turned on in Settings, Integrations; until then, a proposal still works but says nothing
+can be applied. Applying re-checks every file against the folder as it now is and refuses
+the whole plan if anything changed underneath it.
 
 The server answers revision `2026-07-28`, which is stateless and asks for `server/discover`,
 and it also answers the older `initialize` handshake, because that is what installed clients
@@ -435,8 +448,16 @@ leaves the machine.
 Tools/install-chatgpt-plugin.sh
 ```
 
-Then restart ChatGPT and add PaperShelf from its plugin list. It can search the library,
-read a document or a single page, list what you highlighted, and build a bibliography.
+Then restart ChatGPT and add PaperShelf from its plugin list. Without naming a folder, it
+reads the whole library: search returns the matching passages with their page numbers,
+and it can open a document or a single page, list what you highlighted and the notes you
+left, pull a BibTeX entry for one paper or a whole reading project, find documents that
+are byte-for-byte copies of each other, and file what you find into projects and tags. An
+empty result from duplicate-finding this way means no two documents are exact copies, not
+that nothing looks alike; pointing it at a folder instead also catches documents that
+share their opening pages under different bytes. It can also propose renaming files to
+match PaperShelf's own naming rules, which stays off until you turn it on in Settings,
+Integrations, and a proposal always shows what would happen before anything moves.
 
 Note that this is the desktop app's own plugin system. ChatGPT on the web connects to MCP
 servers over HTTPS only, so a local server is not reachable from there without exposing it.

@@ -732,10 +732,13 @@ struct IntegrationSettings: View {
             } header: {
                 Text("Model Context Protocol")
             } footer: {
-                Text("list_documents, search_documents, read_document, bibliography and "
-                     + "find_duplicates, and the reading projects and tags this library "
-                     + "keeps. A separate binary that holds no state, and nothing leaves "
-                     + "the machine.\n\n"
+                Text("Search and read the whole library without naming a folder: a search "
+                     + "quotes the passages it matched with their page numbers, and every "
+                     + "result carries an id that reading, filing into a project and "
+                     + "tagging all accept. A separate binary that holds no state, and "
+                     + "nothing leaves the machine. Duplicate-finding this way only catches "
+                     + "byte-for-byte copies; point it at a folder instead to also catch "
+                     + "documents sharing their opening pages.\n\n"
                      + "Renaming is off by default. With it on, a proposal still comes "
                      + "first and applying it re-checks every file, keeps originals "
                      + "wherever Files & passwords says to, and sends nothing anywhere "
