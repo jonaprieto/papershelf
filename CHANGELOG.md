@@ -4,6 +4,13 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.10.2] - 2026-09-01
+
+### Added
+
+- Open the selected Catalogue or List PDF with Space in native Quick Look, and close it
+  with Escape.
+
 ## [1.10.1] - 2026-09-01
 
 ### Added
