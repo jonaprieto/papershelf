@@ -87,7 +87,10 @@ extension Runner {
             let lock = NSLock()
             DispatchQueue.concurrentPerform(iterations: work.count) { index in
                 let job = work[index]
-                let text = documentText(of: job.url, passwords: passwords)
+                // The format is dropped for now: there is nowhere in the library to put
+                // it yet. Nil still means the file would not open, which is what the
+                // caller counts as a failure worth retrying.
+                let text = indexedMarkdown(of: job.url, passwords: passwords)?.text
                 lock.lock()
                 if let text {
                     stored.append((documentID: job.id, markdown: text))
