@@ -23,14 +23,15 @@ def check(label, condition):
 
 check.failed = False
 
-# A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 31 against
-# the scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection,
-# plus 4 reading by document_id instead of path, plus 3 exercising the write path end to end,
-# plus 3 exercising scoped bibliography and passaged project search, plus 3 closing out this
-# task's remaining review findings: a project's without_text count, a bibliography shortfall,
-# and search_project's next_cursor).
-check("no reply to a notification", len(seen) == 7 + 5 + 31)
+# A notification gets no reply at all, so exactly the requests with an id answer: 8 from the
+# first run (one of its 9 lines is a notification, plus a second tools/list at id 7 for the
+# no-password check below), 5 against the missing library, 31 against the scratch one (14
+# original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
+# document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
+# scoped bibliography and passaged project search, plus 3 closing out this task's remaining
+# review findings: a project's without_text count, a bibliography shortfall, and
+# search_project's next_cursor).
+check("no reply to a notification", len(seen) == 8 + 5 + 31)
 
 d = result("d")
 check(
@@ -68,6 +69,16 @@ check(
 check(
     "tool order is deterministic",
     [x["name"] for x in t.get("tools", [])] == [x["name"] for x in t.get("tools", [])],
+)
+
+# Task 9: the server already has the app's passwords through Prefs, so no tool should still
+# be asking the caller to type one in.
+check(
+    "no tool asks the caller for a password any more",
+    all(
+        "password" not in json.dumps(tool.get("inputSchema", {}))
+        for tool in result("7").get("tools", [])
+    ),
 )
 
 c = result("3")

@@ -13,7 +13,7 @@ func scan(root: String, recursive: Bool) throws -> [Item] {
     let url = URL(fileURLWithPath: root)
     let jobs = collectJobs(roots: [url], recursive: recursive)
     guard !jobs.isEmpty else { return [] }
-    return process(jobs: jobs, options: Options(passwords: [], recursive: recursive, dryRun: true))
+    return process(jobs: jobs, options: Options(passwords: Prefs.passwords, recursive: recursive, dryRun: true))
 }
 
 private func describe(_ item: Item) -> [String: Any] {
@@ -104,7 +104,7 @@ let folderTools: [Tool] = [
                 let depth = arguments["pages_per_document"] as? Int ?? 6
                 let lock = NSLock()
                 DispatchQueue.concurrentPerform(iterations: items.count) { index in
-                    let text = openingText(of: items[index].currentURL, passwords: [], pages: depth)
+                    let text = openingText(of: items[index].currentURL, passwords: Prefs.passwords, pages: depth)
                     lock.lock()
                     texts[index] = text
                     lock.unlock()
@@ -138,7 +138,6 @@ let folderTools: [Tool] = [
                 "path": ["type": "string", "description": "Absolute path to a PDF, if there is no id."],
                 "pages": ["type": "string", "description": "One page or a range, as \"12\" or \"12-20\". Omit for the whole document."],
                 "max_characters": ["type": "integer", "description": "Truncate. Default 200000."],
-                "password": ["type": "string", "description": "Optional, if the file is locked"],
             ],
         ],
         run: { arguments in
@@ -266,7 +265,6 @@ let folderTools: [Tool] = [
             "properties": [
                 "document_id": ["type": "string"],
                 "path": ["type": "string", "description": "Absolute path to a PDF"],
-                "password": ["type": "string"],
             ],
         ],
         run: { arguments in
@@ -317,7 +315,6 @@ let folderTools: [Tool] = [
                 "document_id": ["type": "string"],
                 "path": ["type": "string"],
                 "page": ["type": "integer", "description": "1-based, as the app shows it"],
-                "password": ["type": "string"],
             ],
             "required": ["page"],
         ],

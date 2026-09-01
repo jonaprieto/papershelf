@@ -192,6 +192,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"no_such_tool","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_document","arguments":{"path":"/nope.pdf"}}}' \
   '{"jsonrpc":"2.0","id":6,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"1999-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  '{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}' \
   | "$BIN" 2>/dev/null
 
 # The library-aware tools, with nothing indexed: pointed at a path guaranteed not to exist,
