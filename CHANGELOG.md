@@ -4,6 +4,18 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.11.1] - 2026-09-01
+
+### Added
+
+- Add Finder-style context menus to catalogue PDF cards, including a recoverable Move to
+  Trash action that runs through the existing Apply flow.
+
+### Changed
+
+- Align scoped highlight editing with Settings, including editable colours and blank fields
+  that clearly inherit the library meaning.
+
 ## [1.11.0] - 2026-09-01
 
 ### Added
