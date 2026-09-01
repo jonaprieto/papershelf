@@ -4,6 +4,16 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.10.1] - 2026-09-01
+
+### Added
+
+- Configure PaperShelf as the macOS default PDF viewer from Settings.
+
+### Fixed
+
+- Make settings search keywords case-insensitive.
+
 ## [1.10.0] - 2026-09-01
 
 ### Added
