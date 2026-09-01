@@ -249,7 +249,8 @@ func storeAsDocumentText(_ markdown: String, for url: URL, library: Library) asy
         known = first
     }
     guard let document = known else { return false }
-    return ((try? await library.setExtractedText(markdown, forDocument: document.id)) != nil)
+    return ((try? await library.setExtractedText(markdown, forDocument: document.id,
+                                                  format: .markdown)) != nil)
 }
 
 /// What a scan records about one file: its size, its pages, and whatever the PDF says

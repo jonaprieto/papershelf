@@ -29,7 +29,7 @@ final class ForgetSourceTests: XCTestCase {
                                                      byteCount: 10, pageCount: 1,
                                                      title: nil, author: nil)
         if !text.isEmpty {
-            try await library.setExtractedText(text, forDocument: record.id)
+            try await library.setExtractedText(text, forDocument: record.id, format: .markdown)
         }
         return record.id
     }

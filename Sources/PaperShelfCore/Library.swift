@@ -119,7 +119,7 @@ public actor Library {
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
     fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4,
-                                                   schemaV5, schemaV6]
+                                                   schemaV5, schemaV6, schemaV7]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -277,6 +277,16 @@ public actor Library {
     fileprivate static let schemaV6 = """
         CREATE INDEX IF NOT EXISTS document_tags_by_tag ON document_tags(tag_id);
         CREATE INDEX IF NOT EXISTS project_members_by_document ON project_members(document_id);
+        """
+
+    /// Which producer wrote a row's text, so text stored before page markers existed can be
+    /// found and read again. Nullable and unbacked by a default on purpose: null is exactly
+    /// the population that has to be re-read, and a default would hide it.
+    ///
+    /// `extracted_text_fts` is an external-content table over `markdown` alone, so adding a
+    /// column beside it changes nothing about the index or its triggers.
+    fileprivate static let schemaV7 = """
+        ALTER TABLE extracted_text ADD COLUMN format TEXT;
         """
 
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
@@ -763,14 +773,17 @@ public actor Library {
 
     // MARK: - Extracted text and search
 
-    public func setExtractedText(_ markdown: String, forDocument documentID: String, extractedAt: Date = Date()) throws {
+    public func setExtractedText(_ markdown: String, forDocument documentID: String,
+                                 format: TextFormat, extractedAt: Date = Date()) throws {
         try run("""
-            INSERT INTO extracted_text(document_id, markdown, extracted_at) VALUES (?, ?, ?)
-            ON CONFLICT(document_id) DO UPDATE SET markdown = excluded.markdown, extracted_at = excluded.extracted_at;
+            INSERT INTO extracted_text(document_id, markdown, extracted_at, format) VALUES (?, ?, ?, ?)
+            ON CONFLICT(document_id) DO UPDATE SET markdown = excluded.markdown,
+                extracted_at = excluded.extracted_at, format = excluded.format;
             """) { statement in
             bindText(statement, 1, documentID)
             bindText(statement, 2, markdown)
             bindText(statement, 3, Library.isoString(extractedAt))
+            bindText(statement, 4, format.rawValue)
         }
     }
 
@@ -779,7 +792,7 @@ public actor Library {
     /// is left to do. A path with no text yet reports `nil`.
     public func textIndexRows() throws -> [TextIndexRow] {
         try withStatement("""
-            SELECT l.path, l.document_id, e.extracted_at
+            SELECT l.path, l.document_id, e.extracted_at, e.format
             FROM locations l
             LEFT JOIN extracted_text e ON e.document_id = l.document_id;
             """) { statement in
@@ -789,7 +802,9 @@ public actor Library {
                       let id = columnText(statement, 1) else { continue }
                 rows.append(TextIndexRow(path: path, documentID: id,
                                          extractedAt: columnText(statement, 2)
-                                            .flatMap(Library.isoDate)))
+                                            .flatMap(Library.isoDate),
+                                         format: columnText(statement, 3)
+                                            .flatMap(TextFormat.init(rawValue:))))
             }
             return rows
         }
@@ -797,14 +812,14 @@ public actor Library {
 
     /// Stores a batch of extracted text in one transaction. Fourteen thousand documents
     /// written one statement at a time is fourteen thousand fsyncs.
-    public func setExtractedText(_ batch: [(documentID: String, markdown: String)],
+    public func setExtractedText(_ batch: [(documentID: String, markdown: String, format: TextFormat)],
                                  extractedAt: Date = Date()) throws {
         guard !batch.isEmpty else { return }
         try execute("BEGIN IMMEDIATE;")
         do {
             for entry in batch {
                 try setExtractedText(entry.markdown, forDocument: entry.documentID,
-                                     extractedAt: extractedAt)
+                                     format: entry.format, extractedAt: extractedAt)
             }
             try execute("COMMIT;")
         } catch {
@@ -822,13 +837,14 @@ public actor Library {
     }
 
     public func extractedText(forDocument documentID: String) throws -> ExtractedText? {
-        try withStatement("SELECT document_id, markdown, extracted_at FROM extracted_text WHERE document_id = ?;",
+        try withStatement("SELECT document_id, markdown, extracted_at, format FROM extracted_text WHERE document_id = ?;",
                           bind: { statement in bindText(statement, 1, documentID) }) { statement in
             guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
             return ExtractedText(
                 documentID: columnText(statement, 0) ?? documentID,
                 markdown: columnText(statement, 1) ?? "",
-                extractedAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast
+                extractedAt: columnText(statement, 2).flatMap(Library.isoDate) ?? .distantPast,
+                format: columnText(statement, 3).flatMap(TextFormat.init(rawValue:))
             )
         }
     }
@@ -1225,6 +1241,8 @@ public struct ExtractedText: Sendable, Equatable {
     public var documentID: String
     public var markdown: String
     public var extractedAt: Date
+    /// Nil for text stored before page markers existed, which is what makes it stale.
+    public var format: TextFormat?
 }
 
 /// Mirrors `runCacheURL` (`Cache.swift`) exactly, down to the same folder: the run cache is

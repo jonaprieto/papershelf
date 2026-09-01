@@ -90,7 +90,8 @@ final class ProjectCorpusTests: XCTestCase {
         let ids = records.map(\.id)
         let text = ids.prefix(withText).map {
             (documentID: $0, markdown: "Convergence is the property that two replicas "
-                                     + "which have seen the same updates agree.")
+                                     + "which have seen the same updates agree.",
+             format: TextFormat.markdown)
         }
         try await library.setExtractedText(Array(text))
         return ids
@@ -172,7 +173,8 @@ final class ProjectCorpusTests: XCTestCase {
         XCTAssertEqual(unindexed.count, 6)
         XCTAssertEqual(askReadiness(of: unindexed.map(\.document)), .noText)
 
-        try await library.setExtractedText("Convergence.", forDocument: unindexed[0].document.contentHash)
+        try await library.setExtractedText("Convergence.", forDocument: unindexed[0].document.contentHash,
+                                           format: .markdown)
         let ready = try await env.members(project.id)
         XCTAssertEqual(askReadiness(of: ready.map(\.document)), .ready)
     }
@@ -264,7 +266,7 @@ final class ProjectCorpusTests: XCTestCase {
         let page = String(repeating: "Replicas converge once they have seen the same "
                           + "updates, whatever order they arrived in. ", count: 60)
         for id in ids.prefix(40) {
-            try await library.setExtractedText(page, forDocument: id)
+            try await library.setExtractedText(page, forDocument: id, format: .markdown)
         }
         let members = try await env.members(project.id)
         let documents = members.map(\.document)

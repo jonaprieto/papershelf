@@ -61,11 +61,14 @@ public struct TextIndexRow: Sendable, Equatable {
     public let path: String
     public let documentID: String
     public let extractedAt: Date?
+    /// Nil for text stored before page markers existed, which is what makes it stale.
+    public let format: TextFormat?
 
-    public init(path: String, documentID: String, extractedAt: Date?) {
+    public init(path: String, documentID: String, extractedAt: Date?, format: TextFormat? = nil) {
         self.path = path
         self.documentID = documentID
         self.extractedAt = extractedAt
+        self.format = format
     }
 }
 

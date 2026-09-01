@@ -419,7 +419,7 @@ final class LibraryTests: XCTestCase {
         let read = try await library.indexDocument(path: "/shelf/read.pdf", contentHash: "a")
         _ = try await library.indexDocument(path: "/shelf/unread.pdf", contentHash: "b")
 
-        try await library.setExtractedText([(documentID: read.id, markdown: "a theorem here")])
+        try await library.setExtractedText([(documentID: read.id, markdown: "a theorem here", format: .markdown)])
 
         let rows = try await library.textIndexRows().sorted { $0.path < $1.path }
         XCTAssertEqual(rows.map(\.path), ["/shelf/read.pdf", "/shelf/unread.pdf"])
@@ -496,8 +496,8 @@ final class LibraryTests: XCTestCase {
 
         let opening = "A survey of stochastic epidemic models. "
         try await library.setExtractedText([
-            (documentID: paper.id, markdown: opening + String(repeating: "body ", count: 900) + "hapax"),
-            (documentID: book.id, markdown: "An introduction to choreographies."),
+            (documentID: paper.id, markdown: opening + String(repeating: "body ", count: 900) + "hapax", format: .markdown),
+            (documentID: book.id, markdown: "An introduction to choreographies.", format: .markdown),
         ])
 
         let hapax = try await library.documentIDsMatchingText("hapax")
@@ -603,13 +603,13 @@ final class LibraryTests: XCTestCase {
 
         let target = try await library.indexDocument(path: "/shelf/book.pdf", contentHash: "h1", byteCount: 10, pageCount: 1, title: "Book", author: nil)
         let decoy = try await library.indexDocument(path: "/shelf/other.pdf", contentHash: "h2", byteCount: 10, pageCount: 1, title: "Other", author: nil)
-        try await library.setExtractedText("<!-- page:1 -->\nDistributed systems are hard to reason about.", forDocument: target.id)
-        try await library.setExtractedText("<!-- page:1 -->\nA completely unrelated recipe for bread.", forDocument: decoy.id)
+        try await library.setExtractedText("<!-- page:1 -->\nDistributed systems are hard to reason about.", forDocument: target.id, format: .markdown)
+        try await library.setExtractedText("<!-- page:1 -->\nA completely unrelated recipe for bread.", forDocument: decoy.id, format: .markdown)
 
         let beforeReplace = try await library.fullTextSearch("distributed systems")
         XCTAssertEqual(beforeReplace.map(\.id), [target.id])
 
-        try await library.setExtractedText("<!-- page:1 -->\nQuicksort partitions around a pivot.", forDocument: target.id)
+        try await library.setExtractedText("<!-- page:1 -->\nQuicksort partitions around a pivot.", forDocument: target.id, format: .markdown)
 
         let staleSearch = try await library.fullTextSearch("distributed systems")
         XCTAssertTrue(staleSearch.isEmpty, "the old text must stop matching once it has been replaced")
@@ -627,7 +627,7 @@ final class LibraryTests: XCTestCase {
 
         let beforeSet = try await library.extractedText(forDocument: record.id)
         XCTAssertNil(beforeSet)
-        try await library.setExtractedText("<!-- page:1 -->\nHello.", forDocument: record.id)
+        try await library.setExtractedText("<!-- page:1 -->\nHello.", forDocument: record.id, format: .markdown)
         let afterSet = try await library.extractedText(forDocument: record.id)
         XCTAssertEqual(afterSet?.markdown, "<!-- page:1 -->\nHello.")
     }
@@ -769,6 +769,11 @@ final class LibraryTests: XCTestCase {
                 section     TEXT,
                 PRIMARY KEY (project_id, document_id)
             );
+            CREATE TABLE extracted_text (
+                document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+                markdown     TEXT NOT NULL,
+                extracted_at TEXT NOT NULL
+            );
             PRAGMA user_version = 5;
             """
         XCTAssertEqual(sqlite3_exec(handle, older, nil, nil, nil), SQLITE_OK)
@@ -783,6 +788,47 @@ final class LibraryTests: XCTestCase {
 
         XCTAssertTrue(try rawIndexExists("document_tags_by_tag", in: url))
         XCTAssertTrue(try rawIndexExists("project_members_by_document", in: url))
+    }
+
+    func testStoredTextRemembersWhatShapeItIsIn() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let records = try await library.indexDocuments([Library.IndexInput(path: "/tmp/a.pdf")])
+        let id = try XCTUnwrap(records.first).id
+
+        try await library.setExtractedText("## Page 1\n\nhello", forDocument: id, format: .markdown)
+
+        let fetched = try await library.extractedText(forDocument: id)
+        let stored = try XCTUnwrap(fetched)
+        XCTAssertEqual(stored.format, .markdown)
+        let rows = try await library.textIndexRows()
+        XCTAssertEqual(rows.first(where: { $0.path == "/tmp/a.pdf" })?.format, .markdown)
+    }
+
+    /// A row written before the column existed reads back as nil, which is what makes it
+    /// stale to `needsIndexing` however recently it was written. Written with its own
+    /// connection, the way `rawCount` reads with one, because no accessor can produce a
+    /// formatless row any more and none should be added to let a test do it.
+    func testTextStoredBeforeTheColumnExistedHasNoFormat() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let records = try await library.indexDocuments([Library.IndexInput(path: "/tmp/b.pdf")])
+        let id = try XCTUnwrap(records.first).id
+        try await library.setExtractedText("older text", forDocument: id, format: .markdown)
+
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        XCTAssertEqual(sqlite3_exec(handle, "UPDATE extracted_text SET format = NULL;",
+                                    nil, nil, nil), SQLITE_OK)
+
+        let fetched = try await library.extractedText(forDocument: id)
+        let stored = try XCTUnwrap(fetched)
+        XCTAssertNil(stored.format)
+        XCTAssertTrue(needsIndexing(extractedAt: stored.extractedAt, fileModified: nil,
+                                    format: stored.format))
     }
 }
 
@@ -890,6 +936,7 @@ final class LibraryBibtexTests: XCTestCase {
             -- differently, which is how this test caught itself. The tag tables are
             -- here for that reason: version 6 indexes them, and a fixture without
             -- them fails a migration a real database of this vintage sails through.
+            -- extracted_text is here for the same reason: version 7 alters it.
             CREATE TABLE tags (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE
             );
@@ -906,6 +953,11 @@ final class LibraryBibtexTests: XCTestCase {
                 document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
                 added_at TEXT NOT NULL,
                 PRIMARY KEY (project_id, document_id)
+            );
+            CREATE TABLE extracted_text (
+                document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+                markdown     TEXT NOT NULL,
+                extracted_at TEXT NOT NULL
             );
             PRAGMA user_version = 2;
             """
@@ -1182,7 +1234,7 @@ final class PDFShelfFixtureTests: XCTestCase {
             let record = try await library.indexDocument(
                 path: file.path, contentHash: relative,
                 byteCount: try Data(contentsOf: file).count, pageCount: 1)
-            try await library.setExtractedText(text, forDocument: record.id)
+            try await library.setExtractedText(text, forDocument: record.id, format: .markdown)
         }
 
         let scan = root.appendingPathComponent("scans/invoice.pdf")
@@ -1215,8 +1267,8 @@ final class PDFShelfFixtureTests: XCTestCase {
         for name in ["a", "b", "c"] {
             ids.append(try await library.indexDocument(path: "/tmp/\(name).pdf", contentHash: nil).id)
         }
-        try await library.setExtractedText("first", forDocument: ids[0])
-        try await library.setExtractedText("third", forDocument: ids[2])
+        try await library.setExtractedText("first", forDocument: ids[0], format: .markdown)
+        try await library.setExtractedText("third", forDocument: ids[2], format: .markdown)
 
         let found = try await library.extractedText(forDocuments: [ids[0], ids[1]])
         XCTAssertEqual(found, [ids[0]: "first"])

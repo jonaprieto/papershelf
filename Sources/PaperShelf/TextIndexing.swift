@@ -80,20 +80,19 @@ extension Runner {
     /// disk and PDFKit, neither of which belongs on the main actor.
     private nonisolated static func readText(
         _ work: [(id: String, url: URL)], passwords: [String]
-    ) async -> (stored: [(documentID: String, markdown: String)], failures: Int, last: String) {
+    ) async -> (stored: [(documentID: String, markdown: String, format: TextFormat)], failures: Int, last: String) {
         await Task.detached(priority: .utility) {
-            var stored = [(documentID: String, markdown: String)]()
+            var stored = [(documentID: String, markdown: String, format: TextFormat)]()
             var failures = 0
             let lock = NSLock()
             DispatchQueue.concurrentPerform(iterations: work.count) { index in
                 let job = work[index]
-                // The format is dropped for now: there is nowhere in the library to put
-                // it yet. Nil still means the file would not open, which is what the
-                // caller counts as a failure worth retrying.
-                let text = indexedMarkdown(of: job.url, passwords: passwords)?.text
+                // Nil means the file would not open, which is what the caller counts as
+                // a failure worth retrying.
+                let result = indexedMarkdown(of: job.url, passwords: passwords)
                 lock.lock()
-                if let text {
-                    stored.append((documentID: job.id, markdown: text))
+                if let result {
+                    stored.append((documentID: job.id, markdown: result.text, format: result.format))
                 } else {
                     failures += 1
                 }

@@ -82,7 +82,7 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             let read = await readTextForProject(work, passwords: passwords(),
                                                 using: engine(named: converterName()))
             guard !read.isEmpty else { return 0 }
-            try await library.setExtractedText(read)
+            try await library.setExtractedText(read.map { ($0.documentID, $0.markdown, TextFormat.markdown) })
             return read.count
         },
         sections: { id in try await library.sections(ofProject: id) },
