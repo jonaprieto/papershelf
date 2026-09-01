@@ -77,6 +77,13 @@ PDF
 HELLO2_PDF="$FOLDER/hello2.pdf"
 cp "$HELLO_PDF" "$HELLO2_PDF"
 
+# A third copy, at yet another distinct path, for the same reason: the bibliography
+# cap-visibility check below needs one real, citable file among its 1001 synthetic
+# documents, so `bibliographyPaths` has something to build a path list out of rather than
+# throwing "nothing to cite there" before the cap it is meant to exercise is ever reached.
+HELLO3_PDF="$FOLDER/hello3.pdf"
+cp "$HELLO_PDF" "$HELLO3_PDF"
+
 # Unquoted (unlike a plain schema-only heredoc) so $HELLO_PDF below expands; nothing else in
 # this block uses a shell metacharacter, so that is the only effect of the change.
 sqlite3 "$LIBRARY_DB" <<SQL
@@ -265,6 +272,85 @@ BEGIN
     SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
 END;
 
+-- Critical fix mutation coverage: doc-9 is a document row whose one recorded location does
+-- not exist on disk, and which the fixture never gives extracted text or a note either --
+-- exactly what apply_file_changes moving a file without recording the move (the bug this
+-- fix closes) leaves behind. list_highlights/read_document/read_page against it, with
+-- nothing to fall back on, must say the file cannot be found rather than reporting nothing
+-- marked or a misleading "may be locked, or a scan" -- the false-empty and misleading-error
+-- this fix's resolveDocument/storedOrExtracted changes exist to close. Without those
+-- changes, this would instead answer with an ordinary, successful-looking empty result.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-9', '2026-01-09T00:00:00Z', '2026-01-09T00:00:00Z', NULL, 100, 1, 'Missing File', 'Nobody', '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('$FOLDER/vanished.pdf', 'doc-9', '2026-01-09T00:00:00Z', '2026-01-09T00:00:00Z');
+
+-- Minor fix coverage: a project and a tag whose true membership (1001) exceeds
+-- bibliographyPaths' own 1000-document cap, so a bibliography naming either can prove the
+-- cap's own shortfall -- "not_considered" -- is now reported rather than silently
+-- swallowed. Built with a recursive CTE rather than 1001 literal INSERT statements per
+-- table. Every one of the 1001 gets a locations row -- cap-doc-0001 a real, openable file
+-- (hello3.pdf), the other 1000 a path that does not exist -- so every document considered
+-- within the cap already has "a location on record" and the ordinary shortfall (Important
+-- 1, above) never fires here, keeping this check isolated to the cap it is actually about.
+-- cap-doc-0001 is pinned first in both orderings bibliographyPaths' two capped queries
+-- use -- documents(inProject:limit:)'s ascending added_at, documents(taggedWith:limit:)'s
+-- descending last_seen_at -- so it always lands inside the capped 1000 rather than
+-- depending on how SQLite breaks a tie among 1001 identical timestamps.
+INSERT INTO tags(id, name) VALUES (3, 'bulk');
+INSERT INTO projects(id, name, created_at) VALUES (4, 'Big Project', '2026-01-09T00:00:00Z');
+WITH RECURSIVE seq(n) AS (
+    SELECT 1
+    UNION ALL
+    SELECT n + 1 FROM seq WHERE n < 1001
+)
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+SELECT 'cap-doc-' || printf('%04d', n), '2026-01-09T00:00:00Z',
+       CASE WHEN n = 1 THEN '2026-01-10T00:00:00Z' ELSE '2026-01-09T00:00:00Z' END,
+       NULL, 10, 1, 'Cap Doc ' || n, NULL, '{}'
+FROM seq;
+WITH RECURSIVE seq(n) AS (
+    SELECT 1
+    UNION ALL
+    SELECT n + 1 FROM seq WHERE n < 1001
+)
+INSERT INTO project_members(project_id, document_id, added_at, section)
+SELECT 4, 'cap-doc-' || printf('%04d', n),
+       CASE WHEN n = 1 THEN '2026-01-08T00:00:00Z' ELSE '2026-01-09T00:00:00Z' END,
+       NULL
+FROM seq;
+WITH RECURSIVE seq(n) AS (
+    SELECT 1
+    UNION ALL
+    SELECT n + 1 FROM seq WHERE n < 1001
+)
+INSERT INTO document_tags(document_id, tag_id)
+SELECT 'cap-doc-' || printf('%04d', n), 3
+FROM seq;
+WITH RECURSIVE seq(n) AS (
+    SELECT 1
+    UNION ALL
+    SELECT n + 1 FROM seq WHERE n < 1001
+)
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+SELECT CASE WHEN n = 1 THEN '$HELLO3_PDF' ELSE '/tmp/cap-doc-' || printf('%04d', n) || '.pdf' END,
+       'cap-doc-' || printf('%04d', n), '2026-01-09T00:00:00Z', '2026-01-09T00:00:00Z'
+FROM seq;
+
+-- Important fix coverage: a bare LibraryError thrown from outside any tool's own
+-- per-document try/catch used to reach Server.swift's top-level catch and be rendered
+-- through error.localizedDescription, which LibraryError cannot back sensibly (it
+-- conforms to neither LocalizedError nor CustomNSError) -- Foundation's generic "The
+-- operation couldn't be completed." instead of the real message. createProject, called
+-- by add_to_project outside its per-document loop, is such a call: this trigger makes it
+-- throw a genuine LibraryError.sqlite, unwrapped, for exactly one project name.
+CREATE TRIGGER poison_project_creation
+BEFORE INSERT ON projects
+WHEN NEW.name = 'Poison Project Creation'
+BEGIN
+    SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
+END;
+
 PRAGMA user_version = 7;
 SQL
 
@@ -400,6 +486,28 @@ printf '%s\n' \
 # gone, and FRESH_PLAN (planted alongside it, with a current createdAt) must still be
 # there. mcp-check.py checks both files directly rather than through any reply, since a
 # swept file leaves no reply of its own to check.
+#
+# Ids 97-102 close out the final whole-branch review. 97-99 are the Critical fix's mutation
+# coverage: doc-9's one recorded location does not exist on disk, and the fixture gives it
+# neither cached text nor a note, so there is nothing for list_highlights (97),
+# read_document (98) or read_page (99) to fall back on -- exactly the state a rename
+# apply_file_changes moved without recording (the bug this fix closes) leaves a document
+# in. Before the fix each of the three answered with an ordinary, successful-looking empty
+# or misleadingly-specific result; after it, each has to say plainly that the file cannot
+# be found. 100 and 101 are the bibliography cap-visibility fix: "Big Project" and "bulk"
+# each hold 1001 documents against bibliographyPaths' own 1000-document cap, so a
+# bibliography naming either must report that 1 document was never even considered, not
+# silently answer as though 1000 were the whole scope. 102 is the LibraryError-message
+# fix: add_to_project, naming a project that does not exist yet ("Poison Project
+# Creation"), calls `createProject` outside its per-document try/catch, and the trigger
+# planted on `projects` above makes that call throw a real `LibraryError.sqlite` -- this is
+# what proves Server.swift's top-level catch now renders it as that error's own message
+# rather than Foundation's generic "The operation couldn't be completed." 103 and 104 are
+# the limit-clamping consistency fix: list_project_documents and documents_by_tag, asked
+# for 5000 documents from "Big Project"/"bulk" (1001 real members apiece), must still
+# clamp to the same 1000-document policy `bibliographyPaths` already enforces, the same
+# way list_documents and search_documents already clamped their own upper bound before
+# this fix.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -451,6 +559,14 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"88","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Undercount Test"}}}' \
   '{"jsonrpc":"2.0","id":"89","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-6","doc-5","doc-8"],"add":["draft"]}}}' \
   '{"jsonrpc":"2.0","id":"90","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"draft"}}}' \
+  '{"jsonrpc":"2.0","id":"97","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-9"}}}' \
+  '{"jsonrpc":"2.0","id":"98","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-9"}}}' \
+  '{"jsonrpc":"2.0","id":"99","method":"tools/call","params":{"name":"read_page","arguments":{"document_id":"doc-9","page":1}}}' \
+  '{"jsonrpc":"2.0","id":"100","method":"tools/call","params":{"name":"bibliography","arguments":{"project":"Big Project"}}}' \
+  '{"jsonrpc":"2.0","id":"101","method":"tools/call","params":{"name":"bibliography","arguments":{"tag":"bulk"}}}' \
+  '{"jsonrpc":"2.0","id":"102","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Poison Project Creation","document_ids":["doc-1"]}}}' \
+  '{"jsonrpc":"2.0","id":"103","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Big Project","limit":5000}}}' \
+  '{"jsonrpc":"2.0","id":"104","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"bulk","limit":5000}}}' \
   '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \

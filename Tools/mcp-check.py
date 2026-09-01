@@ -38,12 +38,18 @@ check.failed = False
 # fresh set_tags poison-batch call and its own confirmation, alongside a new add_to_project
 # call and confirmation for the undercount fix itself, for a net change of minus one request
 # plus four, plus 2 for Task 12: an unknown token refused by apply_file_changes (91) and a
-# proposal against a folder holding a real PDF (92)), plus 3 more from a fourth, separate
-# printf into the same binary further down: the same folder proposed again after the PDF is
-# touched (93), which has to answer with a different token than 92's, and the same folder
-# proposed twice more (94, 95) with only `recursive` differing between the two, which have
-# to answer with different tokens from each other despite describing the same one move.
-check("no reply to a notification", len(seen) == 10 + 5 + 52 + 3)
+# proposal against a folder holding a real PDF (92)), plus 8 closing out the final
+# whole-branch review: the Critical fix's mutation coverage against doc-9, whose one
+# recorded location does not exist (97-99), the bibliography cap-visibility fix against a
+# project and a tag each holding 1001 documents (100-101), the LibraryError-message fix
+# against a project name whose creation is poisoned to throw one (102), and the
+# limit-clamping consistency fix against that same 1001-document project and tag
+# (103-104)), plus 3 more from a fourth, separate printf into the same binary further
+# down: the same folder proposed again after the PDF is touched (93), which has to answer
+# with a different token than 92's, and the same folder proposed twice more (94, 95) with
+# only `recursive` differing between the two, which have to answer with different tokens
+# from each other despite describing the same one move.
+check("no reply to a notification", len(seen) == 10 + 5 + 60 + 3)
 
 d = result("d")
 check(
@@ -172,14 +178,16 @@ for missing_id in ("30", "31", "32", "33", "34"):
 
 # The same tools against the scratch library Tools/mcp-check.sh builds: one project
 # ("Dissertation", one document, tagged "ethics"), one project with no documents at all
-# ("Empty"), one tag with no documents ("unused"), and one project ("Queue") holding a
-# single document with no extracted text, for the without_text check further down.
+# ("Empty"), one tag with no documents ("unused"), one project ("Queue") holding a single
+# document with no extracted text, for the without_text check further down, and one
+# project/tag pair ("Big Project"/"bulk", 1001 documents apiece) for the bibliography
+# cap-visibility and limit-clamping checks further down still.
 
 projects = result("40").get("structuredContent", {}).get("projects", [])
 by_name = {p.get("name"): p for p in projects}
 check(
     "list_projects finds every project",
-    set(by_name) == {"Dissertation", "Empty", "Queue"},
+    set(by_name) == {"Dissertation", "Empty", "Queue", "Big Project"},
 )
 check(
     "list_projects counts a project's documents",
@@ -192,7 +200,7 @@ check(
 
 tags = result("41").get("structuredContent", {}).get("tags", [])
 by_tag = {t.get("name"): t for t in tags}
-check("list_tags finds both tags", set(by_tag) == {"ethics", "unused"})
+check("list_tags finds every tag", set(by_tag) == {"ethics", "unused", "bulk"})
 check(
     "list_tags counts a tag's documents",
     by_tag.get("ethics", {}).get("document_count") == 1,
@@ -259,11 +267,17 @@ check(
 o = result("51")
 check(
     "list_documents with no folder reports the library's totals",
-    o.get("structuredContent", {}).get("totals", {}).get("documents") == 8,
+    # 8 original documents, plus doc-9 (Critical fix coverage) and the 1001 synthetic
+    # "cap-doc-*" documents (bibliography cap-visibility coverage), all in the same
+    # scratch library.
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 1010,
 )
 check(
-    "list_documents with no folder lists documents",
-    len(o.get("structuredContent", {}).get("documents", [])) == 8,
+    # The library now holds far more than fits on one page; with no explicit `limit` this
+    # exercises the same default-100 clamp list_documents always had, which the original
+    # 8-document fixture was too small to ever reach.
+    "list_documents with no folder lists a page of documents, capped at the default limit",
+    len(o.get("structuredContent", {}).get("documents", [])) == 100,
 )
 
 s = result("52")
@@ -686,6 +700,113 @@ check(
     bool(same_files_settings_a.get("token"))
     and bool(same_files_settings_b.get("token"))
     and same_files_settings_a.get("token") != same_files_settings_b.get("token"),
+)
+
+# Final whole-branch review, Critical: a document (doc-9) whose one recorded location does
+# not exist on disk, and which has neither cached text nor a note to fall back on -- the
+# state a rename apply_file_changes moved without recording the move (the bug this fix
+# closes) leaves a document in. Before the fix, list_highlights answered with an ordinary,
+# successful-looking "Nothing is marked in that document, and nothing has been written
+# about it.", and read_document/read_page answered with "it may be locked, or it may be a
+# scan with no text layer" -- both true of a file that could not be opened for other
+# reasons, and false of one that simply is not there any more. All three now have to say
+# that plainly instead.
+missing_highlights = result("97")
+missing_highlights_text = missing_highlights.get("content", [{}])[0].get("text", "")
+check(
+    "list_highlights on a document whose recorded location no longer exists says so, "
+    "rather than reporting nothing marked",
+    missing_highlights.get("isError") is True
+    and "no longer has a file there" in missing_highlights_text
+    and "Nothing is marked" not in missing_highlights_text,
+)
+missing_read = result("98")
+missing_read_text = missing_read.get("content", [{}])[0].get("text", "")
+check(
+    "read_document on the same document gives the real reason, not a guess about being "
+    "locked or scanned",
+    missing_read.get("isError") is True
+    and "no longer has a file there" in missing_read_text
+    and "locked" not in missing_read_text.lower(),
+)
+missing_page = result("99")
+missing_page_text = missing_page.get("content", [{}])[0].get("text", "")
+check(
+    "read_page on the same document gives the same real reason",
+    missing_page.get("isError") is True
+    and "no longer has a file there" in missing_page_text,
+)
+
+# The other half of the same fix: a document (doc-1) whose recorded location also does not
+# exist, but which does have a note on record, must not be refused outright -- there is a
+# real answer to give, and this checks that list_highlights still gives it, flagging the
+# file as unreachable rather than silently answering as though its highlights were checked
+# and found empty.
+highlights_with_notes_but_no_file = result("59")
+check(
+    "list_highlights on a document with a note but no reachable file still succeeds, "
+    "flagging the file as missing rather than claiming its highlights were checked",
+    highlights_with_notes_but_no_file.get("isError") is False
+    and highlights_with_notes_but_no_file.get("structuredContent", {}).get(
+        "file_missing"
+    )
+    is True
+    and highlights_with_notes_but_no_file.get("structuredContent", {}).get("marks")
+    == [],
+)
+
+# Important: a bibliography naming a project or a tag whose true membership (1001) exceeds
+# bibliographyPaths' own 1000-document cap used to report exactly as many documents as the
+# cap allowed, with nothing distinguishing that from a scope that truly held 1000. "Big
+# Project" and "bulk" each give every one of their 1000 considered documents a location on
+# record (real or not), so the ordinary shortfall never fires here and `not_considered` is
+# the only thing either reply has to say.
+big_project_bib = result("100")
+big_project_text = big_project_bib.get("content", [{}])[0].get("text", "")
+check(
+    "bibliography reports a project's true membership when it exceeds the 1000-document "
+    "cap, rather than silently answering as though 1000 were the whole scope",
+    big_project_bib.get("isError") is False
+    and big_project_bib.get("structuredContent", {}).get("not_considered") == 1
+    and "1 more document" in big_project_text,
+)
+big_tag_bib = result("101")
+check(
+    "the same is true naming a tag rather than a project",
+    big_tag_bib.get("isError") is False
+    and big_tag_bib.get("structuredContent", {}).get("not_considered") == 1,
+)
+
+# Important: a bare LibraryError thrown from outside any tool's own per-document try/catch
+# used to reach Server.swift's top-level catch and be rendered through
+# `error.localizedDescription`, which LibraryError cannot back sensibly -- Foundation's
+# generic "The operation couldn't be completed." instead of the real message.
+# `createProject`, called by add_to_project outside its per-document loop, is such a call;
+# the trigger planted on `projects` (Tools/mcp-check.sh) makes it throw a genuine
+# `LibraryError.sqlite` for this one project name.
+poisoned_creation = result("102")
+poisoned_creation_text = poisoned_creation.get("content", [{}])[0].get("text", "")
+check(
+    "a LibraryError thrown outside any per-document loop keeps its real message, not "
+    "Foundation's generic NSError text",
+    poisoned_creation.get("isError") is True
+    and "simulated write failure for mcp-check" in poisoned_creation_text
+    and "couldn't be completed" not in poisoned_creation_text,
+)
+
+# Minor: list_project_documents and documents_by_tag used to clamp only the lower bound of
+# `limit`, unlike list_documents and search_documents in the same file, which clamp both.
+# Asked for 5000 against a project/tag that genuinely holds 1001 documents, both must still
+# stop at 1000.
+big_project_listing = result("103")
+check(
+    "list_project_documents clamps the upper bound of limit, not only the lower one",
+    big_project_listing.get("structuredContent", {}).get("count") == 1000,
+)
+big_tag_listing = result("104")
+check(
+    "documents_by_tag clamps the upper bound of limit, not only the lower one",
+    big_tag_listing.get("structuredContent", {}).get("count") == 1000,
 )
 
 sys.exit(1 if check.failed else 0)
