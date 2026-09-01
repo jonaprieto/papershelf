@@ -4,6 +4,20 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.11.0] - 2026-09-01
+
+### Added
+
+- Publish a focused landing page, a real catalogue screenshot, and newcomer build and
+  contribution guides.
+- Make the repository public with GitHub Pages and a protected release workflow.
+
+### Changed
+
+- Keep vendored agent skills out of the repository and remove machine-specific paths from
+  tracked files.
+- Center the app icon artwork and keep its geometry covered by a regression test.
+
 ## [1.10.2] - 2026-09-01
 
 ### Added

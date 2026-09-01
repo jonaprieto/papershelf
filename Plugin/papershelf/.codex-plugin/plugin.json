@@ -1,6 +1,6 @@
 {
   "name": "papershelf",
-"version": "1.10.2",
+"version": "1.11.0",
   "description": "Ask about the PDFs on your own Mac: search them, read them, cite them.",
   "author": { "name": "PaperShelf" },
   "homepage": "https://github.com/jonaprieto/papershelf",

@@ -2,7 +2,7 @@ import Foundation
 
 /// The app, MCP server, plugin manifest and About screen all derive their release identity
 /// from this value, with tests holding the other copies level with it.
-public let paperShelfVersion = "1.10.2"
+public let paperShelfVersion = "1.11.0"
 
 /// Where the app keeps what it must not lose: the library, the last run, anything else
 /// that outlives a launch.
