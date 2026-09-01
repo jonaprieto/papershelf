@@ -168,8 +168,17 @@ public func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String
         for start in stride(from: 0, to: quads.count - 3, by: 4) {
             let points = (0..<4).map { quads[start + $0].pointValue }
             let xs = points.map(\.x), ys = points.map(\.y)
-            boxes.append(CGRect(x: xs.min()! + annotation.bounds.minX,
-                                y: ys.min()! + annotation.bounds.minY,
+            // PaperShelf writes local points, while imported PDFs commonly store the
+            // same points in page space. Adding the origin to both forms shifts imported
+            // marks away from their text, which is what made the Notes rail lose words.
+            let isPageSpace = points.allSatisfy {
+                $0.x >= annotation.bounds.minX && $0.x <= annotation.bounds.maxX
+                    && $0.y >= annotation.bounds.minY && $0.y <= annotation.bounds.maxY
+            }
+            let origin = isPageSpace
+                ? CGPoint.zero : annotation.bounds.origin
+            boxes.append(CGRect(x: xs.min()! + origin.x,
+                                y: ys.min()! + origin.y,
                                 width: xs.max()! - xs.min()!,
                                 height: ys.max()! - ys.min()!))
         }

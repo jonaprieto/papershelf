@@ -2,6 +2,7 @@ import XCTest
 import PDFKit
 import AppKit
 import CoreText
+import PaperShelfCore
 @testable import PaperShelf
 
 /// The floating bar hands a live selection to ChatGPT, and a selection is not a mark: the
@@ -87,6 +88,68 @@ final class SelectionHandoffTests: XCTestCase {
         annotator.remove(mark)
         XCTAssertTrue(annotator.marks.isEmpty)
         annotator.flush()
+    }
+
+    func testHighlightQuoteMatchesTheSelectedTextAcrossWrappedLines() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("annotator-wrap-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = String(repeating: "Sentences that wrap across lines. ", count: 30)
+        try makeTextPDF(at: url, text: source)
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        let view = PDFView()
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: url)
+        let expected = try XCTUnwrap(
+            document.findString("Sentences that wrap across lines. Sentences that wrap", withOptions: [])
+                .first?.string
+        )
+        view.currentSelection = try XCTUnwrap(
+            document.findString("Sentences that wrap across lines. Sentences that wrap", withOptions: []).first)
+
+        XCTAssertEqual(annotator.highlightSelection(colour: .yellow), 1)
+        let mark = try XCTUnwrap(annotator.marks.first)
+        let normalized = expected.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        XCTAssertEqual(mark.quoted, normalized)
+        annotator.flush()
+    }
+
+    func testQuoteExtractionAcceptsPageSpaceQuadrilaterals() throws {
+        let document = try makeDocument(["alpha beta gamma"])
+        let page = try XCTUnwrap(document.page(at: 0))
+        let selection = try XCTUnwrap(document.findString("alpha beta", withOptions: []).first)
+        let bounds = selection.bounds(for: page)
+        let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+        annotation.quadrilateralPoints = [
+            NSValue(point: NSPoint(x: bounds.minX, y: bounds.maxY)),
+            NSValue(point: NSPoint(x: bounds.maxX, y: bounds.maxY)),
+            NSValue(point: NSPoint(x: bounds.minX, y: bounds.minY)),
+            NSValue(point: NSPoint(x: bounds.maxX, y: bounds.minY)),
+        ]
+        page.addAnnotation(annotation)
+
+        XCTAssertEqual(page.selection(for: bounds)?.string, "alpha beta")
+        XCTAssertEqual(PaperShelfCore.quotedText(of: annotation, on: page), "alpha beta")
+    }
+
+    func testQuoteExtractionPreservesUnicodePunctuationAndLigatures() throws {
+        let phrase = "Office fiancée, naïve: λ."
+        let document = try makeDocument(["Office ﬁancée, naïve: λ."])
+        let page = try XCTUnwrap(document.page(at: 0))
+        let selection = try XCTUnwrap(document.findString(phrase, withOptions: []).first)
+        let annotation = PDFAnnotation(bounds: selection.bounds(for: page),
+                                       forType: .highlight, withProperties: nil)
+        let bounds = annotation.bounds
+        annotation.quadrilateralPoints = [
+            NSValue(point: NSPoint(x: bounds.minX, y: bounds.maxY)),
+            NSValue(point: NSPoint(x: bounds.maxX, y: bounds.maxY)),
+            NSValue(point: NSPoint(x: bounds.minX, y: bounds.minY)),
+            NSValue(point: NSPoint(x: bounds.maxX, y: bounds.minY)),
+        ]
+        page.addAnnotation(annotation)
+
+        XCTAssertEqual(PaperShelfCore.quotedText(of: annotation, on: page), phrase)
     }
 
     func testRemoveAllMarksLeavesLinksAlone() throws {
