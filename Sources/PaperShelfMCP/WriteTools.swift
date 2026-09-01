@@ -488,7 +488,14 @@ private struct WriteOutcome: Sendable {
 /// plain struct with no description of its own"). `String(describing:)` is the fallback for
 /// anything else, which is what the two write tools' errors were limited to before this:
 /// a case or struct dump rather than a sentence.
-private func readableMessage(for error: Error) -> String {
+///
+/// Not `private`: `Server.swift`'s own top-level catch, around every tool's `run`, used
+/// `error.localizedDescription` for exactly the same reason this existed for the two write
+/// tools, and `LibraryError` conforms to neither `LocalizedError` nor `CustomNSError`, so
+/// that produced Foundation's generic "The operation couldn't be completed." there instead
+/// of the real message. Internal visibility (the default once `private` is dropped) is
+/// enough for `Server.swift`, in the same module, to call this instead of repeating it.
+func readableMessage(for error: Error) -> String {
     if let toolFailure = error as? ToolFailure { return toolFailure.message }
     if let libraryError = error as? LibraryError { return libraryError.description }
     return String(describing: error)

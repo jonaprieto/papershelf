@@ -89,13 +89,22 @@ struct Server {
                                          "message": "Unknown tool: \(params["name"] ?? "")"]])
             }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
+            // `readableMessage` (`WriteTools.swift`) is the one place that already knows how
+            // to turn a thrown error into a sentence: `ToolFailure.message` for a tool's own
+            // refusals, `LibraryError.description` for one that escaped `Library`/
+            // `LibraryReader` unwrapped, and `String(describing:)` for anything else. Calling
+            // it here, rather than `error.localizedDescription`, matters because
+            // `LibraryError` conforms to neither `LocalizedError` nor `CustomNSError`:
+            // `localizedDescription` on it falls back to Foundation's generic "The operation
+            // couldn't be completed. (...LibraryError error 0.)", discarding the real
+            // message, while `readableMessage` reads it correctly. Two of this server's tools
+            // already had their own private copy of this fix for their per-document errors;
+            // this is every other tool's coverage, at the one place all of them funnel through.
             let outcome: ToolOutput
             do {
                 outcome = try tool.run(arguments)
-            } catch let failure as ToolFailure {
-                outcome = .failure(failure.message)
             } catch {
-                outcome = .failure(error.localizedDescription)
+                outcome = .failure(readableMessage(for: error))
             }
             var result: [String: Any] = [
                 "resultType": "complete",
