@@ -39,22 +39,37 @@ private let folderSchema: [String: Any] = [
     "required": ["folder"],
 ]
 
-let libraryTools: [Tool] = [
+let folderTools: [Tool] = [
     Tool(
         name: "list_documents",
         title: "List documents",
-        description: "List the PDFs in a folder with their page count, size, embedded "
-            + "metadata, and the name PaperShelf would give each one.",
-        inputSchema: folderSchema,
+        description: "With no folder, the library as a whole: how many documents it holds, "
+            + "how many have had their text read, and the most recently seen of them. This "
+            + "is the place to start when the researcher has not named a folder. With a "
+            + "folder, the PDFs in it with their page count, size, embedded metadata, and "
+            + "the name PaperShelf would give each one.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "folder": ["type": "string",
+                           "description": "Absolute path to a folder or a single PDF. Omit to read the library."],
+                "recursive": ["type": "boolean", "description": "Include subfolders. Default true. Folder only."],
+                "limit": ["type": "integer", "description": "Maximum documents. Default 100. Library only."],
+                "cursor": ["type": "string", "description": "From a previous result's next_cursor. Library only."],
+            ],
+        ],
         run: { arguments in
-            let items = try scan(root: try requireString(arguments, "folder"),
-                                 recursive: optionalBool(arguments, "recursive", default: true))
-            let rows = items.map(describe)
-            let text = items.isEmpty
-                ? "No PDFs found."
-                : items.map { "\($0.currentURL.path)  (\($0.pageCount ?? 0) pages)" }
-                    .joined(separator: "\n")
-            return ToolOutput(text: text, structured: ["count": rows.count, "documents": rows])
+            if let folder = arguments["folder"] as? String, !folder.isEmpty {
+                let items = try scan(root: folder,
+                                     recursive: optionalBool(arguments, "recursive", default: true))
+                let rows = items.map(describe)
+                let text = items.isEmpty
+                    ? "No PDFs found."
+                    : items.map { "\($0.currentURL.path)  (\($0.pageCount ?? 0) pages)" }
+                        .joined(separator: "\n")
+                return ToolOutput(text: text, structured: ["count": rows.count, "documents": rows])
+            }
+            return try libraryOverview(arguments)
         }
     ),
 
@@ -70,19 +85,24 @@ let libraryTools: [Tool] = [
         inputSchema: [
             "type": "object",
             "properties": [
-                "folder": ["type": "string", "description": "Absolute path to search under"],
-                "query": ["type": "string", "description": "For example: kant text:\"categorical imperative\""],
-                "recursive": ["type": "boolean"],
-                "limit": ["type": "integer", "description": "Maximum results. Default 50."],
+                "query": ["type": "string", "description": "For example: kant text:\"categorical imperative\". With no folder, the whole query is matched as a phrase against the text of every document in the library."],
+                "folder": ["type": "string", "description": "Absolute path to search under. Omit to search the library, which is faster and finds passages."],
+                "recursive": ["type": "boolean", "description": "Folder only."],
+                "limit": ["type": "integer", "description": "Maximum results. Default 20 for the library, 50 for a folder."],
+                "cursor": ["type": "string", "description": "From a previous result's next_cursor. Library only."],
                 "pages_per_document": ["type": "integer",
-                                       "description": "How many opening pages a text: term reads. Default 6."],
+                                       "description": "How many opening pages a text: term reads. Folder only. Default 6."],
             ],
-            "required": ["folder", "query"],
+            "required": ["query"],
         ],
         run: { arguments in
-            let query = Query(try requireString(arguments, "query"))
+            let raw = try requireString(arguments, "query")
+            guard let folder = arguments["folder"] as? String, !folder.isEmpty else {
+                return try searchLibrary(raw, arguments)
+            }
+            let query = Query(raw)
             guard !query.isEmpty else { throw ToolFailure("the query is empty") }
-            let items = try scan(root: try requireString(arguments, "folder"),
+            let items = try scan(root: folder,
                                  recursive: optionalBool(arguments, "recursive", default: true))
             let prepared = PreparedQuery(query)
             let limit = arguments["limit"] as? Int ?? 50
@@ -276,155 +296,7 @@ let libraryTools: [Tool] = [
     ),
 
     // The tools above scan a folder fresh on every call, which is all that is possible
-    // before anything has been indexed. The ones below read the library PaperShelf itself
-    // builds while indexing (projects, tags), through a read-only connection opened in
-    // Projects.swift; each one reports a missing library politely (isError, not a crash)
-    // rather than assuming one exists.
-
-    Tool(
-        name: "list_projects",
-        title: "List reading projects",
-        description: "List the reading projects recorded in the library, with how many "
-            + "documents each one holds.",
-        inputSchema: ["type": "object", "properties": [String: Any]()],
-        run: { _ in
-            let reader = try openLibraryOrFail()
-            let projects = try reader.projects()
-            let rows = projects.map { project -> [String: Any] in
-                ["id": Int(project.id), "name": project.name, "created_at": project.createdAt,
-                 "document_count": project.documentCount]
-            }
-            let text = projects.isEmpty
-                ? "No projects yet."
-                : projects.map { "\($0.name)  (\($0.documentCount) documents)" }
-                    .joined(separator: "\n")
-            return ToolOutput(text: text, structured: ["count": rows.count, "projects": rows])
-        }
-    ),
-
-    Tool(
-        name: "list_project_documents",
-        title: "List a project's documents",
-        description: "List the documents in one reading project, with each document's most "
-            + "recently known path, its tags, and its page count.",
-        inputSchema: [
-            "type": "object",
-            "properties": [
-                "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
-                "limit": ["type": "integer", "description": "Maximum documents. Default 500."],
-            ],
-            "required": ["project"],
-        ],
-        run: { arguments in
-            let identifier = try requireString(arguments, "project")
-            let reader = try openLibraryOrFail()
-            let project = try resolveProject(identifier, in: reader)
-            // A negative LIMIT means "unlimited" to SQLite, not "none" or an error, which
-            // would silently turn a client's bad input into a full dump of every document
-            // in the project; clamping to zero keeps this tool's own "maximum" honest.
-            let limit = max(0, arguments["limit"] as? Int ?? 500)
-            let documents = try reader.documents(inProject: project.id, limit: limit)
-            // The section a document is filed under is most of what a reading list says,
-            // so it travels with each row and heads each run in the text.
-            let rows = documents.map { document, section -> [String: Any] in
-                var row = describeDocument(document)
-                if let section { row["section"] = section }
-                return row
-            }
-            var text = ""
-            var heading: String??
-            for (document, section) in documents {
-                if heading == nil || heading! != section {
-                    heading = section
-                    text += (text.isEmpty ? "" : "\n") + (section ?? "Filed under nothing") + "\n"
-                }
-                text += "  " + (document.path ?? "(no known path) \(document.id)") + "\n"
-            }
-            if documents.isEmpty { text = "\(project.name) has no documents." }
-            return ToolOutput(text: text,
-                               structured: ["project": ["id": Int(project.id), "name": project.name],
-                                            "count": rows.count, "documents": rows])
-        }
-    ),
-
-    Tool(
-        name: "search_project",
-        title: "Search within a project",
-        description: "Full-text search the extracted text of the documents in one reading "
-            + "project. Only documents PaperShelf has already extracted text for can match.",
-        inputSchema: [
-            "type": "object",
-            "properties": [
-                "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
-                "query": ["type": "string", "description": "Words to search for, matched as a phrase."],
-                "limit": ["type": "integer", "description": "Maximum results. Default 50."],
-            ],
-            "required": ["project", "query"],
-        ],
-        run: { arguments in
-            let identifier = try requireString(arguments, "project")
-            let query = try requireString(arguments, "query")
-            guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ToolFailure("the query is empty")
-            }
-            let reader = try openLibraryOrFail()
-            let project = try resolveProject(identifier, in: reader)
-            // See the identical clamp in list_project_documents: SQLite treats a negative
-            // LIMIT as unlimited, not zero or an error.
-            let limit = max(0, arguments["limit"] as? Int ?? 50)
-            let documents = try reader.search(inProject: project.id, query: query, limit: limit)
-            let rows = documents.map(describeDocument)
-            let text = documents.isEmpty
-                ? "Nothing matched in \(project.name)."
-                : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
-            return ToolOutput(text: text,
-                               structured: ["project": ["id": Int(project.id), "name": project.name],
-                                            "matched": rows.count, "documents": rows])
-        }
-    ),
-
-    Tool(
-        name: "list_tags",
-        title: "List tags",
-        description: "List every tag in the library and how many documents carry it.",
-        inputSchema: ["type": "object", "properties": [String: Any]()],
-        run: { _ in
-            let reader = try openLibraryOrFail()
-            let tags = try reader.tags()
-            let rows = tags.map { tag -> [String: Any] in
-                ["name": tag.name, "document_count": tag.documentCount]
-            }
-            let text = tags.isEmpty
-                ? "No tags yet."
-                : tags.map { "\($0.name)  (\($0.documentCount))" }.joined(separator: "\n")
-            return ToolOutput(text: text, structured: ["count": rows.count, "tags": rows])
-        }
-    ),
-
-    Tool(
-        name: "documents_by_tag",
-        title: "Find documents by tag",
-        description: "List the documents carrying a given tag.",
-        inputSchema: [
-            "type": "object",
-            "properties": [
-                "tag": ["type": "string", "description": "Tag name, matched case-insensitively."],
-                "limit": ["type": "integer", "description": "Maximum documents. Default 200."],
-            ],
-            "required": ["tag"],
-        ],
-        run: { arguments in
-            let tag = try requireString(arguments, "tag")
-            let reader = try openLibraryOrFail()
-            // See the identical clamp in list_project_documents: SQLite treats a negative
-            // LIMIT as unlimited, not zero or an error.
-            let limit = max(0, arguments["limit"] as? Int ?? 200)
-            let documents = try reader.documents(taggedWith: tag, limit: limit)
-            let rows = documents.map(describeDocument)
-            let text = documents.isEmpty
-                ? "No documents tagged '\(tag)'."
-                : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
-            return ToolOutput(text: text, structured: ["tag": tag, "count": rows.count, "documents": rows])
-        }
-    ),
+    // before anything has been indexed. The library-backed tools (projects, tags, and the
+    // whole-library forms of list_documents and search_documents above) live in
+    // LibraryTools.swift instead.
 ]
