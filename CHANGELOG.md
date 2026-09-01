@@ -4,6 +4,21 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.8.0] - 2026-09-01
+
+### Added
+
+- Move between PDFs with a horizontal trackpad gesture and read any PDF in a focused full-screen window.
+- Choose normal, tinted, or white-on-black PDF contrast.
+- Start a note directly from the note action or highlighting bar, keep selected highlights and notes in sync, and dictate notes with audio transcription.
+- Keep annotations synchronized with a generated Markdown companion beside each PDF, with a preference to turn synchronization off.
+- Review and apply file renamings from the command palette.
+- Customize highlight meanings at library, project, or paper scope, with paper settings surviving filename changes.
+
+### Fixed
+
+- Preserve annotation quote text for imported PDFs and text containing Unicode punctuation or ligatures.
+
 ## [1.7.0] - 2026-09-01
 
 ### Added

@@ -28,6 +28,20 @@ Tools/mcp-check.sh           # drives the MCP server over stdio, must report zer
 before a filter selects anything, so a broken app target means no test in the package runs,
 including Core's.
 
+## Release checklist
+
+- Release directly from `main`, using the next semantic version. Keep
+  `paperShelfVersion`, `Resources/Info.plist`'s short version and build number, and
+  `Plugin/papershelf/.codex-plugin/plugin.json` aligned with the new `CHANGELOG.md` entry.
+- Run `swift build`, `swift test`, `Tools/mcp-check.sh`, and `./build.sh` before committing.
+  Inspect the built app's version and bundled changelog before installing it.
+- Make a signed Conventional Commit, then create a signed annotated tag such as
+  `git tag -s v1.8.0 -m "Release v1.8.0"` and push both with `git push origin main v1.8.0`.
+  The tag starts the GitHub release workflow in `.github/workflows/release.yml`.
+- Install the checked build with `./build.sh --install`. If the local ChatGPT plugin is in
+  use, refresh it with `./Tools/install-chatgpt-plugin.sh` so its manifest points at the
+  installed MCP binary and current release.
+
 ## Conventions
 
 - No emoji and no em-dashes anywhere: source, comments, Markdown written into the repo, and

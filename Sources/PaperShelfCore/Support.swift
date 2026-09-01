@@ -8,7 +8,7 @@ import Foundation
 /// drift to happen: a plugin listing showing an older number than the app it ships
 /// inside. Kept level with that number now, and a test holds the two together so they
 /// cannot quietly separate again.
-public let paperShelfVersion = "1.7.0"
+public let paperShelfVersion = "1.8.0"
 
 /// Where the app keeps what it must not lose: the library, the last run, anything else
 /// that outlives a launch.
