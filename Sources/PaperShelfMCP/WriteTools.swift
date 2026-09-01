@@ -3,10 +3,12 @@ import PaperShelfCore
 
 /// The tools that change something. Everything else in this server reads.
 ///
-/// Two kinds of change, kept apart on purpose. These two write rows in the library:
-/// reversible, invisible on disk, and no PDF is touched. `propose_file_changes` and
-/// `apply_file_changes`, below, move actual files and are gated behind a preference that
-/// is off until somebody turns it on.
+/// Two kinds of change, kept apart on purpose. `add_to_project` and `set_tags`, above,
+/// write rows in the library: reversible, invisible on disk, and no PDF is touched.
+/// `propose_file_changes`, below, only ever works out what a rename would do and never
+/// touches a file, so it works whether or not the file-operations preference is on;
+/// `apply_file_changes`, which is the only one of the four that moves anything, is gated
+/// behind that preference and off until somebody turns it on.
 let writeTools: [Tool] = [
     Tool(
         name: "add_to_project",
@@ -244,6 +246,65 @@ let writeTools: [Tool] = [
                 ],
                 isError: !failed.isEmpty
             )
+        }
+    ),
+
+    Tool(
+        name: "propose_file_changes",
+        title: "Work out what renaming a folder would do",
+        description: "The renames PaperShelf's own naming rules would make in a folder, "
+            + "worked out without touching a single file. Comes back with a token. Show "
+            + "the researcher the list and, if they say yes, pass the token to "
+            + "apply_file_changes. The token stops being good after fifteen minutes.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "folder": ["type": "string", "description": "Absolute path."],
+                "recursive": ["type": "boolean", "description": "Include subfolders. Default true."],
+                "casing": ["type": "string", "enum": NameRules.Casing.allCases.map(\.rawValue)],
+                "separator": ["type": "string", "enum": NameRules.Separator.allCases.map(\.rawValue)],
+                "strip_symbols": ["type": "boolean"],
+                "strip_diacritics": ["type": "boolean"],
+                "ascii_only": ["type": "boolean"],
+                "drop_leading_articles": ["type": "boolean"],
+                "max_length": ["type": "integer", "description": "Cut names back to this. Zero leaves them."],
+                "date_position": ["type": "string", "enum": NameRules.DatePosition.allCases.map(\.rawValue)],
+                "date_format": ["type": "string", "enum": NameRules.DateFormat.allCases.map(\.rawValue)],
+            ],
+            "required": ["folder"],
+        ],
+        run: { arguments in
+            let rules = NameRules(
+                casing: (arguments["casing"] as? String).flatMap(NameRules.Casing.init(rawValue:)) ?? .lowercase,
+                separator: (arguments["separator"] as? String).flatMap(NameRules.Separator.init(rawValue:)) ?? .keep,
+                stripSymbols: optionalBool(arguments, "strip_symbols", default: false),
+                stripDiacritics: optionalBool(arguments, "strip_diacritics", default: false),
+                asciiOnly: optionalBool(arguments, "ascii_only", default: false),
+                dropLeadingArticles: optionalBool(arguments, "drop_leading_articles", default: false),
+                maxLength: arguments["max_length"] as? Int ?? 0,
+                datePosition: (arguments["date_position"] as? String).flatMap(NameRules.DatePosition.init(rawValue:)) ?? .prefix,
+                dateFormat: (arguments["date_format"] as? String).flatMap(NameRules.DateFormat.init(rawValue:)) ?? .dashed)
+
+            let plan = try buildPlan(folder: try requireString(arguments, "folder"),
+                                     recursive: optionalBool(arguments, "recursive", default: true),
+                                     rules: rules)
+            _ = try writePlan(plan)
+
+            var text = plan.moves.isEmpty
+                ? "Nothing in that folder would be renamed."
+                : plan.moves.map { move in
+                    (move.from as NSString).lastPathComponent + "\n    -> "
+                        + (move.to as NSString).lastPathComponent
+                }.joined(separator: "\n")
+            if !Prefs.fileOperationsEnabled {
+                text += "\n\nNothing can be applied: PaperShelf has file operations turned "
+                    + "off. Settings, Integrations, \"Let it rename and move files\"."
+            }
+            return ToolOutput(text: text,
+                              structured: ["token": plan.token,
+                                           "count": plan.moves.count,
+                                           "enabled": Prefs.fileOperationsEnabled,
+                                           "moves": plan.moves.map { ["from": $0.from, "to": $0.to] }])
         }
     ),
 ]

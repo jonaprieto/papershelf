@@ -23,16 +23,17 @@ def check(label, condition):
 
 check.failed = False
 
-# A notification gets no reply at all, so exactly the requests with an id answer: 8 from the
-# first run (one of its 9 lines is a notification, plus a second tools/list at id 7 for the
-# no-password check below), 5 against the missing library, 47 against the scratch one (14
+# A notification gets no reply at all, so exactly the requests with an id answer: 9 from the
+# first run (one of its 10 lines is a notification, plus a second tools/list at id 7 for the
+# no-password check below, plus id 8 which is Task 11's propose_file_changes against the
+# empty scratch folder), 5 against the missing library, 47 against the scratch one (14
 # original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
 # document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
 # scoped bibliography and passaged project search, plus 3 closing out this task's remaining
 # review findings: a project's without_text count, a bibliography shortfall, and
 # search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags, plus 9
 # closing out the five review findings against those same two write tools).
-check("no reply to a notification", len(seen) == 8 + 5 + 47)
+check("no reply to a notification", len(seen) == 9 + 5 + 47)
 
 d = result("d")
 check(
@@ -104,6 +105,13 @@ check(
     "an unsupported protocol version is refused with -32022",
     seen.get("6", {}).get("error", {}).get("code") == -32022,
 )
+
+# Task 11: propose_file_changes against the same empty scratch folder as id 3. Nothing in
+# it is a PDF, so the plan is empty, and an empty plan must still come back with a token
+# rather than being treated as an error.
+plan = result("8").get("structuredContent", {})
+check("a proposal comes back with a token", bool(plan.get("token")))
+check("a proposal changes nothing on disk", plan.get("applied") is None)
 
 # The library-aware tools, run once against a path with nothing at it: each must say so
 # politely (isError, not a crash or a JSON-RPC error) and not merely happen to be empty.

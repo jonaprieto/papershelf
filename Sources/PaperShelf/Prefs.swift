@@ -136,6 +136,11 @@ final class Prefs {
     var moveOriginals: Bool = Store.flag("moveOriginals", true) {
         didSet { Store.put("moveOriginals", moveOriginals) }
     }
+    /// Whether the MCP server may move files. Off, because a model asking to tidy a folder
+    /// is a different thing from a person deciding to.
+    var mcpFileOperations: Bool = Store.flag("mcpFileOperations", false) {
+        didSet { Store.put("mcpFileOperations", mcpFileOperations) }
+    }
     var backupFolderName: String = Store.text("backupFolderName", defaultBackupFolderName) {
         didSet { Store.put("backupFolderName", backupFolderName) }
     }

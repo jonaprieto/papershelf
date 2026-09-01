@@ -728,12 +728,18 @@ struct IntegrationSettings: View {
                 LabeledContent("Codex") {
                     Button("Copy the config") { copy(codex) }
                 }
+                Toggle("Let it rename and move files", isOn: $prefs.mcpFileOperations)
             } header: {
                 Text("Model Context Protocol")
             } footer: {
                 Text("list_documents, search_documents, read_document, bibliography and "
-                     + "find_duplicates. A separate binary that holds no state, so every "
-                     + "call names the folder it works on, and nothing leaves the machine.")
+                     + "find_duplicates, and the reading projects and tags this library "
+                     + "keeps. A separate binary that holds no state, and nothing leaves "
+                     + "the machine.\n\n"
+                     + "Renaming is off by default. With it on, a proposal still comes "
+                     + "first and applying it re-checks every file, keeps originals "
+                     + "wherever Files & passwords says to, and sends nothing anywhere "
+                     + "but the Trash.")
                 .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
