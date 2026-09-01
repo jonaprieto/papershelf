@@ -43,6 +43,9 @@ struct ReviewInspector: View {
     /// the browser out of the way. The shelf draws no page of its own, so this is the way
     /// from a cover to what is inside it.
     let read: () -> Void
+    /// Moves through the same ordered results as the reader's J/K commands. The PDF view
+    /// only reports a horizontal trackpad gesture; this view owns what "next" means.
+    let stepDocument: (Int) -> Void
     /// Set only while the reader is open, and the way back out of it. ⎋ does the same
     /// thing; a button is here because a way in that has no visible way out is a trap.
     var leaveReader: (() -> Void)?
@@ -230,7 +233,8 @@ struct ReviewInspector: View {
                     Divider()
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords,
-                           annotator: annotator, fit: prefs.pageFit)
+                           annotator: annotator, fit: prefs.pageFit,
+                           onDocumentSwipe: stepDocument)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The page is an AppKit view hosted in SwiftUI, and a hosted view does
                 // not honour the frame it was given while it is being resized: squeezed
@@ -942,6 +946,54 @@ enum PageFit: String, CaseIterable, Identifiable {
 
 final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
+    var onDocumentSwipe: ((Int) -> Void)?
+    private var horizontalSwipe: CGFloat = 0
+    private var verticalSwipe: CGFloat = 0
+    private var swipeConsumed = false
+
+    /// A horizontal two-finger scroll is a document gesture only after it is clearly
+    /// horizontal and has crossed a small distance. Small horizontal movement remains
+    /// ordinary PDF scrolling, and vertical movement never changes documents.
+    static func documentStep(horizontal: CGFloat, vertical: CGFloat) -> Int? {
+        guard abs(horizontal) >= 80, abs(horizontal) > abs(vertical) * 1.25 else { return nil }
+        return horizontal < 0 ? 1 : -1
+    }
+
+    /// The reader owns document navigation, while PDFView owns page scrolling. Horizontal
+    /// trackpad scrolling is intercepted only when a reader supplied a destination.
+    override func scrollWheel(with event: NSEvent) {
+        guard onDocumentSwipe != nil else {
+            super.scrollWheel(with: event)
+            return
+        }
+        if event.phase == .began { resetSwipe() }
+
+        let horizontal = event.scrollingDeltaX
+        let vertical = event.scrollingDeltaY
+        guard abs(horizontal) > abs(vertical) * 1.25, abs(horizontal) > 0 else {
+            if event.phase == .ended || event.momentumPhase == .ended { resetSwipe() }
+            super.scrollWheel(with: event)
+            return
+        }
+
+        horizontalSwipe += horizontal
+        verticalSwipe += vertical
+        if !swipeConsumed,
+           let step = Self.documentStep(horizontal: horizontalSwipe, vertical: verticalSwipe) {
+            swipeConsumed = true
+            onDocumentSwipe?(step)
+        }
+
+        // Consume horizontal movement so the same gesture cannot both switch documents
+        // and pan the PDF. The next gesture starts after the momentum phase ends.
+        if event.phase == .ended || event.momentumPhase == .ended { resetSwipe() }
+    }
+
+    private func resetSwipe() {
+        horizontalSwipe = 0
+        verticalSwipe = 0
+        swipeConsumed = false
+    }
 
     /// How the page is sized in the room it has. Fitting the width is what a page of text
     /// wants; the other two are here because a figure and a scan do not.
@@ -1011,11 +1063,15 @@ struct PDFPreview: NSViewRepresentable {
     /// about the document: opening its book at the front and leaving you to find p. 108
     /// is most of the work the citation was supposed to save.
     var page: Int?
+    /// Finder-opened reader windows have one PDF and no collection to move through. The
+    /// main reader supplies the collection's existing step function.
+    var onDocumentSwipe: ((Int) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(annotator: annotator) }
 
     func makeNSView(context: Context) -> FitWidthPDFView {
         let view = FitWidthPDFView()
+        view.onDocumentSwipe = onDocumentSwipe
         // An NSView does not clip its content to its own bounds, so a PDF squeezed by the
         // pane beside it went on drawing at the width it had a moment ago -- straight over
         // the inspector. SwiftUI's own `.clipped()` cannot fix that: the page is a real
@@ -1054,6 +1110,7 @@ struct PDFPreview: NSViewRepresentable {
         // the file. The coordinator remembers what was asked for, so the same file is
         // never read twice over and A -> B -> A does not end up showing B.
         let coordinator = context.coordinator
+        view.onDocumentSwipe = onDocumentSwipe
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit

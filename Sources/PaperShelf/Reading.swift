@@ -573,6 +573,16 @@ struct PageBar: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .tip("How big the page is drawn")
+
+                Divider().frame(height: 14)
+
+                Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Toggle full screen")
+                .tip("Toggle full-screen reading")
             }
             .padding(.horizontal, Space.roomy)
             .padding(.vertical, Space.step)

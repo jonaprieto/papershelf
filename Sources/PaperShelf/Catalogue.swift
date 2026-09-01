@@ -1075,6 +1075,7 @@ struct ResultsPane: View {
     /// a key that means one thing in one place.
     static let decisionsInTheReader: Set<Command> = [
         .trash, .skip, .confirm, .moveTo, .applyOne, .reopen,
+        .nextFile, .previousFile,
     ]
 
     private static let alwaysAvailable: Set<Command> = [
@@ -1432,7 +1433,11 @@ struct ResultsPane: View {
         guard next != current else { return }
         // A key moved this, whatever the last click left behind: scroll to it.
         pickedByPointer = false
-        selected = runner.results[next].key
+        let key = runner.results[next].key
+        selected = key
+        // In reader place, `reader` is the displayed document; changing only `selected`
+        // leaves the page stuck on the old file even though the selection moved.
+        if reader != nil { reader = key }
     }
 
     private func confirm() {
@@ -2266,6 +2271,7 @@ struct ResultsPane: View {
                 markDeleted: markDeleted,
                 reopen: reopenSelected,
                 read: { openReader(item.key) },
+                stepDocument: { step(by: $0) },
                 leaveReader: reader == nil ? nil : closeReader,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
