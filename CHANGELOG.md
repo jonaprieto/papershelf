@@ -4,6 +4,19 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.10.0] - 2026-09-01
+
+### Added
+
+- Pull live highlights and notes through MCP with revision polling, so ChatGPT can check for
+  changes without receiving the same document twice.
+- Read and update highlight colors and semantic meanings through MCP at library, folder,
+  project, or document scope.
+
+### Fixed
+
+- Preserve quoted text from PDFs whose embedded font mapping makes PDFKit return mangled text.
+
 ## [1.9.0] - 2026-09-01
 
 ### Added

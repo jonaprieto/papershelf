@@ -1,14 +1,8 @@
 import Foundation
 
-/// The one place a version number is written. The MCP server reports it as its
-/// `serverInfo`, the plugin listing declares it, and `Tools/mcp-check.sh` checks the two
-/// against each other, which is how they drifted to 1.1.0 and 1.2.3 without anyone
-/// noticing. Bumped to 1.3.0 there, then left alone while the app's own
-/// `CFBundleShortVersionString` moved on to 1.6.0, which is a second way for the same
-/// drift to happen: a plugin listing showing an older number than the app it ships
-/// inside. Kept level with that number now, and a test holds the two together so they
-/// cannot quietly separate again.
-public let paperShelfVersion = "1.9.0"
+/// The app, MCP server, plugin manifest and About screen all derive their release identity
+/// from this value, with tests holding the other copies level with it.
+public let paperShelfVersion = "1.10.0"
 
 /// Where the app keeps what it must not lose: the library, the last run, anything else
 /// that outlives a launch.
