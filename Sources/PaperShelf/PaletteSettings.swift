@@ -33,6 +33,10 @@ enum PaletteSettings {
         let prefs = Prefs.shared
         var settings: [PaletteSetting] = []
 
+        settings.append(PaletteSetting(
+            id: "settings", title: "Open Settings", value: { "in Settings" },
+            act: openSettingsWindow, opensSettings: true))
+
         func flag(_ id: String, _ title: String,
                   _ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) {
             settings.append(PaletteSetting(id: id, title: title,

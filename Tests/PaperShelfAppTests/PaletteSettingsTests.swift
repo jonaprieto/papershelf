@@ -6,6 +6,12 @@ import XCTest
 @MainActor
 final class PaletteSettingsTests: XCTestCase {
 
+    func testThePaletteCanOpenTheSettingsWindow() {
+        let setting = try! XCTUnwrap(PaletteSettings.all().first { $0.id == "settings" })
+        XCTAssertEqual(setting.title, "Open Settings")
+        XCTAssertTrue(setting.opensSettings)
+    }
+
     func testAToggleFlipsWhereItStands() {
         let prefs = Prefs.shared
         let before = prefs.watchSources

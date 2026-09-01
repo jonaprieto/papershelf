@@ -152,6 +152,10 @@ final class CommandsTests: XCTestCase {
     func testThePaletteOffersOnlyWhatItCanRun() {
         XCTAssertTrue(ResultsPane.performable.contains(.palette),
                       "the palette has to be reachable by key even though it hides itself")
+        XCTAssertTrue(ResultsPane.performable.contains(.plan),
+                      "reviewing renamings must be reachable from the palette")
+        XCTAssertTrue(ResultsPane.performable.contains(.apply),
+                      "applying renamings must be reachable from the palette")
         XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
                        "a command is listed twice")
     }

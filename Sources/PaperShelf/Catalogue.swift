@@ -859,14 +859,16 @@ struct ResultsPane: View {
             .disabled(runner.identicalExtras == 0)
             .tip("Only files that are identical byte for byte. A likely match is never batched.")
         default:
-            // Only when there is no plan yet. Once there is one the bar is about working
-            // through it, and rebuilding it is in the menu behind.
-            if runner.results.isEmpty {
+            // Reviewing is the safe first step whether the shelf has never been scanned
+            // or already has a stale plan. Keep it visible so renaming never becomes a
+            // hidden recovery action.
+            if hasSources {
                 Button(action: preview) {
-                    Label("Review names", systemImage: "textformat.abc")
+                    Label(runner.results.isEmpty ? "Review renamings" : "Review renamings again",
+                          systemImage: "textformat.abc")
                 }
                 .labelStyle(.titleAndIcon)
-                .disabled(!hasSources || runner.busy)
+                .disabled(runner.busy)
                 .keyboardShortcut("p", modifiers: .command)
                 .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
             }
@@ -1232,7 +1234,7 @@ struct ResultsPane: View {
         .addNote, .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
-        .focusSearch, .shortcuts, .palette,
+        .focusSearch, .shortcuts, .palette, .plan, .apply,
     ]
 
     /// Carries out one command, whatever asked for it.
@@ -1284,6 +1286,10 @@ struct ResultsPane: View {
         case .reopen: reopenSelected()
         case .nextFile: step(by: 1)
         case .previousFile: step(by: -1)
+        case .plan: preview()
+        case .apply:
+            guard canApply else { return false }
+            apply()
 
         case .highlight1: highlight(colourAt: 0)
         case .highlight2: highlight(colourAt: 1)
