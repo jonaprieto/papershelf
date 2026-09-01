@@ -708,6 +708,13 @@ struct IntegrationSettings: View {
     var body: some View {
         Form {
             Section {
+                Text("Your PDFs stay on this Mac. Turning this on lets an assistant you "
+                     + "already use, such as ChatGPT, Claude Code or Codex, search your "
+                     + "library and answer with the passage and the page it came from, "
+                     + "instead of you copying text in by hand. The protocol behind it is "
+                     + "called MCP; nothing past this page needs you to know more than that.")
+                    .fixedSize(horizontal: false, vertical: true)
+
                 if let server {
                     LabeledContent("Server") {
                         HStack {
@@ -733,19 +740,29 @@ struct IntegrationSettings: View {
                 }
                 Toggle("Let it rename and move files", isOn: $prefs.mcpFileOperations)
             } header: {
-                Text("Model Context Protocol")
+                Text("Connect an assistant")
             } footer: {
-                Text("Search and read the whole library without naming a folder: a search "
-                     + "quotes the passages it matched with their page numbers, and every "
-                     + "result carries an id that reading, filing into a project and "
-                     + "tagging all accept. A separate binary that holds no state, and "
-                     + "nothing leaves the machine. Duplicate-finding this way only catches "
-                     + "byte-for-byte copies; point it at a folder instead to also catch "
-                     + "documents sharing their opening pages.\n\n"
-                     + "Renaming is off by default. With it on, a proposal still comes "
-                     + "first and applying it re-checks every file, keeps originals "
-                     + "wherever Files & passwords says to, and sends nothing anywhere "
-                     + "but the Trash.")
+                Text("For the ChatGPT desktop app, use the ChatGPT plugin section below: "
+                     + "it installs with one click rather than a command to paste. Claude "
+                     + "Code and Codex instead read the command or the config copied "
+                     + "above, once each; both talk to the same local server, a separate "
+                     + "process that holds no state and sends nothing off this machine.\n\n"
+                     + "Reading, searching, citing, filing into a project and tagging are "
+                     + "all available as soon as it is connected, without naming a folder "
+                     + "or a path. Duplicate-finding this way only catches byte-for-byte "
+                     + "copies; pointing it at a folder from a conversation instead also "
+                     + "catches documents that merely share their opening pages.\n\n"
+                     + "Searching only reaches documents whose text has already been read "
+                     + "here: connect this before that has happened and the assistant "
+                     + "comes back with nothing, for no reason it can explain. Read it "
+                     + "first from the command palette, or the button the search bar "
+                     + "offers when a search turns up nothing yet, both called "
+                     + "“Index text for search.”\n\n"
+                     + "Renaming and moving files is different: it stays off until the "
+                     + "toggle above is turned on, and even then a proposal is shown "
+                     + "before anything happens, applying it re-checks every file, keeps "
+                     + "the original wherever Files & passwords says to, and sends "
+                     + "nothing anywhere but the Trash.")
                 .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
