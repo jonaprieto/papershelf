@@ -24,11 +24,13 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 28 against
+# first run (one of its 8 lines is a notification), 5 against the missing library, 31 against
 # the scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection,
 # plus 4 reading by document_id instead of path, plus 3 exercising the write path end to end,
-# plus 3 exercising scoped bibliography and passaged project search).
-check("no reply to a notification", len(seen) == 7 + 5 + 28)
+# plus 3 exercising scoped bibliography and passaged project search, plus 3 closing out this
+# task's remaining review findings: a project's without_text count, a bibliography shortfall,
+# and search_project's next_cursor).
+check("no reply to a notification", len(seen) == 7 + 5 + 31)
 
 d = result("d")
 check(
@@ -99,12 +101,16 @@ for missing_id in ("30", "31", "32", "33", "34"):
     )
 
 # The same tools against the scratch library Tools/mcp-check.sh builds: one project
-# ("Dissertation", one document, tagged "ethics") and one project with no documents at all
-# ("Empty"), one tag with no documents ("unused").
+# ("Dissertation", one document, tagged "ethics"), one project with no documents at all
+# ("Empty"), one tag with no documents ("unused"), and one project ("Queue") holding a
+# single document with no extracted text, for the without_text check further down.
 
 projects = result("40").get("structuredContent", {}).get("projects", [])
 by_name = {p.get("name"): p for p in projects}
-check("list_projects finds both projects", set(by_name) == {"Dissertation", "Empty"})
+check(
+    "list_projects finds every project",
+    set(by_name) == {"Dissertation", "Empty", "Queue"},
+)
 check(
     "list_projects counts a project's documents",
     by_name.get("Dissertation", {}).get("document_count") == 1,
@@ -183,11 +189,11 @@ check(
 o = result("51")
 check(
     "list_documents with no folder reports the library's totals",
-    o.get("structuredContent", {}).get("totals", {}).get("documents") == 3,
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 6,
 )
 check(
     "list_documents with no folder lists documents",
-    len(o.get("structuredContent", {}).get("documents", [])) == 3,
+    len(o.get("structuredContent", {}).get("documents", [])) == 6,
 )
 
 s = result("52")
@@ -207,6 +213,12 @@ dupes = result("53").get("structuredContent", {}).get("groups", [])
 check(
     "duplicates are found library-wide by content hash",
     len(dupes) == 1 and len(dupes[0].get("paths", [])) == 2,
+)
+# Minor 4: the library-wide tool must use the same "kind" vocabulary the folder-scan
+# duplicate tool does (identical/sameText/likely), not a second string for the same idea.
+check(
+    "a library-wide duplicate group reports the same 'kind' vocabulary the folder scan uses",
+    dupes[0].get("kind") == "identical" if dupes else False,
 )
 
 # Pagination, forced by an explicit limit smaller than the fixture's three documents: neither
@@ -326,6 +338,46 @@ check(
     "an empty scope value is refused by name, not read as though it were absent",
     empty_scope.get("isError") is True
     and "empty" in empty_scope.get("content", [{}])[0].get("text", "").lower(),
+)
+
+# Minor 6: without_text was asserted nowhere, so a regression in it, or in the threshold
+# that appends its sentence, would go unnoticed. "Queue" holds exactly one member (doc-4)
+# and that document has no extracted_text row at all, and is never touched by any
+# read_document or search_documents call anywhere in this script, so this check does not
+# depend on running before (or after) any particular point in the script.
+queue = result("68")
+check(
+    "list_project_documents reports a nonzero without_text for a project with a genuinely "
+    "unread member",
+    queue.get("structuredContent", {}).get("without_text") == 1
+    and "no text on record" in queue.get("content", [{}])[0].get("text", ""),
+)
+
+# Important 1: a document the library has indexed (doc-5, a documents row with no usable
+# locations row) named in a bibliography's document_ids must be reported as a shortfall, not
+# silently dropped. doc-6 is a real, second PDF named in the same call, so this also proves
+# the shortfall is reported alongside an actual citation rather than instead of one.
+bib_shortfall = result("69")
+bib_structured = bib_shortfall.get("structuredContent", {})
+check(
+    "bibliography by document_ids reports a shortfall when a named document has no "
+    "location on record",
+    bib_shortfall.get("isError") is False
+    and bib_structured.get("requested") == 2
+    and bib_structured.get("cited") == 1
+    and bib_structured.get("skipped_documents") == ["Nowhere"]
+    and "Nowhere" in bib_shortfall.get("content", [{}])[0].get("text", ""),
+)
+
+# Important 3: search_project accepted a cursor argument but never emitted next_cursor, so a
+# project with more matches than the limit was permanently truncated. A limit of 1 against
+# Dissertation's one match exhausts it exactly at the boundary next_cursor's own emission
+# condition (documents.count == limit) checks for.
+next_page = result("70")
+check(
+    "search_project now emits next_cursor the way list_documents and search_documents do",
+    next_page.get("structuredContent", {}).get("next_cursor")
+    == "b2Zmc2V0OjE=",  # encodeCursor(1): base64 of "offset:1"
 )
 
 sys.exit(1 if check.failed else 0)

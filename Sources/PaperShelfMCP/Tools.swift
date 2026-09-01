@@ -211,21 +211,44 @@ let folderTools: [Tool] = [
                       + "you named \(named.joined(separator: " and "))")
             }
             let type = (arguments["type"] as? String).flatMap(BibType.init(rawValue:)) ?? .book
-            let paths = try bibliographyPaths(arguments, scope: named[0])
-            guard !paths.isEmpty else { throw ToolFailure("nothing to cite there") }
+            let resolution = try bibliographyPaths(arguments, scope: named[0])
+            guard !resolution.paths.isEmpty else {
+                if resolution.requested > 0 {
+                    throw ToolFailure("nothing to cite there: none of the "
+                        + "\(resolution.requested) named document"
+                        + (resolution.requested == 1 ? "" : "s")
+                        + " has a location on record")
+                }
+                throw ToolFailure("nothing to cite there")
+            }
             // The entries come from the files themselves, whichever scope named them: a
             // BibTeX key is built out of what the PDF says about itself, which the library
             // does not store in the shape `bibEntries` reads. `collectJobs` (rather than
             // constructing `Job` values directly) both filters to real PDFs and dedupes, and
             // is the only way to build one from outside PaperShelfCore: `Job`'s memberwise
             // initializer is not public even though its stored properties are.
-            let jobs = collectJobs(roots: paths.map { URL(fileURLWithPath: $0) }, recursive: false)
+            let jobs = collectJobs(roots: resolution.paths.map { URL(fileURLWithPath: $0) },
+                                   recursive: false)
             let items = process(jobs: jobs,
                                 options: Options(passwords: Prefs.passwords, recursive: false,
                                                  dryRun: true))
             let entries = bibEntries(for: items, type: type)
-            return ToolOutput(text: bibtexDocument(entries),
-                              structured: ["entries": entries.count, "scope": named[0]])
+            var structured: [String: Any] = ["entries": entries.count, "scope": named[0]]
+            var text = bibtexDocument(entries)
+            // A scope can resolve to more documents than it could find a location for; a
+            // researcher who named eight documents and gets seven cited needs to be told
+            // which one dropped out, not left to notice a short bibliography on their own.
+            let shortfall = resolution.requested - resolution.paths.count
+            if shortfall > 0 {
+                structured["requested"] = resolution.requested
+                structured["cited"] = resolution.paths.count
+                structured["skipped_documents"] = resolution.skipped
+                text += "\n\n\(shortfall) of \(resolution.requested) named document"
+                    + (resolution.requested == 1 ? "" : "s")
+                    + " could not be cited: no location is on record for "
+                    + resolution.skipped.joined(separator: ", ") + "."
+            }
+            return ToolOutput(text: text, structured: structured)
         }
     ),
 

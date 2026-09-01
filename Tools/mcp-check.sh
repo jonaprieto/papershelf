@@ -37,6 +37,12 @@ MzI3IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYK
 Mzk3CiUlRU9GCg==
 PDF
 
+# A second copy of the same file, at a different path: `locations.path` is a primary key, so
+# two documents can never share one location row, and doc-6 below (built for the bibliography
+# shortfall check) needs a real, distinct, openable PDF of its own rather than doc-3's.
+HELLO2_PDF="$FOLDER/hello2.pdf"
+cp "$HELLO_PDF" "$HELLO2_PDF"
+
 # Unquoted (unlike a plain schema-only heredoc) so $HELLO_PDF below expands; nothing else in
 # this block uses a shell metacharacter, so that is the only effect of the change.
 sqlite3 "$LIBRARY_DB" <<SQL
@@ -144,6 +150,30 @@ VALUES ('doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', NULL, 580, 1, '
 INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
 VALUES ('$HELLO_PDF', 'doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
 
+-- Minor 6: a project holding one document with no extracted_text row at all, so
+-- list_project_documents' without_text count has something real to assert on. Nothing else
+-- in this script ever reads doc-4's text or calls read_document/search_documents on it, so
+-- the check built on it does not depend on running before any particular point in the
+-- script: it would report the same count no matter where it ran.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-4', '2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z', NULL, 900, 3, 'Unread Paper', 'Someone', '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('/tmp/unread.pdf', 'doc-4', '2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z');
+INSERT INTO projects(id, name, created_at) VALUES (3, 'Queue', '2026-01-04T00:00:00Z');
+INSERT INTO project_members(project_id, document_id, added_at, section) VALUES (3, 'doc-4', '2026-01-04T00:00:00Z', NULL);
+
+-- Important 1: doc-5 is a document row with no locations row at all -- the library has
+-- indexed it, but has no location on record for it -- so a bibliography by document_ids
+-- naming it must report the shortfall rather than silently citing one fewer than asked.
+-- doc-6 is a real, second PDF (hello2.pdf) named alongside it in that same call, so the
+-- check also proves the shortfall is reported next to an actual citation, not instead of one.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-5', '2026-01-05T00:00:00Z', '2026-01-05T00:00:00Z', NULL, 100, 2, 'Nowhere', 'Ghost', '{}');
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-6', '2026-01-06T00:00:00Z', '2026-01-06T00:00:00Z', NULL, 580, 1, 'Hello Two', NULL, '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('$HELLO2_PDF', 'doc-6', '2026-01-06T00:00:00Z', '2026-01-06T00:00:00Z');
+
 PRAGMA user_version = 7;
 SQL
 
@@ -176,7 +206,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
 
-# The same tools against the scratch library above, now three documents. The last four
+# The same tools against the scratch library above, now six documents. The last four
 # force pagination with an explicit small limit (ids 54-55, since the fixture is too small
 # for any default limit to ever produce a next_cursor on its own), then confirm a cursor this
 # server never handed out is refused rather than crashing or quietly resetting to offset
@@ -196,7 +226,15 @@ printf '%s\n' \
 # search_project's hits now carry the same quoted passage and page number a library-wide
 # search does (66), and a scope named with an empty string is refused with its own words
 # rather than being read as though it had been left out and falling through to whichever
-# other scope was actually named (67).
+# other scope was actually named (67). Ids 68-70 close out this task's remaining review
+# findings: list_project_documents' without_text count is exercised against a project
+# ("Queue") that genuinely holds an unread member, rather than asserted nowhere (68); a
+# bibliography by document_ids naming doc-6 (a real, citable file) alongside doc-5 (a
+# document the library has indexed but has no location on record for) must report the
+# shortfall rather than quietly citing one fewer than asked (69); and search_project, whose
+# limit of 1 exactly exhausts Dissertation's one match, now emits next_cursor the same way
+# list_documents and search_documents already do, rather than leaving a project with more
+# matches than the default limit permanently truncated (70).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -226,5 +264,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"65","method":"tools/call","params":{"name":"bibliography","arguments":{"project":"Dissertation","folder":"/tmp"}}}' \
   '{"jsonrpc":"2.0","id":"66","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"categorical imperative"}}}' \
   '{"jsonrpc":"2.0","id":"67","method":"tools/call","params":{"name":"bibliography","arguments":{"folder":""}}}' \
+  '{"jsonrpc":"2.0","id":"68","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Queue"}}}' \
+  '{"jsonrpc":"2.0","id":"69","method":"tools/call","params":{"name":"bibliography","arguments":{"document_ids":["doc-6","doc-5"]}}}' \
+  '{"jsonrpc":"2.0","id":"70","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"categorical imperative","limit":1}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

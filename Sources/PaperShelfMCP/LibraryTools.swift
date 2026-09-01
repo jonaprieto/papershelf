@@ -221,8 +221,24 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
     return kept.joined(separator: "\n")
 }
 
+/// What one bibliography scope resolved to. `requested` is how many documents the scope
+/// named in total (project/tag membership, or the length of `document_ids`); `paths` is the
+/// subset of those with a usable path to actually build a citation from. The two can differ:
+/// `DocumentSummary.path` is the most recently seen of possibly several known locations, and
+/// a document the library has indexed can currently have none on record. `skipped` names,
+/// where a name is known, the documents left out for exactly that reason, so a caller who
+/// asked for eight documents and got seven back can tell why, rather than reading seven as
+/// though it had been the whole answer.
+struct BibliographyResolution {
+    let paths: [String]
+    let requested: Int
+    let skipped: [String]
+}
+
 /// The files one bibliography scope names. Every scope resolves to paths, because a BibTeX
-/// entry is built by reading the PDF, not by reading the library's row about it.
+/// entry is built by reading the PDF, not by reading the library's row about it -- except
+/// that a document known to the library can have no location on record at all, which is why
+/// this reports what it had to leave out rather than only what it found.
 ///
 /// `project` and `tag` are capped at 1000 documents, generous for a reading project but not
 /// a promise: naming a scope larger than that quietly cites only the first 1000. Whichever
@@ -231,26 +247,48 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
 /// opens before that tool answers. The folder scope pays for that scan twice over: once here
 /// to list candidate paths, once more there to build the `Item`s `bibEntries` reads, because
 /// every scope is resolved to plain paths through this one function rather than the folder
-/// case keeping the `Item`s it already built.
-func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> [String] {
+/// case keeping the `Item`s it already built. The folder scope never has anything to skip:
+/// its candidates come from files found on disk, which is a path by construction.
+func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> BibliographyResolution {
     switch scope {
     case "folder":
         let folder = try requireString(arguments, "folder")
-        return try scan(root: folder,
-                        recursive: optionalBool(arguments, "recursive", default: true))
+        let paths = try scan(root: folder,
+                             recursive: optionalBool(arguments, "recursive", default: true))
             .map(\.currentURL.path)
+        return BibliographyResolution(paths: paths, requested: paths.count, skipped: [])
     case "project":
         let reader = try openLibraryOrFail()
         let project = try resolveProject(try requireString(arguments, "project"), in: reader)
-        return try reader.documents(inProject: project.id, limit: 1000).compactMap { $0.0.path }
+        let documents = try reader.documents(inProject: project.id, limit: 1000).map(\.0)
+        return BibliographyResolution(
+            paths: documents.compactMap(\.path),
+            requested: documents.count,
+            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id })
     case "tag":
         let reader = try openLibraryOrFail()
-        return try reader.documents(taggedWith: try requireString(arguments, "tag"), limit: 1000)
-            .compactMap(\.path)
+        let documents = try reader.documents(taggedWith: try requireString(arguments, "tag"), limit: 1000)
+        return BibliographyResolution(
+            paths: documents.compactMap(\.path),
+            requested: documents.count,
+            skipped: documents.filter { $0.path == nil }.map { $0.title ?? $0.id })
     default:
         let ids = arguments["document_ids"] as? [String] ?? []
         let reader = try openLibraryOrFail()
-        return try ids.compactMap { try reader.document(matching: $0)?.path }
+        var paths: [String] = []
+        var skipped: [String] = []
+        for id in ids {
+            guard let document = try reader.document(matching: id) else {
+                skipped.append(id)
+                continue
+            }
+            guard let path = document.path else {
+                skipped.append(document.title ?? document.id)
+                continue
+            }
+            paths.append(path)
+        }
+        return BibliographyResolution(paths: paths, requested: ids.count, skipped: skipped)
     }
 }
 
@@ -262,15 +300,18 @@ func libraryDuplicates() throws -> ToolOutput {
     let reader = try openLibraryOrFail()
     let groups = try reader.duplicateGroupsByHash()
     guard !groups.isEmpty else {
-        return ToolOutput(text: "No duplicates in the library.", structured: nil)
+        return ToolOutput(text: "No duplicates in the library: no two documents share "
+            + "identical bytes. Documents that only match on their opening pages are not "
+            + "found this way; call find_duplicates with a folder to check for those.",
+                          structured: nil)
     }
     let described = groups.map { group -> [String: Any] in
-        ["kind": "same bytes",
+        ["kind": "identical",
          "paths": group.documents.compactMap(\.path),
          "document_ids": group.documents.map(\.id)]
     }
     let text = groups.map { group in
-        "same bytes:\n" + group.documents.map { "  " + ($0.path ?? $0.id) }
+        "identical:\n" + group.documents.map { "  " + ($0.path ?? $0.id) }
             .joined(separator: "\n")
     }.joined(separator: "\n\n")
     return ToolOutput(text: text, structured: ["groups": described])
@@ -373,7 +414,7 @@ let libraryTools: [Tool] = [
                 "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
                 "query": ["type": "string", "description": "Words to search for, matched as a phrase."],
                 "limit": ["type": "integer", "description": "Maximum results. Default 50."],
-                "cursor": ["type": "string", "description": "From a previous result's next_cursor. Library only."],
+                "cursor": ["type": "string", "description": "From a previous result's next_cursor."],
             ],
             "required": ["project", "query"],
         ],
@@ -391,27 +432,22 @@ let libraryTools: [Tool] = [
             let offset = try decodeCursor(arguments["cursor"])
             let documents = try reader.search(inProject: project.id, query: query,
                                               limit: limit, offset: offset)
-            // Every document search(inProject:) returns already matched against its stored
-            // text, so this is always zero in practice; it is computed the same way
-            // list_project_documents computes it (see the identical comment there) so the
-            // two tools report the shortfall consistently rather than one of them going
-            // quiet about it.
-            let unread = documents.filter { document in
-                (try? reader.extractedText(forDocument: document.id)) == nil
-            }.count
             let rows = documents.map { hit($0, query: query, reader: reader) }
-            var text = documents.isEmpty
+            let text = documents.isEmpty
                 ? "Nothing matched in \(project.name)."
                 : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
-            if unread > 0 {
-                text += "\n\n\(unread) of these have no text on record, so a search of this "
-                    + "project cannot see inside them. Reading them once in PaperShelf, or "
-                    + "asking for one of them by name, fixes that."
+            var structured: [String: Any] = [
+                "project": ["id": Int(project.id), "name": project.name],
+                "matched": rows.count, "documents": rows,
+            ]
+            // Mirrors list_documents and search_documents: a page exactly as large as the
+            // limit may not be the last one, so the client gets a cursor to ask for more
+            // rather than this tool going permanently silent about matches past the first
+            // page, as it did before this field existed.
+            if documents.count == limit && limit > 0 {
+                structured["next_cursor"] = encodeCursor(offset + limit)
             }
-            return ToolOutput(text: text,
-                               structured: ["project": ["id": Int(project.id), "name": project.name],
-                                            "matched": rows.count, "documents": rows,
-                                            "without_text": unread])
+            return ToolOutput(text: text, structured: structured)
         }
     ),
 
