@@ -341,6 +341,88 @@ let writeTools: [Tool] = [
                                            "moves": plan.moves.map { ["from": $0.from, "to": $0.to] }])
         }
     ),
+
+    Tool(
+        name: "apply_file_changes",
+        title: "Carry out a proposed rename",
+        description: "Carries out the renames a propose_file_changes token stands for. "
+            + "Only after the researcher has seen the list and agreed. Refuses if "
+            + "PaperShelf has file operations turned off, if the token is unknown or more "
+            + "than fifteen minutes old, or if any file in the plan has moved or changed "
+            + "since. Originals are kept wherever the app's own backup setting says, and "
+            + "nothing is ever deleted.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "token": ["type": "string", "description": "From propose_file_changes."],
+            ],
+            "required": ["token"],
+        ],
+        run: { arguments in
+            // The gate, checked first and before the token is even looked up: the
+            // cheapest and most absolute of every reason this can refuse.
+            guard Prefs.fileOperationsEnabled else {
+                throw ToolFailure("PaperShelf has file operations turned off, so nothing "
+                    + "here can move a file. The setting is in Settings, Integrations, "
+                    + "\"Let it rename and move files\". Nothing has been moved.")
+            }
+            let plan = try readPlan(token: try requireString(arguments, "token"))
+            guard !plan.moves.isEmpty else {
+                return ToolOutput(text: "That plan renames nothing.",
+                                  structured: ["applied": 0])
+            }
+            try verify(plan)
+
+            // Worked out a second time and compared before anything is written. The plan
+            // records what the rules said when it was proposed; if a folder's contents
+            // have shifted enough that the same rules now produce different names,
+            // applying the old list would rename files to names nobody was shown.
+            let planned = Set(plan.moves.map { "\($0.from)\u{1F}\($0.to)" })
+            let sources = Set(plan.moves.map(\.from))
+            // `backup: plan.backup`, not `Prefs.backup`: the same "honour what the plan
+            // recorded, not what the preference says now" rule the apply step below
+            // follows, so the scan skips wherever this plan's own backup settings put
+            // originals rather than wherever the current preference happens to point.
+            let jobs = collectJobs(roots: [URL(fileURLWithPath: plan.folder)],
+                                   recursive: plan.recursive, backup: plan.backup)
+                .filter { sources.contains($0.file.path) }
+            let rehearsed = process(jobs: jobs, options: plan.options)
+            let now = Set(rehearsed.filter(\.isRenamed)
+                .map { "\($0.source.path)\u{1F}\($0.destination.path)" })
+            guard now == planned else {
+                throw ToolFailure("the same rules now produce different names than this "
+                    + "plan records. Nothing has been moved. Call propose_file_changes "
+                    + "again to see what would happen now.")
+            }
+
+            var options = plan.options
+            options.dryRun = false
+            let done = process(jobs: jobs, options: options)
+            let moved = done.filter(\.carriedOut)
+            let failed = done.filter { $0.status == .failed }
+            try? FileManager.default.removeItem(at: try planURL(token: plan.token))
+
+            // Precise about which files actually moved and which did not, rather than a
+            // bare count: after a partial failure, a researcher needs to know the folder's
+            // real state without opening Finder to check. Each failed file's own message,
+            // from `process`, already says exactly what state that file was left in
+            // (untouched, restored, or written but not cleaned up), so it is carried
+            // through rather than replaced with a generic line.
+            var lines = ["Renamed \(moved.count) of \(plan.moves.count)."]
+            lines += moved.map { "  \($0.source.lastPathComponent) -> \($0.destination.lastPathComponent)" }
+            lines += failed.map { "  \($0.source.lastPathComponent): \($0.message)" }
+
+            return ToolOutput(
+                text: lines.joined(separator: "\n"),
+                structured: ["applied": moved.count,
+                             "failed": failed.count,
+                             "moves": moved.map { ["from": $0.source.path,
+                                                   "to": $0.destination.path] },
+                             "failed_files": failed.map { ["from": $0.source.path,
+                                                           "message": $0.message] }],
+                isError: !failed.isEmpty)
+        }
+    ),
 ]
 
 /// One document's outcome from a write tool's per-document loop: `nil` error means every

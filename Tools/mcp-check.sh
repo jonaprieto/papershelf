@@ -10,6 +10,31 @@ BIN="${1:-$(swift build --show-bin-path)/PaperShelfMCP}"
 FOLDER="$(mktemp -d)"
 trap 'rm -rf "$FOLDER"' EXIT
 
+# A real, minimal PDF, so a rename plan has something in it. Its own folder, because the
+# first block asserts that scanning $FOLDER finds nothing.
+RENAMES="$FOLDER/renames"
+mkdir -p "$RENAMES"
+
+# Where the "did a proposal actually leave the file alone" stat below is recorded. The
+# request/response block that fills this in runs on the left of the final pipe to
+# mcp-check.py, which bash runs as its own subshell, so a plain variable set there would not
+# survive to reach the python3 process on the right of that same pipe; a file both sides can
+# see does.
+RENAMES_STAT_FILE="$FOLDER/renames-size-after-propose.txt"
+base64 -d > "$RENAMES/Some Paper (2024).pdf" <<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAg
+MjAwXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAw
+IFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzNiA+PgpzdHJlYW0KQlQgL0YxIDEyIFRm
+IDIwIDEwMCBUZCAoaGVsbG8pIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlw
+ZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCnhy
+ZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4
+IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAw
+MzI3IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYK
+Mzk3CiUlRU9GCg==
+PDF
+
 # A library-shaped scratch database, built straight with sqlite3 rather than through the app,
 # so this script owns every row in it and does not depend on PaperShelf having been run on
 # this machine. The schema mirrors Library.swift's own schemaV1 (documents, locations, tags,
@@ -329,7 +354,12 @@ printf '%s\n' \
 # (88); and a set_tags call naming doc-6, doc-5 (now poisoned for tagging too, by
 # poison_doc5_tagging above), then doc-8, proves set_tags's own per-document loop carries on
 # past a mid-batch failure the same way add_to_project's does (89), confirmed by
-# documents_by_tag finding the tag on doc-6 and doc-8 but not doc-5 (90).
+# documents_by_tag finding the tag on doc-6 and doc-8 but not doc-5 (90). Task 12's
+# apply_file_changes closes this run out: an unknown token is refused (91), a real PDF in
+# its own folder (RENAMES, not the empty FOLDER id 8 already covers) gives propose_file_changes
+# something to plan a move for (92), and the same folder proposed again after a byte is
+# appended to that PDF (93, in the block below) must come back with a different token, since
+# a token that survived that would not be able to tell a stale plan from a current one.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -381,5 +411,27 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"88","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Undercount Test"}}}' \
   '{"jsonrpc":"2.0","id":"89","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-6","doc-5","doc-8"],"add":["draft"]}}}' \
   '{"jsonrpc":"2.0","id":"90","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"draft"}}}' \
+  '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
-} | python3 Tools/mcp-check.py
+
+# What id 92's proposal actually left on disk, captured before the comment below is
+# appended: the real test that a proposal (a dry run) changes nothing, since the old
+# assertion (`plan.get("applied") is None`) was vacuous -- propose_file_changes never emits
+# an "applied" key under any circumstance, including if it had renamed every file on disk.
+# A dry run that quietly stopped being one would rename this file out from under its own
+# name, so `stat` on the exact original path and name comes back empty; one that stayed a
+# dry run leaves the original 580 bytes exactly where they were.
+stat -f%z "$RENAMES/Some Paper (2024).pdf" > "$RENAMES_STAT_FILE" 2>/dev/null || echo -1 > "$RENAMES_STAT_FILE"
+
+# The same folder proposed twice with a byte written to the fixture in between. A token that
+# survives that would be a token that cannot tell a stale plan from a current one, which is
+# the whole thing standing between apply_file_changes and a file it was never shown. A PDF
+# comment appended after %%EOF is still a PDF PDFKit opens, so the second proposal still
+# finds the same one move; only the file's size and modification date differ, which is
+# exactly what the token has to notice.
+printf '%%comment\n' >> "$RENAMES/Some Paper (2024).pdf"
+printf '%s\n' \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"93\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
+  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
+} | RENAMES_STAT_FILE="$RENAMES_STAT_FILE" python3 Tools/mcp-check.py

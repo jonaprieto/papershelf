@@ -1,4 +1,4 @@
-import sys, json
+import os, sys, json
 
 seen = {}
 for line in sys.stdin:
@@ -26,7 +26,7 @@ check.failed = False
 # A notification gets no reply at all, so exactly the requests with an id answer: 9 from the
 # first run (one of its 10 lines is a notification, plus a second tools/list at id 7 for the
 # no-password check below, plus id 8 which is Task 11's propose_file_changes against the
-# empty scratch folder), 5 against the missing library, 50 against the scratch one (14
+# empty scratch folder), 5 against the missing library, 52 against the scratch one (14
 # original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
 # document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
 # scoped bibliography and passaged project search, plus 3 closing out this task's remaining
@@ -36,8 +36,11 @@ check.failed = False
 # 87-90) closing out a later re-review: id 84's original request is gone, replaced by a
 # fresh set_tags poison-batch call and its own confirmation, alongside a new add_to_project
 # call and confirmation for the undercount fix itself, for a net change of minus one request
-# plus four).
-check("no reply to a notification", len(seen) == 9 + 5 + 50)
+# plus four, plus 2 for Task 12: an unknown token refused by apply_file_changes (91) and a
+# proposal against a folder holding a real PDF (92)), plus 1 more from a fourth, separate
+# printf into the same binary further down: the same folder proposed again after the PDF is
+# touched (93), which has to answer with a different token than 92's.
+check("no reply to a notification", len(seen) == 9 + 5 + 52 + 1)
 
 d = result("d")
 check(
@@ -112,10 +115,14 @@ check(
 
 # Task 11: propose_file_changes against the same empty scratch folder as id 3. Nothing in
 # it is a PDF, so the plan is empty, and an empty plan must still come back with a token
-# rather than being treated as an error.
+# rather than being treated as an error. (The "changes nothing on disk" half of this used to
+# be asserted here as `plan.get("applied") is None`, which is vacuous: propose_file_changes
+# never emits an "applied" key under any circumstance, including if it had renamed every
+# file on disk, and this folder holds no PDF for a proposal to have anything to rename in
+# the first place. A real version of that assertion needs a folder with something in it,
+# and lives with Task 12's checks below, against RENAMES.)
 plan = result("8").get("structuredContent", {})
 check("a proposal comes back with a token", bool(plan.get("token")))
-check("a proposal changes nothing on disk", plan.get("applied") is None)
 
 # The library-aware tools, run once against a path with nothing at it: each must say so
 # politely (isError, not a crash or a JSON-RPC error) and not merely happen to be empty.
@@ -581,6 +588,50 @@ check(
     "the tag lands on the documents whose write actually succeeded, doc-8 included, seen "
     "through documents_by_tag",
     {doc.get("id") for doc in tagged_after_poison} == {"doc-6", "doc-8"},
+)
+
+# Task 12: apply_file_changes, the only tool in this server that moves a file. The gate is
+# off in every environment this script runs in, since it never writes the real preferences
+# domain, and the gate is checked before the token is even looked up, so an unknown token
+# given while the gate is off is refused for being unknown only in principle -- what this
+# actually exercises, here, is the gate refusing first, regardless of what token is given.
+# A real unknown-token refusal (and the change-detection refusal further down, driven
+# through apply_file_changes itself rather than inferred from two propose_file_changes
+# tokens differing) needs the gate on, which is checked by hand, with the user present, per
+# the task brief.
+check(
+    "an unknown token is refused",
+    result("91").get("isError") is True,
+)
+check(
+    "applying is refused while the preference is off, and says so",
+    result("91").get("isError") is True
+    and "turned off"
+    in " ".join(part.get("text", "") for part in result("91").get("content", [])),
+)
+check(
+    "a proposal over a folder with a file in it names a move",
+    result("92").get("structuredContent", {}).get("count", 0) == 1,
+)
+# The real replacement for the vacuous "applied is None" check removed above: RENAMES holds
+# a real 580-byte PDF, stat'd by mcp-check.sh on the exact original path and name right
+# after id 92's proposal ran and before anything else touches it, written to a file since a
+# plain shell variable set on the left of the final pipe cannot reach this process on the
+# right of it. A dry run that quietly stopped being one would have renamed the file out from
+# under that name; this only reads back "580" if propose_file_changes left the file exactly
+# where and what it was.
+try:
+    renames_size_after_propose = open(os.environ["RENAMES_STAT_FILE"]).read().strip()
+except OSError:
+    renames_size_after_propose = None
+check(
+    "a proposal changes nothing on disk",
+    renames_size_after_propose == "580",
+)
+check(
+    "touching a file invalidates the token that described it",
+    result("93").get("structuredContent", {}).get("token")
+    != result("92").get("structuredContent", {}).get("token"),
 )
 
 sys.exit(1 if check.failed else 0)
