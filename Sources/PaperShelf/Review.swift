@@ -71,6 +71,7 @@ struct ReviewInspector: View {
 
     var annotator: Annotator
     var palette: Palette
+    var projectScopes: [HighlightMeaningScope] = []
 
     // The bibliography entry for this one file, edited in place. See BibtexPanel.swift.
     /// The same preference the bibliography tab uses, so one entry is never judged by a
@@ -113,10 +114,15 @@ struct ReviewInspector: View {
         palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
     }
 
+    private var documentMeaningScope: HighlightMeaningScope {
+        .forDocument(item.currentURL)
+    }
+
     private var hoveredMeaning: String? {
         guard let hovered, let style = palette.styles.first(where: { $0.id == hovered })
         else { return nil }
-        return style.meaning.isEmpty ? "Unnamed highlighter" : style.meaning
+        let meaning = palette.meaning(for: style, scope: documentMeaningScope)
+        return meaning == "Highlight" ? "Unnamed highlighter" : meaning
     }
 
     /// Whether the panel is drawn at all. Only the switch that names it decides this.
@@ -183,7 +189,8 @@ struct ReviewInspector: View {
                           annotator.go(toPage: page)
                       }
                   },
-                  showsHeader: false)
+                  showsHeader: false,
+                  projectScopes: projectScopes)
     }
 
     var body: some View {
@@ -502,7 +509,7 @@ struct ReviewInspector: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovered = $0 ? style.id : nil }
-                .accessibilityLabel(style.meaning.isEmpty ? "Unnamed colour" : style.meaning)
+                .accessibilityLabel(palette.meaning(for: style, scope: documentMeaningScope))
             }
 
             Divider().frame(height: 16)

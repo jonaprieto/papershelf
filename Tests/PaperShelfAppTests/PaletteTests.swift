@@ -48,4 +48,37 @@ final class PaletteTests: XCTestCase {
         palette.remove(palette.styles[0])
         XCTAssertEqual(palette.styles.count, 1, "the last highlighter cannot be removed")
     }
+
+    func testPaperMeaningOverridesTheLibraryDefaultAndCanInheritAgain() {
+        let palette = Palette.shared
+        let style = palette.styles[0]
+        let scope = HighlightMeaningScope.document("/tmp/meaning-\(UUID().uuidString).pdf")
+        defer { palette.resetMeanings(in: scope) }
+
+        let libraryMeaning = palette.meaning(for: style)
+        XCTAssertEqual(palette.meaning(for: style, scope: scope), libraryMeaning)
+
+        palette.setMeaning("Delete", on: style, scope: scope)
+        XCTAssertEqual(palette.meaning(for: style, scope: scope), "Delete")
+        XCTAssertEqual(palette.meaning(for: style), libraryMeaning)
+
+        palette.setMeaning("", on: style, scope: scope)
+        XCTAssertEqual(palette.meaning(for: style, scope: scope), libraryMeaning)
+    }
+
+    func testProjectMeaningIsSeparateFromPaperMeaning() {
+        let palette = Palette.shared
+        let style = palette.styles[0]
+        let paper = HighlightMeaningScope.document("/tmp/paper-\(UUID().uuidString).pdf")
+        let project = HighlightMeaningScope.project(id: Int64.random(in: 1...Int64.max),
+                                                    name: "Editing")
+        defer {
+            palette.resetMeanings(in: paper)
+            palette.resetMeanings(in: project)
+        }
+
+        palette.setMeaning("Rewrite", on: style, scope: project)
+        XCTAssertEqual(palette.meaning(for: style, scope: project), "Rewrite")
+        XCTAssertEqual(palette.meaning(for: style, scope: paper), palette.meaning(for: style))
+    }
 }

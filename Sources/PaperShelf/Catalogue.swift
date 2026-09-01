@@ -738,6 +738,11 @@ struct ResultsPane: View {
         palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
     }
 
+    private var currentMeaningScope: HighlightMeaningScope? {
+        guard let item = readerItem ?? selectedItem else { return nil }
+        return .forDocument(item.currentURL)
+    }
+
     /// The rail beside the page, from the same group as the sidebar button, because it is
     /// the same kind of thing: a pane that opens and shuts. Under
     /// `SplitLayout.contentsFoldsBelow` it opens as a popover from here instead, which is
@@ -774,7 +779,7 @@ struct ResultsPane: View {
                     // a template and repainted, so five highlighters came out the same
                     // colour in the one menu whose whole purpose is picking a colour.
                     Label {
-                        Text(style.meaning.isEmpty ? "Unnamed" : style.meaning)
+                        Text(palette.meaning(for: style, scope: currentMeaningScope))
                     } icon: {
                         swatchImage(style.nsColor, size: 12)
                     }
@@ -2278,7 +2283,10 @@ struct ResultsPane: View {
                 excerpt: runner.excerpt(for: item),
                 tags: tagActions(for: item),
                 annotator: annotator,
-                palette: palette
+                palette: palette,
+                projectScopes: projects.map {
+                    .project(id: $0.id, name: $0.name)
+                }
             )
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(

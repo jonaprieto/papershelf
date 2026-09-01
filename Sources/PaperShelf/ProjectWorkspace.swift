@@ -24,6 +24,7 @@ struct ProjectWorkspace: View {
     @State private var showingAddDocuments = false
     @State private var exporting = false
     @State private var dropTargeted = false
+    @State private var editingMeaningScope: HighlightMeaningScope?
 
     /// Told when this project gains or loses a document, so the window's own count of it,
     /// drawn in the sidebar from a query taken when the window loaded, cannot go on
@@ -106,6 +107,9 @@ struct ProjectWorkspace: View {
             AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
                 Task { await model.addBatch(hashes, section: section) }
             }
+        }
+        .sheet(item: $editingMeaningScope) { scope in
+            HighlightMeaningEditor(palette: .shared, scope: scope)
         }
     }
 
@@ -219,6 +223,13 @@ struct ProjectWorkspace: View {
             }
             .disabled(conversation.turns.isEmpty)
             .tip("Write every question and answer in this project out as Markdown")
+
+            Button {
+                editingMeaningScope = .project(id: project.id, name: project.name)
+            } label: {
+                Label("Highlight meanings", systemImage: "textformat")
+            }
+            .tip("Customize highlight meanings for this project")
         }
     }
 

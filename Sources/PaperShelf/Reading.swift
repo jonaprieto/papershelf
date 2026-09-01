@@ -14,6 +14,7 @@ struct MarkRow: View {
     let recolour: (NSColor) -> Void
     let styles: [HighlightStyle]
     let meaning: String
+    let styleMeaning: (HighlightStyle) -> String
     /// Named in the handoff so an answer is about the right document.
     var documentTitle: String = ""
 
@@ -46,7 +47,7 @@ struct MarkRow: View {
                             // See the toolbar's picker: a symbol in a menu item is
                             // repainted, so every choice came out the same colour.
                             Label {
-                                Text(style.meaning.isEmpty ? "Unnamed" : style.meaning)
+                                Text(styleMeaning(style))
                             } icon: {
                                 swatchImage(style.nsColor, size: 12)
                             }
@@ -204,6 +205,8 @@ struct NotesRail: View {
     /// Its own bar, with the count, the export menu and the way out. Off when it sits in
     /// the inspector, which already has one of those and does not need two.
     var showsHeader: Bool = true
+    /// Projects are optional because the standalone reader is not attached to the shelf.
+    var projectScopes: [HighlightMeaningScope] = []
 
     /// Whether the document this panel is about is the one the reader has open.
     ///
@@ -285,7 +288,7 @@ struct NotesRail: View {
     private var meaningsPresent: [String] {
         var seen: [String] = []
         for mark in marks {
-            let meaning = palette.meaning(for: mark.colour)
+            let meaning = palette.meaning(for: mark.colour, scope: currentMeaningScope)
             if !seen.contains(meaning) { seen.append(meaning) }
         }
         return seen
@@ -293,7 +296,26 @@ struct NotesRail: View {
 
     private var shownMarks: [Annotator.Mark] {
         guard let filter else { return marks }
-        return marks.filter { palette.meaning(for: $0.colour) == filter }
+        return marks.filter {
+            palette.meaning(for: $0.colour, scope: currentMeaningScope) == filter
+        }
+    }
+
+    private var defaultMeaningScope: HighlightMeaningScope? {
+        guard !source.isEmpty else { return nil }
+        return .forDocument(URL(fileURLWithPath: source))
+    }
+
+    private var currentMeaningScope: HighlightMeaningScope? {
+        activeMeaningScope ?? defaultMeaningScope
+    }
+
+    private var availableMeaningScopes: [HighlightMeaningScope] {
+        var scopes: [HighlightMeaningScope] = []
+        if let defaultMeaningScope { scopes.append(defaultMeaningScope) }
+        scopes.append(contentsOf: projectScopes)
+        scopes.append(.library)
+        return scopes
     }
 
     var body: some View {
@@ -303,6 +325,10 @@ struct NotesRail: View {
             // Whatever the shadow document still owes the disk it owes now, rather than
             // whenever the panel happens to be torn down.
             .onDisappear { shadow.flush() }
+            .onChange(of: source) { _, _ in activeMeaningScope = nil }
+            .sheet(item: $editingMeaningScope) { scope in
+                HighlightMeaningEditor(palette: palette, scope: scope)
+            }
     }
 
     private var panel: some View {
@@ -387,7 +413,8 @@ struct NotesRail: View {
                             save: { live.setNote($0, on: mark) },
                             recolour: { live.setColour($0, on: mark) },
                             styles: palette.styles,
-                            meaning: palette.meaning(for: mark.colour),
+                            meaning: palette.meaning(for: mark.colour, scope: currentMeaningScope),
+                            styleMeaning: { palette.meaning(for: $0, scope: currentMeaningScope) },
                             documentTitle: title
                         )
                         .listRowInsets(EdgeInsets())
@@ -477,6 +504,34 @@ struct NotesRail: View {
             .fixedSize()
             .foregroundStyle(filter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
             .tip("Show only one kind of mark")
+
+            Menu {
+                ForEach(availableMeaningScopes) { scope in
+                    Button {
+                        activeMeaningScope = scope == defaultMeaningScope ? nil : scope
+                    } label: {
+                        HStack {
+                            if scope == currentMeaningScope {
+                                Image(systemName: "checkmark")
+                            }
+                            Text(scope.label)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "textformat")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .tip("Choose the highlight meanings for this view")
+
+            Button { editingMeaningScope = currentMeaningScope ?? .library } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .fixedSize()
+            .tip("Customize the highlight meanings for this scope")
         }
         .padding(.horizontal, Space.roomy)
         .padding(.vertical, Space.step)
@@ -524,13 +579,15 @@ struct NotesRail: View {
     /// Which meaning the list is narrowed to, or nil for all of them.
     @State private var filter: String?
     @FocusState private var noteInputFocused: Bool
+    @State private var activeMeaningScope: HighlightMeaningScope?
+    @State private var editingMeaningScope: HighlightMeaningScope?
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
     private var notesMarkdown: String {
         let exported = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
-                       meaning: palette.meaning(for: $0.colour))
+                       meaning: palette.meaning(for: $0.colour, scope: currentMeaningScope))
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported)
