@@ -2,6 +2,20 @@ import SwiftUI
 import Observation
 import PaperShelfCore
 
+enum PDFReadingAppearance: String, CaseIterable, Identifiable {
+    case normal, tint, whiteOnBlack
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .normal: return "Normal"
+        case .tint: return "Dark tint"
+        case .whiteOnBlack: return "White on black"
+        }
+    }
+}
+
 /// Everything the app remembers between launches, declared once.
 ///
 /// It used to be declared once per view that read it: 145 `@AppStorage` properties across
@@ -81,8 +95,21 @@ final class Prefs {
     var readingMode: Bool = Store.flag("readingMode", false) {
         didSet { Store.put("readingMode", readingMode) }
     }
-    var readingTint: Bool = Store.flag("readingTint", false) {
-        didSet { Store.put("readingTint", readingTint) }
+    private static var defaultReadingAppearance: PDFReadingAppearance {
+        // Migrate the old preference without writing a second key until the person
+        // changes the new setting.
+        Store.flag("readingTint", false) ? .tint : .normal
+    }
+    var readingAppearance: PDFReadingAppearance = Store.choice(
+        "readingAppearance", Prefs.defaultReadingAppearance
+    ) {
+        didSet { Store.put("readingAppearance", readingAppearance) }
+    }
+
+    /// Compatibility for callers that only need the old on/off question.
+    var readingTint: Bool {
+        get { readingAppearance == .tint }
+        set { readingAppearance = newValue ? .tint : .normal }
     }
     var pageFit: PageFit = Store.choice("pageFit", .width) {
         didSet { Store.put("pageFit", pageFit) }

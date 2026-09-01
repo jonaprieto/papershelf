@@ -4,6 +4,19 @@ import PDFKit
 import UniformTypeIdentifiers
 import PaperShelfCore
 
+private struct PDFReadingAppearanceModifier: ViewModifier {
+    let appearance: PDFReadingAppearance
+
+    func body(content: Content) -> some View {
+        switch appearance {
+        case .whiteOnBlack:
+            content.compositingGroup().colorInvert()
+        case .normal, .tint:
+            content
+        }
+    }
+}
+
 struct ReviewInspector: View {
     /// Return in the name field renames the file on disk. Off means it confirms the name
     /// into the plan instead, to be applied with everything else later.
@@ -235,6 +248,7 @@ struct ReviewInspector: View {
                 PDFPreview(url: item.currentURL, passwords: passwords,
                            annotator: annotator, fit: prefs.pageFit,
                            onDocumentSwipe: stepDocument)
+                .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The page is an AppKit view hosted in SwiftUI, and a hosted view does
                 // not honour the frame it was given while it is being resized: squeezed
@@ -320,7 +334,7 @@ struct ReviewInspector: View {
     /// with it so they tint the paper instead of glowing off it.
     @ViewBuilder
     private var nightTint: some View {
-        if prefs.readingTint && isDark {
+        if prefs.readingAppearance == .tint && isDark {
             Color(red: 0.42, green: 0.40, blue: 0.36)
                 .blendMode(.multiply)
                 .allowsHitTesting(false)

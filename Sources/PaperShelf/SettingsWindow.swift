@@ -146,13 +146,16 @@ struct GeneralSettings: View {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Toggle("Tint the page while reading in the dark", isOn: $prefs.readingTint)
+                Picker("PDF contrast", selection: $prefs.readingAppearance) {
+                    ForEach(PDFReadingAppearance.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
             } header: {
                 Text("Appearance")
             } footer: {
-                Text("Tinting rather than inverting, so figures and scanned plates stay "
-                     + "readable. Highlights drop to 30% so they tint the paper instead of "
-                     + "glowing off it.")
+                Text("Dark tint preserves figures and scanned plates. White on black "
+                     + "inverts the PDF canvas for high-contrast reading; the notes and "
+                     + "other controls stay unchanged.")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

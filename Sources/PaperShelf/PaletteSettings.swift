@@ -45,8 +45,15 @@ enum PaletteSettings {
         }
 
         // Reading
-        flag("readingTint", "Tint the page while reading in the dark",
-             { prefs.readingTint }, { prefs.readingTint = $0 })
+        settings.append(PaletteSetting(
+            id: "pdfAppearance", title: "PDF reading contrast",
+            value: { prefs.readingAppearance.label },
+            act: {
+                let all = PDFReadingAppearance.allCases
+                let next = (all.firstIndex(of: prefs.readingAppearance).map { $0 + 1 } ?? 0)
+                    % all.count
+                prefs.readingAppearance = all[next]
+            }))
         flag("selectionPalette", "Show the highlighters beside a selection",
              { prefs.selectionPalette }, { prefs.selectionPalette = $0 })
         flag("labelForeignMarks", "Label marks from other apps with the nearest colour",
