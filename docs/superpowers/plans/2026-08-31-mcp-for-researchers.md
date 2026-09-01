@@ -552,7 +552,7 @@ In `Sources/PaperShelf/TextIndexing.swift`, the work filter now asks about the f
             }
 ```
 
-and `readText` reads page-marked Markdown, replacing the one-line stopgap Task 1 left there (`indexedMarkdown(of:passwords:)?.text`, which discarded the format because there was nowhere to store it yet):
+Task 2 already did the rest of this function. Adding `format` to the batch `setExtractedText` forced `readText` to produce one, so it now returns `(documentID:markdown:format:)` and threads the real value out of `indexedMarkdown` rather than the stopgap `?.text` Task 1 left. What remains for this task is the work filter above, making `readText` reachable from a test, and the tests themselves. Read the current file before editing; the block below is what `readText` should look like when you are done, and most of it is already there:
 
 ```swift
     /// One batch, read across every core. Extraction is the whole cost here and it is all
