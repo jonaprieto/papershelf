@@ -45,7 +45,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
-                    "folders", "watch", "scan", "open in", "view"]
+                    "folders", "watch", "scan", "open in", "view", "default PDF viewer",
+                    "PDF app"]
         case .files:
             return ["password", "encrypted", "locked", "originals", "backup", "trash",
                     "cache", "covers"]
@@ -70,7 +71,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     func matches(_ needle: String) -> Bool {
         let text = needle.trimmingCharacters(in: .whitespaces).lowercased()
         guard !text.isEmpty else { return true }
-        return title.lowercased().contains(text) || keywords.contains { $0.contains(text) }
+        return title.lowercased().contains(text)
+            || keywords.contains { $0.lowercased().contains(text) }
     }
 }
 
@@ -134,6 +136,8 @@ struct SettingsWindowView: View {
 struct GeneralSettings: View {
     @Bindable private var prefs = Prefs.shared
     @State private var addingSource = false
+    @State private var isDefaultPDFViewer = false
+    @State private var defaultPDFViewerMessage: String?
 
     private var sources: [URL] {
         prefs.sources.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
@@ -156,6 +160,45 @@ struct GeneralSettings: View {
                 Text("Dark tint preserves figures and scanned plates. White on black "
                      + "inverts the PDF canvas for high-contrast reading; the notes and "
                      + "other controls stay unchanged.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                HStack(spacing: Space.step) {
+                    VStack(alignment: .leading, spacing: Space.hair) {
+                        Text(isDefaultPDFViewer
+                             ? "PaperShelf opens PDFs by default"
+                             : "Another app opens PDFs by default")
+                        Text(isDefaultPDFViewer
+                             ? "PDFs opened from Finder and other apps use PaperShelf."
+                             : "Set PaperShelf as the app macOS uses when a PDF is opened.")
+                            .font(Face.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: Space.step)
+                    if isDefaultPDFViewer {
+                        Label("Default", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Make PaperShelf default") {
+                            makeDefaultPDFViewer()
+                        }
+                        .accessibilityHint("Makes PaperShelf the macOS default app for PDF files")
+                    }
+                }
+                if let defaultPDFViewerMessage {
+                    Text(defaultPDFViewerMessage)
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("Default PDF viewer")
+            } footer: {
+                Text("This changes the PDF file association in macOS. It does not change "
+                     + "documents that are already open.")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -281,6 +324,27 @@ struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { refreshDefaultPDFViewer() }
+    }
+
+    private func refreshDefaultPDFViewer() {
+        isDefaultPDFViewer = DefaultPDFViewer.isPaperShelfDefault()
+    }
+
+    private func makeDefaultPDFViewer() {
+        defaultPDFViewerMessage = nil
+        Task { @MainActor in
+            let error = await DefaultPDFViewer.makePaperShelfDefault()
+            refreshDefaultPDFViewer()
+            if let error {
+                defaultPDFViewerMessage = "macOS could not change the PDF association: "
+                    + error.localizedDescription
+            } else if isDefaultPDFViewer {
+                defaultPDFViewerMessage = "PaperShelf is now the default PDF viewer."
+            } else {
+                defaultPDFViewerMessage = "macOS is still applying the PDF association."
+            }
+        }
     }
 
     /// How many documents the library holds that no source accounts for, once asked.

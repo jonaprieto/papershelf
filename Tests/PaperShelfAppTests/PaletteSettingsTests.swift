@@ -12,6 +12,11 @@ final class PaletteSettingsTests: XCTestCase {
         XCTAssertTrue(setting.opensSettings)
     }
 
+    func testDefaultPDFViewerIsSearchableInGeneralSettings() {
+        XCTAssertTrue(SettingsPane.general.matches("default PDF viewer"))
+        XCTAssertTrue(SettingsPane.general.matches("PDF app"))
+    }
+
     func testAToggleFlipsWhereItStands() {
         let prefs = Prefs.shared
         let before = prefs.watchSources
@@ -53,5 +58,20 @@ final class PaletteSettingsTests: XCTestCase {
             XCTAssertEqual(setting.value(), "in Settings",
                            "the palette does not print the value either")
         }
+    }
+}
+
+final class DefaultPDFViewerTests: XCTestCase {
+
+    func testMatchingBundleIdentifiersMeanPaperShelfIsDefault() {
+        XCTAssertTrue(DefaultPDFViewer.matches(handlerBundleIdentifier: "com.jonaprieto.pdfhammer",
+                                                paperShelfBundleIdentifier: "com.jonaprieto.pdfhammer"))
+    }
+
+    func testDifferentOrMissingBundleIdentifiersAreNotPaperShelf() {
+        XCTAssertFalse(DefaultPDFViewer.matches(handlerBundleIdentifier: "net.sourceforge.skim-app.skim",
+                                                 paperShelfBundleIdentifier: "com.jonaprieto.pdfhammer"))
+        XCTAssertFalse(DefaultPDFViewer.matches(handlerBundleIdentifier: nil,
+                                                 paperShelfBundleIdentifier: "com.jonaprieto.pdfhammer"))
     }
 }
