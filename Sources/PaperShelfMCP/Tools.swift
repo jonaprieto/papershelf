@@ -218,7 +218,22 @@ let folderTools: [Tool] = [
                         + (resolution.requested == 1 ? "" : "s")
                         + " has a location on record")
                 }
-                throw ToolFailure("nothing to cite there")
+                // Which scope came up empty matters: a researcher who asks to cite a
+                // project they have not filed anything into yet needs to hear that the
+                // project is empty, not a sentence that reads the same as one for a
+                // project that does not exist.
+                switch named[0] {
+                case "project":
+                    throw ToolFailure("that project has no documents in it yet, so there "
+                        + "is nothing to cite. Add documents to it with add_to_project.")
+                case "tag":
+                    throw ToolFailure("no document carries that tag, so there is nothing "
+                        + "to cite. Call list_tags to see which tags exist.")
+                case "folder":
+                    throw ToolFailure("there are no PDFs in that folder to cite")
+                default:
+                    throw ToolFailure("no document ids were given, so there is nothing to cite")
+                }
             }
             // The entries come from the files themselves, whichever scope named them: a
             // BibTeX key is built out of what the PDF says about itself, which the library
