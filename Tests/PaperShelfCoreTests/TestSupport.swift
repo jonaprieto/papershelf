@@ -34,13 +34,10 @@ func loadPDF(_ url: URL) -> PDFDocument? {
     PDFDocument(url: url)
 }
 
-/// Writes a PDF whose pages carry real, extractable text, so content comparison has
-/// something to compare.
-func makeTextPDF(at url: URL, text: String, password: String? = nil) throws {
-    let raw = NSMutableData()
-    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
-    let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
-    ctx.beginPDFPage(nil)
+/// Draws one page of real, extractable text into `ctx`, at the frame rect and font that
+/// `makeTextPDF` and the text pages of `makeMixedPDF` share. Assumes the caller has already
+/// called `beginPDFPage` and will call `endPDFPage`.
+private func drawTextPage(in ctx: CGContext, text: String) {
     let attributed = NSAttributedString(
         string: text,
         attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.black]
@@ -51,6 +48,24 @@ func makeTextPDF(at url: URL, text: String, password: String? = nil) throws {
         CGPath(rect: CGRect(x: 40, y: 40, width: 520, height: 700), transform: nil), nil
     )
     CTFrameDraw(frame, ctx)
+}
+
+/// Draws one blank, textless page into `ctx`: a filled rect at the size that `makeScratchPDF`
+/// and the blank pages of `makeMixedPDF` share. Assumes the caller has already called
+/// `beginPDFPage` and will call `endPDFPage`.
+private func drawBlankPage(in ctx: CGContext) {
+    ctx.setFillColor(CGColor(gray: 0.6, alpha: 1))
+    ctx.fill(CGRect(x: 40, y: 40, width: 500, height: 700))
+}
+
+/// Writes a PDF whose pages carry real, extractable text, so content comparison has
+/// something to compare.
+func makeTextPDF(at url: URL, text: String, password: String? = nil) throws {
+    let raw = NSMutableData()
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
+    ctx.beginPDFPage(nil)
+    drawTextPage(in: ctx, text: text)
     ctx.endPDFPage()
     ctx.closePDF()
 
@@ -76,8 +91,7 @@ func makeScratchPDF(pages: Int = 1) throws -> URL {
     let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
     for _ in 0..<pages {
         ctx.beginPDFPage(nil)
-        ctx.setFillColor(CGColor(gray: 0.6, alpha: 1))
-        ctx.fill(CGRect(x: 40, y: 40, width: 500, height: 700))
+        drawBlankPage(in: ctx)
         ctx.endPDFPage()
     }
     ctx.closePDF()
@@ -86,9 +100,10 @@ func makeScratchPDF(pages: Int = 1) throws -> URL {
 }
 
 /// Writes a multi-page PDF where each page's text is chosen independently: `nil` draws a
-/// filled rect with no text, as `makeScratchPDF` does, and a string draws real, extractable
-/// text, as `makeTextPDF` does. This is what lets a test put a blank page ahead of a page
-/// that has text, which neither of those on its own can produce.
+/// filled rect with no text, using the same body as `makeScratchPDF`, and a string draws
+/// real, extractable text, using the same body as `makeTextPDF`. This is what lets a test
+/// put a blank page ahead of a page that has text, which neither of those on its own can
+/// produce.
 func makeMixedPDF(at url: URL, pageTexts: [String?], password: String? = nil) throws {
     let raw = NSMutableData()
     var box = CGRect(x: 0, y: 0, width: 612, height: 792)
@@ -96,19 +111,9 @@ func makeMixedPDF(at url: URL, pageTexts: [String?], password: String? = nil) th
     for text in pageTexts {
         ctx.beginPDFPage(nil)
         if let text {
-            let attributed = NSAttributedString(
-                string: text,
-                attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.black]
-            )
-            let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-            let frame = CTFramesetterCreateFrame(
-                framesetter, CFRange(location: 0, length: 0),
-                CGPath(rect: CGRect(x: 40, y: 40, width: 520, height: 700), transform: nil), nil
-            )
-            CTFrameDraw(frame, ctx)
+            drawTextPage(in: ctx, text: text)
         } else {
-            ctx.setFillColor(CGColor(gray: 0.6, alpha: 1))
-            ctx.fill(CGRect(x: 40, y: 40, width: 500, height: 700))
+            drawBlankPage(in: ctx)
         }
         ctx.endPDFPage()
     }
