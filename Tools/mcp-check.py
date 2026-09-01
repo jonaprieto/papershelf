@@ -25,13 +25,14 @@ check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 8 from the
 # first run (one of its 9 lines is a notification, plus a second tools/list at id 7 for the
-# no-password check below), 5 against the missing library, 38 against the scratch one (14
+# no-password check below), 5 against the missing library, 47 against the scratch one (14
 # original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
 # document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
 # scoped bibliography and passaged project search, plus 3 closing out this task's remaining
 # review findings: a project's without_text count, a bibliography shortfall, and
-# search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags).
-check("no reply to a notification", len(seen) == 8 + 5 + 38)
+# search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags, plus 9
+# closing out the five review findings against those same two write tools).
+check("no reply to a notification", len(seen) == 8 + 5 + 47)
 
 d = result("d")
 check(
@@ -437,6 +438,80 @@ check(
         "start here" in note.get("body", "")
         for note in result("77").get("structuredContent", {}).get("notes", [])
     ),
+)
+
+# Critical: `project(matching:)` resolves an identifier as an id whenever it parses as one,
+# and never falls back to a name match in that case, so a purely numeric project name like
+# "2024" used to be recreated on every call (no project ever has id 2024). Two separate
+# add_to_project calls, each filing a different document, must land in the same project.
+first_2024 = result("78").get("structuredContent", {})
+second_2024 = result("79").get("structuredContent", {})
+check(
+    "a purely numeric project name is created only once",
+    first_2024.get("created") is True
+    and second_2024.get("created") is False
+    and first_2024.get("project", {}).get("id")
+    == second_2024.get("project", {}).get("id"),
+)
+projects_2024 = [
+    p
+    for p in result("80").get("structuredContent", {}).get("projects", [])
+    if p.get("name") == "2024"
+]
+check(
+    "list_projects sees exactly one numeric-named project, holding both documents",
+    len(projects_2024) == 1 and projects_2024[0].get("document_count") == 2,
+)
+
+# Important 2: add_to_project's per-document loop must carry on past one document's
+# failure and say what happened to each, rather than a bare isError for the whole call.
+# doc-5 is wired, by a trigger in the fixture's own schema, to fail any attempt to add it
+# to a project; doc-6 is a real, unrelated document named in the same call.
+poison_batch = result("81")
+poison_structured = poison_batch.get("structuredContent", {})
+check(
+    "a batch naming one good document and one bad one reports both outcomes",
+    poison_batch.get("isError") is True
+    and poison_structured.get("succeeded") == 1
+    and poison_structured.get("failed") == 1
+    and poison_structured.get("failed_documents", [{}])[0].get("id") == "doc-5"
+    and "doc-5" in poison_batch.get("content", [{}])[0].get("text", ""),
+)
+poison_members = result("82").get("structuredContent", {}).get("documents", [])
+check(
+    "only the document that actually landed shows up, seen through list_project_documents",
+    len(poison_members) == 1 and poison_members[0].get("id") == "doc-6",
+)
+
+# Important 3: set_tags's added/removed must report an actual diff, not the size of the
+# request; doc-1 already carries "kant" from id 73, so adding it again must change nothing.
+repeat_tag = result("83").get("structuredContent", {})
+check(
+    "a repeated set_tags reports that nothing changed the second time",
+    repeat_tag.get("added") == 0 and repeat_tag.get("succeeded") == 1,
+)
+check(
+    "the tag still finds exactly the one document it already did",
+    len(result("84").get("structuredContent", {}).get("documents", [])) == 1,
+)
+
+# Important 4 and Minor: a repeated identical note must not duplicate, and reusing a
+# project found by a case-insensitive name match must answer with its stored casing
+# ("Reading list", from id 71) rather than echoing the caller's ("READING LIST").
+repeat_note = result("85")
+repeat_note_structured = repeat_note.get("structuredContent", {})
+repeat_note_text = repeat_note.get("content", [{}])[0].get("text", "")
+check(
+    "reusing a project by a case-insensitive name match answers with its stored name",
+    repeat_note_structured.get("created") is False
+    and repeat_note_structured.get("project", {}).get("name") == "Reading list"
+    and "Reading list" in repeat_note_text
+    and "READING LIST" not in repeat_note_text,
+)
+notes_after_repeat = result("86").get("structuredContent", {}).get("notes", [])
+check(
+    "a repeated identical note does not duplicate, seen through list_highlights",
+    sum(1 for note in notes_after_repeat if "start here" in note.get("body", "")) == 1,
 )
 
 sys.exit(1 if check.failed else 0)

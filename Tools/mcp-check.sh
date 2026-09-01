@@ -174,6 +174,21 @@ VALUES ('doc-6', '2026-01-06T00:00:00Z', '2026-01-06T00:00:00Z', NULL, 580, 1, '
 INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
 VALUES ('$HELLO2_PDF', 'doc-6', '2026-01-06T00:00:00Z', '2026-01-06T00:00:00Z');
 
+-- Task 10 review findings: a trigger that makes filing doc-5 into any project fail, on
+-- purpose, so add_to_project's partial-batch handling has a genuine per-document failure
+-- to prove itself against. doc-5 already exists (Important 1, above) as a document row
+-- with no location, is never given a locations row by any check, and nothing before this
+-- point in the script ever adds it to a project, so poisoning it here changes no existing
+-- check's outcome. A real BEFORE INSERT trigger raising ABORT is what a genuine write
+-- failure (a full disk, a corrupt row, a constraint this schema does not model here)
+-- looks like from add_to_project's own code, without needing to fabricate one.
+CREATE TRIGGER poison_doc5_membership
+BEFORE INSERT ON project_members
+WHEN NEW.document_id = 'doc-5'
+BEGIN
+    SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
+END;
+
 PRAGMA user_version = 7;
 SQL
 
@@ -242,7 +257,20 @@ printf '%s\n' \
 # call (73); documents_by_tag confirms the add landed (74) and the remove landed (75),
 # rather than trusting the tool's own reported counts; and list_project_documents (76) and
 # list_highlights (77) confirm the section and the note add_to_project also took landed,
-# through tools that never call add_to_project themselves.
+# through tools that never call add_to_project themselves. Ids 78-86 close out the five
+# review findings raised against these same two write tools: a project named purely with
+# digits ("2024") is filed into once, not created twice, by two separate add_to_project
+# calls (78, 79), confirmed by list_projects seeing exactly one "2024" with both documents
+# as members and the same project id both calls reported (80); add_to_project naming doc-6
+# (real) alongside doc-5 (poisoned by the trigger above, so filing it always fails) reports
+# both outcomes rather than a bare failure (81), confirmed by list_project_documents seeing
+# only the one that actually landed (82); set_tags re-adding "kant" to doc-1, which it
+# already carries from id 73, reports that nothing changed rather than claiming fresh work
+# (83), confirmed by documents_by_tag still finding exactly the one document it already did
+# (84); and add_to_project naming "Reading list" in a different case ("READING LIST") with
+# the same note as id 71 both reuses the existing project under its own stored name rather
+# than echoing the caller's spelling, and does not add a second copy of a note doc-1 already
+# carries (85), confirmed by list_highlights still finding exactly one "start here" note (86).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -282,5 +310,14 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"75","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   '{"jsonrpc":"2.0","id":"76","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Reading list"}}}' \
   '{"jsonrpc":"2.0","id":"77","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"78","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"2024","document_ids":["doc-2"]}}}' \
+  '{"jsonrpc":"2.0","id":"79","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"2024","document_ids":["doc-4"]}}}' \
+  '{"jsonrpc":"2.0","id":"80","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":"81","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Poison Test","document_ids":["doc-6","doc-5"]}}}' \
+  '{"jsonrpc":"2.0","id":"82","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Poison Test"}}}' \
+  '{"jsonrpc":"2.0","id":"83","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-1"],"add":["kant"]}}}' \
+  '{"jsonrpc":"2.0","id":"84","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"kant"}}}' \
+  '{"jsonrpc":"2.0","id":"85","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"READING LIST","document_ids":["doc-1"],"note":"start here"}}}' \
+  '{"jsonrpc":"2.0","id":"86","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py
