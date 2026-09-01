@@ -247,6 +247,20 @@ let folderTools: [Tool] = [
                     + " could not be cited: no location is on record for "
                     + resolution.skipped.joined(separator: ", ") + "."
             }
+            // Important: a project or tag larger than bibliographyPaths' own 1000-document
+            // cap used to report `requested` as the post-cap count, with nothing showing
+            // the cap had even been hit, which is exactly what let a 1500-document project
+            // look like a complete 1000-entry bibliography. Reported independently of the
+            // shortfall above: a scope can hit the cap with every one of the 1000 it did
+            // look at having a usable location, in which case `shortfall` is zero and this
+            // is the only place the gap would ever be said.
+            if resolution.uncountedByCap > 0 {
+                structured["not_considered"] = resolution.uncountedByCap
+                text += "\n\n\(resolution.uncountedByCap) more document"
+                    + (resolution.uncountedByCap == 1 ? " was" : "s were")
+                    + " never looked at: this scope holds more than the 1000 documents "
+                    + "this tool checks per call."
+            }
             return ToolOutput(text: text, structured: structured)
         }
     ),

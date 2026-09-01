@@ -251,25 +251,29 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
 }
 
 /// What one bibliography scope resolved to. `requested` is how many documents the scope
-/// named in total (project/tag membership, or the length of `document_ids`); `paths` is the
-/// subset of those with a usable path to actually build a citation from. The two can differ:
-/// `DocumentSummary.path` is the most recently seen of possibly several known locations, and
-/// a document the library has indexed can currently have none on record. `skipped` names,
-/// where a name is known, the documents left out for exactly that reason, so a caller who
-/// asked for eight documents and got seven back can tell why, rather than reading seven as
-/// though it had been the whole answer.
+/// considered in total (project/tag membership up to the 1000-document cap below, or the
+/// length of `document_ids`); `paths` is the subset of those with a usable path to actually
+/// build a citation from. The two can differ: `DocumentSummary.path` is the most recently
+/// seen of possibly several known locations, and a document the library has indexed can
+/// currently have none on record. `skipped` names, where a name is known, the documents
+/// left out for exactly that reason, so a caller who asked for eight documents and got
+/// seven back can tell why, rather than reading seven as though it had been the whole
+/// answer.
+///
+/// `uncountedByCap` is a second, independent shortfall: how many of a project's or tag's
+/// true membership were never even looked at, because `documents(inProject:limit:)` and
+/// `documents(taggedWith:limit:)` cap what they gather at 1000 before `requested` or
+/// `skipped` are ever computed from it. Zero for every scope with no such cap (`folder`,
+/// `document_ids`), and for a `project`/`tag` scope whose true membership does not exceed
+/// it. Without this, a project of 1500 documents reported a `requested` of 1000 -- the
+/// post-cap count -- with nothing distinguishing that from a project that truly held 1000,
+/// so the very shortfall reporting built to stop a bibliography under-reporting silently
+/// compared itself against an already-truncated number.
 struct BibliographyResolution {
     let paths: [String]
     let requested: Int
     let skipped: [String]
     let uncountedByCap: Int
-
-    init(paths: [String], requested: Int, skipped: [String], uncountedByCap: Int = 0) {
-        self.paths = paths
-        self.requested = requested
-        self.skipped = skipped
-        self.uncountedByCap = uncountedByCap
-    }
 }
 
 /// The files one bibliography scope names. Every scope resolves to paths, because a BibTeX
@@ -278,14 +282,16 @@ struct BibliographyResolution {
 /// this reports what it had to leave out rather than only what it found.
 ///
 /// `project` and `tag` are capped at 1000 documents, generous for a reading project but not
-/// a promise: naming a scope larger than that quietly cites only the first 1000. Whichever
-/// scope is named, `bibliography`'s caller re-reads every path this returns through
-/// `process(dryRun: true)`, so a scope of several hundred documents is several hundred PDF
-/// opens before that tool answers. The folder scope pays for that scan twice over: once here
-/// to list candidate paths, once more there to build the `Item`s `bibEntries` reads, because
-/// every scope is resolved to plain paths through this one function rather than the folder
-/// case keeping the `Item`s it already built. The folder scope never has anything to skip:
-/// its candidates come from files found on disk, which is a path by construction.
+/// a promise: naming a scope larger than that quietly cites only the first 1000 -- which is
+/// exactly what `uncountedByCap`, on `BibliographyResolution`, exists to say out loud rather
+/// than leave silent. Whichever scope is named, `bibliography`'s caller re-reads every path
+/// this returns through `process(dryRun: true)`, so a scope of several hundred documents is
+/// several hundred PDF opens before that tool answers. The folder scope pays for that scan
+/// twice over: once here to list candidate paths, once more there to build the `Item`s
+/// `bibEntries` reads, because every scope is resolved to plain paths through this one
+/// function rather than the folder case keeping the `Item`s it already built. The folder
+/// scope never has anything to skip: its candidates come from files found on disk, which is
+/// a path by construction.
 func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> BibliographyResolution {
     switch scope {
     case "folder":
@@ -293,7 +299,7 @@ func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> Bibl
         let paths = try scan(root: folder,
                              recursive: optionalBool(arguments, "recursive", default: true))
             .map(\.currentURL.path)
-        return BibliographyResolution(paths: paths, requested: paths.count, skipped: [])
+        return BibliographyResolution(paths: paths, requested: paths.count, skipped: [], uncountedByCap: 0)
     case "project":
         let reader = try openLibraryOrFail()
         let project = try resolveProject(try requireString(arguments, "project"), in: reader)
@@ -330,7 +336,7 @@ func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> Bibl
             }
             paths.append(path)
         }
-        return BibliographyResolution(paths: paths, requested: ids.count, skipped: skipped)
+        return BibliographyResolution(paths: paths, requested: ids.count, skipped: skipped, uncountedByCap: 0)
     }
 }
 
@@ -405,8 +411,12 @@ let libraryTools: [Tool] = [
             let project = try resolveProject(identifier, in: reader)
             // A negative LIMIT means "unlimited" to SQLite, not "none" or an error, which
             // would silently turn a client's bad input into a full dump of every document
-            // in the project; clamping to zero keeps this tool's own "maximum" honest.
-            let limit = max(0, arguments["limit"] as? Int ?? 500)
+            // in the project; clamping the lower bound to zero keeps this tool's own
+            // "maximum" honest. The upper bound mirrors list_documents and
+            // search_documents, which clamp both ends of `limit` rather than only the
+            // lower one, and 1000 matches the cap bibliographyPaths already puts on a
+            // project scope, so nothing in this file quietly answers past it.
+            let limit = max(0, min(arguments["limit"] as? Int ?? 500, 1000))
             let documents = try reader.documents(inProject: project.id, limit: limit)
             // Neither this tool nor search_project extracts text for a document that has
             // none: a project can hold hundreds of files, and reading every one of them
@@ -469,8 +479,9 @@ let libraryTools: [Tool] = [
             let reader = try openLibraryOrFail()
             let project = try resolveProject(identifier, in: reader)
             // See the identical clamp in list_project_documents: SQLite treats a negative
-            // LIMIT as unlimited, not zero or an error.
-            let limit = max(0, arguments["limit"] as? Int ?? 50)
+            // LIMIT as unlimited, not zero or an error. The upper bound of 100 matches
+            // search_documents, the other full-text search tool in this file.
+            let limit = max(0, min(arguments["limit"] as? Int ?? 50, 100))
             let offset = try decodeCursor(arguments["cursor"])
             let documents = try reader.search(inProject: project.id, query: query,
                                               limit: limit, offset: offset)
@@ -527,8 +538,9 @@ let libraryTools: [Tool] = [
             let tag = try requireString(arguments, "tag")
             let reader = try openLibraryOrFail()
             // See the identical clamp in list_project_documents: SQLite treats a negative
-            // LIMIT as unlimited, not zero or an error.
-            let limit = max(0, arguments["limit"] as? Int ?? 200)
+            // LIMIT as unlimited, not zero or an error, and the upper bound of 1000
+            // matches the cap bibliographyPaths already puts on a tag scope.
+            let limit = max(0, min(arguments["limit"] as? Int ?? 200, 1000))
             let documents = try reader.documents(taggedWith: tag, limit: limit)
             let rows = documents.map(describeDocument)
             let text = documents.isEmpty
