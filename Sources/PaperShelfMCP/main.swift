@@ -1,7 +1,7 @@
 import Foundation
 
 let server = Server(
-    tools: folderTools + libraryTools,
+    tools: folderTools + libraryTools + writeTools,
     name: "papershelf",
     version: "1.1.0",
     instructions: "Read and search a local PDF library. Paths are absolute paths on this "

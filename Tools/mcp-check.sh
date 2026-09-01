@@ -235,7 +235,14 @@ printf '%s\n' \
 # shortfall rather than quietly citing one fewer than asked (69); and search_project, whose
 # limit of 1 exactly exhausts Dissertation's one match, now emits next_cursor the same way
 # list_documents and search_documents already do, rather than leaving a project with more
-# matches than the default limit permanently truncated (70).
+# matches than the default limit permanently truncated (70). Ids 71-77 are Task 10's first
+# writing tools, both against doc-1: add_to_project files it into a project named for the
+# first time, with a section and a note (71); list_projects confirms that project now
+# exists with its one document (72); set_tags adds "kant" and removes "ethics" in the same
+# call (73); documents_by_tag confirms the add landed (74) and the remove landed (75),
+# rather than trusting the tool's own reported counts; and list_project_documents (76) and
+# list_highlights (77) confirm the section and the note add_to_project also took landed,
+# through tools that never call add_to_project themselves.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -268,5 +275,12 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"68","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Queue"}}}' \
   '{"jsonrpc":"2.0","id":"69","method":"tools/call","params":{"name":"bibliography","arguments":{"document_ids":["doc-6","doc-5"]}}}' \
   '{"jsonrpc":"2.0","id":"70","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"categorical imperative","limit":1}}}' \
+  '{"jsonrpc":"2.0","id":"71","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Reading list","document_ids":["doc-1"],"section":"to read","note":"start here"}}}' \
+  '{"jsonrpc":"2.0","id":"72","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":"73","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-1"],"add":["kant"],"remove":["ethics"]}}}' \
+  '{"jsonrpc":"2.0","id":"74","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"kant"}}}' \
+  '{"jsonrpc":"2.0","id":"75","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
+  '{"jsonrpc":"2.0","id":"76","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Reading list"}}}' \
+  '{"jsonrpc":"2.0","id":"77","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

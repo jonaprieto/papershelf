@@ -25,13 +25,13 @@ check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 8 from the
 # first run (one of its 9 lines is a notification, plus a second tools/list at id 7 for the
-# no-password check below), 5 against the missing library, 31 against the scratch one (14
+# no-password check below), 5 against the missing library, 38 against the scratch one (14
 # original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
 # document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
 # scoped bibliography and passaged project search, plus 3 closing out this task's remaining
 # review findings: a project's without_text count, a bibliography shortfall, and
-# search_project's next_cursor).
-check("no reply to a notification", len(seen) == 8 + 5 + 31)
+# search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags).
+check("no reply to a notification", len(seen) == 8 + 5 + 38)
 
 d = result("d")
 check(
@@ -389,6 +389,48 @@ check(
     "search_project now emits next_cursor the way list_documents and search_documents do",
     next_page.get("structuredContent", {}).get("next_cursor")
     == "b2Zmc2V0OjE=",  # encodeCursor(1): base64 of "offset:1"
+)
+
+# Task 10: the first tools that write. add_to_project files doc-1 into "Reading list", a
+# project that does not exist yet, with a section and a note; set_tags then adds "kant" and
+# removes "ethics" from the same document in one call. Every assertion below reads the
+# result back through a different tool than the one that wrote it, since a tool that merely
+# reports success proves nothing about whether the write landed.
+check(
+    "a project named for the first time is created",
+    result("71").get("structuredContent", {}).get("created") is True,
+)
+check(
+    "the new project is listed with its one document",
+    any(
+        project.get("name") == "Reading list" and project.get("document_count") == 1
+        for project in result("72").get("structuredContent", {}).get("projects", [])
+    ),
+)
+check(
+    "tags are added and removed in one call",
+    result("73").get("structuredContent", {}).get("added") == 1
+    and result("73").get("structuredContent", {}).get("removed") == 1,
+)
+check(
+    "the added tag finds the document",
+    len(result("74").get("structuredContent", {}).get("documents", [])) == 1,
+)
+check(
+    "the removed tag finds nothing",
+    len(result("75").get("structuredContent", {}).get("documents", [])) == 0,
+)
+reading_list_docs = result("76").get("structuredContent", {}).get("documents", [])
+check(
+    "add_to_project's section reaches the document, seen through list_project_documents",
+    len(reading_list_docs) == 1 and reading_list_docs[0].get("section") == "to read",
+)
+check(
+    "add_to_project's note reaches the document, seen through list_highlights",
+    any(
+        "start here" in note.get("body", "")
+        for note in result("77").get("structuredContent", {}).get("notes", [])
+    ),
 )
 
 sys.exit(1 if check.failed else 0)

@@ -1,5 +1,4 @@
 import Foundation
-import PDFKit
 import PaperShelfCore
 import os
 
@@ -251,24 +250,4 @@ func storeAsDocumentText(_ markdown: String, for url: URL, library: Library) asy
     guard let document = known else { return false }
     return ((try? await library.setExtractedText(markdown, forDocument: document.id,
                                                   format: .markdown)) != nil)
-}
-
-/// What a scan records about one file: its size, its pages, and whatever the PDF says
-/// about itself. The same fields `syncLibrary` writes, read straight off the disk.
-func indexInput(for url: URL) -> Library.IndexInput {
-    let byteCount = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
-    let document = PDFDocument(url: url)
-    var info: [String: String] = [:]
-    if let attributes = document?.documentAttributes {
-        for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute,
-                    .creatorAttribute, .producerAttribute, .keywordsAttribute] {
-            guard let value = attributes[key] else { continue }
-            let text = (value as? String) ?? (value as? [String])?.joined(separator: ", ") ?? ""
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { info[key.rawValue] = trimmed }
-        }
-    }
-    return Library.IndexInput(path: url.path, byteCount: byteCount,
-                              pageCount: document?.pageCount, title: info["Title"],
-                              author: info["Author"], documentInfo: info)
 }

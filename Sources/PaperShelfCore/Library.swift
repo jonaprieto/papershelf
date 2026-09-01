@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import SQLite3
 import os
 
@@ -1071,6 +1072,32 @@ public actor Library {
         }
     }
     #endif
+}
+
+/// What a scan records about one file: its size, its pages, and whatever the PDF says
+/// about itself. The same fields `Runner.syncLibrary` (`PaperShelf/LibrarySync.swift`)
+/// writes, read straight off the disk.
+///
+/// A free function, not a method on `Library`: it never touches the database, only the
+/// file at `url`, so it belongs beside the type it builds an `IndexInput` for rather than
+/// inside the actor. That is also what lets a caller compute it off the actor entirely
+/// (`Task.detached` in `ReaderWindow.swift`) before ever reaching for `Library.shared`.
+public func indexInput(for url: URL) -> Library.IndexInput {
+    let byteCount = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+    let document = PDFDocument(url: url)
+    var info: [String: String] = [:]
+    if let attributes = document?.documentAttributes {
+        for key in [PDFDocumentAttribute.titleAttribute, .authorAttribute, .subjectAttribute,
+                    .creatorAttribute, .producerAttribute, .keywordsAttribute] {
+            guard let value = attributes[key] else { continue }
+            let text = (value as? String) ?? (value as? [String])?.joined(separator: ", ") ?? ""
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { info[key.rawValue] = trimmed }
+        }
+    }
+    return Library.IndexInput(path: url.path, byteCount: byteCount,
+                              pageCount: document?.pageCount, title: info["Title"],
+                              author: info["Author"], documentInfo: info)
 }
 
 // MARK: - Connection setup (free functions, called only from `Library.init` before `self.db`
