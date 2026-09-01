@@ -146,7 +146,21 @@ private func planToken(for plan: RenamePlan) -> String {
               backupCustomPath: plan.backupCustomPath, moves: plan.moves)
 }
 
+/// `PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY` overrides the location, for `Tools/mcp-check.sh`
+/// alone: a check script needs a scratch folder it controls and can plant fabricated plan
+/// files into, not the real directory a copy of PaperShelf on this machine keeps its own
+/// pending plans (and its `library.sqlite`) in. Production callers never set it, and get
+/// exactly the path this function otherwise resolves to. The long, unmistakable name is
+/// deliberate: this is not a general-purpose override like `PAPERSHELF_LIBRARY_PATH`, it is
+/// a lever that exists only so a test can stop writing into a real user's Application
+/// Support folder, and it should never look like anything a production build could sensibly
+/// set.
 private func plansDirectory() throws -> URL {
+    if let overridden = ProcessInfo.processInfo.environment["PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY"] {
+        let folder = URL(fileURLWithPath: overridden, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                               in: .userDomainMask).first else {
         throw ToolFailure("there is no Application Support directory to hold a plan")
@@ -154,6 +168,70 @@ private func plansDirectory() throws -> URL {
     let folder = base.appendingPathComponent("PaperShelf", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder
+}
+
+/// Just enough of a plan's own JSON to judge its age. Decoded on its own, independent of
+/// `RenamePlan`'s full `Codable` conformance, so a future version of this format (an added
+/// field, a renamed enum case) does not make an otherwise-current plan unreadable to this
+/// sweep merely because `RenamePlan` itself can no longer make sense of every field in it.
+/// See `sweepExpiredPlans` for what this is used for.
+private struct PlanTimestamp: Decodable {
+    let createdAt: Date
+}
+
+/// Removes every plan in `plansDirectory()` whose own recorded `createdAt` is older than
+/// `RenamePlan.lifetime`, so a proposal nobody ever applies does not sit in Application
+/// Support forever. `propose_file_changes` is the only place a plan is written and is
+/// called from `writePlan` for exactly that reason: it is the one action that already
+/// touches this directory on every call, so a sweep hung off it costs one directory
+/// listing on top of work already being done, and needs no timer or run loop of its own in
+/// a process that has neither.
+///
+/// Matches only the exact name `planURL` gives a plan, `pending-plan-*.json`: this same
+/// directory also holds `library.sqlite` and its write-ahead log, and a sweep that matched
+/// anything looser than the one pattern this feature itself writes would be a disaster
+/// instead of a cleanup.
+///
+/// Expiry is judged from each plan's own `createdAt`, read independently of `RenamePlan`'s
+/// full decode (see `PlanTimestamp`), never from the file's modification date: a backup
+/// tool or a sync client can rewrite an mtime long after a plan was actually made, which
+/// would either hide a plan that is genuinely expired or expire one that is still good.
+///
+/// A file whose `createdAt` cannot be read at all, whether because the JSON is not valid or
+/// because that one field is missing or not a parseable date, is removed outright rather
+/// than kept. `readPlan` already refuses anything it cannot decode as a full `RenamePlan`,
+/// so such a file can never be applied either way; without a readable timestamp it can also
+/// never become "expired" under this scheme, so leaving it alone would mean it sits here
+/// forever, which is exactly the litter this sweep exists to stop. This is a narrower bar
+/// than failing a full `RenamePlan` decode: a plan written by some future version of this
+/// format that added a field or renamed an enum case still has a readable `createdAt` and
+/// is judged on its age alone, exactly like any other plan, rather than being deleted
+/// merely because this version cannot make sense of everything else in it.
+///
+/// Never throws, and never lets a single bad entry stop the rest of the sweep: a missing
+/// directory, a file that vanishes between the listing and the read, or a permission
+/// problem are each swallowed in place, since none of them are `propose_file_changes`'s to
+/// report and none of them should turn "here is what would be renamed" into an error about
+/// unrelated litter from a previous session.
+func sweepExpiredPlans() {
+    guard let folder = try? plansDirectory() else { return }
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+        at: folder, includingPropertiesForKeys: nil) else { return }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    for url in entries {
+        let name = url.lastPathComponent
+        guard name.hasPrefix("pending-plan-"), name.hasSuffix(".json") else { continue }
+        guard let data = try? Data(contentsOf: url),
+              let stamp = try? decoder.decode(PlanTimestamp.self, from: data) else {
+            try? FileManager.default.removeItem(at: url)
+            continue
+        }
+        guard Date().timeIntervalSince(stamp.createdAt) <= RenamePlan.lifetime else {
+            try? FileManager.default.removeItem(at: url)
+            continue
+        }
+    }
 }
 
 func planURL(token: String) throws -> URL {
@@ -167,6 +245,12 @@ func planURL(token: String) throws -> URL {
 }
 
 func writePlan(_ plan: RenamePlan) throws -> URL {
+    // Every proposal a researcher looks at and decides against, or simply lets sit until it
+    // expires, would otherwise leave its file behind in Application Support forever, since
+    // apply_file_changes is the only other place a plan is ever removed. Swept here, on the
+    // one action that already touches this directory, rather than on a timer this process
+    // has no run loop to hang one from.
+    sweepExpiredPlans()
     let url = try planURL(token: plan.token)
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601

@@ -15,6 +15,15 @@ trap 'rm -rf "$FOLDER"' EXIT
 RENAMES="$FOLDER/renames"
 mkdir -p "$RENAMES"
 
+# A scratch plans directory, pointed to by PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY on
+# every invocation of $BIN below, so that every propose_file_changes call in this script,
+# including id 8's, writes into a folder this script owns and this script's own trap
+# cleans up, rather than into the real ~/Library/Application Support/PaperShelf/ a copy of
+# PaperShelf on this machine might be using: that is exactly how litter from a manual
+# verification pass reached a real user's disk in the first place.
+PLANS_DIR="$FOLDER/plans"
+mkdir -p "$PLANS_DIR"
+
 # Where the "did a proposal actually leave the file alone" stat below is recorded. The
 # request/response block that fills this in runs on the left of the final pipe to
 # mcp-check.py, which bash runs as its own subshell, so a plain variable set there would not
@@ -259,11 +268,28 @@ END;
 PRAGMA user_version = 7;
 SQL
 
+# Coverage for the sweep that removes expired plans: two files planted straight into
+# $PLANS_DIR, shaped only as far as sweepExpiredPlans actually looks (a
+# pending-plan-<hex>.json name, and a createdAt field it can parse on its own), since the
+# check script cannot control the clock and so cannot wait fifteen minutes for a real plan
+# to expire on its own. STALE_PLAN's createdAt is decades in the past, so it is already
+# older than RenamePlan.lifetime by the time anything reads it; FRESH_PLAN's is the current
+# moment, so it is nowhere near expired. Neither file is a complete RenamePlan (no folder,
+# no moves, no token matching its own hash) on purpose: sweepExpiredPlans is documented to
+# judge age from createdAt alone, independent of whether the rest of a plan can still be
+# decoded, and a minimal file like these is what actually proves that rather than merely
+# exercising the common case of a plan this same binary also wrote.
+STALE_PLAN="$PLANS_DIR/pending-plan-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+FRESH_PLAN="$PLANS_DIR/pending-plan-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json"
+printf '{"createdAt":"2000-01-01T00:00:00Z"}' > "$STALE_PLAN"
+printf '{"createdAt":"%s"}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$FRESH_PLAN"
+
 # Three separate runs of the server, each answering into the same combined stream: one era
-# and folder-scanning pass with no environment override, one with the library-aware tools
-# pointed at a path guaranteed not to exist, and one pointed at the scratch library above.
-# Request ids are kept disjoint across the three so mcp-check.py, which keys purely by id, can
-# check all of them from the one merged stream.
+# and folder-scanning pass, one with the library-aware tools pointed at a path guaranteed
+# not to exist, and one pointed at the scratch library above. Every one of the three is
+# pointed at $PLANS_DIR rather than the real Application Support folder. Request ids are
+# kept disjoint across the three so mcp-check.py, which keys purely by id, can check all of
+# them from the one merged stream.
 {
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
@@ -276,7 +302,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":6,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"1999-01-01","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$FOLDER\"}}}" \
-  | "$BIN" 2>/dev/null
+  "{\"jsonrpc\":\"2.0\",\"id\":\"96\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
+  | PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
 
 # The library-aware tools, with nothing indexed: pointed at a path guaranteed not to exist,
 # independent of whatever real library.sqlite this machine's own copy of PaperShelf may or
@@ -288,7 +315,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"32","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"kant"}}}' \
   '{"jsonrpc":"2.0","id":"33","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
-  | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
+  | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" \
+    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
 
 # The same tools against the scratch library above, now eight documents. The last four
 # force pagination with an explicit small limit (ids 54-55, since the fixture is too small
@@ -365,7 +393,13 @@ printf '%s\n' \
 # against that same touched file, differing only in `recursive`, must still describe the
 # same one move (RENAMES holds no subfolder, so `recursive` changes nothing about what is
 # found) but must not share a token, since applying one has to consult its own plan's
-# settings, not the other's.
+# settings, not the other's. Id 96, back in the first block above, is the sweep coverage
+# for the litter fix: a plain propose_file_changes call against RENAMES, which writePlan
+# already runs on every call regardless of what it is proposing, so by the time it answers,
+# STALE_PLAN (planted with a decades-old createdAt, before the first block ran) must be
+# gone, and FRESH_PLAN (planted alongside it, with a current createdAt) must still be
+# there. mcp-check.py checks both files directly rather than through any reply, since a
+# swept file leaves no reply of its own to check.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -419,7 +453,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"90","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"draft"}}}' \
   '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
-  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
+  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \
+    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
 
 # What id 92's proposal actually left on disk, captured before the comment below is
 # appended: the real test that a proposal (a dry run) changes nothing, since the old
@@ -441,5 +476,8 @@ printf '%s\n' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"93\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   "{\"jsonrpc\":\"2.0\",\"id\":\"94\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\",\"recursive\":true}}}" \
   "{\"jsonrpc\":\"2.0\",\"id\":\"95\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\",\"recursive\":false}}}" \
-  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
-} | RENAMES_STAT_FILE="$RENAMES_STAT_FILE" python3 Tools/mcp-check.py
+  | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \
+    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
+} | RENAMES_STAT_FILE="$RENAMES_STAT_FILE" \
+    SWEEP_STALE_PLAN="$STALE_PLAN" SWEEP_FRESH_PLAN="$FRESH_PLAN" \
+    python3 Tools/mcp-check.py

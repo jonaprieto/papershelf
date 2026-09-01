@@ -23,14 +23,15 @@ def check(label, condition):
 
 check.failed = False
 
-# A notification gets no reply at all, so exactly the requests with an id answer: 9 from the
-# first run (one of its 10 lines is a notification, plus a second tools/list at id 7 for the
-# no-password check below, plus id 8 which is Task 11's propose_file_changes against the
-# empty scratch folder), 5 against the missing library, 52 against the scratch one (14
-# original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
-# document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
-# scoped bibliography and passaged project search, plus 3 closing out this task's remaining
-# review findings: a project's without_text count, a bibliography shortfall, and
+# A notification gets no reply at all, so exactly the requests with an id answer: 10 from
+# the first run (one of its 11 lines is a notification, plus a second tools/list at id 7 for
+# the no-password check below, plus id 8 which is Task 11's propose_file_changes against the
+# empty scratch folder, plus id 96 which is the litter fix's sweep coverage, a second
+# propose_file_changes against RENAMES), 5 against the missing library, 52 against the
+# scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection, plus 4
+# reading by document_id instead of path, plus 3 exercising the write path end to end, plus 3
+# exercising scoped bibliography and passaged project search, plus 3 closing out this task's
+# remaining review findings: a project's without_text count, a bibliography shortfall, and
 # search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags, plus 9
 # closing out the five review findings against those same two write tools, plus 4 more (ids
 # 87-90) closing out a later re-review: id 84's original request is gone, replaced by a
@@ -42,7 +43,7 @@ check.failed = False
 # touched (93), which has to answer with a different token than 92's, and the same folder
 # proposed twice more (94, 95) with only `recursive` differing between the two, which have
 # to answer with different tokens from each other despite describing the same one move.
-check("no reply to a notification", len(seen) == 9 + 5 + 52 + 3)
+check("no reply to a notification", len(seen) == 10 + 5 + 52 + 3)
 
 d = result("d")
 check(
@@ -130,6 +131,31 @@ check(
 # and lives with Task 12's checks below, against RENAMES.)
 plan = result("8").get("structuredContent", {})
 check("a proposal comes back with a token", bool(plan.get("token")))
+
+# The litter fix: propose_file_changes writes a plan to Application Support and, until now,
+# nothing ever swept one a researcher never applied. mcp-check.sh plants two files directly
+# into $PLANS_DIR before the first request is even sent: STALE_PLAN, whose recorded
+# createdAt is decades old, and FRESH_PLAN, whose createdAt is the moment the script ran.
+# writePlan sweeps expired plans on every call, so id 8's own propose_file_changes, and
+# every one after it, already exercises the sweep; id 96 is simply a second, unambiguous
+# proposal to check the aftermath against. These two checks read the filesystem directly,
+# not a JSON-RPC reply, since a file the sweep removed leaves no reply of its own to
+# examine, and one that survives is not named in any reply either.
+sweep_result = result("96")
+check(
+    "id 96: the sweep-triggering proposal still returns a token",
+    bool(sweep_result.get("structuredContent", {}).get("token")),
+)
+stale_plan = os.environ.get("SWEEP_STALE_PLAN")
+fresh_plan = os.environ.get("SWEEP_FRESH_PLAN")
+check(
+    "a plan whose own createdAt is long expired is swept when a new plan is written",
+    bool(stale_plan) and not os.path.exists(stale_plan),
+)
+check(
+    "the same sweep leaves an unexpired plan alone",
+    bool(fresh_plan) and os.path.exists(fresh_plan),
+)
 
 # The library-aware tools, run once against a path with nothing at it: each must say so
 # politely (isError, not a crash or a JSON-RPC error) and not merely happen to be empty.
