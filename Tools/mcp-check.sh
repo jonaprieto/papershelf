@@ -191,7 +191,12 @@ printf '%s\n' \
 # library-wide search for a word found only in its PDF comes back empty before anything has
 # read it (62), read_document then reads the file and writes the result back (63), and the
 # same search now finds it, which only happens if that write and the FTS triggers on it both
-# actually ran (64).
+# actually ran (64). Ids 65-67 exercise Task 8's scoped bibliography and passaged project
+# search: naming two scopes at once is refused rather than one of them winning quietly (65),
+# search_project's hits now carry the same quoted passage and page number a library-wide
+# search does (66), and a scope named with an empty string is refused with its own words
+# rather than being read as though it had been left out and falling through to whichever
+# other scope was actually named (67).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -218,5 +223,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"62","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"hello"}}}' \
   '{"jsonrpc":"2.0","id":"63","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-3"}}}' \
   '{"jsonrpc":"2.0","id":"64","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"hello"}}}' \
+  '{"jsonrpc":"2.0","id":"65","method":"tools/call","params":{"name":"bibliography","arguments":{"project":"Dissertation","folder":"/tmp"}}}' \
+  '{"jsonrpc":"2.0","id":"66","method":"tools/call","params":{"name":"search_project","arguments":{"project":"1","query":"categorical imperative"}}}' \
+  '{"jsonrpc":"2.0","id":"67","method":"tools/call","params":{"name":"bibliography","arguments":{"folder":""}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

@@ -221,6 +221,61 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
     return kept.joined(separator: "\n")
 }
 
+/// The files one bibliography scope names. Every scope resolves to paths, because a BibTeX
+/// entry is built by reading the PDF, not by reading the library's row about it.
+///
+/// `project` and `tag` are capped at 1000 documents, generous for a reading project but not
+/// a promise: naming a scope larger than that quietly cites only the first 1000. Whichever
+/// scope is named, `bibliography`'s caller re-reads every path this returns through
+/// `process(dryRun: true)`, so a scope of several hundred documents is several hundred PDF
+/// opens before that tool answers. The folder scope pays for that scan twice over: once here
+/// to list candidate paths, once more there to build the `Item`s `bibEntries` reads, because
+/// every scope is resolved to plain paths through this one function rather than the folder
+/// case keeping the `Item`s it already built.
+func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> [String] {
+    switch scope {
+    case "folder":
+        let folder = try requireString(arguments, "folder")
+        return try scan(root: folder,
+                        recursive: optionalBool(arguments, "recursive", default: true))
+            .map(\.currentURL.path)
+    case "project":
+        let reader = try openLibraryOrFail()
+        let project = try resolveProject(try requireString(arguments, "project"), in: reader)
+        return try reader.documents(inProject: project.id, limit: 1000).compactMap { $0.0.path }
+    case "tag":
+        let reader = try openLibraryOrFail()
+        return try reader.documents(taggedWith: try requireString(arguments, "tag"), limit: 1000)
+            .compactMap(\.path)
+    default:
+        let ids = arguments["document_ids"] as? [String] ?? []
+        let reader = try openLibraryOrFail()
+        return try ids.compactMap { try reader.document(matching: $0)?.path }
+    }
+}
+
+/// Duplicates across the whole library, from hashes it already computed. Nothing here
+/// opens a PDF, so this answers over fourteen thousand documents as fast as over ten. It
+/// finds only byte-for-byte copies; the folder scan additionally finds documents whose
+/// opening pages match under different bytes, which needs the files themselves.
+func libraryDuplicates() throws -> ToolOutput {
+    let reader = try openLibraryOrFail()
+    let groups = try reader.duplicateGroupsByHash()
+    guard !groups.isEmpty else {
+        return ToolOutput(text: "No duplicates in the library.", structured: nil)
+    }
+    let described = groups.map { group -> [String: Any] in
+        ["kind": "same bytes",
+         "paths": group.documents.compactMap(\.path),
+         "document_ids": group.documents.map(\.id)]
+    }
+    let text = groups.map { group in
+        "same bytes:\n" + group.documents.map { "  " + ($0.path ?? $0.id) }
+            .joined(separator: "\n")
+    }.joined(separator: "\n\n")
+    return ToolOutput(text: text, structured: ["groups": described])
+}
+
 // These tools read the library PaperShelf itself builds while indexing (projects, tags, and
 // the library-wide search above), through the read-only connection Projects.swift opens;
 // each one reports a missing library politely (isError, not a crash) rather than assuming
@@ -270,6 +325,14 @@ let libraryTools: [Tool] = [
             // in the project; clamping to zero keeps this tool's own "maximum" honest.
             let limit = max(0, arguments["limit"] as? Int ?? 500)
             let documents = try reader.documents(inProject: project.id, limit: limit)
+            // Neither this tool nor search_project extracts text for a document that has
+            // none: a project can hold hundreds of files, and reading every one of them
+            // inside a single tool call is the same unbounded wait search_documents refuses
+            // for a folder. What this must not do is hide the shortfall, so it is counted
+            // and said plainly instead.
+            let unread = documents.filter { document, _ in
+                (try? reader.extractedText(forDocument: document.id)) == nil
+            }.count
             // The section a document is filed under is most of what a reading list says,
             // so it travels with each row and heads each run in the text.
             let rows = documents.map { document, section -> [String: Any] in
@@ -287,9 +350,15 @@ let libraryTools: [Tool] = [
                 text += "  " + (document.path ?? "(no known path) \(document.id)") + "\n"
             }
             if documents.isEmpty { text = "\(project.name) has no documents." }
+            if unread > 0 {
+                text += "\n\n\(unread) of these have no text on record, so a search of this "
+                    + "project cannot see inside them. Reading them once in PaperShelf, or "
+                    + "asking for one of them by name, fixes that."
+            }
             return ToolOutput(text: text,
                                structured: ["project": ["id": Int(project.id), "name": project.name],
-                                            "count": rows.count, "documents": rows])
+                                            "count": rows.count, "documents": rows,
+                                            "without_text": unread])
         }
     ),
 
@@ -304,6 +373,7 @@ let libraryTools: [Tool] = [
                 "project": ["type": "string", "description": "A project's name, or its id (as a string) from list_projects."],
                 "query": ["type": "string", "description": "Words to search for, matched as a phrase."],
                 "limit": ["type": "integer", "description": "Maximum results. Default 50."],
+                "cursor": ["type": "string", "description": "From a previous result's next_cursor. Library only."],
             ],
             "required": ["project", "query"],
         ],
@@ -318,14 +388,30 @@ let libraryTools: [Tool] = [
             // See the identical clamp in list_project_documents: SQLite treats a negative
             // LIMIT as unlimited, not zero or an error.
             let limit = max(0, arguments["limit"] as? Int ?? 50)
-            let documents = try reader.search(inProject: project.id, query: query, limit: limit)
-            let rows = documents.map(describeDocument)
-            let text = documents.isEmpty
+            let offset = try decodeCursor(arguments["cursor"])
+            let documents = try reader.search(inProject: project.id, query: query,
+                                              limit: limit, offset: offset)
+            // Every document search(inProject:) returns already matched against its stored
+            // text, so this is always zero in practice; it is computed the same way
+            // list_project_documents computes it (see the identical comment there) so the
+            // two tools report the shortfall consistently rather than one of them going
+            // quiet about it.
+            let unread = documents.filter { document in
+                (try? reader.extractedText(forDocument: document.id)) == nil
+            }.count
+            let rows = documents.map { hit($0, query: query, reader: reader) }
+            var text = documents.isEmpty
                 ? "Nothing matched in \(project.name)."
                 : documents.map { $0.path ?? $0.id }.joined(separator: "\n")
+            if unread > 0 {
+                text += "\n\n\(unread) of these have no text on record, so a search of this "
+                    + "project cannot see inside them. Reading them once in PaperShelf, or "
+                    + "asking for one of them by name, fixes that."
+            }
             return ToolOutput(text: text,
                                structured: ["project": ["id": Int(project.id), "name": project.name],
-                                            "matched": rows.count, "documents": rows])
+                                            "matched": rows.count, "documents": rows,
+                                            "without_text": unread])
         }
     ),
 

@@ -5,7 +5,7 @@ import PaperShelfCore
 /// the length of that call only. The server holds no state between requests: this
 /// revision of the protocol has no sessions, and a tool that remembered things would give
 /// two clients different answers.
-private func scan(root: String, recursive: Bool) throws -> [Item] {
+func scan(root: String, recursive: Bool) throws -> [Item] {
     var isFolder: ObjCBool = false
     guard FileManager.default.fileExists(atPath: root, isDirectory: &isFolder) else {
         throw ToolFailure("no such folder or file: \(root)")
@@ -28,15 +28,6 @@ private func describe(_ item: Item) -> [String: Any] {
     if !item.documentInfo.isEmpty { out["metadata"] = item.documentInfo }
     return out
 }
-
-private let folderSchema: [String: Any] = [
-    "type": "object",
-    "properties": [
-        "folder": ["type": "string", "description": "Absolute path to a folder or a single PDF"],
-        "recursive": ["type": "boolean", "description": "Include subfolders. Default true."],
-    ],
-    "required": ["folder"],
-]
 
 let folderTools: [Tool] = [
     Tool(
@@ -177,26 +168,64 @@ let folderTools: [Tool] = [
     Tool(
         name: "bibliography",
         title: "Build a BibTeX bibliography",
-        description: "Produce BibTeX entries for the PDFs in a folder, keyed by author and "
-            + "year where those can be read from the file.",
+        description: "BibTeX entries for a set of documents, keyed by author and year "
+            + "where those can be read. Name exactly one of folder, project, tag or "
+            + "document_ids: a researcher who has just been shown eight results can cite "
+            + "those eight by id.",
         inputSchema: [
             "type": "object",
             "properties": [
                 "folder": ["type": "string"],
-                "recursive": ["type": "boolean"],
+                "project": ["type": "string", "description": "A project's name or id."],
+                "tag": ["type": "string"],
+                "document_ids": ["type": "array", "items": ["type": "string"]],
+                "recursive": ["type": "boolean", "description": "Folder only."],
                 "type": ["type": "string", "enum": BibType.allCases.map(\.rawValue),
                          "description": "Entry type to emit. Default book."],
             ],
-            "required": ["folder"],
         ],
         run: { arguments in
-            let items = try scan(root: try requireString(arguments, "folder"),
-                                 recursive: optionalBool(arguments, "recursive", default: true))
-            guard !items.isEmpty else { throw ToolFailure("no PDFs there") }
+            // `presence` tells apart three states a caller can leave a scope key in: absent
+            // (not worth mentioning in an error), present but empty (a mistake worth its own
+            // sentence, since an empty string or array silently filtered out the same as an
+            // absent key would let a typo'd scope fall through to whichever other scope was
+            // validly named), and present with a value (a real vote for that scope).
+            let keys = ["folder", "project", "tag", "document_ids"]
+            func presence(_ key: String) -> Bool? {
+                if let text = arguments[key] as? String { return text.isEmpty ? false : true }
+                if let list = arguments[key] as? [Any] { return list.isEmpty ? false : true }
+                return nil
+            }
+            let states = keys.map { ($0, presence($0)) }
+            let empties = states.filter { $0.1 == false }.map(\.0)
+            guard empties.isEmpty else {
+                throw ToolFailure("\(empties.joined(separator: " and ")) "
+                    + (empties.count == 1 ? "was given empty" : "were given empty")
+                    + "; name a value, or leave it out entirely")
+            }
+            let named = states.filter { $0.1 == true }.map(\.0)
+            guard named.count == 1 else {
+                throw ToolFailure(named.isEmpty
+                    ? "name one of folder, project, tag or document_ids"
+                    : "name only one of folder, project, tag or document_ids; "
+                      + "you named \(named.joined(separator: " and "))")
+            }
             let type = (arguments["type"] as? String).flatMap(BibType.init(rawValue:)) ?? .book
+            let paths = try bibliographyPaths(arguments, scope: named[0])
+            guard !paths.isEmpty else { throw ToolFailure("nothing to cite there") }
+            // The entries come from the files themselves, whichever scope named them: a
+            // BibTeX key is built out of what the PDF says about itself, which the library
+            // does not store in the shape `bibEntries` reads. `collectJobs` (rather than
+            // constructing `Job` values directly) both filters to real PDFs and dedupes, and
+            // is the only way to build one from outside PaperShelfCore: `Job`'s memberwise
+            // initializer is not public even though its stored properties are.
+            let jobs = collectJobs(roots: paths.map { URL(fileURLWithPath: $0) }, recursive: false)
+            let items = process(jobs: jobs,
+                                options: Options(passwords: Prefs.passwords, recursive: false,
+                                                 dryRun: true))
             let entries = bibEntries(for: items, type: type)
             return ToolOutput(text: bibtexDocument(entries),
-                              structured: ["entries": entries.count])
+                              structured: ["entries": entries.count, "scope": named[0]])
         }
     ),
 
@@ -287,11 +316,25 @@ let folderTools: [Tool] = [
     Tool(
         name: "find_duplicates",
         title: "Find duplicate documents",
-        description: "Report documents in a folder that are the same file, the same bytes "
-            + "under different names, or the same opening pages under different bytes.",
-        inputSchema: folderSchema,
+        description: "Report duplicate documents. With no folder, the whole library: only "
+            + "documents with identical bytes, found from a hash the library already "
+            + "computed. An empty result there means no two documents in the library are "
+            + "byte-for-byte the same copy, not that nothing in it is similar. With a "
+            + "folder, a broader check that opens the files themselves: the same file, the "
+            + "same bytes under different names, or the same opening pages under different "
+            + "bytes.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "folder": ["type": "string", "description": "Absolute path. Omit to check the whole library."],
+                "recursive": ["type": "boolean", "description": "Folder only. Default true."],
+            ],
+        ],
         run: { arguments in
-            let items = try scan(root: try requireString(arguments, "folder"),
+            guard let folder = arguments["folder"] as? String, !folder.isEmpty else {
+                return try libraryDuplicates()
+            }
+            let items = try scan(root: folder,
                                  recursive: optionalBool(arguments, "recursive", default: true))
             let groups = duplicateGroups(in: items)
             guard !groups.isEmpty else { return ToolOutput(text: "No duplicates.", structured: nil) }

@@ -24,10 +24,11 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 25 against
+# first run (one of its 8 lines is a notification), 5 against the missing library, 28 against
 # the scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection,
-# plus 4 reading by document_id instead of path, plus 3 exercising the write path end to end).
-check("no reply to a notification", len(seen) == 7 + 5 + 25)
+# plus 4 reading by document_id instead of path, plus 3 exercising the write path end to end,
+# plus 3 exercising scoped bibliography and passaged project search).
+check("no reply to a notification", len(seen) == 7 + 5 + 28)
 
 d = result("d")
 check(
@@ -299,6 +300,32 @@ check(
     after_write.get("matched") == 1
     and bool(after_hits)
     and after_hits[0].get("id") == "doc-3",
+)
+
+# Task 8: bibliography gains a scope, so it must refuse to guess between two of them named
+# at once rather than silently picking one.
+check(
+    "bibliography refuses two scopes rather than picking one",
+    result("65").get("isError") is True,
+)
+
+# Task 8: search_project's hits carry the same quoted passage and page a library-wide
+# search already does, since a researcher searching one project wants the quote just as
+# much as one searching the whole shelf.
+p = result("66").get("structuredContent", {}).get("documents", [])
+check(
+    "a project search quotes the passage and its page",
+    bool(p) and p[0].get("excerpts", [{}])[0].get("page") == 7,
+)
+
+# Task 8: an empty string for a scope is a caller mistake, not the same as leaving the key
+# out; it must be refused in its own words, not silently read as absent and left to fall
+# through to whichever other scope was actually named.
+empty_scope = result("67")
+check(
+    "an empty scope value is refused by name, not read as though it were absent",
+    empty_scope.get("isError") is True
+    and "empty" in empty_scope.get("content", [{}])[0].get("text", "").lower(),
 )
 
 sys.exit(1 if check.failed else 0)
