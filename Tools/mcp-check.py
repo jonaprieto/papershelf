@@ -26,14 +26,18 @@ check.failed = False
 # A notification gets no reply at all, so exactly the requests with an id answer: 9 from the
 # first run (one of its 10 lines is a notification, plus a second tools/list at id 7 for the
 # no-password check below, plus id 8 which is Task 11's propose_file_changes against the
-# empty scratch folder), 5 against the missing library, 47 against the scratch one (14
+# empty scratch folder), 5 against the missing library, 50 against the scratch one (14
 # original, plus 4 forcing pagination and exercising cursor rejection, plus 4 reading by
 # document_id instead of path, plus 3 exercising the write path end to end, plus 3 exercising
 # scoped bibliography and passaged project search, plus 3 closing out this task's remaining
 # review findings: a project's without_text count, a bibliography shortfall, and
 # search_project's next_cursor, plus 7 for Task 10's add_to_project and set_tags, plus 9
-# closing out the five review findings against those same two write tools).
-check("no reply to a notification", len(seen) == 9 + 5 + 47)
+# closing out the five review findings against those same two write tools, plus 4 more (ids
+# 87-90) closing out a later re-review: id 84's original request is gone, replaced by a
+# fresh set_tags poison-batch call and its own confirmation, alongside a new add_to_project
+# call and confirmation for the undercount fix itself, for a net change of minus one request
+# plus four).
+check("no reply to a notification", len(seen) == 9 + 5 + 50)
 
 d = result("d")
 check(
@@ -215,11 +219,11 @@ check(
 o = result("51")
 check(
     "list_documents with no folder reports the library's totals",
-    o.get("structuredContent", {}).get("totals", {}).get("documents") == 6,
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 8,
 )
 check(
     "list_documents with no folder lists documents",
-    len(o.get("structuredContent", {}).get("documents", [])) == 6,
+    len(o.get("structuredContent", {}).get("documents", [])) == 8,
 )
 
 s = result("52")
@@ -474,21 +478,27 @@ check(
 # Important 2: add_to_project's per-document loop must carry on past one document's
 # failure and say what happened to each, rather than a bare isError for the whole call.
 # doc-5 is wired, by a trigger in the fixture's own schema, to fail any attempt to add it
-# to a project; doc-6 is a real, unrelated document named in the same call.
+# to a project; doc-6 and doc-8 are real, unrelated documents named in the same call, doc-8
+# after doc-5. A reviewer later pointed out that naming only doc-6 and doc-5 (doc-6 first)
+# cannot tell "the loop carried on past doc-5's failure" apart from "doc-6 had already
+# committed before doc-5 failed", since either way only doc-6 would show up; doc-8, named
+# after doc-5, only shows up if the loop actually kept going past the failure to reach it.
 poison_batch = result("81")
 poison_structured = poison_batch.get("structuredContent", {})
 check(
-    "a batch naming one good document and one bad one reports both outcomes",
+    "a batch naming two good documents and one bad one reports every outcome",
     poison_batch.get("isError") is True
-    and poison_structured.get("succeeded") == 1
+    and poison_structured.get("succeeded") == 2
+    and set(poison_structured.get("succeeded_documents", [])) == {"doc-6", "doc-8"}
     and poison_structured.get("failed") == 1
     and poison_structured.get("failed_documents", [{}])[0].get("id") == "doc-5"
     and "doc-5" in poison_batch.get("content", [{}])[0].get("text", ""),
 )
 poison_members = result("82").get("structuredContent", {}).get("documents", [])
 check(
-    "only the document that actually landed shows up, seen through list_project_documents",
-    len(poison_members) == 1 and poison_members[0].get("id") == "doc-6",
+    "the documents that actually landed show up, doc-8 included, seen through "
+    "list_project_documents",
+    {member.get("id") for member in poison_members} == {"doc-6", "doc-8"},
 )
 
 # Important 3: set_tags's added/removed must report an actual diff, not the size of the
@@ -497,10 +507,6 @@ repeat_tag = result("83").get("structuredContent", {})
 check(
     "a repeated set_tags reports that nothing changed the second time",
     repeat_tag.get("added") == 0 and repeat_tag.get("succeeded") == 1,
-)
-check(
-    "the tag still finds exactly the one document it already did",
-    len(result("84").get("structuredContent", {}).get("documents", [])) == 1,
 )
 
 # Important 4 and Minor: a repeated identical note must not duplicate, and reusing a
@@ -520,6 +526,61 @@ notes_after_repeat = result("86").get("structuredContent", {}).get("notes", [])
 check(
     "a repeated identical note does not duplicate, seen through list_highlights",
     sum(1 for note in notes_after_repeat if "start here" in note.get("body", "")) == 1,
+)
+
+# A later re-review of the two checks just above found the second of them (originally at id
+# 84) toothless: it looked "kant" back up after id 83's repeat, which only ever exercises
+# addTag's own pre-existing ON CONFLICT DO NOTHING and cannot depend on how the response
+# counts its delta, since that counting happens after every write and never changes what
+# addTag itself does. It is replaced below by a real test of the undercount fix the same
+# reviewer named: add_to_project's "filed" must be a genuine before/after diff of project
+# membership, not a tally of which documents' own per-document loop reported success, since
+# addMember auto-commits independently of whatever setSection or addNote does afterward for
+# the same document.
+#
+# doc-7 is filed alongside doc-6 with a note attached to both: doc-6's note write succeeds,
+# but doc-7's is wired, by poison_doc7_note in the fixture's own schema, to always fail --
+# doc-7's row in project_members still lands, since that write happens first and is never
+# poisoned. If "filed" were counted from succeeded documents alone, doc-7 would vanish from
+# it entirely, exactly the undercount this fix closes.
+undercount = result("87")
+undercount_structured = undercount.get("structuredContent", {})
+undercount_text = undercount.get("content", [{}])[0].get("text", "")
+check(
+    "add_to_project counts a document as filed even though a later step failed for it",
+    undercount.get("isError") is True
+    and undercount_structured.get("filed") == 2
+    and undercount_structured.get("succeeded") == 1
+    and undercount_structured.get("succeeded_documents") == ["doc-6"]
+    and undercount_structured.get("failed_documents", [{}])[0].get("id") == "doc-7"
+    and undercount_structured.get("filed_despite_error") == ["doc-7"]
+    and "doc-7" in undercount_text,
+)
+undercount_members = result("88").get("structuredContent", {}).get("documents", [])
+check(
+    "the document filed despite its later step failing is a genuine member, seen through "
+    "list_project_documents",
+    {member.get("id") for member in undercount_members} == {"doc-6", "doc-7"},
+)
+
+# The replacement for the other toothless check: set_tags never had its own per-document
+# loop proven to carry on past a mid-batch failure the way add_to_project's is proven at ids
+# 81-82 above. doc-5 is now poisoned for tagging too (poison_doc5_tagging), and doc-8 is
+# named after it, so "draft" landing on doc-8 only happens if set_tags keeps going past
+# doc-5's failure rather than the whole call unravelling at the first thrown error.
+tag_batch = result("89").get("structuredContent", {})
+check(
+    "set_tags's own per-document loop also carries on past a mid-batch failure",
+    tag_batch.get("succeeded") == 2
+    and set(tag_batch.get("succeeded_documents", [])) == {"doc-6", "doc-8"}
+    and tag_batch.get("failed") == 1
+    and tag_batch.get("failed_documents", [{}])[0].get("id") == "doc-5",
+)
+tagged_after_poison = result("90").get("structuredContent", {}).get("documents", [])
+check(
+    "the tag lands on the documents whose write actually succeeded, doc-8 included, seen "
+    "through documents_by_tag",
+    {doc.get("id") for doc in tagged_after_poison} == {"doc-6", "doc-8"},
 )
 
 sys.exit(1 if check.failed else 0)

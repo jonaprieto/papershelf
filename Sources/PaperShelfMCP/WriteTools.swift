@@ -20,7 +20,10 @@ let writeTools: [Tool] = [
             + "already carries the exact same note is left alone rather than getting a "
             + "second copy. Documents are named by the document_id a search handed back, "
             + "or by absolute path. If one named document cannot be filed, the rest still "
-            + "are; the result names which succeeded and which did not.",
+            + "are; the result names which succeeded and which did not. \"filed\" always "
+            + "reflects actual project membership, so a document can appear both filed and "
+            + "failed: it can be filed before a later step, like setting its section or "
+            + "attaching its note, fails for it.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -81,6 +84,14 @@ let writeTools: [Tool] = [
             // `addMember` and `addNote` are each their own statement, and a repeat call
             // with the same arguments should say nothing changed, not report the same
             // "success" a second time as though it were fresh work.
+            //
+            // The "after" side of that diff is read again below, once every document has
+            // been attempted, rather than derived from which documents' per-document loop
+            // reported success: `addMember` auto-commits the instant it runs, independent
+            // of whatever `setSection` or `addNote` does afterward for the same document,
+            // so a document whose later step throws can still have left a genuine row in
+            // `project_members`. Counting only the documents that reported success would
+            // silently drop that document from `filed`, even though the database disagrees.
             let alreadyMember: Set<String> = created
                 ? []
                 : Set(try reader.documents(inProject: projectID, limit: Int.max).map { $0.0.id })
@@ -113,16 +124,30 @@ let writeTools: [Tool] = [
                         }
                         collected.append(WriteOutcome(id: id, error: nil))
                     } catch {
-                        collected.append(WriteOutcome(id: id, error: String(describing: error)))
+                        collected.append(WriteOutcome(id: id, error: readableMessage(for: error)))
                     }
                 }
                 return collected
             }
 
-            let succeeded = outcomes.filter { $0.error == nil }.map(\.id)
+            let succeededIDs = outcomes.filter { $0.error == nil }.map(\.id)
             let failed = outcomes.filter { $0.error != nil }
-            let filed = succeeded.filter { !alreadyMember.contains($0) }.count
-            let alreadyThere = succeeded.count - filed
+
+            // The "after" membership, read fresh from the database rather than assembled
+            // from `succeededIDs`: see the comment above `alreadyMember`. `filed` is which
+            // of the named documents are members now that were not members before, in
+            // full, regardless of what each document's own outcome says.
+            let nowMember = Set(try reader.documents(inProject: projectID, limit: Int.max).map { $0.0.id })
+            let filedIDs = ids.filter { nowMember.contains($0) && !alreadyMember.contains($0) }
+            let filed = filedIDs.count
+            let alreadyThere = ids.filter { alreadyMember.contains($0) }.count
+
+            // A document can be both a reported failure and one of `filedIDs`: `addMember`
+            // committed before `setSection` or `addNote` threw for it. That is exactly the
+            // case this fix exists for, so it is named in the response rather than left for
+            // a caller to notice that `filed` and `succeeded` do not add up on their own.
+            let failedButFiled = failed.filter { filedIDs.contains($0.id) }
+            let outrightFailed = failed.filter { !filedIDs.contains($0.id) }
 
             var text = "Filed \(filed) new document\(filed == 1 ? "" : "s") into \(projectName)"
             if alreadyThere > 0 {
@@ -130,9 +155,15 @@ let writeTools: [Tool] = [
             }
             if created { text += ", which is new" }
             text += "."
-            if !failed.isEmpty {
-                text += " \(failed.count) document\(failed.count == 1 ? "" : "s") could not "
-                    + "be filed: \(failed.map(\.id).joined(separator: ", "))."
+            if !outrightFailed.isEmpty {
+                text += " \(outrightFailed.count) document\(outrightFailed.count == 1 ? "" : "s") could not "
+                    + "be filed: \(outrightFailed.map(\.id).joined(separator: ", "))."
+            }
+            if !failedButFiled.isEmpty {
+                text += " \(failedButFiled.count) document\(failedButFiled.count == 1 ? "" : "s") "
+                    + "\(failedButFiled.count == 1 ? "was" : "were") filed, but a later step "
+                    + "failed for \(failedButFiled.count == 1 ? "it" : "them"): "
+                    + "\(failedButFiled.map(\.id).joined(separator: ", "))."
             }
 
             return ToolOutput(
@@ -141,9 +172,11 @@ let writeTools: [Tool] = [
                     "project": ["id": Int(projectID), "name": projectName],
                     "created": created,
                     "filed": filed,
-                    "succeeded": succeeded.count,
+                    "succeeded": succeededIDs.count,
+                    "succeeded_documents": succeededIDs,
                     "failed": failed.count,
                     "failed_documents": failed.map { ["id": $0.id, "error": $0.error ?? ""] },
+                    "filed_despite_error": failedButFiled.map(\.id),
                 ],
                 isError: !failed.isEmpty
             )
@@ -202,7 +235,7 @@ let writeTools: [Tool] = [
                         for tag in removing { try await library.removeTag(tag, fromDocument: id) }
                         collected.append(WriteOutcome(id: id, error: nil))
                     } catch {
-                        collected.append(WriteOutcome(id: id, error: String(describing: error)))
+                        collected.append(WriteOutcome(id: id, error: readableMessage(for: error)))
                     }
                 }
                 return collected
@@ -241,6 +274,7 @@ let writeTools: [Tool] = [
                     "added": added,
                     "removed": removed,
                     "succeeded": succeeded.count,
+                    "succeeded_documents": succeeded,
                     "failed": failed.count,
                     "failed_documents": failed.map { ["id": $0.id, "error": $0.error ?? ""] },
                 ],
@@ -315,6 +349,22 @@ let writeTools: [Tool] = [
 private struct WriteOutcome: Sendable {
     let id: String
     let error: String?
+}
+
+/// A sentence a researcher can read, for whatever a write step throws.
+///
+/// `LibraryError` already reads as one, since it conforms to `CustomStringConvertible`, and
+/// `ToolFailure`'s own `message` already is one; both are named explicitly rather than
+/// through `error as? CustomStringConvertible`, which Foundation's `NSError` bridging makes
+/// the compiler treat as unconditionally true for any `Error` (a warning on its own, and
+/// not a reliable way to tell "this type actually wrote a description" from "this is a
+/// plain struct with no description of its own"). `String(describing:)` is the fallback for
+/// anything else, which is what the two write tools' errors were limited to before this:
+/// a case or struct dump rather than a sentence.
+private func readableMessage(for error: Error) -> String {
+    if let toolFailure = error as? ToolFailure { return toolFailure.message }
+    if let libraryError = error as? LibraryError { return libraryError.description }
+    return String(describing: error)
 }
 
 /// The documents a write tool was pointed at, by id or by path, in one list.

@@ -182,8 +182,50 @@ VALUES ('$HELLO2_PDF', 'doc-6', '2026-01-06T00:00:00Z', '2026-01-06T00:00:00Z');
 -- check's outcome. A real BEFORE INSERT trigger raising ABORT is what a genuine write
 -- failure (a full disk, a corrupt row, a constraint this schema does not model here)
 -- looks like from add_to_project's own code, without needing to fabricate one.
+--
+-- This trigger fires on the INSERT into project_members, which is the first of
+-- add_to_project's three writes: it can only ever fail a document at addMember itself, and
+-- so it cannot exercise "addMember committed, a later write then failed", which is the
+-- shape of the undercounting fix below. doc-7 and the second trigger, further down, cover
+-- that case instead.
 CREATE TRIGGER poison_doc5_membership
 BEFORE INSERT ON project_members
+WHEN NEW.document_id = 'doc-5'
+BEGIN
+    SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
+END;
+
+-- Task 10 second review findings, part one: doc-7 is filed successfully -- its INSERT into
+-- project_members is never poisoned -- but a note attached to it in the same call always
+-- fails, because the trigger below fires on the INSERT into notes instead. That is a
+-- genuine "membership landed, a later step failed" for add_to_project to report honestly:
+-- filed for doc-7 must count it even though it is also in failed_documents.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-7', '2026-01-07T00:00:00Z', '2026-01-07T00:00:00Z', NULL, 100, 1, 'Filed Then Failed', 'Nobody', '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('/tmp/filed-then-failed.pdf', 'doc-7', '2026-01-07T00:00:00Z', '2026-01-07T00:00:00Z');
+
+CREATE TRIGGER poison_doc7_note
+BEFORE INSERT ON notes
+WHEN NEW.document_id = 'doc-7'
+BEGIN
+    SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
+END;
+
+-- Task 10 second review findings, part two: doc-8 is a plain document, poisoned nowhere,
+-- used only as the third member of a batch that also names doc-5. Naming it after doc-5
+-- proves that add_to_project's and set_tags's per-document loops carry on to a document
+-- that comes after a failure, not merely that an earlier document had already committed
+-- before the failure happened. A second trigger poisons doc-5's own tag writes the same
+-- way poison_doc5_membership poisons its project writes, so set_tags has the same kind of
+-- genuine mid-batch failure to prove itself against as add_to_project already does.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-8', '2026-01-08T00:00:00Z', '2026-01-08T00:00:00Z', NULL, 100, 1, 'Comes After The Poison', 'Nobody', '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('/tmp/comes-after-poison.pdf', 'doc-8', '2026-01-08T00:00:00Z', '2026-01-08T00:00:00Z');
+
+CREATE TRIGGER poison_doc5_tagging
+BEFORE INSERT ON document_tags
 WHEN NEW.document_id = 'doc-5'
 BEGIN
     SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
@@ -223,7 +265,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
 
-# The same tools against the scratch library above, now six documents. The last four
+# The same tools against the scratch library above, now eight documents. The last four
 # force pagination with an explicit small limit (ids 54-55, since the fixture is too small
 # for any default limit to ever produce a next_cursor on its own), then confirm a cursor this
 # server never handed out is refused rather than crashing or quietly resetting to offset
@@ -262,16 +304,32 @@ printf '%s\n' \
 # review findings raised against these same two write tools: a project named purely with
 # digits ("2024") is filed into once, not created twice, by two separate add_to_project
 # calls (78, 79), confirmed by list_projects seeing exactly one "2024" with both documents
-# as members and the same project id both calls reported (80); add_to_project naming doc-6
-# (real) alongside doc-5 (poisoned by the trigger above, so filing it always fails) reports
-# both outcomes rather than a bare failure (81), confirmed by list_project_documents seeing
-# only the one that actually landed (82); set_tags re-adding "kant" to doc-1, which it
-# already carries from id 73, reports that nothing changed rather than claiming fresh work
-# (83), confirmed by documents_by_tag still finding exactly the one document it already did
-# (84); and add_to_project naming "Reading list" in a different case ("READING LIST") with
-# the same note as id 71 both reuses the existing project under its own stored name rather
-# than echoing the caller's spelling, and does not add a second copy of a note doc-1 already
-# carries (85), confirmed by list_highlights still finding exactly one "start here" note (86).
+# as members and the same project id both calls reported (80); add_to_project naming doc-6,
+# doc-5 (poisoned by the trigger above, so filing it always fails), then doc-8, in that
+# order, reports every outcome rather than a bare failure (81), confirmed by
+# list_project_documents seeing the two that actually landed and, since doc-8 comes after
+# doc-5 in the request, that a failure in the middle of the batch does not stop the document
+# named after it (82); set_tags re-adding "kant" to doc-1, which it already carries from id
+# 73, reports that nothing changed rather than claiming fresh work (83); and add_to_project
+# naming "Reading list" in a different case ("READING LIST") with the same note as id 71
+# both reuses the existing project under its own stored name rather than echoing the
+# caller's spelling, and does not add a second copy of a note doc-1 already carries (85),
+# confirmed by list_highlights still finding exactly one "start here" note (86). Ids 87-90
+# close out a later re-review of ids 82 and 84 themselves. (82) originally named only doc-6
+# and doc-5, so the one document it found had already committed before doc-5 failed and
+# would have shown up whether or not the per-document try/catch it was meant to prove ever
+# ran; doc-8 above, named third, is what turns it into a real test of carrying on past a
+# failure rather than a document that would have landed regardless. (84) originally looked
+# "kant" back up after the id-83 repeat, which only ever exercises addTag's own pre-existing
+# ON CONFLICT DO NOTHING and says nothing about how the response counts its delta; ids
+# 87-90 replace it with a check set_tags never had: doc-7 proves add_to_project's own
+# undercount directly, since its addMember always lands but the note in the same call always
+# fails for it (poison_doc7_note above), so filed must count it even though it is also in
+# failed_documents (87), confirmed by list_project_documents seeing it as a genuine member
+# (88); and a set_tags call naming doc-6, doc-5 (now poisoned for tagging too, by
+# poison_doc5_tagging above), then doc-8, proves set_tags's own per-document loop carries on
+# past a mid-batch failure the same way add_to_project's does (89), confirmed by
+# documents_by_tag finding the tag on doc-6 and doc-8 but not doc-5 (90).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -314,11 +372,14 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"78","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"2024","document_ids":["doc-2"]}}}' \
   '{"jsonrpc":"2.0","id":"79","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"2024","document_ids":["doc-4"]}}}' \
   '{"jsonrpc":"2.0","id":"80","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
-  '{"jsonrpc":"2.0","id":"81","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Poison Test","document_ids":["doc-6","doc-5"]}}}' \
+  '{"jsonrpc":"2.0","id":"81","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Poison Test","document_ids":["doc-6","doc-5","doc-8"]}}}' \
   '{"jsonrpc":"2.0","id":"82","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Poison Test"}}}' \
   '{"jsonrpc":"2.0","id":"83","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-1"],"add":["kant"]}}}' \
-  '{"jsonrpc":"2.0","id":"84","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"kant"}}}' \
   '{"jsonrpc":"2.0","id":"85","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"READING LIST","document_ids":["doc-1"],"note":"start here"}}}' \
   '{"jsonrpc":"2.0","id":"86","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"87","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Undercount Test","document_ids":["doc-6","doc-7"],"note":"keep reading"}}}' \
+  '{"jsonrpc":"2.0","id":"88","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Undercount Test"}}}' \
+  '{"jsonrpc":"2.0","id":"89","method":"tools/call","params":{"name":"set_tags","arguments":{"document_ids":["doc-6","doc-5","doc-8"],"add":["draft"]}}}' \
+  '{"jsonrpc":"2.0","id":"90","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"draft"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py
