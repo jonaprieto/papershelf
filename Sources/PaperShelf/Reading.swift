@@ -334,7 +334,7 @@ struct NotesRail: View {
             .task(id: documentIsOpen) { await loadSelectedDocument() }
             // Whatever the shadow document still owes the disk it owes now, rather than
             // whenever the panel happens to be torn down.
-            .onDisappear { shadow.flush() }
+            .onDisappear { shadow.flush(); dictation.cancel() }
             .onChange(of: source) { _, _ in activeMeaningScope = nil }
             .sheet(item: $editingMeaningScope) { scope in
                 HighlightMeaningEditor(palette: palette, scope: scope)
@@ -377,6 +377,32 @@ struct NotesRail: View {
                                 .lineLimit(2...5)
                                 .focused($noteInputFocused)
                             HStack {
+                                Button {
+                                    if dictation.isRecording {
+                                        Task {
+                                            if let text = await dictation.stop() {
+                                                let separator = noteText.isEmpty || noteText.hasSuffix(" ") || noteText.hasSuffix("\n") ? "" : " "
+                                                noteText += separator + text
+                                                noteInputFocused = true
+                                            }
+                                        }
+                                    } else {
+                                        dictation.start()
+                                    }
+                                } label: {
+                                    Image(systemName: dictation.isRecording ? "stop.circle.fill" : "mic.fill")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(dictation.isTranscribing)
+                                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate note")
+                                if let error = dictation.error {
+                                    Text(error)
+                                        .font(Face.caption)
+                                        .foregroundStyle(Ink.red)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            HStack {
                                 Button("Save") {
                                     if annotator.hasSelection {
                                         annotator.highlightSelection(colour: lastColour, note: noteText)
@@ -388,8 +414,8 @@ struct NotesRail: View {
                                     addingNote = false
                                 }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty)
-                                Button("Cancel") { noteText = ""; addingNote = false }
+                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty || dictation.isRecording || dictation.isTranscribing)
+                                Button("Cancel") { dictation.cancel(); noteText = ""; addingNote = false }
                             }
                         }
                         .padding(Space.roomy)
@@ -591,6 +617,7 @@ struct NotesRail: View {
     @FocusState private var noteInputFocused: Bool
     @State private var activeMeaningScope: HighlightMeaningScope?
     @State private var editingMeaningScope: HighlightMeaningScope?
+    @State private var dictation = NoteDictation()
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.

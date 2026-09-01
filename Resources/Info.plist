@@ -51,6 +51,8 @@
 	<string>© 2026 Jonathan Prieto-Cubides. Licensed under the MIT Licence.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PaperShelf uses the microphone to dictate notes for your PDF annotations.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>PaperShelf reads and rewrites the PDFs you select on removable volumes.</string>
 </dict>

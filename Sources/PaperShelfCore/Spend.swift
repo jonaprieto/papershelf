@@ -251,6 +251,7 @@ public enum AIFeature: String, Sendable, CaseIterable, Codable, Hashable {
     case connectionTest   // Settings' Test connection button, still real spend, tagged apart
     case readingProject   // a question asked of a reading project
     case bibtex           // improving a bibliography entry
+    case noteTranscription // dictating a note
 
     public var displayName: String {
         switch self {
@@ -259,6 +260,7 @@ public enum AIFeature: String, Sendable, CaseIterable, Codable, Hashable {
         case .connectionTest: return "Connection test"
         case .readingProject: return "Reading project"
         case .bibtex: return "Bibliography"
+        case .noteTranscription: return "Note transcription"
         }
     }
 }

@@ -225,6 +225,7 @@ final class SpendTests: XCTestCase {
         XCTAssertEqual(AIFeature.identify.rawValue, "identify")
         XCTAssertEqual(AIFeature.batchIdentify.rawValue, "batchIdentify")
         XCTAssertEqual(AIFeature.connectionTest.rawValue, "connectionTest")
+        XCTAssertEqual(AIFeature.noteTranscription.rawValue, "noteTranscription")
     }
 }
 

@@ -40,4 +40,29 @@ final class AIClientTests: XCTestCase {
         XCTAssertTrue(client.spendRecorder is Library,
                       "got \(String(describing: client.spendRecorder))")
     }
+
+    func testTranscriptionMultipartBodyCarriesTheModelAndAudio() {
+        let boundary = "test-boundary"
+        let body = audioMultipartBody(audio: Data([1, 2, 3]), filename: "note.m4a",
+                                      model: "gpt-4o-transcribe", boundary: boundary)
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.contains("name=\"model\""))
+        XCTAssertTrue(text.contains("gpt-4o-transcribe"))
+        XCTAssertTrue(text.contains("filename=\"note.m4a\""))
+        XCTAssertNotNil(body.range(of: Data([1, 2, 3])))
+        XCTAssertTrue(text.contains("--test-boundary--"))
+    }
+
+    func testTranscriptionRequiresAnAPIKeyBeforeNetworking() async {
+        do {
+            _ = try await AIClient(baseURL: "https://example.invalid/v1", model: "test", apiKey: "")
+                .transcribe(audio: Data())
+            XCTFail("a transcription without a key must not reach the network")
+        } catch let error as AIError {
+            XCTAssertEqual(error.errorDescription,
+                           "No API key. Add one in Settings, or set OPENAI_API_KEY before launching.")
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }

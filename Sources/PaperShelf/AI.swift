@@ -288,6 +288,34 @@ struct AIClient {
         throw AIError.unreadable("the reply had no text in it")
     }
 
+    func transcribe(audio: Data, filename: String = "note.m4a") async throws -> String {
+        guard !apiKey.isEmpty else { throw AIError.noKey }
+        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/audio/transcriptions")
+        else { throw AIError.unreadable("bad base URL") }
+
+        let boundary = "PaperShelf-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)",
+                         forHTTPHeaderField: "Content-Type")
+        request.httpBody = audioMultipartBody(audio: audio, filename: filename,
+                                               model: model, boundary: boundary)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let text = (body?["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        await record(usage: body.flatMap { parseTokenUsage($0) },
+                     feature: .noteTranscription, succeeded: !text.isEmpty)
+        if !text.isEmpty { return text }
+        guard (200..<300).contains(code) else {
+            throw AIError.http(code, (body?["error"] as? [String: Any])?["message"] as? String ?? "")
+        }
+        throw AIError.unreadable("the transcription had no text in it")
+    }
+
     /// Best-effort: a broken spend ledger must never be the reason an AI call fails or
     /// its error is swallowed, so a write failure here is dropped, not surfaced.
     private func record(usage: TokenUsage?, feature: AIFeature, succeeded: Bool) async {
@@ -299,6 +327,20 @@ struct AIClient {
                                               feature: feature, usage: usage, cost: billed, succeeded: succeeded)
         await SpendSignal.shared.bump()
     }
+}
+
+func audioMultipartBody(audio: Data, filename: String, model: String, boundary: String) -> Data {
+    var body = Data()
+    func append(_ text: String) { body.append(Data(text.utf8)) }
+    append("--\(boundary)\r\n")
+    append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
+    append("\(model)\r\n")
+    append("--\(boundary)\r\n")
+    append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+    append("Content-Type: audio/mp4\r\n\r\n")
+    body.append(audio)
+    append("\r\n--\(boundary)--\r\n")
+    return body
 }
 
 
