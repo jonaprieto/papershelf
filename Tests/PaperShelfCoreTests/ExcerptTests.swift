@@ -76,4 +76,54 @@ final class ExcerptTests: XCTestCase {
         XCTAssertEqual(found.first?.text, "the needle is here",
                       "a bisected marker (e.g. \"ge 2\") must not survive into the quote")
     }
+
+    /// "## Page 1" opens every document this pipeline produces, so it is almost always the
+    /// first case-insensitive occurrence of the ordinary English word "page". A query like
+    /// "on page" is not present verbatim, so the longest-word fallback tries "page" alone,
+    /// and that must not land on the heading: the heading is structure we inserted, not a
+    /// passage the document contains.
+    func testAMatchInsideAHeadingIsSkippedRatherThanQuoted() {
+        let markdown = """
+            ## Page 1
+
+            Some page content. real text here.
+
+            ## Page 7
+
+            The categorical imperative is the only thing that binds without condition.
+
+            """
+        let found = excerpts(in: markdown, matching: "on page")
+        XCTAssertEqual(found.count, 1)
+        XCTAssertFalse(found.first?.text.contains("Page 1") == true,
+                       "a heading is structure, not prose the document wrote")
+        XCTAssertEqual(found.first?.page, 1,
+                      "the match found in the body is on page 1, not nil")
+    }
+
+    /// The fix above must not suppress the word "page" wherever it appears: a researcher
+    /// searching for it wants the word where the author actually wrote it.
+    func testPageWrittenByTheAuthorStillMatchesAndKeepsItsPage() {
+        let markdown = """
+            ## Page 1
+
+            The opening remarks.
+
+            ## Page 7
+
+            Turn to the next page for the appendix.
+
+            """
+        let found = excerpts(in: markdown, matching: "next page")
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.page, 7)
+        XCTAssertTrue(found.first?.text.contains("next page") == true)
+    }
+
+    /// A document that is nothing but headings has no prose to quote at all: the search must
+    /// terminate having skipped every match rather than loop on them.
+    func testADocumentOfOnlyHeadingsReturnsNoExcerpts() {
+        let onlyHeadings = "## Page 1\n\n## Page 2\n\n## Page 3\n"
+        XCTAssertTrue(excerpts(in: onlyHeadings, matching: "page").isEmpty)
+    }
 }

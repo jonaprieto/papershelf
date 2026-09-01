@@ -61,6 +61,15 @@ private func passages(in markdown: String, matching needle: String,
     while found.count < limit,
           let match = markdown.range(of: needle, options: options,
                                      range: searchFrom..<markdown.endIndex) {
+        // A `## Page N` heading is structure this pipeline inserted, not prose the document
+        // wrote; the word "page" inside one (its own name) is not a passage to quote back.
+        // Skip it and resume past the heading's own line, rather than keep it with a
+        // repositioned window: the line's end is always later than where this match started,
+        // so this can never search backward into the same heading again.
+        if let headingEnd = headingLineEnd(enclosing: match.lowerBound, in: markdown) {
+            searchFrom = headingEnd
+            continue
+        }
         let page = pageNumber(in: markdown, before: match.lowerBound)
         let rawStart = markdown.index(match.lowerBound, offsetBy: -radius,
                                       limitedBy: markdown.startIndex) ?? markdown.startIndex
@@ -88,11 +97,28 @@ private func passages(in markdown: String, matching needle: String,
 /// should land just past the line (later, toward the match); `true` is for a window's end,
 /// which should land just before it (earlier, toward the match).
 private func excludingMarker(_ index: String.Index, in markdown: String, keepingBefore: Bool) -> String.Index {
+    let line = lineBounds(enclosing: index, in: markdown)
+    guard markdown[line].hasPrefix(pageMarker) else { return index }
+    return keepingBefore ? line.lowerBound : line.upperBound
+}
+
+/// The end of the `## Page N` line enclosing `index`, if `index` falls inside one; `nil`
+/// otherwise.
+///
+/// Used to skip a match that lands inside a heading rather than beside it: only the line's
+/// end is ever returned, never its start, so a caller resuming its search from this point
+/// moves strictly forward and can never land on the same heading a second time.
+private func headingLineEnd(enclosing index: String.Index, in markdown: String) -> String.Index? {
+    let line = lineBounds(enclosing: index, in: markdown)
+    guard markdown[line].hasPrefix(pageMarker) else { return nil }
+    return line.upperBound
+}
+
+private func lineBounds(enclosing index: String.Index, in markdown: String) -> Range<String.Index> {
     let lineStart = markdown.range(of: "\n", options: .backwards,
                                    range: markdown.startIndex..<index)?.upperBound ?? markdown.startIndex
     let lineEnd = markdown.range(of: "\n", range: index..<markdown.endIndex)?.lowerBound ?? markdown.endIndex
-    guard markdown[lineStart..<lineEnd].hasPrefix(pageMarker) else { return index }
-    return keepingBefore ? lineStart : lineEnd
+    return lineStart..<lineEnd
 }
 
 /// A marker is structure, not prose: a quote that carries one reads as though the document
