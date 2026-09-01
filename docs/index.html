@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PaperShelf is a focused macOS PDF reader and research library with local search, notes, citations, and MCP support.">
+  <title>PaperShelf, a calmer shelf for serious reading</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f5f1e8;
+      --muted: #b8b5ad;
+      --dim: #77756e;
+      --paper: #171717;
+      --panel: #20201f;
+      --line: #393936;
+      --amber: #ffc53d;
+      --blue: #83a5ff;
+      --rose: #eb9bb2;
+      --violet: #bea4ff;
+      --green: #8ed39d;
+      --serif: Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: #101010; color: var(--ink); font-family: var(--serif); line-height: 1.5; }
+    a { color: inherit; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+    .chrome, .eyebrow, .button, .install, .meta, .tool, .chip, .roadmap, .footer, nav { font-family: var(--sans); }
+    .chrome { border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; letter-spacing: .04em; }
+    nav { display: flex; align-items: center; justify-content: space-between; min-height: 70px; }
+    .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); font-weight: 650; }
+    .brand img { width: 34px; height: 34px; border-radius: 9px; }
+    nav ul { display: flex; gap: 24px; list-style: none; margin: 0; padding: 0; }
+    nav a { text-decoration: none; }
+    nav a:hover { color: var(--amber); }
+    .hero { padding: 112px 0 96px; max-width: 920px; }
+    .eyebrow { color: var(--amber); font-size: 12px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(56px, 9vw, 106px); font-weight: 400; letter-spacing: -.055em; line-height: .95; margin: 20px 0 28px; max-width: 850px; }
+    h2 { font-size: clamp(38px, 6vw, 62px); font-weight: 400; letter-spacing: -.04em; line-height: 1; margin-bottom: 20px; }
+    h3 { font-size: 26px; font-weight: 400; line-height: 1.1; margin-bottom: 12px; }
+    .lede { color: var(--muted); font-size: clamp(21px, 2.5vw, 28px); max-width: 680px; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 34px; }
+    .button { background: var(--amber); border-radius: 4px; color: #111; display: inline-block; font-size: 14px; font-weight: 700; padding: 12px 18px; text-decoration: none; }
+    .button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+    .install { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 4px; margin-top: 34px; max-width: 470px; padding: 16px 18px; }
+    .install code { color: var(--amber); font-size: 14px; }
+    .note { color: var(--dim); font-size: 13px; }
+    .hero-shot { background: #e9e9e8; border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 30px 90px #0009; display: block; margin: 0 auto 130px; max-width: 100%; }
+    section { border-top: 1px solid var(--line); padding: 110px 0; }
+    .section-head { display: grid; grid-template-columns: 1fr 1.2fr; gap: 48px; margin-bottom: 48px; }
+    .section-head p { color: var(--muted); font-size: 20px; max-width: 560px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .feature { background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 28px; min-height: 330px; }
+    .number { color: var(--amber); font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+    .feature p { color: var(--muted); }
+    .mock { background: #111; border: 1px solid #42413d; border-radius: 5px; font-family: var(--sans); font-size: 13px; margin-top: 22px; overflow: hidden; }
+    .mock-head { border-bottom: 1px solid #353532; color: var(--dim); padding: 10px 13px; }
+    .mock-body { padding: 14px; }
+    .marks { display: grid; gap: 7px; }
+    .mark { border-radius: 3px; color: #111; padding: 7px 10px; }
+    .mark.yellow { background: #ead36b; }
+    .mark.green { background: var(--green); }
+    .mark.blue { background: var(--blue); }
+    .mark.rose { background: var(--rose); }
+    .mark.violet { background: var(--violet); }
+    .rail { display: grid; grid-template-columns: 1.15fr .85fr; gap: 12px; }
+    .paper-lines { background: #eee9dc; color: #252421; font-family: var(--serif); line-height: 1.35; padding: 18px; }
+    .paper-lines span { background: #ead36b; }
+    .query { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 15px; }
+    .chip, .tool { border: 1px solid #4a4944; border-radius: 3px; color: var(--ink); display: inline-block; padding: 5px 8px; }
+    .chip.accent { border-color: var(--amber); color: var(--amber); }
+    .palette { display: grid; gap: 8px; }
+    .palette div { border-bottom: 1px solid #30302d; color: var(--muted); padding-bottom: 7px; }
+    .palette b { color: var(--amber); font-weight: 400; }
+    .rename { display: grid; gap: 12px; }
+    .rename .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .rename code, .bib code { color: #d6d1c4; font-size: 12px; white-space: pre-wrap; }
+    .bib { background: #111; padding: 15px; }
+    .bib .key { color: var(--blue); }
+    .bib .value { color: var(--green); }
+    .tools { display: flex; flex-wrap: wrap; gap: 7px; }
+    .tool.write { border-color: var(--amber); color: var(--amber); }
+    .under { display: grid; gap: 10px; }
+    .under-row { border-bottom: 1px solid #30302d; display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
+    .under-row span:last-child { color: var(--muted); text-align: right; }
+    .roadmap { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; list-style: none; margin: 0; padding: 0; }
+    .roadmap li { border-top: 1px solid var(--line); color: var(--muted); padding-top: 13px; }
+    .roadmap li::before { color: var(--amber); content: "□"; margin-right: 8px; }
+    .closing { padding: 120px 0 150px; }
+    .closing p { color: var(--muted); font-size: 23px; max-width: 640px; }
+    .footer { border-top: 1px solid var(--line); color: var(--dim); font-size: 13px; padding: 25px 0 50px; }
+    .footer a { color: var(--muted); }
+    @media (max-width: 720px) {
+      .wrap { width: min(100% - 30px, 600px); }
+      nav ul { display: none; }
+      .hero { padding-top: 78px; }
+      .hero-shot { margin-bottom: 80px; }
+      .section-head, .feature-grid, .rail, .roadmap { grid-template-columns: 1fr; }
+      section { padding: 78px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="chrome"><div class="wrap"><nav aria-label="Main navigation"><a class="brand" href="#top"><img src="icon.png" alt="">PaperShelf</a><ul><li><a href="#read">Read</a></li><li><a href="#find">Find</a></li><li><a href="#order">Order</a></li><li><a href="#cite">Cite</a></li><li><a href="#connect">Connect</a></li></ul></nav></div></header>
+  <main id="top"><div class="wrap">
+    <div class="hero"><div class="eyebrow">Active development · macOS 14+</div><h1>A calmer shelf for serious reading.</h1><p class="lede">PaperShelf keeps the PDFs on your Mac searchable, readable, annotated, and ready to cite. Its local MCP server lets an assistant help without sending the library away.</p><div class="actions"><a class="button" href="https://github.com/jonaprieto/papershelf/releases/latest">Download latest</a><a class="button ghost" href="https://github.com/jonaprieto/papershelf">View source</a></div><div class="install"><code>brew tap jonaprieto/papershelf</code><code>brew install --cask papershelf</code><span class="note">Ad-hoc signed while notarization is on the roadmap.</span></div></div>
+    <img class="hero-shot" src="screenshot-catalogue.png" alt="PaperShelf catalogue showing a real collection of research papers">
+    <section id="read"><div class="section-head"><div><div class="eyebrow">01 · Read</div><h2>Keep the page and the thought together.</h2></div><p>A focused PDF reader, full screen when you need it, with notes and highlights that keep their page, passage, color, and meaning.</p></div><div class="feature-grid"><article class="feature"><h3>Five meanings, one click away.</h3><p>The default vocabulary is visible, editable, and scoped to the library or a single paper.</p><div class="mock"><div class="mock-head">Highlighters</div><div class="mock-body marks"><div class="mark yellow" data-highlight-meaning="Worth remembering">Worth remembering</div><div class="mark green" data-highlight-meaning="Agree, or confirmed">Agree, or confirmed</div><div class="mark blue" data-highlight-meaning="Definition or key term">Definition or key term</div><div class="mark rose" data-highlight-meaning="Disagree, or doubtful">Disagree, or doubtful</div><div class="mark violet" data-highlight-meaning="Follow up">Follow up</div></div></div></article><article class="feature"><h3>The notes rail follows the mark.</h3><p>Select a highlight in the page and its matching note is selected in the inspector. Add a note, dictate one, or export the complete Markdown.</p><div class="mock rail"><div class="paper-lines">A passage worth <span>remembering</span> stays visible beside the note that explains why.</div><div class="mock-body marks"><div class="mark yellow">Worth remembering<br><small>p. 3</small></div><div class="mark violet">Follow up<br><small>p. 7</small></div></div></div></article></div></section>
+    <section id="find"><div class="section-head"><div><div class="eyebrow">02 · Find</div><h2>Search like you remember.</h2></div><p>Use the query language when you know what you want, or press <code>⌘K</code> when you only know that the feature exists.</p></div><div class="feature-grid"><article class="feature"><h3>Queries stay legible.</h3><p>Search by title, author, abstract, text, folder, tag, year, pages, or size, and remove each filter as a chip.</p><div class="mock"><div class="mock-head">Search</div><div class="mock-body"><div class="query"><span class="chip accent">text: dependent colimit</span><span class="chip">year: 2024</span><span class="chip">tag: follow-up</span></div><div class="note">18 papers · sorted by relevance</div></div></div></article><article class="feature"><h3>The palette makes the app discoverable.</h3><p>Commands, tags, projects, documents, passages, pages, and shortcuts all live behind one native command surface.</p><div class="mock"><div class="mock-head">⌘K · six prefixes</div><div class="mock-body palette"><div><b>&gt;</b> commands</div><div><b>#</b> tags</div><div><b>@</b> projects</div><div><b>/</b> passages</div><div><b>:</b> page number</div><div><b>?</b> shortcuts</div></div></div></article></div></section>
+    <section id="order"><div class="section-head"><div><div class="eyebrow">03 · Keep in order</div><h2>Every move gets a review.</h2></div><p>PaperShelf proposes names, shows what changes, keeps originals when you ask, and gives the reviewer the final word.</p></div><div class="feature-grid"><article class="feature"><h3>Names are made from parts.</h3><p>Drag a pattern into place, preview the result, and keep the text form beside it.</p><div class="mock rename"><div class="chips"><span class="chip accent">date</span><span class="chip">author</span><span class="chip">title</span><span class="chip">year</span></div><code>2025-kashyap-composition-aware-pretraining.pdf</code><span class="note">Built from date · author · title</span></div></article><article class="feature"><h3>Duplicates do not become guesses.</h3><p>Identical bytes, same opening pages, and similar names are separate claims. The stronger claim wins.</p><div class="mock"><div class="mock-head">Duplicate passes</div><div class="mock-body"><div class="query"><span class="chip accent">Identical</span><span class="chip">Same pages</span><span class="chip">Similar names</span></div><div class="note">Keep this one · Trash the other 2</div></div></div></article></div></section>
+    <section id="cite"><div class="section-head"><div><div class="eyebrow">04 · Cite</div><h2>From shelf to bibliography.</h2></div><p>Generate a complete BibTeX document from the current selection, with stable keys and missing fields called out where you can fix them.</p></div><div class="feature-grid"><article class="feature"><h3>Readable by people and tools.</h3><p>Keys follow <code>surname:year:firstword</code>; formatting follows the settings you chose.</p><div class="mock bib"><code>@article{<span class="key">kashyap:2026:composition</span>,
+  author = {<span class="value">Kashyap Naveen, Aryan</span>},
+  title  = {<span class="value">A Composition-Aware Pretraining Framework</span>},
+  year   = {<span class="value">2026</span>}
+}</code></div></article><article class="feature"><h3>Complete only when complete.</h3><p>Missing author, title, or year fields become navigable chips rather than silent blanks.</p><div class="mock"><div class="mock-head">BibTeX</div><div class="mock-body"><div class="query"><span class="chip accent">3 missing authors</span><span class="chip">Complete only</span><span class="chip">Wrap</span></div><div class="note">Copy or save the generated file</div></div></div></article></div></section>
+    <section id="connect"><div class="section-head"><div><div class="eyebrow">05 · Connect</div><h2>Your papers stay put.</h2></div><p>The bundled MCP server serves local search, reading, citations, highlights, projects, tags, and guarded file actions to a connected assistant.</p></div><div class="feature-grid"><article class="feature"><h3>Eighteen tools, one local process.</h3><p>Read tools work immediately. File changes and semantic profile writes are explicit and off by default where they can change your files.</p><div class="mock"><div class="mock-head">MCP tools</div><div class="mock-body tools"><span class="tool" data-mcp-tool="list_documents">list_documents</span><span class="tool" data-mcp-tool="search_documents">search_documents</span><span class="tool" data-mcp-tool="read_document">read_document</span><span class="tool" data-mcp-tool="bibliography">bibliography</span><span class="tool" data-mcp-tool="list_highlights">list_highlights</span><span class="tool" data-mcp-tool="read_page">read_page</span><span class="tool" data-mcp-tool="find_duplicates">find_duplicates</span><span class="tool" data-mcp-tool="list_projects">list_projects</span><span class="tool" data-mcp-tool="list_project_documents">list_project_documents</span><span class="tool" data-mcp-tool="search_project">search_project</span><span class="tool" data-mcp-tool="list_tags">list_tags</span><span class="tool" data-mcp-tool="documents_by_tag">documents_by_tag</span><span class="tool write" data-mcp-tool="add_to_project">add_to_project</span><span class="tool write" data-mcp-tool="set_tags">set_tags</span><span class="tool write" data-mcp-tool="propose_file_changes">propose_file_changes</span><span class="tool write" data-mcp-tool="apply_file_changes">apply_file_changes</span><span class="tool" data-mcp-tool="get_highlight_profile">get_highlight_profile</span><span class="tool write" data-mcp-tool="set_highlight_profile">set_highlight_profile</span></div></div></article><article class="feature"><h3>Install the bridge, not your library.</h3><p>Install the app, then add its bundled server to ChatGPT or another local MCP client. The files remain on this Mac.</p><div class="mock under"><div class="under-row"><span>App</span><span>PaperShelf.app</span></div><div class="under-row"><span>Server</span><span>papershelf-mcp</span></div><div class="under-row"><span>Transport</span><span>stdio</span></div><div class="under-row"><span>Writes</span><span>off by default</span></div></div></article></div></section>
+    <section id="underneath"><div class="section-head"><div><div class="eyebrow">06 · Underneath</div><h2>Quiet infrastructure for a busy shelf.</h2></div><p>When a PDF is more than a file, the boring parts matter: conversion, indexing, costs, passwords, activity, and a key that does not sit in a plaintext preference.</p></div><div class="feature-grid"><article class="feature"><h3>Four paths to searchable text.</h3><div class="mock under"><div class="under-row"><span>pdftotext</span><span>fast default</span></div><div class="under-row"><span>MarkItDown</span><span>structured Markdown</span></div><div class="under-row"><span>Marker</span><span>layout aware</span></div><div class="under-row"><span>Docling</span><span>complex documents</span></div></div></article><article class="feature"><h3>Local by design.</h3><p>API keys live in Keychain when available. Spend is recorded locally. Password lists, plans, activity, and indexes stay in Application Support.</p><div class="mock under"><div class="under-row"><span>Key</span><span>Keychain</span></div><div class="under-row"><span>Text</span><span>SQLite + FTS</span></div><div class="under-row"><span>Notes</span><span>generated Markdown</span></div></div></article></div></section>
+    <section><div class="section-head"><div><div class="eyebrow">Roadmap</div><h2>Useful first. Stable next.</h2></div><p>PaperShelf is deliberately small today, so each release can leave the shelf better than it found it.</p></div><ul class="roadmap"><li>Notarized and signed distribution</li><li>Stable 2.0 storage and plugin interfaces</li><li>Better OCR and reading projects</li><li>Upstream Homebrew Cask submission</li></ul></section>
+    <div class="closing"><div class="eyebrow">Made for the paper you are actually reading.</div><h2>Open the page. Keep the thread.</h2><p>Download the latest build, or read the source and make the next careful improvement.</p><div class="actions"><a class="button" href="https://github.com/jonaprieto/papershelf/releases/latest">Get PaperShelf</a><a class="button ghost" href="https://github.com/jonaprieto/papershelf/issues">Open an issue</a></div></div>
+  </div></main>
+  <footer class="footer"><div class="wrap">PaperShelf · MIT License · <a href="https://github.com/jonaprieto/papershelf">GitHub</a> · <a href="../CHANGELOG.md">Changelog</a></div></footer>
+</body>
+</html>

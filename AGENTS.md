@@ -3,6 +3,9 @@
 PaperShelf reads, renames, files and searches a library of PDFs on a Mac, and ships an MCP
 server so an assistant can search and cite those PDFs without the files leaving the machine.
 
+The human build and release contract lives in [HACKING.md](HACKING.md); keep both documents
+aligned when the package or its distribution changes.
+
 ## Layout
 
 Three SwiftPM targets, no third-party dependencies. That is a property worth keeping: the
