@@ -154,6 +154,13 @@ final class QuickLook: NSObject, QLPreviewPanelDataSource {
         panel.makeKeyAndOrderFront(nil)
     }
 
+    @discardableResult
+    static func closeIfVisible() -> Bool {
+        guard let panel = QLPreviewPanel.shared(), panel.isVisible else { return false }
+        panel.orderOut(nil)
+        return true
+    }
+
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { url == nil ? 0 : 1 }
 
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {

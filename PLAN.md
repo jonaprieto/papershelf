@@ -28,6 +28,7 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 - Add native macOS full-screen support for focused reading.
 - Keep Reading Mode and native full screen independently usable.
 - Add a Settings > General helper to show and set PaperShelf as the macOS default PDF viewer.
+- Make Space in Catalogue/List open the selected PDF in native Quick Look, with Escape closing it.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 
@@ -141,6 +142,7 @@ Add focused coverage for:
 - Rename review/apply palette actions and settings access.
 - Reader next/previous navigation.
 - Default PDF viewer detection and configuration from Settings.
+- Finder-style Space and Escape Quick Look behavior in Catalogue/List.
 - Highlight click-to-note selection.
 - Note editor focus.
 - Semantic scope precedence, rename stability, and legacy fallback.

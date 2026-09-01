@@ -178,6 +178,13 @@ struct ResultsPane: View {
         return runner.results.first { $0.key == reader }
     }
 
+    static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
+                                    reading: Bool, readerOpen: Bool,
+                                    hasSelection: Bool) -> Bool {
+        keyCode == 49 && !reading && !readerOpen && hasSelection
+            && (viewMode == .catalogue || viewMode == .list)
+    }
+
     private func openReader(_ key: String?) {
         guard let key else { return }
         if reader != key {
@@ -1141,7 +1148,10 @@ struct ResultsPane: View {
 
     private func handle(_ event: NSEvent) -> Bool {
         guard !runner.busy else { return false }
-        if event.keyCode == 53 { return escape() }   // ⎋
+        if event.keyCode == 53 {                     // ⎋
+            if QuickLook.closeIfVisible() { return true }
+            return escape()
+        }
         let match = Keymap.shared.command(for: event, in: activeScope)
             ?? defaultRegionCommand(for: event)
         let bare = match.flatMap { Keymap.shared.shortcut(for: $0) }?.modifiers.isEmpty ?? true
@@ -1155,6 +1165,14 @@ struct ResultsPane: View {
         // Trash instead of the letter reaching the field. S, M, A, R and Return did the
         // same, which is most of the alphabet a note is written with.
         if bare, isTyping(event) { return false }
+
+        if Self.shouldOpenQuickLook(keyCode: event.keyCode, viewMode: prefs.viewMode,
+                                    reading: reading, readerOpen: reader != nil,
+                                    hasSelection: selectedItem != nil),
+           let item = selectedItem {
+            QuickLook.show(item.currentURL)
+            return true
+        }
 
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
         if reading || reader != nil {
