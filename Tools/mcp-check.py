@@ -37,10 +37,12 @@ check.failed = False
 # fresh set_tags poison-batch call and its own confirmation, alongside a new add_to_project
 # call and confirmation for the undercount fix itself, for a net change of minus one request
 # plus four, plus 2 for Task 12: an unknown token refused by apply_file_changes (91) and a
-# proposal against a folder holding a real PDF (92)), plus 1 more from a fourth, separate
+# proposal against a folder holding a real PDF (92)), plus 3 more from a fourth, separate
 # printf into the same binary further down: the same folder proposed again after the PDF is
-# touched (93), which has to answer with a different token than 92's.
-check("no reply to a notification", len(seen) == 9 + 5 + 52 + 1)
+# touched (93), which has to answer with a different token than 92's, and the same folder
+# proposed twice more (94, 95) with only `recursive` differing between the two, which have
+# to answer with different tokens from each other despite describing the same one move.
+check("no reply to a notification", len(seen) == 9 + 5 + 52 + 3)
 
 d = result("d")
 check(
@@ -632,6 +634,27 @@ check(
     "touching a file invalidates the token that described it",
     result("93").get("structuredContent", {}).get("token")
     != result("92").get("structuredContent", {}).get("token"),
+)
+
+# The token-covers-settings fix (defect two of Task 12) only ever had a check proving a
+# token changes when the underlying file does (the one right above); nothing proved the
+# thing that fix actually exists for, which is two proposals over the *same* files with
+# *different* settings not colliding on one token. RENAMES holds no subfolder, so toggling
+# `recursive` changes nothing collectJobs finds there, and the two proposals below describe
+# the identical one move; only the `recursive` flag baked into each plan's own token differs.
+same_files_settings_a = result("94").get("structuredContent", {})
+same_files_settings_b = result("95").get("structuredContent", {})
+check(
+    "two proposals differing only in a setting still describe the same renames",
+    bool(same_files_settings_a.get("moves"))
+    and same_files_settings_a.get("moves") == same_files_settings_b.get("moves"),
+)
+check(
+    "but do not share a token, since applying one must consult its own settings, not the "
+    "other's",
+    bool(same_files_settings_a.get("token"))
+    and bool(same_files_settings_b.get("token"))
+    and same_files_settings_a.get("token") != same_files_settings_b.get("token"),
 )
 
 sys.exit(1 if check.failed else 0)

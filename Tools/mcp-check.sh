@@ -359,7 +359,13 @@ printf '%s\n' \
 # its own folder (RENAMES, not the empty FOLDER id 8 already covers) gives propose_file_changes
 # something to plan a move for (92), and the same folder proposed again after a byte is
 # appended to that PDF (93, in the block below) must come back with a different token, since
-# a token that survived that would not be able to tell a stale plan from a current one.
+# a token that survived that would not be able to tell a stale plan from a current one. Ids
+# 94 and 95, in that same block, close out the review finding that the token-covers-settings
+# fix (defect two, above) had no test proving the thing it actually fixes: two proposals
+# against that same touched file, differing only in `recursive`, must still describe the
+# same one move (RENAMES holds no subfolder, so `recursive` changes nothing about what is
+# found) but must not share a token, since applying one has to consult its own plan's
+# settings, not the other's.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -433,5 +439,7 @@ stat -f%z "$RENAMES/Some Paper (2024).pdf" > "$RENAMES_STAT_FILE" 2>/dev/null ||
 printf '%%comment\n' >> "$RENAMES/Some Paper (2024).pdf"
 printf '%s\n' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"93\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"94\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\",\"recursive\":true}}}" \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"95\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\",\"recursive\":false}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | RENAMES_STAT_FILE="$RENAMES_STAT_FILE" python3 Tools/mcp-check.py

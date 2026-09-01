@@ -23,6 +23,16 @@ struct RenamePlan: Codable {
         /// exactly.
         let bytes: Int
         let modified: Double
+        /// What kind of change this actually is, from `process(jobs:options:)` at the
+        /// moment the plan was built: an ordinary rename, or one that also decrypts the
+        /// document because a saved password now unlocks it. A locked file's destination
+        /// name can change from the naming rules alone, with nothing else here telling a
+        /// rename apart from a rename that has quietly become a decryption; recording the
+        /// status and re-checking it at apply time (`apply_file_changes`, `WriteTools.swift`)
+        /// is what catches a password added to or removed from the app's saved list while
+        /// this plan sat waiting, since that comparison is otherwise blind to anything but
+        /// the two filenames.
+        let status: Status
     }
 
     /// The plan's own hash, which is also its name on disk. Built by `planToken` from every
@@ -115,7 +125,7 @@ func planToken(
         backupFolderName, backupCustomPath ?? "",
     ].joined(separator: "\u{1F}")
     let movesCanonical = moves
-        .map { "\($0.from)\u{1F}\($0.to)\u{1F}\($0.bytes)\u{1F}\($0.modified)" }
+        .map { "\($0.from)\u{1F}\($0.to)\u{1F}\($0.bytes)\u{1F}\($0.modified)\u{1F}\($0.status.rawValue)" }
         .sorted()
         .joined(separator: "\u{1E}")
     let canonical = settings + "\u{1E}" + movesCanonical
@@ -150,7 +160,8 @@ func planURL(token: String) throws -> URL {
     // A token is hexadecimal by construction; refusing anything else is what keeps a
     // crafted token from naming a file outside this folder.
     guard !token.isEmpty, token.allSatisfy({ $0.isHexDigit }) else {
-        throw ToolFailure("that is not a token this server handed out")
+        throw ToolFailure("that is not a token this server handed out. Nothing has been "
+            + "moved.")
     }
     return try plansDirectory().appendingPathComponent("pending-plan-\(token).json")
 }
@@ -168,17 +179,18 @@ func readPlan(token: String) throws -> RenamePlan {
     let url = try planURL(token: token)
     guard let data = try? Data(contentsOf: url) else {
         throw ToolFailure("no plan with that token; it may have been applied already, or "
-            + "expired. Call propose_file_changes again.")
+            + "expired. Nothing has been moved. Call propose_file_changes again.")
     }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     guard let plan = try? decoder.decode(RenamePlan.self, from: data) else {
-        throw ToolFailure("that plan could not be read; call propose_file_changes again")
+        throw ToolFailure("that plan could not be read. Nothing has been moved. Call "
+            + "propose_file_changes again.")
     }
     guard !plan.isExpired else {
         try? FileManager.default.removeItem(at: url)
-        throw ToolFailure("that plan is more than fifteen minutes old; call "
-            + "propose_file_changes again to see what would happen now")
+        throw ToolFailure("that plan is more than fifteen minutes old. Nothing has been "
+            + "moved. Call propose_file_changes again to see what would happen now.")
     }
     // The plan's token, recomputed from exactly what was just decoded. Since every field
     // that feeds the hash round-trips through JSON exactly, this only fails for a plan file
@@ -186,8 +198,8 @@ func readPlan(token: String) throws -> RenamePlan {
     // checks that a plan's contents still match the token naming it on disk.
     guard planToken(for: plan) == plan.token else {
         try? FileManager.default.removeItem(at: url)
-        throw ToolFailure("that plan does not match its own token; call "
-            + "propose_file_changes again")
+        throw ToolFailure("that plan does not match its own token. Nothing has been "
+            + "moved. Call propose_file_changes again.")
     }
     return plan
 }
@@ -204,8 +216,15 @@ func verify(_ plan: RenamePlan) throws {
             throw ToolFailure("\(move.from) is not where it was when this plan was made. "
                 + "Nothing has been moved. Call propose_file_changes again.")
         }
-        let bytes = (attributes[.size] as? Int) ?? -1
-        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+        // `attributesOfItem` answering but missing (or mistyping) one of these two keys is
+        // not the same fact as the file having changed, so it gets its own guard and its
+        // own sentence rather than being folded into the comparison below through a `-1`
+        // that could also, in principle, be a real answer.
+        guard let bytes = attributes[.size] as? Int,
+              let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 else {
+            throw ToolFailure("\(move.from)'s size or modification date could not be read. "
+                + "Nothing has been moved. Call propose_file_changes again.")
+        }
         // Exact, not `abs(a - b) < 1`: storage is now exact epoch seconds, so a real
         // tolerance would only mask that fix, and it would also let a file edited within
         // the same wall-clock second slip past unnoticed.
@@ -249,7 +268,8 @@ func buildPlan(folder: String, recursive: Bool, rules: NameRules) throws -> Rena
             return nil
         }
         return RenamePlan.Move(from: item.source.path, to: item.destination.path,
-                               bytes: bytes, modified: modified.timeIntervalSince1970)
+                               bytes: bytes, modified: modified.timeIntervalSince1970,
+                               status: item.status)
     }
     let backupFolderName = backup.safeFolderName
     let backupCustomPath = backup.customLocation?.path

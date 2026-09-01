@@ -289,7 +289,11 @@ let writeTools: [Tool] = [
         description: "The renames PaperShelf's own naming rules would make in a folder, "
             + "worked out without touching a single file. Comes back with a token. Show "
             + "the researcher the list and, if they say yes, pass the token to "
-            + "apply_file_changes. The token stops being good after fifteen minutes.",
+            + "apply_file_changes. The token stops being good after fifteen minutes. A "
+            + "file that is locked, but that PaperShelf already has a working password "
+            + "for, is decrypted rather than simply renamed if applied; the result marks "
+            + "which files that applies to and what becomes of the original under the "
+            + "app's current backup setting.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -324,11 +328,29 @@ let writeTools: [Tool] = [
                                      rules: rules)
             _ = try writePlan(plan)
 
+            // A move whose status is `.decrypted` is not an ordinary rename: `process`
+            // rewrites the document through PDFKit rather than moving its bytes untouched,
+            // because a saved password now opens it. A researcher approving "rename these"
+            // has to be told "decrypt this one" as its own fact, not left to discover it
+            // after the fact, and told separately what becomes of the original, since that
+            // depends on a setting (`apply_file_changes` honours whatever this plan's own
+            // backup settings say, not whatever they are changed to later).
+            let originalFate = plan.backupEnabled
+                ? "the original is kept "
+                    + (plan.backupCustomPath.map { "at \($0)" }
+                        ?? "in a \"\(plan.backupFolderName)\" folder alongside it") + "."
+                : "the original is overwritten and is not recoverable from the Trash."
             var text = plan.moves.isEmpty
                 ? "Nothing in that folder would be renamed."
-                : plan.moves.map { move in
-                    (move.from as NSString).lastPathComponent + "\n    -> "
+                : plan.moves.map { move -> String in
+                    var line = (move.from as NSString).lastPathComponent + "\n    -> "
                         + (move.to as NSString).lastPathComponent
+                    if move.status == .decrypted {
+                        line += "\n    this file is locked, and PaperShelf has a password "
+                            + "for it: applying this plan decrypts it, rewriting the "
+                            + "document rather than only renaming it, and \(originalFate)"
+                    }
+                    return line
                 }.joined(separator: "\n")
             if !Prefs.fileOperationsEnabled {
                 text += "\n\nNothing can be applied: PaperShelf has file operations turned "
@@ -338,7 +360,8 @@ let writeTools: [Tool] = [
                               structured: ["token": plan.token,
                                            "count": plan.moves.count,
                                            "enabled": Prefs.fileOperationsEnabled,
-                                           "moves": plan.moves.map { ["from": $0.from, "to": $0.to] }])
+                                           "moves": plan.moves.map { ["from": $0.from, "to": $0.to,
+                                                                      "decrypts": $0.status == .decrypted] }])
         }
     ),
 
@@ -348,9 +371,14 @@ let writeTools: [Tool] = [
         description: "Carries out the renames a propose_file_changes token stands for. "
             + "Only after the researcher has seen the list and agreed. Refuses if "
             + "PaperShelf has file operations turned off, if the token is unknown or more "
-            + "than fifteen minutes old, or if any file in the plan has moved or changed "
-            + "since. Originals are kept wherever the app's own backup setting says, and "
-            + "nothing is ever deleted.",
+            + "than fifteen minutes old, or if any file in the plan has moved, changed, "
+            + "or would now be decrypted rather than simply renamed since the plan was "
+            + "proposed. An ordinary rename never loses data: the bytes carry over under "
+            + "the new name whether or not backup is on. A file that has to be decrypted "
+            + "to be renamed is rewritten instead of moved; with backup on, the original "
+            + "locked file is kept in the backup folder, and with backup off it is "
+            + "replaced and its original bytes are not recoverable. propose_file_changes "
+            + "states which files that applies to before anything here is approved.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -368,6 +396,12 @@ let writeTools: [Tool] = [
             }
             let plan = try readPlan(token: try requireString(arguments, "token"))
             guard !plan.moves.isEmpty else {
+                // Removed here too, not just on the paths below that actually move
+                // something: leaving it would make an empty plan's token replayable
+                // (harmlessly, since replaying it only ever reproduces "renames nothing")
+                // until it expires on its own, which is an unstated exception to every
+                // other path through this tool removing the plan file it read.
+                try? FileManager.default.removeItem(at: try planURL(token: plan.token))
                 return ToolOutput(text: "That plan renames nothing.",
                                   structured: ["applied": 0])
             }
@@ -376,8 +410,15 @@ let writeTools: [Tool] = [
             // Worked out a second time and compared before anything is written. The plan
             // records what the rules said when it was proposed; if a folder's contents
             // have shifted enough that the same rules now produce different names,
-            // applying the old list would rename files to names nobody was shown.
-            let planned = Set(plan.moves.map { "\($0.from)\u{1F}\($0.to)" })
+            // applying the old list would rename files to names nobody was shown. Status
+            // is compared alongside the two names, not just the names themselves: a
+            // locked file's destination name does not depend on whether it can be
+            // decrypted (`apply_file_changes` never asks `process` to fall back to a
+            // PDF's metadata date), so a password added to, or removed from, the app's
+            // saved list between the proposal and this call would otherwise change what
+            // this move actually does (rename, versus decrypt-and-rewrite) without
+            // changing either name this comparison used to look at.
+            let planned = Set(plan.moves.map { "\($0.from)\u{1F}\($0.to)\u{1F}\($0.status.rawValue)" })
             let sources = Set(plan.moves.map(\.from))
             // `backup: plan.backup`, not `Prefs.backup`: the same "honour what the plan
             // recorded, not what the preference says now" rule the apply step below
@@ -388,11 +429,12 @@ let writeTools: [Tool] = [
                 .filter { sources.contains($0.file.path) }
             let rehearsed = process(jobs: jobs, options: plan.options)
             let now = Set(rehearsed.filter(\.isRenamed)
-                .map { "\($0.source.path)\u{1F}\($0.destination.path)" })
+                .map { "\($0.source.path)\u{1F}\($0.destination.path)\u{1F}\($0.status.rawValue)" })
             guard now == planned else {
-                throw ToolFailure("the same rules now produce different names than this "
-                    + "plan records. Nothing has been moved. Call propose_file_changes "
-                    + "again to see what would happen now.")
+                throw ToolFailure("the same rules now produce different names, or would "
+                    + "now change a file's encryption, than this plan records. Nothing "
+                    + "has been moved. Call propose_file_changes again to see what would "
+                    + "happen now.")
             }
 
             var options = plan.options
