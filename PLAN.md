@@ -111,6 +111,14 @@ Relevant areas: `AI.swift`, `Reading.swift`, and `Resources/Info.plist`.
 Relevant areas: `Annotations.swift`, `Reading.swift`, `Markdown.swift`, and PDF text
 extraction helpers.
 
+### 9. Share notes with ChatGPT
+
+- Add explicit Notes Rail actions to open all current highlights and notes in a new ChatGPT
+  conversation or copy them into an existing one.
+- Reuse the complete Markdown export so pages, notes, and semantic meanings stay together.
+- Keep automatic background synchronization deferred until there is an explicit privacy and
+  consent design for sending future annotations off the machine.
+
 ## Verification
 
 Add focused coverage for:
@@ -124,6 +132,7 @@ Add focused coverage for:
 - Sidecar movement during renaming.
 - Transcription request construction and failure handling.
 - Annotation text fidelity for multi-line, Unicode, and ligature-containing selections.
+- Complete notes handoff to ChatGPT without dropping pages, notes, or semantic meanings.
 
 After each workstream, run:
 

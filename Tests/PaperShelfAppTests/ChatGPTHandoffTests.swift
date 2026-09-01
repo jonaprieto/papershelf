@@ -31,6 +31,14 @@ final class ChatGPTHandoffTests: XCTestCase {
         XCTAssertFalse(prompt.contains("page"), "no page number, so none is invented")
     }
 
+    func testNotesPromptKeepsTheCompleteExportTogether() {
+        let markdown = "# A Paper\n\n## Page 3\n\n> a highlight\n\nMy note"
+        let prompt = ChatGPTHandoff.notesPrompt(title: "A Paper", markdown: markdown)
+
+        XCTAssertTrue(prompt.contains("current highlights and notes from A Paper"))
+        XCTAssertTrue(prompt.hasSuffix(markdown))
+    }
+
     /// The characters that would otherwise end the prompt early.
     func testQuerySyntaxInAPassageSurvivesEncoding() throws {
         let awkward = "Kingsbury & Terry: a+b = c? #1 100% sure"

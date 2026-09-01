@@ -29,6 +29,12 @@ enum ChatGPTHandoff {
         return out
     }
 
+    /// The complete current export, ready to become context in a new conversation.
+    static func notesPrompt(title: String, markdown: String) -> String {
+        "These are my current highlights and notes from \(title). Use them as context "
+            + "for this conversation:\n\n" + markdown
+    }
+
     /// Opens a new conversation with the passage already in the composer.
     @discardableResult
     static func open(_ prompt: String) -> Bool {

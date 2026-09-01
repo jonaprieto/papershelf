@@ -193,6 +193,7 @@ struct MarkRow: View {
 struct NotesRail: View {
     var annotator: Annotator
     var palette: Palette
+    private let prefs = Prefs.shared
     @Binding var addingNote: Bool
     @Binding var noteText: String
     let lastColour: NSColor
@@ -592,6 +593,25 @@ struct NotesRail: View {
             Button("Copy all") { copyNotes() }
                 .tip("Every mark on this document, as text")
 
+            if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy {
+                Menu {
+                    if prefs.offerChatGPT {
+                        Button("Open all notes in ChatGPT") {
+                            ChatGPTHandoff.open(chatGPTNotesPrompt)
+                        }
+                    }
+                    if prefs.offerChatGPTCopy {
+                        Button("Copy all notes for ChatGPT") {
+                            ChatGPTHandoff.copy(chatGPTNotesPrompt)
+                        }
+                    }
+                } label: {
+                    Label("ChatGPT", systemImage: "bubble.left.and.text.bubble.right")
+                }
+                .menuStyle(.borderlessButton)
+                .tip("Share every highlight and note with ChatGPT")
+            }
+
             Spacer(minLength: Space.snug)
 
             // Only for the document in front of you. Removing every mark means rewriting
@@ -646,6 +666,12 @@ struct NotesRail: View {
     private func copyNotes() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(notesMarkdown, forType: .string)
+    }
+
+    private var chatGPTNotesPrompt: String {
+        ChatGPTHandoff.notesPrompt(
+            title: (title as NSString).deletingPathExtension,
+            markdown: notesMarkdown)
     }
 }
 

@@ -466,7 +466,9 @@ Separately, every highlight in the notes rail offers **Open in ChatGPT**, which 
 conversation with the passage already in the composer, and **Copy for ChatGPT**, for a
 conversation you already have open. The app registers only a `codex://` scheme and can
 address a new thread but not an existing one, which is why copying is offered as well.
-Neither sends anything on its own: the text lands in the composer and you decide.
+The Notes rail also offers the same two actions for all highlights and notes in the current
+document at once. Neither sends anything on its own: the text lands in the composer or on
+the clipboard and you decide.
 
 ## Plan, review, apply
 
