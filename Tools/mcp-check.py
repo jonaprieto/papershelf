@@ -24,10 +24,10 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 22 against
+# first run (one of its 8 lines is a notification), 5 against the missing library, 25 against
 # the scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection,
-# plus 4 reading by document_id instead of path).
-check("no reply to a notification", len(seen) == 7 + 5 + 22)
+# plus 4 reading by document_id instead of path, plus 3 exercising the write path end to end).
+check("no reply to a notification", len(seen) == 7 + 5 + 25)
 
 d = result("d")
 check(
@@ -182,11 +182,11 @@ check(
 o = result("51")
 check(
     "list_documents with no folder reports the library's totals",
-    o.get("structuredContent", {}).get("totals", {}).get("documents") == 2,
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 3,
 )
 check(
     "list_documents with no folder lists documents",
-    len(o.get("structuredContent", {}).get("documents", [])) == 2,
+    len(o.get("structuredContent", {}).get("documents", [])) == 3,
 )
 
 s = result("52")
@@ -208,9 +208,9 @@ check(
     len(dupes) == 1 and len(dupes[0].get("paths", [])) == 2,
 )
 
-# Pagination, forced by an explicit limit smaller than the fixture's two documents: neither
+# Pagination, forced by an explicit limit smaller than the fixture's three documents: neither
 # default limit (100 for list_documents, 20 for search_documents) is ever small enough for
-# documents.count == limit to fire against a two-document library, so nothing else in this
+# documents.count == limit to fire against a three-document library, so nothing else in this
 # script ever produces a next_cursor or feeds one back in.
 page_one = result("54").get("structuredContent", {})
 check(
@@ -261,14 +261,44 @@ check(
         for note in result("59").get("structuredContent", {}).get("notes", [])
     ),
 )
+page_range_text = " ".join(
+    part.get("text", "") for part in result("60").get("content", [])
+)
 check(
     "a page range is sliced out of the stored text",
-    "A preface"
-    not in " ".join(part.get("text", "") for part in result("60").get("content", [])),
+    "categorical imperative" in page_range_text and "A preface" not in page_range_text,
 )
 check(
     "an unknown document id is an isError, not a crash",
     result("61").get("isError") is True,
+)
+
+# The write path end to end, on doc-3, which starts this run with a location but no
+# extracted_text row at all: nothing before this in the script has read its file, so a
+# library-wide search for its one word must come back empty until read_document actually
+# extracts and caches it, and must find it afterward only because that write, and the FTS
+# triggers on it, both actually ran.
+before_write = result("62")
+check(
+    "search_documents finds nothing for a document whose text has never been read",
+    before_write.get("isError") is False
+    and before_write.get("structuredContent", {}).get("matched") == 0,
+)
+
+extracted = result("63")
+check(
+    "read_document extracts a document with no cached text from the file itself",
+    "hello" in " ".join(part.get("text", "") for part in extracted.get("content", []))
+    and extracted.get("structuredContent", {}).get("extracted_now") is True,
+)
+
+after_write = result("64").get("structuredContent", {})
+after_hits = after_write.get("documents", [])
+check(
+    "the same search now finds it, because the write-back landed and the FTS index saw it",
+    after_write.get("matched") == 1
+    and bool(after_hits)
+    and after_hits[0].get("id") == "doc-3",
 )
 
 sys.exit(1 if check.failed else 0)

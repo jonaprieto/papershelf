@@ -17,7 +17,29 @@ trap 'rm -rf "$FOLDER"' EXIT
 # schemaV7's format column on extracted_text and its PRAGMA user_version; a change to either
 # is expected to need a matching change here.
 LIBRARY_DB="$FOLDER/library.sqlite"
-sqlite3 "$LIBRARY_DB" <<'SQL'
+
+# A real, valid one-page PDF whose only text is the word "hello", written to the same
+# folder the trap above already cleans up. This backs doc-3 below: the one document in the
+# fixture that has no extracted_text row, so reading it for the first time has to open this
+# file rather than the cache, exercising storedOrExtracted's write-back for real.
+HELLO_PDF="$FOLDER/hello.pdf"
+base64 -d > "$HELLO_PDF" <<'PDF'
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAyMDAg
+MjAwXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiAvQ29udGVudHMgNCAw
+IFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzNiA+PgpzdHJlYW0KQlQgL0YxIDEyIFRm
+IDIwIDEwMCBUZCAoaGVsbG8pIFRqIEVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9iago8PCAvVHlw
+ZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCnhy
+ZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4
+IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAw
+MzI3IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYK
+Mzk3CiUlRU9GCg==
+PDF
+
+# Unquoted (unlike a plain schema-only heredoc) so $HELLO_PDF below expands; nothing else in
+# this block uses a shell metacharacter, so that is the only effect of the change.
+sqlite3 "$LIBRARY_DB" <<SQL
 CREATE TABLE documents (
     id             TEXT PRIMARY KEY,
     first_seen_at  TEXT NOT NULL,
@@ -111,6 +133,17 @@ VALUES ('doc-2', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', 'abc', 1234, 42
 INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
 VALUES ('/tmp/groundwork-copy.pdf', 'doc-2', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
 
+-- A third document with no extracted_text row at all, and a location pointing at the real
+-- PDF written above. doc-1 already has stored text, so read_document/read_page on it never
+-- leave the cache-hit branch; doc-2 has neither stored text nor a file that exists on disk,
+-- so nothing can extract from it either. doc-3 is the one document in this fixture for which
+-- a read has to open the file, extract with PDFKit, and write the result back through
+-- openLibraryForWriting/blocking/setExtractedText, which is otherwise never exercised.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', NULL, 580, 1, 'Hello', NULL, '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('$HELLO_PDF', 'doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+
 PRAGMA user_version = 7;
 SQL
 
@@ -143,17 +176,22 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
 
-# The same tools against the scratch library above. The last four force pagination with an
-# explicit small limit against the fixture's two documents (ids 54-55, since the fixture is
-# too small for any default limit to ever produce a next_cursor on its own), then confirm a
-# cursor this server never handed out is refused rather than crashing or quietly resetting to
-# offset zero: one that is not base64 at all (id 56), and one that is well-formed base64 but
-# decodes to a negative offset, built the same way encodeCursor builds a real one, since that
-# is the guard standing between a bad argument and an unclamped SQLite LIMIT reading negative
-# as unlimited (id 57). Ids 58-61 exercise reading by document_id instead of path: a page
-# read straight out of doc-1's stored text (58), its notes brought back alongside whatever
-# PDFKit can find at its (nonexistent, in this fixture) path (59), a page range sliced out of
-# the same stored text (60), and an id nothing in the library matches (61).
+# The same tools against the scratch library above, now three documents. The last four
+# force pagination with an explicit small limit (ids 54-55, since the fixture is too small
+# for any default limit to ever produce a next_cursor on its own), then confirm a cursor this
+# server never handed out is refused rather than crashing or quietly resetting to offset
+# zero: one that is not base64 at all (id 56), and one that is well-formed base64 but decodes
+# to a negative offset, built the same way encodeCursor builds a real one, since that is the
+# guard standing between a bad argument and an unclamped SQLite LIMIT reading negative as
+# unlimited (id 57). Ids 58-61 exercise reading by document_id instead of path: a page read
+# straight out of doc-1's stored text (58), its notes brought back alongside whatever PDFKit
+# can find at its (nonexistent, in this fixture) path (59), a page range sliced out of the
+# same stored text (60), and an id nothing in the library matches (61). Ids 62-64 exercise
+# the write path end to end on doc-3, whose extracted_text row does not exist yet: a
+# library-wide search for a word found only in its PDF comes back empty before anything has
+# read it (62), read_document then reads the file and writes the result back (63), and the
+# same search now finds it, which only happens if that write and the FTS triggers on it both
+# actually ran (64).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -177,5 +215,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"59","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
   '{"jsonrpc":"2.0","id":"60","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-1","pages":"7-7"}}}' \
   '{"jsonrpc":"2.0","id":"61","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"no-such-doc"}}}' \
+  '{"jsonrpc":"2.0","id":"62","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"hello"}}}' \
+  '{"jsonrpc":"2.0","id":"63","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-3"}}}' \
+  '{"jsonrpc":"2.0","id":"64","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"hello"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

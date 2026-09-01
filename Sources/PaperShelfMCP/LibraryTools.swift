@@ -155,9 +155,14 @@ func storedOrExtracted(path: String, documentID: String?) throws -> (markdown: S
     // `let reader = try? LibraryReader.open()` already unwraps it fully. A second `let reader`
     // after that would be conditionally binding an already non-optional value, which does not
     // compile (see the identical note on `hit` above).
+    //
+    // The cache read is `try?` for the same reason: a transient failure reading the cached
+    // row, a busy or locked connection say, is a cache concern, not the caller's problem. The
+    // file is right there and readable, so that failure falls through to fresh extraction
+    // rather than aborting a read that would otherwise succeed.
     if let documentID,
        let reader = try? LibraryReader.open(),
-       let stored = try reader.extractedText(forDocument: documentID),
+       let stored = try? reader.extractedText(forDocument: documentID),
        stored.format != nil, !stored.markdown.isEmpty {
         return (stored.markdown, false)
     }
@@ -166,8 +171,11 @@ func storedOrExtracted(path: String, documentID: String?) throws -> (markdown: S
         throw ToolFailure("nothing could be read from that file; it may be locked, or it "
             + "may be a scan with no text layer")
     }
-    if let documentID, !read.text.isEmpty {
-        let library = try openLibraryForWriting()
+    // Caching the result is best-effort end to end: opening the connection can fail (the
+    // library file has vanished since the document was resolved, say) just as easily as the
+    // write two lines down already does, and neither failure should cost the researcher text
+    // PDFKit already successfully extracted.
+    if let documentID, !read.text.isEmpty, let library = try? openLibraryForWriting() {
         try? blocking { try await library.setExtractedText(read.text, forDocument: documentID,
                                                            format: read.format) }
     }
