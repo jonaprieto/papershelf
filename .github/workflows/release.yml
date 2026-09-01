@@ -26,7 +26,7 @@ jobs:
       TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Test
         run: swift test
