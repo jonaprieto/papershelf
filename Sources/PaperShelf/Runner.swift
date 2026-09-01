@@ -333,6 +333,7 @@ final class Runner {
         replace(item.key, with: done)
         set(.applied, for: item.key)
         note(kind(for: done.status), for: item, detail: "-> \(done.destinationName)")
+        moveNotesSidecar(for: done)
         // Applying one file on its own never reaches `finish`, and it moves the file just
         // as a whole run does, so the library has to hear about this one too.
         Task { await self.syncLibrary(with: [done]) }
@@ -1095,6 +1096,7 @@ final class Runner {
 
     private func finish(_ out: [Item], keepingDecisions: Bool = false,
                         derived: Derived? = nil, syncLibrary: Bool = true) {
+        for item in out { moveNotesSidecar(for: item) }
         if !keepingDecisions { cursor = 0 }
         results = out
         let parts = derived ?? Runner.derive(out)

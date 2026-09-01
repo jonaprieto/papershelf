@@ -111,6 +111,11 @@ final class Prefs {
         get { readingAppearance == .tint }
         set { readingAppearance = newValue ? .tint : .normal }
     }
+    /// Keeps a generated Markdown companion beside each PDF whenever annotations change.
+    /// Existing companions are never removed when this is turned off.
+    var syncNotesSidecar: Bool = Store.flag("syncNotesSidecar", true) {
+        didSet { Store.put("syncNotesSidecar", syncNotesSidecar) }
+    }
     var pageFit: PageFit = Store.choice("pageFit", .width) {
         didSet { Store.put("pageFit", pageFit) }
     }

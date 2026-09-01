@@ -162,6 +162,20 @@ struct GeneralSettings: View {
             }
 
             Section {
+                Toggle("Keep a Markdown notes file beside each PDF",
+                       isOn: $prefs.syncNotesSidecar)
+            } header: {
+                Text("Notes")
+            } footer: {
+                Text("PaperShelf overwrites the generated <PDF stem> notes.md file from "
+                     + "the PDF annotations. Turning this off stops future writes but does "
+                     + "not delete an existing file.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
                 if sources.isEmpty {
                     Text("Nothing added yet").foregroundStyle(.secondary)
                 }

@@ -530,13 +530,35 @@ final class Annotator {
             lastError = "Could not write the note"
             return
         }
+        let sidecar = notesSidecarText(for: url)
         unsaved = false
         let previous = writeTask
         writeTask = Task { [weak self] in
             _ = await previous?.value
-            let failure = await Annotator.persist(data, to: url)
+            let failure = await Annotator.persist(data, to: url, sidecar: sidecar)
             self?.lastError = failure
         }
+    }
+
+    private func notesSidecarText(for url: URL) -> String? {
+        guard Prefs.shared.syncNotesSidecar else { return nil }
+        let title = statedTitle?.isEmpty == false
+            ? statedTitle! : url.deletingPathExtension().lastPathComponent
+        let scope = HighlightMeaningScope.forDocument(url)
+        let exports = marks.map {
+            MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
+                       meaning: Palette.shared.meaning(for: $0.colour, scope: scope),
+                       colour: colourHex($0.colour))
+        }
+        return markdownNotes(title: title, source: url.path, marks: exports)
+    }
+
+    private func colourHex(_ colour: NSColor) -> String {
+        guard let rgb = colour.usingColorSpace(.sRGB) else { return "" }
+        return String(format: "#%02X%02X%02X",
+                      Int((max(0, min(1, rgb.redComponent)) * 255).rounded()),
+                      Int((max(0, min(1, rgb.greenComponent)) * 255).rounded()),
+                      Int((max(0, min(1, rgb.blueComponent)) * 255).rounded()))
     }
 
     private func replace(_ mark: Mark, colour: NSColor? = nil, note: String? = nil) {
@@ -549,16 +571,35 @@ final class Annotator {
 
     /// Writing through a temporary file means an interrupted save cannot leave a
     /// half-written document where the original was.
-    private nonisolated static func persist(_ data: Data, to url: URL) async -> String? {
+    private nonisolated static func persist(_ data: Data, to url: URL,
+                                            sidecar: String?) async -> String? {
         await Task.detached(priority: .utility) { () -> String? in
             let temporary = url.deletingLastPathComponent()
                 .appendingPathComponent(".papershelf-notes-\(UUID().uuidString).pdf")
+            var temporarySidecar: URL?
+            func replaceOrMove(_ temporary: URL, at destination: URL) throws {
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+                } else {
+                    try FileManager.default.moveItem(at: temporary, to: destination)
+                }
+            }
             do {
                 try data.write(to: temporary, options: .atomic)
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+                if let sidecar {
+                    let destination = notesSidecarURL(for: url)
+                    let sidecarFile = destination.deletingLastPathComponent()
+                        .appendingPathComponent(".papershelf-notes-\(UUID().uuidString).md")
+                    temporarySidecar = sidecarFile
+                    try sidecar.write(to: sidecarFile, atomically: true, encoding: .utf8)
+                    try replaceOrMove(sidecarFile, at: destination)
+                    temporarySidecar = nil
+                }
                 return nil
             } catch {
                 try? FileManager.default.removeItem(at: temporary)
+                if let temporarySidecar { try? FileManager.default.removeItem(at: temporarySidecar) }
                 return error.localizedDescription
             }
         }.value
