@@ -140,6 +140,130 @@ public func markdownBibliography(_ entries: [BibEntry], date: Date = Date()) -> 
 
 // MARK: - Reading the marks in a document
 
+struct PDFWord: Equatable {
+    let text: String
+    let bounds: CGRect
+}
+
+private final class PDFWordParser: NSObject, XMLParserDelegate {
+    private let pageBounds: CGRect
+    private(set) var words: [PDFWord] = []
+    private var currentText = ""
+    private var currentBounds: CGRect?
+
+    init(pageBounds: CGRect) {
+        self.pageBounds = pageBounds
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?,
+                attributes attributeDict: [String: String] = [:]) {
+        guard elementName == "word",
+              let xMin = Double(attributeDict["xMin"] ?? ""),
+              let yMin = Double(attributeDict["yMin"] ?? ""),
+              let xMax = Double(attributeDict["xMax"] ?? ""),
+              let yMax = Double(attributeDict["yMax"] ?? ""),
+              xMax >= xMin, yMax >= yMin else { return }
+        currentText = ""
+        currentBounds = CGRect(x: xMin + pageBounds.minX,
+                               y: pageBounds.maxY - yMax,
+                               width: xMax - xMin,
+                               height: yMax - yMin)
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard currentBounds != nil else { return }
+        currentText += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        guard elementName == "word" else { return }
+        let text = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let bounds = currentBounds, !text.isEmpty {
+            words.append(PDFWord(text: text, bounds: bounds))
+        }
+        currentText = ""
+        currentBounds = nil
+    }
+}
+
+/// Parses Poppler's layout coordinates into the page coordinate system PDFKit uses.
+/// Kept internal so the parser can be tested without requiring a particular PDF utility
+/// to be installed on the test machine.
+func pdfBBoxWords(_ data: Data, pageBounds: CGRect) -> [PDFWord]? {
+    let parser = PDFWordParser(pageBounds: pageBounds)
+    let xml = XMLParser(data: data)
+    xml.delegate = parser
+    guard xml.parse() else { return nil }
+    return parser.words
+}
+
+private let pdfWordCache = NSCache<NSString, PDFWordPage>()
+
+private final class PDFWordPage: NSObject {
+    let words: [PDFWord]
+
+    init(words: [PDFWord]) {
+        self.words = words
+    }
+}
+
+private func bboxWords(for page: PDFPage) -> [PDFWord]? {
+    guard let document = page.document,
+          let url = document.documentURL,
+          document.index(for: page) >= 0,
+          let tool = locate("pdftotext") else { return nil }
+    let index = document.index(for: page)
+
+    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+    let cacheKey = "\(url.path)#\(index)#\(values?.fileSize ?? 0)#\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)" as NSString
+    if let cached = pdfWordCache.object(forKey: cacheKey) { return cached.words }
+
+    let process = Process()
+    process.executableURL = tool
+    let pageNumber = index + 1
+    process.arguments = ["-bbox", "-f", "\(pageNumber)", "-l", "\(pageNumber)", url.path, "-"]
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    do { try process.run() } catch { return nil }
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0,
+          let words = pdfBBoxWords(data, pageBounds: page.bounds(for: .mediaBox)) else { return nil }
+    pdfWordCache.setObject(PDFWordPage(words: words), forKey: cacheKey)
+    return words
+}
+
+func bboxQuote(words: [PDFWord], in boxes: [CGRect]) -> String? {
+    let selected = words.filter { word in
+        boxes.contains { $0.insetBy(dx: -0.5, dy: -0.5).intersects(word.bounds) }
+    }
+    guard !selected.isEmpty else { return nil }
+
+    let ordered = selected.sorted {
+        let yDifference = abs($0.bounds.midY - $1.bounds.midY)
+        if yDifference > 2 { return $0.bounds.midY > $1.bounds.midY }
+        return $0.bounds.minX < $1.bounds.minX
+    }
+    var result = ""
+    var previous: PDFWord?
+    for word in ordered {
+        if result.isEmpty {
+            result = word.text
+        } else if let previous,
+                  previous.text.hasSuffix("-"),
+                  previous.bounds.midY - word.bounds.midY > 2 {
+            result += word.text
+        } else {
+            result += " " + word.text
+        }
+        previous = word
+    }
+    return result
+}
+
 /// A highlight or note already in a PDF, read from the file rather than from the app's
 /// own state, so a separate process (the MCP server) can see what the reader marked.
 public struct PDFMark: Sendable, Equatable {
@@ -184,6 +308,11 @@ public func quotedText(of annotation: PDFAnnotation, on page: PDFPage) -> String
         }
     } else {
         boxes = [annotation.bounds]
+    }
+    if let words = bboxWords(for: page),
+       let quote = bboxQuote(words: words, in: boxes),
+       !quote.isEmpty {
+        return quote
     }
     let pieces = boxes.compactMap { page.selection(for: $0)?.string }
     return pieces.joined(separator: " ")

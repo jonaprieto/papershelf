@@ -35,6 +35,18 @@ final class MarkdownTests: XCTestCase {
         XCTAssertFalse(text.contains("## Page"))
     }
 
+    func testPopplerWordCoordinatesBecomePDFKitCoordinatesAndKeepHyphenatedLines() throws {
+        let xml = """
+            <doc><page width=\"200\" height=\"100\"><word xMin=\"10\" yMin=\"10\" xMax=\"35\" yMax=\"20\">pre-</word><word xMin=\"10\" yMin=\"22\" xMax=\"55\" yMax=\"32\">sentation.</word></page></doc>
+            """.data(using: .utf8)!
+        let words = try XCTUnwrap(pdfBBoxWords(xml, pageBounds: CGRect(x: 0, y: 0, width: 200, height: 100)))
+        XCTAssertEqual(words.map(\.text), ["pre-", "sentation."])
+        XCTAssertEqual(words[0].bounds, CGRect(x: 10, y: 80, width: 25, height: 10))
+        XCTAssertEqual(bboxQuote(words: words,
+                                 in: [CGRect(x: 9, y: 67, width: 47, height: 24)]),
+                       "pre-sentation.")
+    }
+
     func testNotesIncludeTheStoredColourAndSidecarUsesThePDFFolder() {
         let text = markdownNotes(
             title: "Book", source: "/tmp/papers/book.pdf",
