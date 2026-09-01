@@ -41,6 +41,17 @@ final class AIClientTests: XCTestCase {
                       "got \(String(describing: client.spendRecorder))")
     }
 
+    func testLoginShellReadsZshrcForFinderLaunches() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("papershelf-zshrc-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try Data("export OPENAI_API_KEY=from-zshrc\n".utf8)
+            .write(to: home.appendingPathComponent(".zshrc"))
+
+        XCTAssertEqual(AIClient.loginShellKey(shell: "/bin/zsh", home: home.path), "from-zshrc")
+    }
+
     func testTranscriptionMultipartBodyCarriesTheModelAndAudio() {
         let boundary = "test-boundary"
         let body = audioMultipartBody(audio: Data([1, 2, 3]), filename: "note.m4a",

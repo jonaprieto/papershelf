@@ -313,6 +313,14 @@ enum Appearance: String, CaseIterable, Identifiable {
         }
     }
 
+    var systemImage: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon.fill"
+        }
+    }
+
     var nsAppearance: NSAppearance? {
         switch self {
         case .system: return nil

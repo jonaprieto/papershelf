@@ -14,6 +14,14 @@ enum PDFReadingAppearance: String, CaseIterable, Identifiable {
         case .whiteOnBlack: return "White on black"
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .normal: return "doc"
+        case .tint: return "circle.lefthalf.filled"
+        case .whiteOnBlack: return "circle.righthalf.filled"
+        }
+    }
 }
 
 /// Everything the app remembers between launches, declared once.

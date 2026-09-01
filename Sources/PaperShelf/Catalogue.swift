@@ -707,6 +707,10 @@ struct ResultsPane: View {
                 .tip(prefs.inspectorCollapsed
                      ? "Show info, rename, notes and the citation"
                      : "Hide the inspector", key: "⌘⇧B")
+                appearanceMenu
+                if showsPage {
+                    contrastMenu
+                }
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -741,6 +745,46 @@ struct ResultsPane: View {
     private var currentMeaningScope: HighlightMeaningScope? {
         guard let item = readerItem ?? selectedItem else { return nil }
         return .forDocument(item.currentURL)
+    }
+
+    @ViewBuilder
+    private var appearanceMenu: some View {
+        Menu {
+            Picker("Theme", selection: Binding(
+                get: { prefs.appearance },
+                set: { prefs.appearance = $0 }
+            )) {
+                ForEach(Appearance.allCases) { mode in
+                    Label(mode.label, systemImage: mode.systemImage).tag(mode)
+                }
+            }
+        } label: {
+            Label("Appearance", systemImage: prefs.appearance.systemImage)
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityLabel("Appearance")
+        .accessibilityValue(prefs.appearance.label)
+        .tip("Theme: \(prefs.appearance.label)")
+    }
+
+    @ViewBuilder
+    private var contrastMenu: some View {
+        Menu {
+            Picker("PDF contrast", selection: Binding(
+                get: { prefs.readingAppearance },
+                set: { prefs.readingAppearance = $0 }
+            )) {
+                ForEach(PDFReadingAppearance.allCases) { mode in
+                    Label(mode.label, systemImage: mode.systemImage).tag(mode)
+                }
+            }
+        } label: {
+            Label("PDF contrast", systemImage: prefs.readingAppearance.systemImage)
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityLabel("PDF contrast")
+        .accessibilityValue(prefs.readingAppearance.label)
+        .tip("PDF contrast: \(prefs.readingAppearance.label)")
     }
 
     /// The rail beside the page, from the same group as the sidebar button, because it is

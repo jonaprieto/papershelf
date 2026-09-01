@@ -159,14 +159,19 @@ struct AIClient {
     }
 
     /// An app launched from Finder inherits launchd's environment, not a shell's, so a
-    /// key exported in .zshrc is invisible to us. Asking the login shell is the only way
-    /// to see it. Run only when nothing else has produced a key, since it executes the
-    /// user's own startup files.
-    static func loginShellKey() -> String? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+    /// key exported in .zshrc is invisible to us. A login shell does not read .zshrc, so
+    /// source it explicitly after the login files. Run only when nothing else has produced
+    /// a key, since it executes the user's own startup files.
+    static func loginShellKey(shell: String? = nil, home: String? = nil) -> String? {
+        let shell = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-lc", "printf %s \"$OPENAI_API_KEY\""]
+        process.arguments = ["-lc", "source \"$HOME/.zshrc\" >/dev/null 2>&1; printf %s \"$OPENAI_API_KEY\""]
+        if let home {
+            var environment = ProcessInfo.processInfo.environment
+            environment["HOME"] = home
+            process.environment = environment
+        }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
