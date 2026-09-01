@@ -150,7 +150,10 @@ printf '%s\n' \
 # offset zero: one that is not base64 at all (id 56), and one that is well-formed base64 but
 # decodes to a negative offset, built the same way encodeCursor builds a real one, since that
 # is the guard standing between a bad argument and an unclamped SQLite LIMIT reading negative
-# as unlimited (id 57).
+# as unlimited (id 57). Ids 58-61 exercise reading by document_id instead of path: a page
+# read straight out of doc-1's stored text (58), its notes brought back alongside whatever
+# PDFKit can find at its (nonexistent, in this fixture) path (59), a page range sliced out of
+# the same stored text (60), and an id nothing in the library matches (61).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -170,5 +173,9 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"55","method":"tools/call","params":{"name":"list_documents","arguments":{"limit":1,"cursor":"b2Zmc2V0OjE="}}}' \
   '{"jsonrpc":"2.0","id":"56","method":"tools/call","params":{"name":"list_documents","arguments":{"cursor":"not-a-real-cursor"}}}' \
   '{"jsonrpc":"2.0","id":"57","method":"tools/call","params":{"name":"list_documents","arguments":{"cursor":"b2Zmc2V0Oi0x"}}}' \
+  '{"jsonrpc":"2.0","id":"58","method":"tools/call","params":{"name":"read_page","arguments":{"document_id":"doc-1","page":7}}}' \
+  '{"jsonrpc":"2.0","id":"59","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"60","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-1","pages":"7-7"}}}' \
+  '{"jsonrpc":"2.0","id":"61","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"no-such-doc"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

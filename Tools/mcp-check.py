@@ -24,9 +24,10 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 18 against
-# the scratch one (14 original plus 4 forcing pagination and exercising cursor rejection).
-check("no reply to a notification", len(seen) == 7 + 5 + 18)
+# first run (one of its 8 lines is a notification), 5 against the missing library, 22 against
+# the scratch one (14 original, plus 4 forcing pagination and exercising cursor rejection,
+# plus 4 reading by document_id instead of path).
+check("no reply to a notification", len(seen) == 7 + 5 + 22)
 
 d = result("d")
 check(
@@ -245,6 +246,29 @@ check(
     "a cursor that decodes to a negative offset is refused, not treated as offset zero",
     negative_cursor.get("isError") is True
     and "cursor" in negative_cursor.get("content", [{}])[0].get("text", "").lower(),
+)
+
+# Reading a document a search or listing found by its document_id, with no path in hand.
+check(
+    "a page is read straight out of the stored text, with no file to open",
+    "categorical imperative"
+    in " ".join(part.get("text", "") for part in result("58").get("content", [])),
+)
+check(
+    "highlights bring the notes written about the document",
+    any(
+        "Korsgaard" in note.get("body", "")
+        for note in result("59").get("structuredContent", {}).get("notes", [])
+    ),
+)
+check(
+    "a page range is sliced out of the stored text",
+    "A preface"
+    not in " ".join(part.get("text", "") for part in result("60").get("content", [])),
+)
+check(
+    "an unknown document id is an isError, not a crash",
+    result("61").get("isError") is True,
 )
 
 sys.exit(1 if check.failed else 0)

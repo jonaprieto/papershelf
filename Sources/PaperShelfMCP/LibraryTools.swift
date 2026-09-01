@@ -115,6 +115,104 @@ func searchLibrary(_ query: String, _ arguments: [String: Any]) throws -> ToolOu
     return ToolOutput(text: text, structured: structured)
 }
 
+/// Either identifier, from either half of the tool surface. The library-backed tools hand
+/// back an id and the folder-backed ones a path; without this, a researcher cannot read a
+/// document a search just found them.
+func resolveDocument(_ arguments: [String: Any]) throws -> (path: String?, id: String?) {
+    if let path = arguments["path"] as? String, !path.isEmpty {
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw ToolFailure("no such file: \(path)")
+        }
+        let id = (try? LibraryReader.open())
+            .flatMap { try? $0?.document(matching: path) }?.id
+        return (path, id)
+    }
+    guard let identifier = arguments["document_id"] as? String, !identifier.isEmpty else {
+        throw ToolFailure("give either 'path' or 'document_id'")
+    }
+    let reader = try openLibraryOrFail()
+    guard let document = try reader.document(matching: identifier) else {
+        throw ToolFailure("the library has no document with id, path or title "
+            + "'\(identifier)'; call search_documents or list_documents first")
+    }
+    return (document.path, document.id)
+}
+
+/// The document's text, read from the library when it is there and read from the file and
+/// stored when it is not.
+///
+/// Extracting here is bounded to the one document a researcher asked for, which is the
+/// difference between this and indexing: it is worth doing inside a tool call because it
+/// is one file, and the next question about the same document is then free.
+///
+/// Two tool calls racing on the same unindexed document each extract independently and each
+/// write; `setExtractedText` is an upsert on the document's id, so the worst outcome is
+/// duplicated extraction work and a last-write-wins overwrite with equivalent text, never a
+/// corrupt row. Acceptable without a lock at the volume one researcher's chat client drives.
+func storedOrExtracted(path: String, documentID: String?) throws -> (markdown: String, extracted: Bool) {
+    // `LibraryReader.open()` is itself a throwing function returning an optional; under this
+    // project's Swift 5 language mode `try?` flattens that to a single-level optional, so one
+    // `let reader = try? LibraryReader.open()` already unwraps it fully. A second `let reader`
+    // after that would be conditionally binding an already non-optional value, which does not
+    // compile (see the identical note on `hit` above).
+    if let documentID,
+       let reader = try? LibraryReader.open(),
+       let stored = try reader.extractedText(forDocument: documentID),
+       stored.format != nil, !stored.markdown.isEmpty {
+        return (stored.markdown, false)
+    }
+    guard let read = indexedMarkdown(of: URL(fileURLWithPath: path),
+                                     passwords: Prefs.passwords) else {
+        throw ToolFailure("nothing could be read from that file; it may be locked, or it "
+            + "may be a scan with no text layer")
+    }
+    if let documentID, !read.text.isEmpty {
+        let library = try openLibraryForWriting()
+        try? blocking { try await library.setExtractedText(read.text, forDocument: documentID,
+                                                           format: read.format) }
+    }
+    return (read.text, true)
+}
+
+/// One page range out of page-marked Markdown, as "12" or "12-20".
+///
+/// Page-marked Markdown only ever carries a "## Page N" heading for a page that had text
+/// (`indexedMarkdown` skips blank pages entirely), so a requested page missing from it is
+/// ambiguous on its own: it could be a page past the end of the document, or a page inside
+/// it that is a scanned image with no text layer. The highest page number seen anywhere in
+/// the Markdown disambiguates the two: a request past that high-water mark is past what was
+/// ever read, while a request at or before it fell on a page that has no text of its own.
+func pageSlice(_ markdown: String, range: String) throws -> String {
+    let parts = range.split(separator: "-", maxSplits: 1).map(String.init)
+    guard let first = Int(parts.first ?? ""), first > 0 else {
+        throw ToolFailure("'pages' looks like \"12\" or \"12-20\"")
+    }
+    let last = parts.count > 1 ? Int(parts[1]) : first
+    guard let last, last >= first else {
+        throw ToolFailure("'pages' looks like \"12\" or \"12-20\", with the second number "
+            + "no smaller than the first")
+    }
+    var kept: [String] = []
+    var current: Int?
+    var highestSeen = 0
+    for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.hasPrefix("## Page ") {
+            current = Int(line.dropFirst("## Page ".count).prefix { $0.isNumber })
+            if let current { highestSeen = max(highestSeen, current) }
+        }
+        if let current, current >= first, current <= last { kept.append(String(line)) }
+    }
+    guard !kept.isEmpty else {
+        if highestSeen > 0 && first > highestSeen {
+            throw ToolFailure("that document's extracted text only reaches page "
+                + "\(highestSeen); page \(first) is beyond it")
+        }
+        throw ToolFailure("pages \(first) to \(last) have no text of their own; they may "
+            + "be scanned images with no text layer")
+    }
+    return kept.joined(separator: "\n")
+}
+
 // These tools read the library PaperShelf itself builds while indexing (projects, tags, and
 // the library-wide search above), through the read-only connection Projects.swift opens;
 // each one reports a missing library politely (isError, not a crash) rather than assuming

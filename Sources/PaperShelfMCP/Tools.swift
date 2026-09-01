@@ -1,5 +1,4 @@
 import Foundation
-import PDFKit
 import PaperShelfCore
 
 /// A scan is what everything else is built on, so it is done once per call and kept for
@@ -137,36 +136,41 @@ let folderTools: [Tool] = [
     Tool(
         name: "read_document",
         title: "Read a document as Markdown",
-        description: "Extract a PDF's text as Markdown, page by page. Works on a "
-            + "password-protected file when the password is supplied.",
+        description: "A document's text, page by page. Give it either a path or the "
+            + "document_id a search handed back. A document the library has already read "
+            + "is served from the library; one it has not is read from the file now and "
+            + "kept, so the next question about it is free.",
         inputSchema: [
             "type": "object",
             "properties": [
-                "path": ["type": "string", "description": "Absolute path to a PDF"],
-                "password": ["type": "string", "description": "Optional, if the file is locked"],
-                "page_markers": ["type": "boolean", "description": "Write '## Page N' headings. Default true."],
+                "document_id": ["type": "string", "description": "From a search or listing. Also accepts a title."],
+                "path": ["type": "string", "description": "Absolute path to a PDF, if there is no id."],
+                "pages": ["type": "string", "description": "One page or a range, as \"12\" or \"12-20\". Omit for the whole document."],
                 "max_characters": ["type": "integer", "description": "Truncate. Default 200000."],
+                "password": ["type": "string", "description": "Optional, if the file is locked"],
             ],
-            "required": ["path"],
         ],
         run: { arguments in
-            let path = try requireString(arguments, "path")
-            guard FileManager.default.fileExists(atPath: path) else {
-                throw ToolFailure("no such file: \(path)")
+            let (path, id) = try resolveDocument(arguments)
+            guard let path else {
+                throw ToolFailure("the library knows that document but not where it is now; "
+                    + "call it again with 'path'")
             }
-            let passwords = (arguments["password"] as? String).map { [$0] } ?? []
-            let markdown = markdownFromPDF(
-                url: URL(fileURLWithPath: path), passwords: passwords,
-                pageMarkers: optionalBool(arguments, "page_markers", default: true))
+            let read = try storedOrExtracted(path: path, documentID: id)
+            var markdown = read.markdown
+            if let range = arguments["pages"] as? String, !range.isEmpty {
+                markdown = try pageSlice(markdown, range: range)
+            }
             guard !markdown.isEmpty else {
-                throw ToolFailure("nothing could be read from that file; it may be locked, "
-                                  + "or it may be a scan with no text layer")
+                throw ToolFailure("that document has no text layer to read")
             }
             let cap = arguments["max_characters"] as? Int ?? 200_000
             let clipped = markdown.count > cap
                 ? String(markdown.prefix(cap)) + "\n\n[truncated at \(cap) characters]"
                 : markdown
-            return ToolOutput(text: clipped, structured: nil)
+            return ToolOutput(text: clipped,
+                              structured: ["extracted_now": read.extracted,
+                                           "truncated": markdown.count > cap])
         }
     ),
 
@@ -200,26 +204,33 @@ let folderTools: [Tool] = [
         name: "list_highlights",
         title: "Read what the reader marked",
         description: "Every highlight, underline, strikeout and sticky note in a PDF, with "
-            + "the text each one covers, the note attached to it, and its page. This is "
-            + "what the person reading the document chose to mark, so it is the best "
-            + "starting point for discussing the document with them.",
+            + "the text each one covers, the note attached to it, and its page, plus "
+            + "anything written about the document in PaperShelf's own notes. This is what "
+            + "the person reading the document chose to mark, so it is the best starting "
+            + "point for discussing the document with them. Give it either a path or a "
+            + "document_id.",
         inputSchema: [
             "type": "object",
             "properties": [
+                "document_id": ["type": "string"],
                 "path": ["type": "string", "description": "Absolute path to a PDF"],
                 "password": ["type": "string"],
             ],
-            "required": ["path"],
         ],
         run: { arguments in
-            let path = try requireString(arguments, "path")
-            guard FileManager.default.fileExists(atPath: path) else {
-                throw ToolFailure("no such file: \(path)")
+            let (path, id) = try resolveDocument(arguments)
+            guard let path else {
+                throw ToolFailure("the library knows that document but not where it is now; "
+                    + "call it again with 'path'")
             }
-            let passwords = (arguments["password"] as? String).map { [$0] } ?? []
-            let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: passwords)
-            guard !marks.isEmpty else {
-                return ToolOutput(text: "Nothing is marked in that document.", structured: nil)
+            let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: Prefs.passwords)
+            let notes = id.flatMap { documentID -> [(body: String, createdAt: String)]? in
+                guard let reader = try? LibraryReader.open() else { return nil }
+                return try? reader.notes(forDocument: documentID)
+            } ?? []
+            guard !marks.isEmpty || !notes.isEmpty else {
+                return ToolOutput(text: "Nothing is marked in that document, and nothing "
+                                        + "has been written about it.", structured: nil)
             }
             let rows = marks.map { mark -> [String: Any] in
                 var row: [String: Any] = ["page": mark.page, "kind": mark.kind]
@@ -227,13 +238,19 @@ let folderTools: [Tool] = [
                 if !mark.note.isEmpty { row["note"] = mark.note }
                 return row
             }
-            let text = marks.map { mark in
+            let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
+            var text = marks.map { mark in
                 var line = "p.\(mark.page) [\(mark.kind)]"
                 if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
                 if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
                 return line
             }.joined(separator: "\n")
-            return ToolOutput(text: text, structured: ["count": rows.count, "marks": rows])
+            if !notes.isEmpty {
+                text += (text.isEmpty ? "" : "\n\n") + "About the document:\n"
+                    + notes.map { "  " + $0.body }.joined(separator: "\n")
+            }
+            return ToolOutput(text: text,
+                              structured: ["count": rows.count, "marks": rows, "notes": noteRows])
         }
     ),
 
@@ -241,33 +258,28 @@ let folderTools: [Tool] = [
         name: "read_page",
         title: "Read one page",
         description: "The text of a single page, for reading around a highlight rather "
-            + "than pulling in the whole document.",
+            + "than pulling in the whole document. Give it either a path or a document_id.",
         inputSchema: [
             "type": "object",
             "properties": [
+                "document_id": ["type": "string"],
                 "path": ["type": "string"],
                 "page": ["type": "integer", "description": "1-based, as the app shows it"],
                 "password": ["type": "string"],
             ],
-            "required": ["path", "page"],
+            "required": ["page"],
         ],
         run: { arguments in
-            let path = try requireString(arguments, "path")
             guard let page = arguments["page"] as? Int, page > 0 else {
                 throw ToolFailure("'page' is required and starts at 1")
             }
-            guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else {
-                throw ToolFailure("cannot read that PDF: \(path)")
+            let (path, id) = try resolveDocument(arguments)
+            guard let path else {
+                throw ToolFailure("the library knows that document but not where it is now; "
+                    + "call it again with 'path'")
             }
-            if document.isLocked, let password = arguments["password"] as? String {
-                _ = document.unlock(withPassword: password)
-            }
-            guard page <= document.pageCount else {
-                throw ToolFailure("that document has \(document.pageCount) pages")
-            }
-            guard let text = document.page(at: page - 1)?.string, !text.isEmpty else {
-                throw ToolFailure("page \(page) has no text layer to read")
-            }
+            let read = try storedOrExtracted(path: path, documentID: id)
+            let text = try pageSlice(read.markdown, range: "\(page)")
             return ToolOutput(text: text, structured: ["page": page])
         }
     ),
