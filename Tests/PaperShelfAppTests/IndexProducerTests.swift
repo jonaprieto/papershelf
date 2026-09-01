@@ -1,5 +1,5 @@
 import XCTest
-import PaperShelfCore
+@testable import PaperShelfCore
 @testable import PaperShelf
 
 /// What the bulk index pass stores, which is the text every search reads. It has to carry
@@ -11,6 +11,14 @@ final class IndexProducerTests: XCTestCase {
             .appendingPathComponent(scratchName(name), isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func item(named name: String, modified: Date?) -> Item {
+        let url = URL(fileURLWithPath: "/tmp/\(scratchName("indexwork"))/\(name)")
+        var item = Item(root: url.deletingLastPathComponent(), source: url,
+                        destination: url, status: .renamed)
+        item.modifiedDate = modified
+        return item
     }
 
     func testABulkPassStoresPageMarkedMarkdown() async throws {
@@ -41,5 +49,76 @@ final class IndexProducerTests: XCTestCase {
 
         XCTAssertEqual(read.failures, 1)
         XCTAssertTrue(read.stored.isEmpty)
+    }
+
+    /// `indexedMarkdown` answers an empty string, not nil, for a document that opened but
+    /// has no text layer: a scan, and a permanent answer worth storing so the file is
+    /// never read again. `readText`'s own pass-through -- not just `indexedMarkdown` on
+    /// its own -- has to treat that as a stored entry rather than a failure.
+    func testAScannedPageComesBackThroughReadTextAsAStoredEmptyEntry() async throws {
+        let directory = try scratch("index-producer-scan")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let scan = directory.appendingPathComponent("scan.pdf")
+        try makePDF(at: scan, password: nil)
+
+        let read = await Runner.readText([(id: "doc-3", url: scan)], passwords: [])
+
+        XCTAssertEqual(read.failures, 0)
+        let stored = try XCTUnwrap(read.stored.first)
+        XCTAssertEqual(stored.documentID, "doc-3")
+        XCTAssertTrue(stored.markdown.isEmpty)
+    }
+
+    // MARK: - indexWork
+
+    /// `indexWork`, the pure filter behind `Runner.indexText`: which documents a bulk
+    /// index pass has to re-read. Plain `Item` and `TextIndexRow` values in, so none of
+    /// this needs `Library.shared` or `Runner.results`.
+    ///
+    /// The mutation a reviewer confirmed the whole suite would otherwise miss: a literal
+    /// `.markdown` in place of `row.format`. A row with no format is text stored before
+    /// page markers existed, and is stale however recently it was written -- newer than
+    /// the file's own modification date included.
+    func testANilFormatRowNeedsReindexingEvenWhenNewerThanTheFile() throws {
+        let url = URL(fileURLWithPath: "/tmp/\(scratchName("indexwork"))/paper.pdf")
+        let destination = url.deletingLastPathComponent().appendingPathComponent("renamed.pdf")
+        var moved = Item(root: url.deletingLastPathComponent(), source: url,
+                         destination: destination, status: .moved)
+        moved.modifiedDate = Date(timeIntervalSince1970: 1_000)
+        moved.carriedOut = true
+
+        let row = TextIndexRow(path: moved.key, documentID: "doc-nil-format",
+                               extractedAt: Date(timeIntervalSince1970: 2_000), format: nil)
+
+        let work = indexWork(snapshot: [moved], rows: [row])
+
+        let entry = try XCTUnwrap(work.first)
+        XCTAssertEqual(entry.id, "doc-nil-format")
+        XCTAssertEqual(entry.url, moved.currentURL,
+                       "the file is read where it is now, not where it started")
+        XCTAssertNotEqual(moved.currentURL, moved.source,
+                          "the fixture must actually separate the two for this to prove anything")
+    }
+
+    /// A document the library has never seen has no row to match, and is left alone
+    /// rather than treated as needing indexing by default.
+    func testADocumentWithNoMatchingRowIsSkipped() {
+        let solo = item(named: "unknown.pdf", modified: Date(timeIntervalSince1970: 1_000))
+
+        let work = indexWork(snapshot: [solo], rows: [])
+
+        XCTAssertTrue(work.isEmpty)
+    }
+
+    /// A row already read after the file's last change, in the current format, needs
+    /// nothing: not every row in the library becomes work.
+    func testAnUpToDateDocumentIsNotReindexed() {
+        let current = item(named: "current.pdf", modified: Date(timeIntervalSince1970: 1_000))
+        let row = TextIndexRow(path: current.key, documentID: "doc-current",
+                               extractedAt: Date(timeIntervalSince1970: 2_000), format: .markdown)
+
+        let work = indexWork(snapshot: [current], rows: [row])
+
+        XCTAssertTrue(work.isEmpty)
     }
 }

@@ -26,16 +26,7 @@ extension Runner {
             guard let library = Library.shared,
                   let rows = try? await library.textIndexRows() else { return }
 
-            let byPath = Dictionary(rows.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
-            let modified = Dictionary(snapshot.map { ($0.key, $0.modifiedDate) },
-                                      uniquingKeysWith: { first, _ in first })
-            let work = snapshot.compactMap { item -> (id: String, url: URL)? in
-                guard let row = byPath[item.key] else { return nil }
-                guard needsIndexing(extractedAt: row.extractedAt,
-                                    fileModified: modified[item.key] ?? nil,
-                                    format: row.format) else { return nil }
-                return (row.documentID, item.currentURL)
-            }
+            let work = indexWork(snapshot: snapshot, rows: rows)
             guard !work.isEmpty else { return }
             await MainActor.run { self?.activity.indexTotal = work.count }
 
@@ -116,5 +107,31 @@ extension Runner {
     func refreshIndexedCount() async {
         guard let library = Library.shared else { return }
         setIndexedTextCount((try? await library.indexedTextCount()) ?? 0)
+    }
+}
+
+/// Which documents in `snapshot` a bulk index pass has to re-read: present in the
+/// library under `item.key`, and either never indexed, indexed before the file's current
+/// modification date, or indexed by a producer that predates page markers.
+///
+/// Plain values in, plain values out, with no dependency on `Library.shared`, `Runner`,
+/// or any actor, so this is the one place a test can reach without seeding either. `rows`
+/// is taken as `library.textIndexRows()` returns it rather than as a caller-built
+/// dictionary, so the one rule for what happens when two rows share a path lives here,
+/// next to the filter that depends on it, instead of being duplicated at every call site.
+///
+/// A document with no matching row is skipped, and it is `item.currentURL` -- where the
+/// file is now, not `item.source`, where it started -- that goes into the work list,
+/// because that is where a reader has to open it.
+func indexWork(snapshot: [Item], rows: [TextIndexRow]) -> [(id: String, url: URL)] {
+    let byPath = Dictionary(rows.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+    let modified = Dictionary(snapshot.map { ($0.key, $0.modifiedDate) },
+                              uniquingKeysWith: { first, _ in first })
+    return snapshot.compactMap { item in
+        guard let row = byPath[item.key] else { return nil }
+        guard needsIndexing(extractedAt: row.extractedAt,
+                            fileModified: modified[item.key] ?? nil,
+                            format: row.format) else { return nil }
+        return (row.documentID, item.currentURL)
     }
 }
