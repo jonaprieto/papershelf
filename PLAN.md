@@ -99,6 +99,18 @@ Relevant areas: `Markdown.swift`, `Annotations.swift`, `Prefs.swift`, and the re
 
 Relevant areas: `AI.swift`, `Reading.swift`, and `Resources/Info.plist`.
 
+### 8. Preserve annotation text fidelity
+
+- Fix corrupted or incomplete quoted text shown in the Notes rail after highlighting.
+- Preserve word boundaries, punctuation, Unicode characters, ligatures, and multi-line text
+  when reading a PDF selection or annotation.
+- Keep the exact same text across the PDF annotation, Notes rail, Markdown export, and
+  generated sidecar.
+- Verify that the fix does not change the visual highlight geometry or page navigation.
+
+Relevant areas: `Annotations.swift`, `Reading.swift`, `Markdown.swift`, and PDF text
+extraction helpers.
+
 ## Verification
 
 Add focused coverage for:
@@ -111,6 +123,7 @@ Add focused coverage for:
 - Markdown sidecar content, generated header, overwrite behavior, and toggle behavior.
 - Sidecar movement during renaming.
 - Transcription request construction and failure handling.
+- Annotation text fidelity for multi-line, Unicode, and ligature-containing selections.
 
 After each workstream, run:
 
