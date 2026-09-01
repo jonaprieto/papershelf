@@ -21,6 +21,11 @@ func decodeCursor(_ value: Any?) throws -> Int {
 
 /// One search result: what the document is, and the passages that matched with the page
 /// each is on. A researcher asking a question wants the quote, not a second round trip.
+///
+/// The price of that quote is a full load of the document's stored Markdown, up to two
+/// million characters, scanned case and diacritic insensitively; a default search pays that
+/// for up to twenty hits, a limit raised to the clamp for up to a hundred. Acceptable as it
+/// stands, but nothing here would warn a later change that raises a default limit.
 func hit(_ document: LibraryReader.DocumentSummary, query: String,
          reader: LibraryReader) -> [String: Any] {
     var row = describeDocument(document)

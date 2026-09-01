@@ -24,9 +24,9 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 14 against
-# the scratch one.
-check("no reply to a notification", len(seen) == 7 + 5 + 14)
+# first run (one of its 8 lines is a notification), 5 against the missing library, 18 against
+# the scratch one (14 original plus 4 forcing pagination and exercising cursor rejection).
+check("no reply to a notification", len(seen) == 7 + 5 + 18)
 
 d = result("d")
 check(
@@ -205,6 +205,46 @@ dupes = result("53").get("structuredContent", {}).get("groups", [])
 check(
     "duplicates are found library-wide by content hash",
     len(dupes) == 1 and len(dupes[0].get("paths", [])) == 2,
+)
+
+# Pagination, forced by an explicit limit smaller than the fixture's two documents: neither
+# default limit (100 for list_documents, 20 for search_documents) is ever small enough for
+# documents.count == limit to fire against a two-document library, so nothing else in this
+# script ever produces a next_cursor or feeds one back in.
+page_one = result("54").get("structuredContent", {})
+check(
+    "a limit that exhausts itself against the fixture produces a next_cursor",
+    page_one.get("next_cursor")
+    == "b2Zmc2V0OjE=",  # encodeCursor(1): base64 of "offset:1"
+)
+page_one_paths = {d.get("path") for d in page_one.get("documents", [])}
+
+page_two = result("55").get("structuredContent", {})
+page_two_paths = {d.get("path") for d in page_two.get("documents", [])}
+check(
+    "feeding the cursor back in advances to the documents the first page did not have",
+    len(page_one_paths) == 1
+    and len(page_two_paths) == 1
+    and page_one_paths.isdisjoint(page_two_paths),
+)
+
+malformed_cursor = result("56")
+check(
+    "a cursor that is not base64 this server ever handed out is isError, not a crash "
+    "or a silent fall back to offset zero",
+    malformed_cursor.get("isError") is True
+    and "cursor" in malformed_cursor.get("content", [{}])[0].get("text", "").lower(),
+)
+
+# base64 of "offset:-1", built the same way encodeCursor builds a real cursor: well-formed
+# base64 that decodes cleanly, so only decodeCursor's own offset >= 0 check can catch it.
+# SQLite reads a negative LIMIT as unlimited, so this is the guard against a bad cursor
+# dumping the whole library.
+negative_cursor = result("57")
+check(
+    "a cursor that decodes to a negative offset is refused, not treated as offset zero",
+    negative_cursor.get("isError") is True
+    and "cursor" in negative_cursor.get("content", [{}])[0].get("text", "").lower(),
 )
 
 sys.exit(1 if check.failed else 0)

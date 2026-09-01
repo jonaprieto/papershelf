@@ -143,7 +143,14 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" "$BIN" 2>/dev/null
 
-# The same tools against the scratch library above.
+# The same tools against the scratch library above. The last four force pagination with an
+# explicit small limit against the fixture's two documents (ids 54-55, since the fixture is
+# too small for any default limit to ever produce a next_cursor on its own), then confirm a
+# cursor this server never handed out is refused rather than crashing or quietly resetting to
+# offset zero: one that is not base64 at all (id 56), and one that is well-formed base64 but
+# decodes to a negative offset, built the same way encodeCursor builds a real one, since that
+# is the guard standing between a bad argument and an unclamped SQLite LIMIT reading negative
+# as unlimited (id 57).
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":"40","method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"41","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
@@ -159,5 +166,9 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"51","method":"tools/call","params":{"name":"list_documents","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"52","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"categorical imperative"}}}' \
   '{"jsonrpc":"2.0","id":"53","method":"tools/call","params":{"name":"find_duplicates","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":"54","method":"tools/call","params":{"name":"list_documents","arguments":{"limit":1}}}' \
+  '{"jsonrpc":"2.0","id":"55","method":"tools/call","params":{"name":"list_documents","arguments":{"limit":1,"cursor":"b2Zmc2V0OjE="}}}' \
+  '{"jsonrpc":"2.0","id":"56","method":"tools/call","params":{"name":"list_documents","arguments":{"cursor":"not-a-real-cursor"}}}' \
+  '{"jsonrpc":"2.0","id":"57","method":"tools/call","params":{"name":"list_documents","arguments":{"cursor":"b2Zmc2V0Oi0x"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py
