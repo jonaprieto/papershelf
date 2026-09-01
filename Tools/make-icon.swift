@@ -33,6 +33,10 @@ func draw(into ctx: CGContext, side: CGFloat) {
                            end: CGPoint(x: 0, y: 90), options: [])
     ctx.restoreGState()
 
+    // The plate leaves 197 units above the books and 84 below them. Move the content
+    // by half that 113-unit difference so its centre matches the plate's centre.
+    ctx.translateBy(x: 0, y: 56)
+
     // Three spines of unequal height standing on a shelf rule, seen edge-on. They sit
     // on the shelf rather than floating above it, and the short one leans, which is what
     // keeps the row from reading as a bar chart at 16pt.

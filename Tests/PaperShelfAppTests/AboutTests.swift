@@ -58,4 +58,15 @@ final class AboutTests: XCTestCase {
         XCTAssertTrue(text.contains(paperShelfVersion),
                        "CHANGELOG.md has no entry for \(paperShelfVersion)")
     }
+
+    func testTheIconGeneratorCentersItsContentOnThePlate() throws {
+        let source = try String(contentsOf: repositoryRoot.appendingPathComponent("Tools/make-icon.swift"),
+                                encoding: .utf8)
+        let plateCenter = (90.0 + 914.0) / 2.0
+        let contentCenter = (174.0 + 717.0) / 2.0 + 56.0
+
+        XCTAssertTrue(source.contains("ctx.translateBy(x: 0, y: 56)"),
+                      "the generated icon content must use the centring transform")
+        XCTAssertEqual(contentCenter, plateCenter, accuracy: 1.0)
+    }
 }
