@@ -17,6 +17,8 @@
 - Expose review, apply, and existing rename actions in the command palette.
 - Add a direct **Open Settings** palette action while retaining searchable individual settings.
 - Keep applying unavailable until a current review exists.
+- Restore Finder-style context menus for catalogue cards and list rows, including the
+  recoverable **Move to Trash** action that is completed through the existing Apply flow.
 
 Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 

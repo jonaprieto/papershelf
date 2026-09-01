@@ -2057,6 +2057,7 @@ struct ResultsPane: View {
                         // Draggable like the list's rows and the sidebar's: a cover is a
                         // file, and dropping one on a project files it there.
                         .onDrag { NSItemProvider(contentsOf: item.currentURL) ?? NSItemProvider() }
+                        .contextMenu { fileMenu(item) }
                     }
                 }
                 .padding(Space.gutter)
