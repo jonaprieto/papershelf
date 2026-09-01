@@ -85,6 +85,48 @@ func makeScratchPDF(pages: Int = 1) throws -> URL {
     return url
 }
 
+/// Writes a multi-page PDF where each page's text is chosen independently: `nil` draws a
+/// filled rect with no text, as `makeScratchPDF` does, and a string draws real, extractable
+/// text, as `makeTextPDF` does. This is what lets a test put a blank page ahead of a page
+/// that has text, which neither of those on its own can produce.
+func makeMixedPDF(at url: URL, pageTexts: [String?], password: String? = nil) throws {
+    let raw = NSMutableData()
+    var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+    let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
+    for text in pageTexts {
+        ctx.beginPDFPage(nil)
+        if let text {
+            let attributed = NSAttributedString(
+                string: text,
+                attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.black]
+            )
+            let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+            let frame = CTFramesetterCreateFrame(
+                framesetter, CFRange(location: 0, length: 0),
+                CGPath(rect: CGRect(x: 40, y: 40, width: 520, height: 700), transform: nil), nil
+            )
+            CTFrameDraw(frame, ctx)
+        } else {
+            ctx.setFillColor(CGColor(gray: 0.6, alpha: 1))
+            ctx.fill(CGRect(x: 40, y: 40, width: 500, height: 700))
+        }
+        ctx.endPDFPage()
+    }
+    ctx.closePDF()
+
+    guard let doc = PDFDocument(data: raw as Data) else {
+        throw NSError(domain: "TestSupport", code: 5)
+    }
+    var options: [PDFDocumentWriteOption: Any] = [:]
+    if let password {
+        options[.ownerPasswordOption] = password
+        options[.userPasswordOption] = password
+    }
+    guard doc.write(to: url, withOptions: options) else {
+        throw NSError(domain: "TestSupport", code: 6)
+    }
+}
+
 /// A unique name for a scratch directory, with no digits in it.
 ///
 /// A UUID is written in blocks separated by dashes, so one containing a block like `1974`

@@ -45,6 +45,24 @@ final class TextIndexTests: XCTestCase {
                                      passwords: []))
     }
 
+    /// A blank first page must not shift the number reported for the page after it: a
+    /// searcher told a match is on "page 2" needs that to mean the PDF's own second page,
+    /// not the second marker this function happened to emit.
+    func testAPageMarkerIsThePDFsOwnPageNumberNotACountOfMarkersEmitted() throws {
+        let directory = try scratch("text-index-mixed")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("mixed.pdf")
+        try makeMixedPDF(at: file, pageTexts: [nil, "Stochastic epidemic models"])
+
+        // The first page must carry no extractable text at all, or this test proves nothing.
+        let document = try XCTUnwrap(loadPDF(file))
+        XCTAssertTrue((document.page(at: 0)?.string ?? "").isEmpty)
+
+        let read = try XCTUnwrap(indexedMarkdown(of: file, passwords: []))
+        XCTAssertTrue(read.text.contains("## Page 2"))
+        XCTAssertFalse(read.text.contains("## Page 1"))
+    }
+
     func testALockedDocumentNoPasswordOpensIsNotIndexed() throws {
         let directory = try scratch("text-index-locked")
         defer { try? FileManager.default.removeItem(at: directory) }
