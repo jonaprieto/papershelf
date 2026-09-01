@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import PaperShelf
 
 /// The highlighters, which two windows show and one window edits.
@@ -90,5 +91,22 @@ final class PaletteTests: XCTestCase {
         let renamedPaper = HighlightMeaningScope.document(id: paperID, name: "renamed.pdf")
         XCTAssertEqual(palette.meaning(for: style, scope: renamedPaper), "Delete",
                        "a filename change keeps the paper override")
+    }
+
+    func testFolderOverridesColourAndMeaningForItsDocuments() {
+        let palette = Palette.shared
+        let style = palette.styles[0]
+        let folder = HighlightMeaningScope.folder(path: "/tmp/papers-\(UUID().uuidString)",
+                                                   name: "papers")
+        defer { palette.resetMeanings(in: folder) }
+
+        palette.setColour(Color(nsColor: .systemBlue), on: style, scope: folder)
+        palette.setMeaning("Rewrite", on: style, scope: folder)
+
+        let scoped = try! XCTUnwrap(
+            palette.styles(for: [.document(id: "doc", name: "paper.pdf"), folder, .library])
+                .first { $0.id == style.id })
+        XCTAssertEqual(scoped.meaning, "Rewrite")
+        XCTAssertLessThan(scoped.distance(to: .systemBlue), 0.0001)
     }
 }

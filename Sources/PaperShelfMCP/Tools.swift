@@ -288,12 +288,16 @@ let folderTools: [Tool] = [
             + "anything written about the document in PaperShelf's own notes. This is what "
             + "the person reading the document chose to mark, so it is the best starting "
             + "point for discussing the document with them. Give it either a path or a "
-            + "document_id; path wins if both are given.",
+            + "document_id; path wins if both are given. The answer is live from the PDF. "
+            + "Save its revision and pass it back as since_revision on the next call to "
+            + "learn whether highlights, notes, or profile settings need to be pulled. "
+            + "Each mark also includes its stored color when the PDF provides one.",
         inputSchema: [
             "type": "object",
             "properties": [
                 "document_id": ["type": "string"],
                 "path": ["type": "string", "description": "Absolute path to a PDF"],
+                "since_revision": ["type": "string", "description": "A revision returned by an earlier call; unchanged data is not repeated."],
             ],
         ],
         run: { arguments in
@@ -331,19 +335,42 @@ let folderTools: [Tool] = [
                                                "file_missing": true])
             }
             let marks = pdfMarks(in: URL(fileURLWithPath: path), passwords: Prefs.passwords)
+            let noteRevision = id.flatMap { documentID -> String? in
+                guard let reader = try? LibraryReader.open() else { return nil }
+                return try? reader.noteRevision(forDocument: documentID)
+            } ?? ""
+            let fileValues = try? URL(fileURLWithPath: path).resourceValues(
+                forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let profileStamp: String
+            if let profileURL = highlightProfileURL(),
+               let values = try? profileURL.resourceValues(
+                   forKeys: [.fileSizeKey, .contentModificationDateKey]) {
+                profileStamp = "\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+            } else {
+                profileStamp = "0:0"
+            }
+            let revision = "\(fileValues?.fileSize ?? 0):\(fileValues?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(noteRevision):\(profileStamp)"
+            if let since = arguments["since_revision"] as? String, since == revision {
+                return ToolOutput(text: "No highlight or note changes since revision \(revision).",
+                                  structured: ["changed": false, "revision": revision,
+                                               "count": marks.count, "notes": notes.count])
+            }
             guard !marks.isEmpty || !notes.isEmpty else {
                 return ToolOutput(text: "Nothing is marked in that document, and nothing "
-                                        + "has been written about it.", structured: nil)
+                                        + "has been written about it.",
+                                  structured: ["changed": true, "revision": revision,
+                                               "count": 0, "marks": [], "notes": []])
             }
             let rows = marks.map { mark -> [String: Any] in
                 var row: [String: Any] = ["page": mark.page, "kind": mark.kind]
                 if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
                 if !mark.note.isEmpty { row["note"] = mark.note }
+                if !mark.colour.isEmpty { row["color"] = mark.colour }
                 return row
             }
             let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
             var text = marks.map { mark in
-                var line = "p.\(mark.page) [\(mark.kind)]"
+                var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")]"
                 if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
                 if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
                 return line
@@ -353,7 +380,8 @@ let folderTools: [Tool] = [
                     + notes.map { "  " + $0.body }.joined(separator: "\n")
             }
             return ToolOutput(text: text,
-                              structured: ["count": rows.count, "marks": rows, "notes": noteRows])
+                              structured: ["changed": true, "revision": revision,
+                                           "count": rows.count, "marks": rows, "notes": noteRows])
         }
     ),
 

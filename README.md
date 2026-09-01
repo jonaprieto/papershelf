@@ -406,12 +406,22 @@ command = "/Applications/PaperShelf.app/Contents/MacOS/papershelf-mcp"
 ```
 
 The tools are `list_documents`, `search_documents`, `read_document`, `read_page`,
-`list_highlights`, `bibliography`, `find_duplicates`, `list_projects`,
+`list_highlights`, `get_highlight_profile`, `set_highlight_profile`, `bibliography`,
+`find_duplicates`, `list_projects`,
 `list_project_documents`, `search_project`, `list_tags`, `documents_by_tag`,
 `add_to_project` and `set_tags`. Every result carries a `document_id` that
 `read_document`, `read_page`, `list_highlights`, `add_to_project` and `set_tags` all
 accept, so a document a search found can be read or filed without ever naming its path.
-Paths, where they appear, are absolute paths on this machine.
+Paths, where they appear, are absolute paths on this machine. `list_highlights` reads the
+current PDF rather than a cache, includes a revision and stored highlight colors, and accepts
+that revision as `since_revision` on a later call. If nothing changed, it returns
+`changed: false` without repeating all the marks; if it changed, it returns the complete current
+set of highlights and notes.
+
+`get_highlight_profile` and `set_highlight_profile` read and update the meaning and color of a
+palette slot at `library`, `folder`, `project`, or `document` scope. Use the stable `style_id`
+returned by the getter. The app reloads the shared profile when its Notes rail or settings next
+appears, and document overrides use the library document id so renaming a PDF does not lose them.
 
 Two more tools, `propose_file_changes` and `apply_file_changes`, can rename files to match
 PaperShelf's own naming rules. They are off until **Let it rename and move files** is
@@ -458,6 +468,14 @@ that nothing looks alike; pointing it at a folder instead also catches documents
 share their opening pages under different bytes. It can also propose renaming files to
 match PaperShelf's own naming rules, which stays off until you turn it on in Settings,
 Integrations, and a proposal always shows what would happen before anything moves.
+
+To keep a ChatGPT conversation current, ask it to read a document's highlights once with
+`list_highlights` and retain the returned `revision`. Later ask it to check for new marks and
+notes, passing that value as `since_revision`. A `changed: false` result means there is nothing
+new to import; a changed result contains the current highlights, notes, pages, colors, and
+quotes. This is an explicit pull from the local MCP server. A local stdio MCP server cannot
+push an unsolicited message into an already-open ChatGPT conversation, so the app's Notes rail
+still provides the explicit Open in ChatGPT and Copy for ChatGPT handoff actions.
 
 Note that this is the desktop app's own plugin system. ChatGPT on the web connects to MCP
 servers over HTTPS only, so a local server is not reachable from there without exposing it.

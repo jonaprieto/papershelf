@@ -271,12 +271,14 @@ public struct PDFMark: Sendable, Equatable {
     public var kind: String
     public var quoted: String
     public var note: String
+    public var colour: String
 
-    public init(page: Int, kind: String, quoted: String, note: String) {
+    public init(page: Int, kind: String, quoted: String, note: String, colour: String = "") {
         self.page = page
         self.kind = kind
         self.quoted = quoted
         self.note = note
+        self.colour = colour
     }
 }
 
@@ -341,8 +343,16 @@ public func pdfMarks(in url: URL, passwords: [String] = []) -> [PDFMark] {
             guard !quoted.isEmpty || !note.isEmpty else { continue }
             // Pages are 1-based everywhere this app shows one.
             found.append(PDFMark(page: index + 1, kind: type.lowercased(),
-                                 quoted: quoted, note: note))
+                                 quoted: quoted, note: note,
+                                 colour: annotationColour(annotation.color)))
         }
     }
     return found
+}
+
+private func annotationColour(_ colour: NSColor?) -> String {
+    guard let rgb = colour?.usingColorSpace(.sRGB) else { return "" }
+    let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+        .map { Int((max(0, min(1, $0)) * 255).rounded()) }
+    return String(format: "#%02X%02X%02X", channels[0], channels[1], channels[2])
 }

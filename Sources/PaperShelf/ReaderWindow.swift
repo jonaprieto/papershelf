@@ -137,8 +137,17 @@ struct ReaderWindow: View {
     }
 
     private var nextColour: NSColor {
-        (palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour }
-            ?? palette.styles.first)?.nsColor ?? .systemYellow
+        (currentStyles.first { $0.id.uuidString == prefs.lastHighlightColour }
+            ?? currentStyles.first)?.nsColor ?? .systemYellow
+    }
+
+    private var currentMeaningScopes: [HighlightMeaningScope] {
+        [.forDocument(url, id: documentID),
+         .forFolder(url.deletingLastPathComponent()), .library]
+    }
+
+    private var currentStyles: [HighlightStyle] {
+        palette.styles(for: currentMeaningScopes)
     }
 
     private func selectMark(at point: CGPoint) {
@@ -154,7 +163,7 @@ struct ReaderWindow: View {
     private var selectionBar: some View {
         if prefs.selectionPalette, annotator.hasSelection {
             HStack(spacing: Space.step) {
-                ForEach(palette.styles) { style in
+                ForEach(currentStyles) { style in
                     Button {
                         _ = annotator.highlightSelection(colour: style.nsColor)
                         prefs.lastHighlightColour = style.id.uuidString
@@ -162,7 +171,7 @@ struct ReaderWindow: View {
                         Circle().fill(Color(style.nsColor)).frame(width: 16, height: 16)
                     }
                     .buttonStyle(.plain)
-                    .help(palette.meaning(for: style.nsColor))
+                    .help(palette.meaning(for: style.nsColor, scopes: currentMeaningScopes))
                 }
                 Divider().frame(height: 14)
                 Button {
@@ -194,8 +203,8 @@ struct ReaderWindow: View {
             return .handled
         }
         guard let digit = Int(press.characters), (1...5).contains(digit),
-              palette.styles.indices.contains(digit - 1) else { return .ignored }
-        let style = palette.styles[digit - 1]
+              currentStyles.indices.contains(digit - 1) else { return .ignored }
+        let style = currentStyles[digit - 1]
         _ = annotator.highlightSelection(colour: style.nsColor)
         prefs.lastHighlightColour = style.id.uuidString
         return .handled

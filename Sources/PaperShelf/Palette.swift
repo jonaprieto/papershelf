@@ -1,17 +1,20 @@
 import SwiftUI
 import AppKit
+import PaperShelfCore
 
-/// Where a highlighter's meaning applies. The PDF keeps its colour; this only changes the
-/// label shown beside it and in exported notes.
+/// Where a highlighter's meaning and palette colour apply. Existing PDF annotations keep the
+/// colour stored in the file; new marks and the notes UI use the scoped profile.
 enum HighlightMeaningScope: Hashable, Identifiable {
     case library
     case document(id: String, name: String)
+    case folder(path: String, name: String)
     case project(id: Int64, name: String)
 
     var id: String {
         switch self {
         case .library: return "library"
         case .document(let id, _): return "document:" + id
+        case .folder(let path, _): return "folder:" + path
         case .project(let id, _): return "project:\(id)"
         }
     }
@@ -20,6 +23,7 @@ enum HighlightMeaningScope: Hashable, Identifiable {
         switch self {
         case .library: return "Whole library"
         case .document(_, let name): return name
+        case .folder(_, let name): return name
         case .project(_, let name): return name
         }
     }
@@ -28,6 +32,7 @@ enum HighlightMeaningScope: Hashable, Identifiable {
         switch self {
         case .library: return "Whole library"
         case .document: return "This paper"
+        case .folder(_, let name): return "Folder: \(name)"
         case .project(_, let name): return "Project: \(name)"
         }
     }
@@ -37,6 +42,11 @@ enum HighlightMeaningScope: Hashable, Identifiable {
     static func forDocument(_ url: URL, id: String? = nil) -> Self {
         .document(id: id ?? url.resolvingSymlinksInPath().path,
                   name: url.lastPathComponent)
+    }
+
+    static func forFolder(_ url: URL) -> Self {
+        let resolved = url.resolvingSymlinksInPath()
+        return .folder(path: resolved.path, name: resolved.lastPathComponent)
     }
 }
 
@@ -79,6 +89,14 @@ struct HighlightStyle: Codable, Identifiable, Equatable {
     }
 }
 
+private extension HighlightStyle {
+    init?(_ stored: HighlightProfileStyle) {
+        guard let id = UUID(uuidString: stored.id) else { return nil }
+        self.init(id: id, red: stored.red, green: stored.green, blue: stored.blue,
+                  meaning: stored.meaning)
+    }
+}
+
 /// The reader's highlighters: which colours exist, in what order, meaning what.
 ///
 /// A colour scheme is personal, so this is a list to be edited rather than a fixed set.
@@ -100,23 +118,36 @@ final class Palette {
 
     private let key = "highlightPalette"
     private let scopedMeaningKey = "highlightMeaningOverrides"
-    private var scopedMeanings: [String: [String: String]] = [:]
+    private var scopedOverrides: [String: [String: HighlightProfileOverride]] = [:]
 
-    /// A starting point, not a claim about how anyone reads.
+    /// A starting point, not a claim about how anyone reads. Stable ids let the MCP process
+    /// address the same highlighter without depending on a process-local UUID.
     static let defaults: [HighlightStyle] = [
-        HighlightStyle(red: 1.00, green: 0.85, blue: 0.30, meaning: "Worth remembering"),
-        HighlightStyle(red: 0.55, green: 0.87, blue: 0.55, meaning: "Agree, or confirmed"),
-        HighlightStyle(red: 0.55, green: 0.78, blue: 1.00, meaning: "Definition or key term"),
-        HighlightStyle(red: 1.00, green: 0.65, blue: 0.75, meaning: "Disagree, or doubtful"),
-        HighlightStyle(red: 0.78, green: 0.66, blue: 1.00, meaning: "Follow up"),
+        HighlightStyle(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, red: 1.00, green: 0.85, blue: 0.30, meaning: "Worth remembering"),
+        HighlightStyle(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, red: 0.55, green: 0.87, blue: 0.55, meaning: "Agree, or confirmed"),
+        HighlightStyle(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, red: 0.55, green: 0.78, blue: 1.00, meaning: "Definition or key term"),
+        HighlightStyle(id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!, red: 1.00, green: 0.65, blue: 0.75, meaning: "Disagree, or doubtful"),
+        HighlightStyle(id: UUID(uuidString: "00000000-0000-0000-0000-000000000005")!, red: 0.78, green: 0.66, blue: 1.00, meaning: "Follow up"),
     ]
 
     private init() {
-        load()
-        loadScopedMeanings()
+        if !loadSharedProfile() {
+            loadLegacyStyles()
+            loadLegacyMeanings()
+            saveProfile()
+        }
     }
 
-    private func load() {
+    private func loadSharedProfile() -> Bool {
+        guard let profile = readHighlightProfile(), !profile.styles.isEmpty else { return false }
+        let stored = profile.styles.compactMap(HighlightStyle.init)
+        guard !stored.isEmpty else { return false }
+        styles = stored
+        scopedOverrides = profile.overrides
+        return true
+    }
+
+    private func loadLegacyStyles() {
         guard let data = UserDefaults.standard.data(forKey: key),
               let stored = try? JSONDecoder().decode([HighlightStyle].self, from: data),
               !stored.isEmpty else {
@@ -126,21 +157,48 @@ final class Palette {
         styles = stored
     }
 
-    private func loadScopedMeanings() {
+    private func loadLegacyMeanings() {
         guard let data = UserDefaults.standard.data(forKey: scopedMeaningKey),
               let stored = try? JSONDecoder().decode([String: [String: String]].self, from: data)
         else { return }
-        scopedMeanings = stored
+        for (scope, meanings) in stored {
+            for (id, meaning) in meanings {
+                scopedOverrides[scope, default: [:]][id] = HighlightProfileOverride(meaning: meaning)
+            }
+        }
     }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(styles) else { return }
         UserDefaults.standard.set(data, forKey: key)
+        saveProfile()
     }
 
     private func saveScopedMeanings() {
-        guard let data = try? JSONEncoder().encode(scopedMeanings) else { return }
+        var meanings: [String: [String: String]] = [:]
+        for (scope, overrides) in scopedOverrides {
+            for (id, override) in overrides {
+                if let meaning = override.meaning {
+                    meanings[scope, default: [:]][id] = meaning
+                }
+            }
+        }
+        guard let data = try? JSONEncoder().encode(meanings) else { return }
         UserDefaults.standard.set(data, forKey: scopedMeaningKey)
+        saveProfile()
+    }
+
+    private func saveProfile() {
+        let stored = styles.map {
+            HighlightProfileStyle(id: $0.id.uuidString, red: $0.red, green: $0.green,
+                                  blue: $0.blue, meaning: $0.meaning)
+        }
+        try? writeHighlightProfile(HighlightProfile(styles: stored, overrides: scopedOverrides))
+    }
+
+    /// Picks up changes made by the MCP process when a notes or settings view appears.
+    func reloadSharedProfile() {
+        _ = loadSharedProfile()
     }
 
     func add() {
@@ -163,6 +221,18 @@ final class Palette {
         save()
     }
 
+    func setColour(_ colour: Color, on style: HighlightStyle, scope: HighlightMeaningScope) {
+        guard scope != .library, styles.contains(where: { $0.id == style.id }) else { return }
+        let resolved = NSColor(colour).usingColorSpace(.sRGB) ?? .yellow
+        var override = scopedOverrides[scope.storageKey]?[style.id.uuidString] ??
+            HighlightProfileOverride()
+        override.red = Double(resolved.redComponent)
+        override.green = Double(resolved.greenComponent)
+        override.blue = Double(resolved.blueComponent)
+        update(override, for: style, in: scope)
+        saveScopedMeanings()
+    }
+
     func setMeaning(_ meaning: String, on style: HighlightStyle) {
         guard let index = styles.firstIndex(where: { $0.id == style.id }) else { return }
         styles[index].meaning = meaning
@@ -176,20 +246,16 @@ final class Palette {
         guard scope != .library,
               styles.contains(where: { $0.id == style.id }) else { return }
         let value = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty || value == style.meaning {
-            scopedMeanings[scope.storageKey]?[style.id.uuidString] = nil
-            if scopedMeanings[scope.storageKey]?.isEmpty == true {
-                scopedMeanings[scope.storageKey] = nil
-            }
-        } else {
-            scopedMeanings[scope.storageKey, default: [:]][style.id.uuidString] = value
-        }
+        var override = scopedOverrides[scope.storageKey]?[style.id.uuidString] ??
+            HighlightProfileOverride()
+        override.meaning = value.isEmpty || value == style.meaning ? nil : value
+        update(override, for: style, in: scope)
         saveScopedMeanings()
     }
 
     func resetMeanings(in scope: HighlightMeaningScope) {
         guard scope != .library else { return }
-        scopedMeanings[scope.storageKey] = nil
+        scopedOverrides[scope.storageKey] = nil
         saveScopedMeanings()
     }
 
@@ -198,11 +264,43 @@ final class Palette {
         save()
     }
 
+    func styles(for scope: HighlightMeaningScope?) -> [HighlightStyle] {
+        guard let scope, scope != .library else { return styles }
+        return styles(for: [scope])
+    }
+
+    func styles(for scopes: [HighlightMeaningScope]) -> [HighlightStyle] {
+        var result = styles
+        for scope in scopes.reversed() where scope != .library {
+            for index in result.indices {
+                guard let override = scopedOverrides[scope.storageKey]?[result[index].id.uuidString]
+                else { continue }
+                result[index].red = override.red ?? result[index].red
+                result[index].green = override.green ?? result[index].green
+                result[index].blue = override.blue ?? result[index].blue
+                result[index].meaning = override.meaning ?? result[index].meaning
+            }
+        }
+        return result
+    }
+
+    private func update(_ override: HighlightProfileOverride, for style: HighlightStyle,
+                        in scope: HighlightMeaningScope) {
+        if override.isEmpty {
+            scopedOverrides[scope.storageKey]?[style.id.uuidString] = nil
+            if scopedOverrides[scope.storageKey]?.isEmpty == true {
+                scopedOverrides[scope.storageKey] = nil
+            }
+        } else {
+            scopedOverrides[scope.storageKey, default: [:]][style.id.uuidString] = override
+        }
+    }
+
     /// The palette entry a stored mark was painted with, or nil when it matches nothing
     /// here: files marked in other apps carry colours this palette has never held.
     func nearest(to colour: NSColor?) -> HighlightStyle? {
         guard let colour else { return nil }
-        return styles.min { $0.distance(to: colour) < $1.distance(to: colour) }
+        return nearest(to: colour, in: styles)
     }
 
 
@@ -215,11 +313,18 @@ final class Palette {
     }
 
     func meaning(for colour: NSColor?, scopes: [HighlightMeaningScope]) -> String {
-        let match = nearest(to: colour)
         // A mark this app made carries one of these colours exactly. A mark made in
         // Preview or Skim is near one at best, and whether that near miss is worth a name
         // is the preference: turned off, only an exact colour is named.
         let limit = Prefs.shared.labelForeignMarks ? 0.02 : 0.0002
+        for scope in scopes where scope != .library {
+            let scopedStyles = styles(for: [scope])
+            if let match = nearest(to: colour, in: scopedStyles),
+               match.distance(to: colour ?? .clear) < limit {
+                return match.meaning.isEmpty ? "Highlight" : match.meaning
+            }
+        }
+        let match = nearest(to: colour)
         guard let match, match.distance(to: colour ?? .clear) < limit else { return "Highlight" }
         return meaning(for: match, scopes: scopes)
     }
@@ -230,11 +335,16 @@ final class Palette {
 
     func meaning(for style: HighlightStyle, scopes: [HighlightMeaningScope]) -> String {
         for scope in scopes where scope != .library {
-            if let override = scopedMeanings[scope.storageKey]?[style.id.uuidString] {
+            if let override = scopedOverrides[scope.storageKey]?[style.id.uuidString]?.meaning {
                 return override
             }
         }
         return style.meaning.isEmpty ? "Highlight" : style.meaning
+    }
+
+    private func nearest(to colour: NSColor?, in styles: [HighlightStyle]) -> HighlightStyle? {
+        guard let colour else { return nil }
+        return styles.min { $0.distance(to: colour) < $1.distance(to: colour) }
     }
 }
 

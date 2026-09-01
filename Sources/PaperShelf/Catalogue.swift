@@ -739,12 +739,19 @@ struct ResultsPane: View {
 
     /// The colour the next highlight will be painted with, and what it means.
     private var currentStyle: HighlightStyle? {
-        palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
+        let styles = palette.styles(for: currentMeaningScopes)
+        return styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? styles.first
     }
 
     private var currentMeaningScope: HighlightMeaningScope? {
         guard let item = readerItem ?? selectedItem else { return nil }
         return .forDocument(item.currentURL)
+    }
+
+    private var currentMeaningScopes: [HighlightMeaningScope] {
+        guard let item = readerItem ?? selectedItem else { return [.library] }
+        return [.forDocument(item.currentURL),
+                .forFolder(item.currentURL.deletingLastPathComponent()), .library]
     }
 
     @ViewBuilder
@@ -813,8 +820,9 @@ struct ResultsPane: View {
     /// way to hand the file on.
     @ViewBuilder
     private var readerActions: some View {
+        let styles = palette.styles(for: currentMeaningScopes)
         Menu {
-            ForEach(palette.styles) { style in
+            ForEach(styles) { style in
                 Button {
                     prefs.lastHighlightColour = style.id.uuidString
                     if annotator.hasSelection { annotator.highlightSelection(colour: style.nsColor) }
@@ -1417,8 +1425,9 @@ struct ResultsPane: View {
     /// there is nothing selected — which is what a number key means once a mark is under
     /// the cursor rather than a fresh run of text.
     private func highlight(colourAt index: Int) {
-        guard palette.styles.indices.contains(index) else { return }
-        let colour = palette.styles[index].nsColor
+        let styles = palette.styles(for: currentMeaningScopes)
+        guard styles.indices.contains(index) else { return }
+        let colour = styles[index].nsColor
         if annotator.hasSelection {
             _ = annotator.highlightSelection(colour: colour)
         } else if let selected = annotator.selectedMark,

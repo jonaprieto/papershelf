@@ -59,10 +59,10 @@ Highlight meaning should be separate from presentation color. Provide default ro
 - Omit
 - Important
 
-Support editing the label, color, and shortcut at three scopes:
+Support editing the label, color, and shortcut at four scopes:
 
 ```text
-Paper override > Project override > Library defaults
+Paper override > Folder override > Project override > Library defaults
 ```
 
 - Store paper overrides using the library's stable document ID so renaming a PDF does not lose them.
@@ -72,7 +72,8 @@ Paper override > Project override > Library defaults
 - Show semantic labels in the Notes Rail, Markdown exports, and generated sidecars.
 - Changing a paper or project profile should immediately update the display and exports for its highlights.
 
-Relevant areas: `Annotations.swift`, `Prefs.swift`, `PaletteSettings.swift`, `Markdown.swift`, and existing library persistence.
+Relevant areas: `Annotations.swift`, `Prefs.swift`, `PaletteSettings.swift`, `Markdown.swift`,
+`HighlightProfile.swift`, `HighlightTools.swift`, and existing library persistence.
 
 ### 6. Synchronize notes to a generated Markdown sidecar
 
@@ -116,8 +117,21 @@ extraction helpers.
 - Add explicit Notes Rail actions to open all current highlights and notes in a new ChatGPT
   conversation or copy them into an existing one.
 - Reuse the complete Markdown export so pages, notes, and semantic meanings stay together.
+- Make `list_highlights` read live PDF annotations and document notes through MCP, returning a
+  revision and the stored mark colors.
+- Let ChatGPT pass that revision back as `since_revision`; unchanged documents return only a
+  `changed: false` response, while changed documents return the complete current set.
 - Keep automatic background synchronization deferred until there is an explicit privacy and
   consent design for sending future annotations off the machine.
+
+### 10. Share highlight profiles through MCP
+
+- Add `get_highlight_profile` and `set_highlight_profile` for library, folder, project, and
+  stable document scopes.
+- Store the shared profile in Application Support so the app and its MCP process use the same
+  stable style IDs, colors, and meanings.
+- Reload the shared profile when the Notes rail or settings appears, with document overrides
+  surviving file renames through the library document ID.
 
 ## Verification
 
@@ -133,6 +147,10 @@ Add focused coverage for:
 - Transcription request construction and failure handling.
 - Annotation text fidelity for multi-line, Unicode, and ligature-containing selections.
 - Complete notes handoff to ChatGPT without dropping pages, notes, or semantic meanings.
+- MCP revision polling reports new PDF marks, notes, and profile changes without repeating an
+  unchanged payload.
+- MCP highlight profile reads and writes work independently at library, folder, project, and
+  document scope.
 
 After each workstream, run:
 

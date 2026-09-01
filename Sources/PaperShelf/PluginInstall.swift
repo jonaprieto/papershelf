@@ -236,8 +236,11 @@ enum ChatGPTPlugin {
                 + "plugin lets ChatGPT read it: search the whole library, or one folder, "
                 + "and get back the matching passages with the page each one came from; "
                 + "open a document or a single page; list what you highlighted and the "
-                + "notes you left; pull a BibTeX entry for one paper or a whole reading "
-                + "project; and file what you find into projects and tags. It can also "
+                + "notes you left from the live PDF; poll a returned revision for new "
+                + "highlights and notes; read and update highlight colors and meanings "
+                + "for the library, a folder, a project, or one paper; pull a BibTeX "
+                + "entry for one paper or a whole reading project; and file what you find "
+                + "into projects and tags. It can also "
                 + "find duplicate documents by comparing their contents, so an empty "
                 + "result means no two are byte-for-byte identical, not that nothing "
                 + "looks alike. Renaming files to match PaperShelf's own naming rules is "
@@ -253,7 +256,7 @@ enum ChatGPTPlugin {
             "defaultPrompt": [
                 "What do I have on session types? Quote the relevant passages.",
                 "What did I highlight in the Milner paper?",
-                "File my papers on category theory into a project called Reading list.",
+                "Check whether my highlights in the Milner paper changed since the last revision.",
             ],
         ]
         if hasLogo {

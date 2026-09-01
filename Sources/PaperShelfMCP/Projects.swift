@@ -339,6 +339,14 @@ final class LibraryReader {
         }
     }
 
+    func noteRevision(forDocument id: String) throws -> String? {
+        try withStatement("SELECT MAX(updated_at) FROM notes WHERE document_id = ?;",
+                          bind: { statement in bindText(statement, 1, id) }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return columnText(statement, 0)
+        }
+    }
+
     /// Resolves whatever a caller has in hand to one document: the id a previous result
     /// handed back, a path on disk, or a title. Tried in that order, because an id is
     /// exact, a path is nearly exact, and a title is a guess.

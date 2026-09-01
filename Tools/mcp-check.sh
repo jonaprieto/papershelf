@@ -23,6 +23,7 @@ mkdir -p "$RENAMES"
 # verification pass reached a real user's disk in the first place.
 PLANS_DIR="$FOLDER/plans"
 mkdir -p "$PLANS_DIR"
+PROFILE_FILE="$FOLDER/highlight-profile.json"
 
 # Where the "did a proposal actually leave the file alone" stat below is recorded. The
 # request/response block that fills this in runs on the left of the final pipe to
@@ -389,7 +390,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$FOLDER\"}}}" \
   "{\"jsonrpc\":\"2.0\",\"id\":\"96\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
-  | PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
+  | PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" \
+    PAPERSHELF_HIGHLIGHT_PROFILE_PATH="$PROFILE_FILE" "$BIN" 2>/dev/null
 
 # The library-aware tools, with nothing indexed: pointed at a path guaranteed not to exist,
 # independent of whatever real library.sqlite this machine's own copy of PaperShelf may or
@@ -402,7 +404,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"33","method":"tools/call","params":{"name":"list_tags","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":"34","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"ethics"}}}' \
   | PAPERSHELF_LIBRARY_PATH="$FOLDER/no-such-library.sqlite" \
-    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
+    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" \
+    PAPERSHELF_HIGHLIGHT_PROFILE_PATH="$PROFILE_FILE" "$BIN" 2>/dev/null
 
 # The same tools against the scratch library above, now eight documents. The last four
 # force pagination with an explicit small limit (ids 54-55, since the fixture is too small
@@ -567,10 +570,22 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"102","method":"tools/call","params":{"name":"add_to_project","arguments":{"project":"Poison Project Creation","document_ids":["doc-1"]}}}' \
   '{"jsonrpc":"2.0","id":"103","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"Big Project","limit":5000}}}' \
   '{"jsonrpc":"2.0","id":"104","method":"tools/call","params":{"name":"documents_by_tag","arguments":{"tag":"bulk","limit":5000}}}' \
+  '{"jsonrpc":"2.0","id":"105","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":"106","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"library","style_id":"00000000-0000-0000-0000-000000000001","color":"#112233","meaning":"Delete"}}}' \
+  '{"jsonrpc":"2.0","id":"107","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"library"}}}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"108\",\"method\":\"tools/call\",\"params\":{\"name\":\"set_highlight_profile\",\"arguments\":{\"scope\":\"folder\",\"folder\":\"$RENAMES\",\"style_id\":\"00000000-0000-0000-0000-000000000001\",\"color\":\"#445566\",\"meaning\":\"Rewrite\"}}}" \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"109\",\"method\":\"tools/call\",\"params\":{\"name\":\"get_highlight_profile\",\"arguments\":{\"scope\":\"folder\",\"folder\":\"$RENAMES\"}}}" \
+  '{"jsonrpc":"2.0","id":"110","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"project","project":"Dissertation","style_id":"00000000-0000-0000-0000-000000000001","meaning":"Omit"}}}' \
+  '{"jsonrpc":"2.0","id":"111","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"project","project":"Dissertation"}}}' \
+  '{"jsonrpc":"2.0","id":"112","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"document","document_id":"doc-3","style_id":"00000000-0000-0000-0000-000000000001","meaning":"Review"}}}' \
+  '{"jsonrpc":"2.0","id":"113","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"document","document_id":"doc-3"}}}' \
+  '{"jsonrpc":"2.0","id":"114","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"document","document_id":"doc-3","style_id":"00000000-0000-0000-0000-000000000001","reset":true}}}' \
+  '{"jsonrpc":"2.0","id":"115","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-3"}}}' \
   '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \
-    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" "$BIN" 2>/dev/null
+    PAPERSHELF_TEST_PLANS_PATH_FOR_TESTS_ONLY="$PLANS_DIR" \
+    PAPERSHELF_HIGHLIGHT_PROFILE_PATH="$PROFILE_FILE" "$BIN" 2>/dev/null
 
 # What id 92's proposal actually left on disk, captured before the comment below is
 # appended: the real test that a proposal (a dry run) changes nothing, since the old

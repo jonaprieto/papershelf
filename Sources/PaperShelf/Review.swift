@@ -113,7 +113,8 @@ struct ReviewInspector: View {
     @State private var documentProjectScopes: [HighlightMeaningScope] = []
 
     private var lastStyle: HighlightStyle? {
-        palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? palette.styles.first
+        let styles = palette.styles(for: effectiveMeaningScopes)
+        return styles.first { $0.id.uuidString == prefs.lastHighlightColour } ?? styles.first
     }
 
     private var documentMeaningScope: HighlightMeaningScope {
@@ -121,7 +122,13 @@ struct ReviewInspector: View {
     }
 
     private var effectiveMeaningScopes: [HighlightMeaningScope] {
-        [documentMeaningScope] + documentProjectScopes + [.library]
+        [documentMeaningScope,
+         .forFolder(item.currentURL.deletingLastPathComponent())]
+            + documentProjectScopes + [.library]
+    }
+
+    private var effectiveStyles: [HighlightStyle] {
+        palette.styles(for: effectiveMeaningScopes)
     }
 
     private var hoveredMeaning: String? {
@@ -177,7 +184,7 @@ struct ReviewInspector: View {
     private var notesPanel: some View {
         NotesRail(annotator: annotator, palette: palette,
                   addingNote: $addingNote, noteText: $noteText,
-                  lastColour: (palette.styles.first ?? Palette.defaults[0]).nsColor,
+                  lastColour: (lastStyle ?? Palette.defaults[0]).nsColor,
                   title: item.destinationName,
                   source: item.currentURL.path,
                   close: {},
@@ -425,7 +432,7 @@ struct ReviewInspector: View {
                 // Measured from the palette, for the same reason the mark bar's is: these
                 // were 250 and 284, written when the palette had five colours in it, and
                 // the palette is a list the reader edits.
-                let bar = CGSize(width: CGFloat(palette.styles.count) * 27 + (handoff ? 106 : 72),
+                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 106 : 72),
                                  height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
@@ -496,7 +503,7 @@ struct ReviewInspector: View {
                 // squeezed the content into a number written for a five-colour palette,
                 // and a reader who had added two more got a trash can cut in half by the
                 // capsule's edge.
-                let bar = CGSize(width: CGFloat(palette.styles.count) * 27 + 96, height: 40)
+                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + 96, height: 40)
                 let above = box.minY - bar.height - 8
                 let y = above > 8 ? above : min(box.maxY + 8, geometry.size.height - bar.height - 8)
                 let x = min(max(box.midX - bar.width / 2, 8), max(8, geometry.size.width - bar.width - 8))
@@ -521,9 +528,11 @@ struct ReviewInspector: View {
     }
 
     private func markBar(_ mark: Annotator.Mark) -> some View {
-        let current = palette.nearest(to: mark.colour)
+        let current = effectiveStyles.min {
+            $0.distance(to: mark.colour) < $1.distance(to: mark.colour)
+        }
         return HStack(spacing: Space.step) {
-            ForEach(palette.styles) { style in
+            ForEach(effectiveStyles) { style in
                 Button { annotator.setColour(style.nsColor, on: mark) } label: {
                     Circle()
                         .fill(style.swatch)
@@ -567,7 +576,7 @@ struct ReviewInspector: View {
 
     private var selectionBar: some View {
         HStack(spacing: Space.step) {
-            ForEach(palette.styles) { style in
+            ForEach(effectiveStyles) { style in
                 Button {
                     annotator.highlightSelection(colour: style.nsColor)
                     prefs.lastHighlightColour = style.id.uuidString

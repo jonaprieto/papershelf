@@ -49,7 +49,7 @@ check.failed = False
 # with a different token than 92's, and the same folder proposed twice more (94, 95) with
 # only `recursive` differing between the two, which have to answer with different tokens
 # from each other despite describing the same one move.
-check("no reply to a notification", len(seen) == 10 + 5 + 60 + 3)
+check("no reply to a notification", len(seen) == 10 + 5 + 71 + 3)
 
 d = result("d")
 check(
@@ -108,6 +108,14 @@ check(
         "password" not in json.dumps(tool.get("inputSchema", {})).lower()
         for tool in listed_tools
     ),
+)
+list_highlights_spec = next(
+    (tool for tool in listed_tools if tool.get("name") == "list_highlights"), {}
+)
+check(
+    "list_highlights exposes revision polling",
+    "since_revision"
+    in list_highlights_spec.get("inputSchema", {}).get("properties", {}),
 )
 
 c = result("3")
@@ -357,6 +365,11 @@ check(
         "Korsgaard" in note.get("body", "")
         for note in result("59").get("structuredContent", {}).get("notes", [])
     ),
+)
+check(
+    "live highlight results carry a revision",
+    result("115").get("structuredContent", {}).get("changed") is True
+    and bool(result("115").get("structuredContent", {}).get("revision")),
 )
 page_range_text = " ".join(
     part.get("text", "") for part in result("60").get("content", [])
@@ -807,6 +820,46 @@ big_tag_listing = result("104")
 check(
     "documents_by_tag clamps the upper bound of limit, not only the lower one",
     big_tag_listing.get("structuredContent", {}).get("count") == 1000,
+)
+
+# Highlight profiles are shared between the app and MCP through one portable file. The
+# first read exposes stable ids; the following calls prove library, folder, project and
+# document overrides can each be written and read back without changing one another.
+profile_initial = result("105").get("structuredContent", {}).get("styles", [])
+check(
+    "get_highlight_profile exposes stable style ids",
+    len(profile_initial) == 5
+    and profile_initial[0].get("id") == "00000000-0000-0000-0000-000000000001",
+)
+library_profile = result("107").get("structuredContent", {})
+check(
+    "MCP updates the whole-library colour and meaning",
+    library_profile.get("scope") == "library"
+    and library_profile.get("styles", [{}])[0].get("color") == "#112233"
+    and library_profile.get("styles", [{}])[0].get("meaning") == "Delete",
+)
+folder_profile = result("109").get("structuredContent", {})
+check(
+    "MCP updates a folder colour and meaning",
+    folder_profile.get("scope", "").startswith("folder:")
+    and folder_profile.get("styles", [{}])[0].get("color") == "#445566"
+    and folder_profile.get("styles", [{}])[0].get("meaning") == "Rewrite",
+)
+project_profile = result("111").get("structuredContent", {})
+check(
+    "MCP updates a project meaning",
+    project_profile.get("scope") == "project:1"
+    and project_profile.get("styles", [{}])[0].get("meaning") == "Omit",
+)
+document_profile = result("113").get("structuredContent", {})
+check(
+    "MCP updates a document meaning",
+    document_profile.get("scope", "").startswith("document:")
+    and document_profile.get("styles", [{}])[0].get("meaning") == "Review",
+)
+check(
+    "MCP can reset a document override",
+    result("114").get("structuredContent", {}).get("reset") is True,
 )
 
 sys.exit(1 if check.failed else 0)

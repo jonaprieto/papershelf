@@ -313,18 +313,25 @@ struct NotesRail: View {
         return .forDocument(URL(fileURLWithPath: source), id: documentID)
     }
 
+    private var folderMeaningScope: HighlightMeaningScope? {
+        guard !source.isEmpty else { return nil }
+        return .forFolder(URL(fileURLWithPath: source).deletingLastPathComponent())
+    }
+
     private var currentMeaningScope: HighlightMeaningScope? {
         activeMeaningScope ?? defaultMeaningScope
     }
 
     private var effectiveMeaningScopes: [HighlightMeaningScope] {
         if let activeMeaningScope { return [activeMeaningScope] }
-        return ([defaultMeaningScope].compactMap { $0 } + effectiveProjectScopes + [.library])
+        return ([defaultMeaningScope, folderMeaningScope].compactMap { $0 }
+                + effectiveProjectScopes + [.library])
     }
 
     private var availableMeaningScopes: [HighlightMeaningScope] {
         var scopes: [HighlightMeaningScope] = []
         if let defaultMeaningScope { scopes.append(defaultMeaningScope) }
+        if let folderMeaningScope { scopes.append(folderMeaningScope) }
         scopes.append(contentsOf: projectScopes)
         scopes.append(.library)
         return scopes
@@ -450,7 +457,7 @@ struct NotesRail: View {
                             remove: { live.remove(mark) },
                             save: { live.setNote($0, on: mark) },
                             recolour: { live.setColour($0, on: mark) },
-                            styles: palette.styles,
+                            styles: palette.styles(for: effectiveMeaningScopes),
                             meaning: palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes),
                             styleMeaning: { palette.meaning(for: $0, scopes: effectiveMeaningScopes) },
                             documentTitle: title
@@ -498,7 +505,10 @@ struct NotesRail: View {
             }
         }
         .background(.background.secondary)
-        .onAppear { focusNoteInputIfNeeded() }
+        .onAppear {
+            palette.reloadSharedProfile()
+            focusNoteInputIfNeeded()
+        }
         .onChange(of: addingNote) { _, isAdding in
             noteInputFocused = false
             if isAdding { focusNoteInputIfNeeded() }
