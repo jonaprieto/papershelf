@@ -117,8 +117,9 @@ extension Runner {
 /// Plain values in, plain values out, with no dependency on `Library.shared`, `Runner`,
 /// or any actor, so this is the one place a test can reach without seeding either. `rows`
 /// is taken as `library.textIndexRows()` returns it rather than as a caller-built
-/// dictionary, so the one rule for what happens when two rows share a path lives here,
-/// next to the filter that depends on it, instead of being duplicated at every call site.
+/// dictionary, so the rule for what happens when two rows share a path lives here, next
+/// to the filter that depends on it, and a test builds its fixtures in the same shape the
+/// real caller receives.
 ///
 /// A document with no matching row is skipped, and it is `item.currentURL` -- where the
 /// file is now, not `item.source`, where it started -- that goes into the work list,
