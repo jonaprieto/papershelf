@@ -30,7 +30,16 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 
-### 3. Fix note and highlight interactions
+### 3. Add selectable PDF contrast modes
+
+- Preserve the current dark tint behavior as the default.
+- Add Normal, Dark tint, and White-on-black appearance choices.
+- Apply the effect only to the PDF canvas, not the Notes panel or application chrome.
+- Verify text PDFs, scanned PDFs, images, and highlights.
+
+Relevant areas: `Prefs.swift`, `Review.swift`, and `PaletteSettings.swift`.
+
+### 4. Fix note and highlight interactions
 
 - Pressing **Add Note** should immediately focus the note text field.
 - Make the highlighting-bar action explicitly visible and labelled **Add note**.
@@ -40,7 +49,7 @@ Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 
 Relevant areas: `Reading.swift`, `Annotations.swift`, `Review.swift`.
 
-### 4. Add customizable highlight semantics
+### 5. Add customizable highlight semantics
 
 Highlight meaning should be separate from presentation color. Provide default roles such as:
 
@@ -65,7 +74,7 @@ Paper override > Project override > Library defaults
 
 Relevant areas: `Annotations.swift`, `Prefs.swift`, `PaletteSettings.swift`, `Markdown.swift`, and existing library persistence.
 
-### 5. Synchronize notes to a generated Markdown sidecar
+### 6. Synchronize notes to a generated Markdown sidecar
 
 - Keep PDF annotations as the single source of truth.
 - Generate an accompanying file beside each PDF, initially named `<PDF stem> notes.md`.
@@ -78,7 +87,7 @@ Relevant areas: `Annotations.swift`, `Prefs.swift`, `PaletteSettings.swift`, `Ma
 
 Relevant areas: `Markdown.swift`, `Annotations.swift`, `Prefs.swift`, and the rename apply path.
 
-### 6. Add dictation to note inputs
+### 7. Add dictation to note inputs
 
 - Add a microphone button beside note inputs.
 - Record a short native macOS audio clip, then transcribe it when recording stops.
