@@ -97,6 +97,7 @@ final class Annotator {
 
     weak var view: PDFView?
     private(set) var url: URL?
+    private(set) var documentID: String?
 
     /// Bumped on every attach, so a scan still walking the file you just left stops
     /// instead of publishing its marks over the one you are looking at now.
@@ -122,6 +123,7 @@ final class Annotator {
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         self.view = view
         self.url = url
+        documentID = nil
         generation &+= 1
         marks = []
         contents = []
@@ -143,6 +145,10 @@ final class Annotator {
             self.readContents()
             self.startScanningForMarks()
         }
+    }
+
+    func setDocumentID(_ id: String?) {
+        documentID = id
     }
 
     /// A document attribute worth showing: a string, with something in it. PDFs written
@@ -544,7 +550,7 @@ final class Annotator {
         guard Prefs.shared.syncNotesSidecar else { return nil }
         let title = statedTitle?.isEmpty == false
             ? statedTitle! : url.deletingPathExtension().lastPathComponent
-        let scope = HighlightMeaningScope.forDocument(url)
+        let scope = HighlightMeaningScope.forDocument(url, id: documentID)
         let exports = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: Palette.shared.meaning(for: $0.colour, scope: scope),

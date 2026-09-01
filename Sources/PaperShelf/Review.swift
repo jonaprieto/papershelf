@@ -231,6 +231,7 @@ struct ReviewInspector: View {
             record = try? await library.document(atPath: path)
         }
         guard let record else { return }
+        annotator.setDocumentID(record.id)
         let projects = (try? await library.projects(containingDocument: record.id)) ?? []
         documentProjectScopes = projects.map { .project(id: $0.id, name: $0.name) }
     }

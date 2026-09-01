@@ -286,6 +286,7 @@ struct NotesRail: View {
         guard !Task.isCancelled, let document else { return }
         shadowView.document = document
         shadow.attach(shadowView, url: url)
+        if let documentID { shadow.setDocumentID(documentID) }
     }
 
     /// The meanings actually on this document, so the filter offers what is there rather
