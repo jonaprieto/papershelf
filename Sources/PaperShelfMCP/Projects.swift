@@ -189,7 +189,10 @@ final class LibraryReader {
     /// afterward: filtering afterward would rank against the whole library and then throw
     /// rows away, which for a broad query in a large library could drop every match this
     /// project actually has before `limit` is ever reached.
-    func search(inProject projectID: Int64, query: String, limit: Int) throws -> [DocumentSummary] {
+    ///
+    /// `offset` defaults to zero so `search_project` (`Tools.swift`), which has no reason to
+    /// page through a single project's results yet, keeps calling this with three arguments.
+    func search(inProject projectID: Int64, query: String, limit: Int, offset: Int = 0) throws -> [DocumentSummary] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
@@ -201,17 +204,183 @@ final class LibraryReader {
             JOIN project_members m ON m.document_id = d.id AND m.project_id = ?
             WHERE extracted_text_fts MATCH ?
             ORDER BY bm25(extracted_text_fts)
-            LIMIT ?;
+            LIMIT ? OFFSET ?;
             """, bind: { statement in
             sqlite3_bind_int64(statement, 1, projectID)
             bindText(statement, 2, phrase)
             sqlite3_bind_int64(statement, 3, Int64(limit))
+            sqlite3_bind_int64(statement, 4, Int64(offset))
         }) { statement in
             var results: [DocumentSummary] = []
             while sqlite3_step(statement) == SQLITE_ROW {
                 results.append(documentSummary(from: statement))
             }
             return results
+        }
+    }
+
+    // MARK: - The library as a whole
+
+    struct Totals {
+        let documents: Int
+        let withText: Int
+        let clipped: Int
+        /// Rows written before page markers existed. Worth reporting, because a search
+        /// over them cannot say a page and cannot see past the old cap.
+        let staleText: Int
+        let projects: Int
+        let tags: Int
+    }
+
+    func totals() throws -> Totals {
+        try withStatement("""
+            SELECT (SELECT COUNT(*) FROM documents),
+                   (SELECT COUNT(*) FROM extracted_text),
+                   (SELECT COUNT(*) FROM extracted_text WHERE format = ?),
+                   (SELECT COUNT(*) FROM extracted_text WHERE format IS NULL),
+                   (SELECT COUNT(*) FROM projects),
+                   (SELECT COUNT(*) FROM tags);
+            """, bind: { statement in
+            bindText(statement, 1, TextFormat.clipped.rawValue)
+        }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+                return Totals(documents: 0, withText: 0, clipped: 0, staleText: 0,
+                              projects: 0, tags: 0)
+            }
+            return Totals(documents: Int(sqlite3_column_int64(statement, 0)),
+                          withText: Int(sqlite3_column_int64(statement, 1)),
+                          clipped: Int(sqlite3_column_int64(statement, 2)),
+                          staleText: Int(sqlite3_column_int64(statement, 3)),
+                          projects: Int(sqlite3_column_int64(statement, 4)),
+                          tags: Int(sqlite3_column_int64(statement, 5)))
+        }
+    }
+
+    func documents(limit: Int, offset: Int) throws -> [DocumentSummary] {
+        try withStatement("""
+            SELECT \(Self.documentColumns)
+            FROM documents d
+            ORDER BY d.last_seen_at DESC
+            LIMIT ? OFFSET ?;
+            """, bind: { statement in
+            sqlite3_bind_int64(statement, 1, Int64(limit))
+            sqlite3_bind_int64(statement, 2, Int64(offset))
+        }) { statement in
+            var results: [DocumentSummary] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(documentSummary(from: statement))
+            }
+            return results
+        }
+    }
+
+    /// The whole library, ranked by bm25. The same one-phrase wrapping `Library.fullTextSearch`
+    /// uses: FTS5 gives `-`, `:`, `"` and bareword operators special meaning, and a
+    /// researcher's question is not the place to make anyone escape them.
+    func search(query: String, limit: Int, offset: Int) throws -> [DocumentSummary] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return try withStatement("""
+            SELECT \(Self.documentColumns)
+            FROM extracted_text_fts
+            JOIN extracted_text e ON e.rowid = extracted_text_fts.rowid
+            JOIN documents d ON d.id = e.document_id
+            WHERE extracted_text_fts MATCH ?
+            ORDER BY bm25(extracted_text_fts)
+            LIMIT ? OFFSET ?;
+            """, bind: { statement in
+            bindText(statement, 1, phrase)
+            sqlite3_bind_int64(statement, 2, Int64(limit))
+            sqlite3_bind_int64(statement, 3, Int64(offset))
+        }) { statement in
+            var results: [DocumentSummary] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(documentSummary(from: statement))
+            }
+            return results
+        }
+    }
+
+    func extractedText(forDocument id: String) throws -> (markdown: String, format: TextFormat?)? {
+        try withStatement("SELECT markdown, format FROM extracted_text WHERE document_id = ?;",
+                          bind: { statement in bindText(statement, 1, id) }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return (columnText(statement, 0) ?? "",
+                    columnText(statement, 1).flatMap(TextFormat.init(rawValue:)))
+        }
+    }
+
+    func notes(forDocument id: String) throws -> [(body: String, createdAt: String)] {
+        try withStatement("""
+            SELECT body, created_at FROM notes WHERE document_id = ? ORDER BY created_at;
+            """, bind: { statement in bindText(statement, 1, id) }) { statement in
+            var results: [(body: String, createdAt: String)] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append((columnText(statement, 0) ?? "", columnText(statement, 1) ?? ""))
+            }
+            return results
+        }
+    }
+
+    /// Resolves whatever a caller has in hand to one document: the id a previous result
+    /// handed back, a path on disk, or a title. Tried in that order, because an id is
+    /// exact, a path is nearly exact, and a title is a guess.
+    func document(matching identifier: String) throws -> DocumentSummary? {
+        let byID = try withStatement(
+            "SELECT \(Self.documentColumns) FROM documents d WHERE d.id = ?;",
+            bind: { statement in bindText(statement, 1, identifier) }
+        ) { statement -> DocumentSummary? in
+            sqlite3_step(statement) == SQLITE_ROW ? documentSummary(from: statement) : nil
+        }
+        if let byID { return byID }
+
+        let resolved = URL(fileURLWithPath: identifier).resolvingSymlinksInPath().path
+        let byPath = try withStatement("""
+            SELECT \(Self.documentColumns) FROM documents d
+            JOIN locations l ON l.document_id = d.id
+            WHERE l.path = ? OR l.path = ? LIMIT 1;
+            """, bind: { statement in
+            bindText(statement, 1, identifier)
+            bindText(statement, 2, resolved)
+        }) { statement -> DocumentSummary? in
+            sqlite3_step(statement) == SQLITE_ROW ? documentSummary(from: statement) : nil
+        }
+        if let byPath { return byPath }
+
+        return try withStatement("""
+            SELECT \(Self.documentColumns) FROM documents d
+            WHERE d.title = ? COLLATE NOCASE LIMIT 1;
+            """, bind: { statement in bindText(statement, 1, identifier) }) { statement in
+            sqlite3_step(statement) == SQLITE_ROW ? documentSummary(from: statement) : nil
+        }
+    }
+
+    /// Documents that are byte-for-byte the same file under more than one name. Only a
+    /// hash the library already computed is used; nothing here opens a PDF.
+    func duplicateGroupsByHash() throws -> [(hash: String, documents: [DocumentSummary])] {
+        let hashes = try withStatement("""
+            SELECT content_hash FROM documents
+            WHERE content_hash IS NOT NULL
+            GROUP BY content_hash HAVING COUNT(*) > 1;
+            """) { statement -> [String] in
+            var results: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let hash = columnText(statement, 0) { results.append(hash) }
+            }
+            return results
+        }
+        return try hashes.map { hash in
+            let documents = try withStatement("""
+                SELECT \(Self.documentColumns) FROM documents d WHERE d.content_hash = ?;
+                """, bind: { statement in bindText(statement, 1, hash) }) { statement -> [DocumentSummary] in
+                var results: [DocumentSummary] = []
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    results.append(documentSummary(from: statement))
+                }
+                return results
+            }
+            return (hash, documents)
         }
     }
 

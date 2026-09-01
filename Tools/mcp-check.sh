@@ -13,9 +13,9 @@ trap 'rm -rf "$FOLDER"' EXIT
 # A library-shaped scratch database, built straight with sqlite3 rather than through the app,
 # so this script owns every row in it and does not depend on PaperShelf having been run on
 # this machine. The schema mirrors Library.swift's own schemaV1 (documents, locations, tags,
-# document_tags, projects, project_members with its section, extracted_text/_fts); a
-# change to that schema is
-# expected to need a matching change here.
+# document_tags, projects, project_members with its section, notes, extracted_text/_fts) plus
+# schemaV7's format column on extracted_text and its PRAGMA user_version; a change to either
+# is expected to need a matching change here.
 LIBRARY_DB="$FOLDER/library.sqlite"
 sqlite3 "$LIBRARY_DB" <<'SQL'
 CREATE TABLE documents (
@@ -57,10 +57,18 @@ CREATE TABLE project_members (
     section     TEXT,
     PRIMARY KEY (project_id, document_id)
 );
+CREATE TABLE notes (
+    id          INTEGER PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    body        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 CREATE TABLE extracted_text (
     document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     markdown     TEXT NOT NULL,
-    extracted_at TEXT NOT NULL
+    extracted_at TEXT NOT NULL,
+    format       TEXT
 );
 CREATE VIRTUAL TABLE extracted_text_fts USING fts5(
     markdown, content='extracted_text', content_rowid='rowid'
@@ -80,8 +88,13 @@ INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count,
 VALUES ('doc-1', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', 'abc', 1234, 42, 'Groundwork', 'Kant', '{}');
 INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
 VALUES ('/tmp/groundwork.pdf', 'doc-1', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
-INSERT INTO extracted_text(document_id, markdown, extracted_at)
-VALUES ('doc-1', 'the categorical imperative is a concept', '2026-01-01T00:00:00Z');
+INSERT INTO extracted_text(document_id, markdown, extracted_at, format)
+VALUES ('doc-1',
+        '## Page 1' || char(10) || char(10) || 'A preface.' || char(10) || char(10) ||
+        '## Page 7' || char(10) || char(10) || 'the categorical imperative is a concept',
+        '2026-01-01T00:00:00Z', 'markdown-v1');
+INSERT INTO notes(document_id, body, created_at, updated_at)
+VALUES ('doc-1', 'compare against Korsgaard', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
 
 -- A tag and a project with zero members each: list_tags and list_projects must still show
 -- them, at count zero, rather than an INNER JOIN silently dropping the empty ones.
@@ -90,6 +103,15 @@ INSERT INTO document_tags(document_id, tag_id) VALUES ('doc-1', 1);
 INSERT INTO projects(id, name, created_at) VALUES (1, 'Dissertation', '2026-01-01T00:00:00Z'),
                                                    (2, 'Empty', '2026-01-02T00:00:00Z');
 INSERT INTO project_members(project_id, document_id, added_at, section) VALUES (1, 'doc-1', '2026-01-01T00:00:00Z', 'background');
+
+-- A second document sharing doc-1's content hash, so library-wide duplicate detection has
+-- a pair to find.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-2', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', 'abc', 1234, 42, 'Groundwork (copy)', 'Kant', '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('/tmp/groundwork-copy.pdf', 'doc-2', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+
+PRAGMA user_version = 7;
 SQL
 
 # Three separate runs of the server, each answering into the same combined stream: one era
@@ -134,5 +156,8 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"48","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"99"}}}' \
   '{"jsonrpc":"2.0","id":"49","method":"tools/call","params":{"name":"search_project","arguments":{"project":"2","query":"categorical"}}}' \
   '{"jsonrpc":"2.0","id":"50","method":"tools/call","params":{"name":"list_project_documents","arguments":{"project":"1","limit":-1}}}' \
+  '{"jsonrpc":"2.0","id":"51","method":"tools/call","params":{"name":"list_documents","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":"52","method":"tools/call","params":{"name":"search_documents","arguments":{"query":"categorical imperative"}}}' \
+  '{"jsonrpc":"2.0","id":"53","method":"tools/call","params":{"name":"find_duplicates","arguments":{}}}' \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null
 } | python3 Tools/mcp-check.py

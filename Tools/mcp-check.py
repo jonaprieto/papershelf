@@ -24,9 +24,9 @@ def check(label, condition):
 check.failed = False
 
 # A notification gets no reply at all, so exactly the requests with an id answer: 7 from the
-# first run (one of its 8 lines is a notification), 5 against the missing library, 11 against
+# first run (one of its 8 lines is a notification), 5 against the missing library, 14 against
 # the scratch one.
-check("no reply to a notification", len(seen) == 7 + 5 + 11)
+check("no reply to a notification", len(seen) == 7 + 5 + 14)
 
 d = result("d")
 check(
@@ -176,6 +176,35 @@ check(
 check(
     "a negative limit is clamped, not treated as unlimited",
     result("50").get("structuredContent", {}).get("count") == 0,
+)
+
+o = result("51")
+check(
+    "list_documents with no folder reports the library's totals",
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 2,
+)
+check(
+    "list_documents with no folder lists documents",
+    len(o.get("structuredContent", {}).get("documents", [])) == 2,
+)
+
+s = result("52")
+hits = s.get("structuredContent", {}).get("documents", [])
+check("a library-wide search finds the indexed document", len(hits) == 1)
+check(
+    "a hit quotes the passage it matched",
+    "categorical imperative"
+    in (hits[0].get("excerpts", [{}])[0].get("text", "") if hits else ""),
+)
+check(
+    "a hit says which page it came from",
+    (hits[0].get("excerpts", [{}])[0].get("page") if hits else None) == 7,
+)
+
+dupes = result("53").get("structuredContent", {}).get("groups", [])
+check(
+    "duplicates are found library-wide by content hash",
+    len(dupes) == 1 and len(dupes[0].get("paths", [])) == 2,
 )
 
 sys.exit(1 if check.failed else 0)
