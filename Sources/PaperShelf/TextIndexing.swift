@@ -32,7 +32,8 @@ extension Runner {
             let work = snapshot.compactMap { item -> (id: String, url: URL)? in
                 guard let row = byPath[item.key] else { return nil }
                 guard needsIndexing(extractedAt: row.extractedAt,
-                                    fileModified: modified[item.key] ?? nil) else { return nil }
+                                    fileModified: modified[item.key] ?? nil,
+                                    format: row.format) else { return nil }
                 return (row.documentID, item.currentURL)
             }
             guard !work.isEmpty else { return }
@@ -78,7 +79,7 @@ extension Runner {
 
     /// One batch, read across every core. Extraction is the whole cost here and it is all
     /// disk and PDFKit, neither of which belongs on the main actor.
-    private nonisolated static func readText(
+    nonisolated static func readText(
         _ work: [(id: String, url: URL)], passwords: [String]
     ) async -> (stored: [(documentID: String, markdown: String, format: TextFormat)], failures: Int, last: String) {
         await Task.detached(priority: .utility) {
