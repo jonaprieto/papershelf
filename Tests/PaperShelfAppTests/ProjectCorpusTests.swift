@@ -415,6 +415,36 @@ final class ProjectCorpusTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix("# "), "Markdown, not a page of run-together lines")
     }
 
+    /// Important 2's fix, exercised through the other call site it touches: `readDocuments`
+    /// (`ProjectsLive.swift`) used to tag every document it read `.markdown` regardless of
+    /// what came back, through the batch overload that could not express anything else.
+    /// This uses the new overload, and the built-in reader's own output genuinely carries
+    /// the page markers that format promises, so the row it writes must still come back
+    /// tagged `.markdown` rather than this fix silently downgrading everything to stale.
+    /// `converterName` is pinned to the built-in reader by name, rather than left as the
+    /// environment's own default of "automatic" (`environment(_:)` above): automatic picks
+    /// whichever converter happens to be installed on whatever machine runs this, which is
+    /// exactly the non-determinism a test cannot depend on.
+    func testReadingAProjectTagsPageMarkedTextAsMarkdown() async throws {
+        let library = try library()
+        let env = await MainActor.run {
+            liveProjectsEnvironment(
+                library: library,
+                client: AIClient(baseURL: "https://example.invalid/v1", model: "test", apiKey: ""),
+                endpoint: "https://example.invalid/v1", model: "test",
+                converterName: { builtInReaderName })
+        }
+        let file = try writePDF(named: "project-read.pdf", text: "Filed under nothing yet.")
+        let record = try await library.indexDocuments([indexInput(for: file)]).first!
+
+        let count = try await env.readDocuments([record.id])
+
+        XCTAssertEqual(count, 1)
+        let stored = try await library.extractedText(forDocument: record.id)
+        XCTAssertEqual(stored?.format, .markdown,
+                       "the built-in reader's own output carries page markers")
+    }
+
     /// The converter's answer, kept for a file selected anywhere, is what search and a
     /// project then read. A file the library has never met is recorded on the way.
     func testKeepingAConversionGivesAnUnknownFileItsText() async throws {
@@ -431,6 +461,47 @@ final class ProjectCorpusTests: XCTestCase {
         let record = try XCTUnwrap(found)
         let stored = try await library.extractedText(forDocument: record.id)
         XCTAssertEqual(stored?.markdown.contains("Convergence, stated plainly."), true)
+    }
+
+    /// Important 2's fix, pinned directly: `markdown(for:passwords:using:)` can run an
+    /// external converter (Marker, Docling, MarkItDown, pdftotext), and none of those
+    /// write this app's own "## Page N" markers. `storeAsDocumentText` used to tag every
+    /// kept conversion `.markdown` regardless of whether it actually carried one, which
+    /// is exactly what let `pageSlice` throw "may be scanned images" against text that
+    /// was never marked up in the first place, and let the bulk re-indexer skip a row
+    /// that badly needed reading again. Text with no marker in it has to come back
+    /// tagged `nil` -- the same "stale, read again" state a pre-format-column row is
+    /// already in -- not `.markdown`.
+    func testKeepingAConversionWithoutPageMarkersIsTaggedStaleNotMarkdown() async throws {
+        let file = try writePDF(named: "unmarked.pdf", text: "No page markers here.")
+        let library = try library()
+
+        let kept = await storeAsDocumentText("# A Converter's Own Markdown\n\nNo page markers here.",
+                                             for: file, library: library)
+
+        XCTAssertTrue(kept)
+        let found = try await library.document(atPath: file.path)
+        let record = try XCTUnwrap(found)
+        let stored = try await library.extractedText(forDocument: record.id)
+        XCTAssertNil(stored?.format, "unmarked text is stale, the same as a pre-format-column row")
+    }
+
+    /// The other half of the same pin: text that genuinely does carry this app's own
+    /// marker -- the built-in reader's own output, say, kept as-is -- is still tagged
+    /// `.markdown`, so this fix narrows what gets tagged current without narrowing it
+    /// down to nothing.
+    func testKeepingAConversionWithPageMarkersIsTaggedMarkdown() async throws {
+        let file = try writePDF(named: "marked.pdf", text: "This page has a marker.")
+        let library = try library()
+
+        let kept = await storeAsDocumentText("## Page 1\n\nThis page has a marker.",
+                                             for: file, library: library)
+
+        XCTAssertTrue(kept)
+        let found = try await library.document(atPath: file.path)
+        let record = try XCTUnwrap(found)
+        let stored = try await library.extractedText(forDocument: record.id)
+        XCTAssertEqual(stored?.format, .markdown)
     }
 
     /// Keeping it twice is keeping the newer answer, not a second document.

@@ -233,6 +233,16 @@ func pdfsUnder(_ paths: [String]) -> [String] {
 /// The library files documents, not paths, so a file it has never met is indexed here
 /// first, the same way filing one into a project does. Answers false when the file could
 /// not be recorded at all, which is the only case the caller can do anything about.
+///
+/// `markdown` is whatever `Converting.convert` produced, which can be an external
+/// converter's own output rather than this app's page-marked reading: this always keeps
+/// the text (a person clicking "keep" in the Markdown sheet means it, regardless of
+/// format), but only tags it `.markdown` when `hasPageMarkers` finds this app's own
+/// "## Page N" markers actually in it. Tagging every kept conversion `.markdown`
+/// regardless, as this used to, is what let a converter's prose be read as
+/// page-sliceable when it never was; tagging it `nil` here instead leaves it exactly as
+/// stale as a row written before the format column existed, which the bulk re-indexer in
+/// PaperShelf already knows to read again.
 @discardableResult
 func storeAsDocumentText(_ markdown: String, for url: URL, library: Library) async -> Bool {
     let resolved = url.resolvingSymlinksInPath().path
@@ -248,6 +258,7 @@ func storeAsDocumentText(_ markdown: String, for url: URL, library: Library) asy
         known = first
     }
     guard let document = known else { return false }
+    let format: TextFormat? = hasPageMarkers(markdown) ? .markdown : nil
     return ((try? await library.setExtractedText(markdown, forDocument: document.id,
-                                                  format: .markdown)) != nil)
+                                                  format: format)) != nil)
 }

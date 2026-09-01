@@ -774,8 +774,15 @@ public actor Library {
 
     // MARK: - Extracted text and search
 
+    /// `format` is optional, matching `ExtractedText.format` and `TextIndexRow.format`
+    /// above: a caller that cannot promise this app's own page markers are actually in
+    /// `markdown` -- text that came back from a configurable external converter, say,
+    /// rather than from `indexedMarkdown`/`markdownFromPDF` -- passes `nil` rather than
+    /// guessing, which stores exactly the same "stale, read again" state a row written
+    /// before the format column existed is already in (`needsIndexing(format:)` treats
+    /// the two identically).
     public func setExtractedText(_ markdown: String, forDocument documentID: String,
-                                 format: TextFormat, extractedAt: Date = Date()) throws {
+                                 format: TextFormat?, extractedAt: Date = Date()) throws {
         try run("""
             INSERT INTO extracted_text(document_id, markdown, extracted_at, format) VALUES (?, ?, ?, ?)
             ON CONFLICT(document_id) DO UPDATE SET markdown = excluded.markdown,
@@ -784,7 +791,7 @@ public actor Library {
             bindText(statement, 1, documentID)
             bindText(statement, 2, markdown)
             bindText(statement, 3, Library.isoString(extractedAt))
-            bindText(statement, 4, format.rawValue)
+            bindText(statement, 4, format?.rawValue)
         }
     }
 
@@ -814,6 +821,33 @@ public actor Library {
     /// Stores a batch of extracted text in one transaction. Fourteen thousand documents
     /// written one statement at a time is fourteen thousand fsyncs.
     public func setExtractedText(_ batch: [(documentID: String, markdown: String, format: TextFormat)],
+                                 extractedAt: Date = Date()) throws {
+        guard !batch.isEmpty else { return }
+        try execute("BEGIN IMMEDIATE;")
+        do {
+            for entry in batch {
+                try setExtractedText(entry.markdown, forDocument: entry.documentID,
+                                     format: entry.format, extractedAt: extractedAt)
+            }
+            try execute("COMMIT;")
+        } catch {
+            try? execute("ROLLBACK;")
+            throw error
+        }
+    }
+
+    /// As the batch above, for a set of documents whose format is not known up front to be
+    /// page-marked. `readTextForProject` (`PaperShelf/ProjectsLive.swift`) is the caller
+    /// this exists for: it reads a project's unindexed documents through whichever
+    /// converter is configured, page markers or not, and used to hand every one of them to
+    /// the non-optional overload above tagged `.markdown` regardless, which is what let a
+    /// converter's prose be read as page-sliceable when it never was. A separate overload
+    /// rather than widening the one above: the bulk re-indexer's own batch
+    /// (`Runner.indexText`, `PaperShelf/TextIndexing.swift`) always reads through
+    /// `indexedMarkdown`, which never leaves the format in doubt, so it keeps the
+    /// non-optional guarantee and this one exists beside it for the caller that cannot
+    /// make that promise.
+    public func setExtractedText(_ batch: [(documentID: String, markdown: String, format: TextFormat?)],
                                  extractedAt: Date = Date()) throws {
         guard !batch.isEmpty else { return }
         try execute("BEGIN IMMEDIATE;")

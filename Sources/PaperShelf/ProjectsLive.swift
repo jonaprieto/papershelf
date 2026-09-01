@@ -82,7 +82,18 @@ func liveProjectsEnvironment(library: Library, client: AIClient,
             let read = await readTextForProject(work, passwords: passwords(),
                                                 using: engine(named: converterName()))
             guard !read.isEmpty else { return 0 }
-            try await library.setExtractedText(read.map { ($0.documentID, $0.markdown, TextFormat.markdown) })
+            // `readTextForProject` reads through whichever converter Settings names, which
+            // can be an external tool (Marker, Docling, MarkItDown, pdftotext) that writes
+            // its own Markdown rather than this app's "## Page N" markers. Tagging that
+            // output `.markdown` regardless, as this used to, is what let a converter's
+            // prose be read as page-sliceable when it never was: `hasPageMarkers` checks
+            // each document's own text rather than assuming the format the built-in
+            // reader always produces.
+            let tagged: [(documentID: String, markdown: String, format: TextFormat?)] = read.map { entry in
+                (documentID: entry.documentID, markdown: entry.markdown,
+                 format: hasPageMarkers(entry.markdown) ? .markdown : nil)
+            }
+            try await library.setExtractedText(tagged)
             return read.count
         },
         sections: { id in try await library.sections(ofProject: id) },

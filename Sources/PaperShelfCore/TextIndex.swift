@@ -20,6 +20,24 @@ public enum TextFormat: String, Sendable, Equatable {
     case clipped = "markdown-v1-clipped"
 }
 
+/// Whether `markdown` actually carries this app's own page markers: a line reading exactly
+/// "## Page N", which is what `indexedMarkdown` above and `markdownFromPDF` (`Convert.swift`)
+/// insert one of per page, and what `pageSlice`, `hit` (`PaperShelfMCP/LibraryTools.swift`)
+/// and the bulk re-indexer (`needsIndexing(format:)` below) all rely on a `.markdown`/
+/// `.clipped` format to promise.
+///
+/// A tagging decision, not a parser: `markdown(for:passwords:using:)` (`Convert.swift`) can
+/// also run an external converter (Marker, Docling, MarkItDown, pdftotext) over the same
+/// document, and every one of those produces its own Markdown, with its own headings, none
+/// of which happen to write this exact line. Tagging that output `.markdown` anyway is what
+/// let a converter's prose be read as page-sliceable when it never was; this is the check
+/// that stops it, called before a row is tagged rather than trusted to already be true.
+public func hasPageMarkers(_ markdown: String) -> Bool {
+    markdown.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
+        line.hasPrefix("## Page ") && Int(line.dropFirst("## Page ".count)) != nil
+    }
+}
+
 /// The document's text as page-marked Markdown, up to the cap.
 ///
 /// Nil means the file could not be opened, or is locked and no password given fits, which

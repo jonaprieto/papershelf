@@ -96,4 +96,22 @@ final class TextIndexTests: XCTestCase {
         XCTAssertFalse(needsIndexing(extractedAt: late, fileModified: early, format: .clipped),
                        "clipped is as read as it is going to get, not unread")
     }
+
+    /// The check that stands between a row actually being page-marked and a row merely
+    /// being labeled that way: `storeAsDocumentText` and `readDocuments`
+    /// (`PaperShelf/LibrarySync.swift`, `PaperShelf/ProjectsLive.swift`) both call this
+    /// before tagging a row `.markdown`, precisely because the text they are tagging can
+    /// come from an external converter that writes its own Markdown rather than from
+    /// `indexedMarkdown`/`markdownFromPDF`.
+    func testHasPageMarkersDetectsThisAppsOwnHeadingExactly() {
+        XCTAssertTrue(hasPageMarkers("# Title\n\n## Page 1\n\nSome text."),
+                      "the built-in reader's own marker")
+        XCTAssertTrue(hasPageMarkers("Some text.\n## Page 12\nMore text, on a later page."),
+                      "a marker need not be the first line, or its own paragraph")
+        XCTAssertFalse(hasPageMarkers("# A converter's own Markdown\n\nJust some prose."),
+                       "a converter's own headings are not this app's page markers")
+        XCTAssertFalse(hasPageMarkers("### Page 1\n\nA third-level heading is not it either"))
+        XCTAssertFalse(hasPageMarkers("## Page one\n\nnor is one spelled out rather than a number"))
+        XCTAssertFalse(hasPageMarkers(""), "empty text has no markers to find")
+    }
 }
