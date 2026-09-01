@@ -11,10 +11,10 @@ import PaperShelfCore
 struct AboutWindow: View {
     static let windowID = "about"
 
-    /// Which of the three the window is showing. A window, not three: they are one
-    /// question -- what is this -- asked at three depths.
+    /// Which of the four the window is showing. A window, not four: they are one
+    /// question -- what is this -- asked at four depths.
     private enum Page: String, CaseIterable, Identifiable {
-        case about, licence, thirdParty
+        case about, licence, thirdParty, changelog
         var id: String { rawValue }
 
         var label: String {
@@ -22,6 +22,7 @@ struct AboutWindow: View {
             case .about: return "About"
             case .licence: return "Licence"
             case .thirdParty: return "Third-Party Software"
+            case .changelog: return "Changelog"
             }
         }
     }
@@ -45,16 +46,17 @@ struct AboutWindow: View {
                 Group {
                     switch page {
                     case .about: summary
-                    case .licence: text(AboutWindow.licence)
+                    case .licence: text(AboutWindow.licence, mono: true, muted: false)
                     case .thirdParty: thirdPartyBody
+                    case .changelog: text(AboutWindow.changelog, mono: true, muted: false)
                     }
                 }
                 .padding(Space.gutter)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        // Tall enough that the longest of the three -- the licence -- is read by
-        // scrolling a little rather than through a slot.
+        // Tall enough that the longest of the four -- the licence, or a changelog with a
+        // few entries in it -- is read by scrolling a little rather than through a slot.
         .frame(width: 540, height: 620)
     }
 
@@ -139,12 +141,15 @@ struct AboutWindow: View {
         }
     }
 
-    /// Selectable on purpose: a licence you cannot copy out of is a licence you have to
-    /// retype to comply with.
-    private func text(_ body: String) -> some View {
+    /// Selectable on purpose: a licence, or a changelog entry, you cannot copy out of is
+    /// one you have to retype to quote. `mono` is for verbatim documents read as they are
+    /// written, the licence and the changelog; `muted` sets the two of those, the main
+    /// content of the page they are on, apart from a paragraph that is only introducing
+    /// something else.
+    private func text(_ body: String, mono: Bool = false, muted: Bool = true) -> some View {
         Text(body)
-            .font(body == AboutWindow.licence ? Face.mono : Face.body)
-            .foregroundStyle(body == AboutWindow.licence ? .primary : .secondary)
+            .font(mono ? Face.mono : Face.body)
+            .foregroundStyle(muted ? .secondary : .primary)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
@@ -193,4 +198,22 @@ struct AboutWindow: View {
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
     """
+
+    /// `CHANGELOG.md`, read from wherever `build.sh` copied it, the same way it copies
+    /// `PluginLogo.png`. There is exactly one copy of the file, at the repository root; a
+    /// built `.app` has no source checkout to read that from directly, so this reads the
+    /// one `build.sh` placed inside the bundle instead of a second copy kept in the repo,
+    /// which is what could have silently gone stale against the real one.
+    ///
+    /// A build that never went through `build.sh` -- `swift run`, or a `.app` built before
+    /// this shipped -- has no such file. That is said plainly rather than showing an empty
+    /// page, which would read as the window being broken rather than as a build that
+    /// predates this feature.
+    static var changelog: String {
+        guard let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "The changelog is not available in this build."
+        }
+        return text
+    }
 }

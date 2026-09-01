@@ -27,6 +27,13 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # The plugin listing in the ChatGPT app shows this, copied into the plugin folder at
 # install time. It has to travel inside the bundle: a built .app has no source checkout.
 cp Resources/PluginLogo.png "$APP/Contents/Resources/PluginLogo.png"
+# Same reasoning for the changelog the About window's fourth page reads: there is exactly
+# one copy of it, at the repository root, so nothing here can drift from it the way the
+# three version numbers once did. Checked explicitly, with a message, rather than letting
+# a missing file fail on a bare `cp`: that failed silently enough in the past that nobody
+# noticed the version numbers had drifted either.
+[[ -f CHANGELOG.md ]] || { echo "CHANGELOG.md is missing at the repository root; the About window would ship with no changelog to read" >&2; exit 1; }
+cp CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
 
 # Ad-hoc signature: enough for a locally built app, no Developer ID needed.
 codesign --force --sign - "$APP/Contents/MacOS/papershelf-mcp"

@@ -39,4 +39,23 @@ final class AboutTests: XCTestCase {
                        "a converter was added or removed; the About window lists them "
                        + "from this same array, so only this expectation needs updating")
     }
+
+    // MARK: - Changelog
+
+    /// The test bundle is never a `.app` build.sh has copied `CHANGELOG.md` into, so this
+    /// exercises the same path a `swift run` build or a pre-1.7.0 `.app` takes: a plain
+    /// message rather than an empty page.
+    func testTheChangelogFallsBackGracefullyWhenNotBundled() {
+        XCTAssertEqual(AboutWindow.changelog, "The changelog is not available in this build.")
+    }
+
+    /// The changelog file itself has to keep naming the version it is shipped inside, or
+    /// a bump to `paperShelfVersion` silently leaves the About window's fourth page
+    /// describing an older release than the one someone is actually running.
+    func testTheChangelogFileNamesTheCurrentVersion() throws {
+        let file = repositoryRoot.appendingPathComponent("CHANGELOG.md")
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains(paperShelfVersion),
+                       "CHANGELOG.md has no entry for \(paperShelfVersion)")
+    }
 }
