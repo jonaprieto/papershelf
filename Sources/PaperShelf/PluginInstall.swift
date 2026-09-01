@@ -295,7 +295,7 @@ enum ChatGPTPlugin {
     /// way the checked-in manifest is, so a debug build and a release build never disagree
     /// about what they are.
     static var releaseVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.7.0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.0"
     }
 
     /// `mcpServers`, not `mcp_servers`: the plugin schema names it in camel case, and a

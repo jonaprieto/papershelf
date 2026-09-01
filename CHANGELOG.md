@@ -4,6 +4,18 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.9.0] - 2026-09-01
+
+### Added
+
+- Share all highlights and notes from the Notes rail with ChatGPT, either in a new
+  conversation or by copying them into an existing one.
+- Add quick theme and PDF contrast controls to the top toolbar.
+
+### Fixed
+
+- Find `OPENAI_API_KEY` from `~/.zshrc` when the app is launched outside a shell.
+
 ## [1.8.0] - 2026-09-01
 
 ### Added
