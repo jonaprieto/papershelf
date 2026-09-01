@@ -247,7 +247,8 @@ struct ReviewInspector: View {
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords,
                            annotator: annotator, fit: prefs.pageFit,
-                           onDocumentSwipe: stepDocument)
+                           onDocumentSwipe: stepDocument,
+                           onMarkClick: selectMark(at:))
                 .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The page is an AppKit view hosted in SwiftUI, and a hosted view does
@@ -427,6 +428,13 @@ struct ReviewInspector: View {
         }
     }
 
+    private func selectMark(at point: CGPoint) {
+        guard let mark = annotator.mark(atViewPoint: point) else { return }
+        annotator.selectedMark = mark.id
+        prefs.inspectorPanel = .notes
+        prefs.inspectorCollapsed = false
+    }
+
     private func hideMarkBar(after delay: Duration) {
         guard hoveredMarkID != nil, markBarHide == nil else { return }
         markBarHide = Task {
@@ -503,11 +511,13 @@ struct ReviewInspector: View {
                 annotator.selectedMark = mark.id
                 prefs.inspectorPanel = .notes
                 prefs.inspectorCollapsed = false
+                noteText = mark.note
+                addingNote = true
             } label: {
                 Image(systemName: "text.bubble")
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(mark.note.isEmpty ? "Write a note" : "Read the note")
+            .accessibilityLabel(mark.note.isEmpty ? "Add note" : "Edit note")
             .tip(mark.note.isEmpty ? "Write a note on this mark" : "Show this mark's note")
 
             Button { annotator.remove(mark) } label: {
@@ -556,7 +566,7 @@ struct ReviewInspector: View {
                 Image(systemName: "text.bubble")
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Write a note")
+            .accessibilityLabel("Add note")
             .onHover { hoveringNote = $0 }
 
             // One menu, not two more bare icons: the bar is a fixed width and already
@@ -961,6 +971,7 @@ enum PageFit: String, CaseIterable, Identifiable {
 final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
     var onDocumentSwipe: ((Int) -> Void)?
+    var onMarkClick: ((CGPoint) -> Void)?
     private var horizontalSwipe: CGFloat = 0
     private var verticalSwipe: CGFloat = 0
     private var swipeConsumed = false
@@ -971,6 +982,14 @@ final class FitWidthPDFView: PDFView {
     static func documentStep(horizontal: CGFloat, vertical: CGFloat) -> Int? {
         guard abs(horizontal) >= 80, abs(horizontal) > abs(vertical) * 1.25 else { return nil }
         return horizontal < 0 ? 1 : -1
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 1 {
+            let point = convert(event.locationInWindow, from: nil)
+            onMarkClick?(CGPoint(x: point.x, y: bounds.height - point.y))
+        }
+        super.mouseDown(with: event)
     }
 
     /// The reader owns document navigation, while PDFView owns page scrolling. Horizontal
@@ -1080,12 +1099,15 @@ struct PDFPreview: NSViewRepresentable {
     /// Finder-opened reader windows have one PDF and no collection to move through. The
     /// main reader supplies the collection's existing step function.
     var onDocumentSwipe: ((Int) -> Void)?
+    /// The main reader uses this to select a mark in its Notes tab when the page is clicked.
+    var onMarkClick: ((CGPoint) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(annotator: annotator) }
 
     func makeNSView(context: Context) -> FitWidthPDFView {
         let view = FitWidthPDFView()
         view.onDocumentSwipe = onDocumentSwipe
+        view.onMarkClick = onMarkClick
         // An NSView does not clip its content to its own bounds, so a PDF squeezed by the
         // pane beside it went on drawing at the width it had a moment ago -- straight over
         // the inspector. SwiftUI's own `.clipped()` cannot fix that: the page is a real
@@ -1125,6 +1147,7 @@ struct PDFPreview: NSViewRepresentable {
         // never read twice over and A -> B -> A does not end up showing B.
         let coordinator = context.coordinator
         view.onDocumentSwipe = onDocumentSwipe
+        view.onMarkClick = onMarkClick
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit

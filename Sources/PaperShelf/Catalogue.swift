@@ -792,15 +792,13 @@ struct ResultsPane: View {
              : "Which highlighter the next mark uses")
 
         Button {
-            // A note is a highlight you wrote on. With text selected this makes the mark
-            // and opens the notes on it; with nothing selected it is the way to the notes.
-            if annotator.hasSelection, let style = currentStyle {
-                annotator.highlightSelection(colour: style.nsColor)
-            }
+            // The Notes rail owns creating the mark, so typing starts in one editor and
+            // the toolbar, floating bar and command palette all take the same route.
+            addingNote = true
             prefs.inspectorPanel = .notes
             prefs.inspectorCollapsed = false
         } label: {
-            Label("Note", systemImage: "bubble.left")
+            Label("Add note", systemImage: "bubble.left")
         }
         .tip(annotator.hasSelection
              ? "Mark the selection and write about it"
@@ -1299,6 +1297,8 @@ struct ResultsPane: View {
         case .highlight5: highlight(colourAt: 4)
         case .addNote:
             guard annotator.selectedMark != nil || annotator.hasSelection else { return false }
+            prefs.inspectorPanel = .notes
+            prefs.inspectorCollapsed = false
             addingNote = true
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)

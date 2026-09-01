@@ -33,7 +33,8 @@ struct ReaderWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit)
+            PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
+                       onMarkClick: selectMark(at:))
                 .overlay(alignment: .top) { selectionBar }
                 .inspector(isPresented: $showsNotes) {
                     NotesRail(annotator: annotator, palette: palette,
@@ -133,6 +134,12 @@ struct ReaderWindow: View {
     private var nextColour: NSColor {
         (palette.styles.first { $0.id.uuidString == prefs.lastHighlightColour }
             ?? palette.styles.first)?.nsColor ?? .systemYellow
+    }
+
+    private func selectMark(at point: CGPoint) {
+        guard let mark = annotator.mark(atViewPoint: point) else { return }
+        annotator.selectedMark = mark.id
+        showsNotes = true
     }
 
     /// The bar that appears beside a selection. The keys are the fast path; this is the one

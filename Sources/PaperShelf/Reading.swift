@@ -339,9 +339,15 @@ struct NotesRail: View {
                             TextField("What is worth remembering", text: $noteText, axis: .vertical)
                                 .textFieldStyle(.roundedBorder)
                                 .lineLimit(2...5)
+                                .focused($noteInputFocused)
                             HStack {
                                 Button("Save") {
-                                    annotator.highlightSelection(colour: lastColour, note: noteText)
+                                    if annotator.hasSelection {
+                                        annotator.highlightSelection(colour: lastColour, note: noteText)
+                                    } else if let id = annotator.selectedMark,
+                                              let mark = marks.first(where: { $0.id == id }) {
+                                        annotator.setNote(noteText, on: mark)
+                                    }
                                     noteText = ""
                                     addingNote = false
                                 }
@@ -427,6 +433,11 @@ struct NotesRail: View {
             }
         }
         .background(.background.secondary)
+        .onAppear { focusNoteInputIfNeeded() }
+        .onChange(of: addingNote) { _, isAdding in
+            noteInputFocused = false
+            if isAdding { focusNoteInputIfNeeded() }
+        }
         .confirmationDialog("Remove every mark from this document?",
                             isPresented: $clearing) {
             Button("Remove \(marks.count) marks", role: .destructive) {
@@ -436,6 +447,11 @@ struct NotesRail: View {
         } message: {
             Text("This writes the document without them. It cannot be undone.")
         }
+    }
+
+    private func focusNoteInputIfNeeded() {
+        guard addingNote else { return }
+        DispatchQueue.main.async { noteInputFocused = true }
     }
 
     /// What the document holds, and the one control that changes what is listed.
@@ -507,6 +523,7 @@ struct NotesRail: View {
     @State private var clearing = false
     /// Which meaning the list is narrowed to, or nil for all of them.
     @State private var filter: String?
+    @FocusState private var noteInputFocused: Bool
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
