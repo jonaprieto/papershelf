@@ -23,6 +23,7 @@ jobs:
       NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
       NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
       NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+      TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,3 +63,43 @@ jobs:
           shasum -a 256 "$DMG" > "$DMG.sha256"
           gh release create "${GITHUB_REF_NAME}" "$DMG" "$DMG.sha256" \
             --title "${GITHUB_REF_NAME}" --generate-notes
+
+      - name: Publish the cask
+        if: env.TAP_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(cut -d' ' -f1 "dist/PaperShelf-${VERSION}.dmg.sha256")
+          TAP="$RUNNER_TEMP/homebrew-papershelf"
+          gh repo clone jonaprieto/homebrew-papershelf "$TAP"
+          mkdir -p "$TAP/Casks"
+          cat > "$TAP/Casks/papershelf.rb" <<EOF
+cask "papershelf" do
+  version "${VERSION}"
+  sha256 "${SHA}"
+
+  url "https://github.com/jonaprieto/papershelf/releases/download/v#{version}/PaperShelf-#{version}.dmg"
+  name "PaperShelf"
+  desc "macOS PDF reader and research library"
+  homepage "https://jonaprieto.github.io/papershelf/"
+
+  app "PaperShelf.app"
+
+  caveats <<~EOS
+    PaperShelf is ad-hoc signed while notarization is on the roadmap.
+    If macOS blocks the first launch, right-click PaperShelf.app in Finder and choose Open.
+  EOS
+
+  zap trash: [
+    "~/Library/Application Support/PaperShelf",
+    "~/Library/Preferences/com.jonaprieto.pdfhammer.plist",
+  ]
+end
+EOF
+          git -C "$TAP" config user.name "github-actions[bot]"
+          git -C "$TAP" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$TAP" add Casks/papershelf.rb
+          if git -C "$TAP" diff --cached --quiet; then exit 0; fi
+          git -C "$TAP" commit -m "chore: update PaperShelf to ${VERSION}"
+          git -C "$TAP" push origin HEAD
