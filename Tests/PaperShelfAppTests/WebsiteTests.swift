@@ -1,6 +1,7 @@
 import XCTest
 @testable import PaperShelf
 
+@MainActor
 final class WebsiteTests: XCTestCase {
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
