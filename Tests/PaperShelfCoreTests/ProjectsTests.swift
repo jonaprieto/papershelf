@@ -166,7 +166,7 @@ final class ProjectsPromptTests: XCTestCase {
 
     func testPromptLabelsEachExcerptWithTitleAndPage() {
         let excerpts = [
-            Excerpt(contentHash: "a", documentTitle: "Paper One", page: 3, body: "Some text."),
+            ProjectChunk(contentHash: "a", documentTitle: "Paper One", page: 3, body: "Some text."),
         ]
         let prompt = readingProjectPrompt(question: "What is X?", projectName: "My Project", excerpts: excerpts)
         XCTAssertTrue(prompt.contains("Question: What is X?"))
@@ -184,8 +184,8 @@ final class ProjectsPromptTests: XCTestCase {
 
     func testPromptCountsDistinctDocumentsNotExcerpts() {
         let excerpts = [
-            Excerpt(contentHash: "a", documentTitle: "A", page: 1, body: "x"),
-            Excerpt(contentHash: "a", documentTitle: "A", page: 2, body: "y"),
+            ProjectChunk(contentHash: "a", documentTitle: "A", page: 1, body: "x"),
+            ProjectChunk(contentHash: "a", documentTitle: "A", page: 2, body: "y"),
         ]
         let prompt = readingProjectPrompt(question: "q", projectName: "P", excerpts: excerpts)
         XCTAssertTrue(prompt.contains("1 document"))
@@ -196,7 +196,7 @@ final class ProjectsPromptTests: XCTestCase {
 final class ProjectsCitationTests: XCTestCase {
 
     func testParsesASimpleCitation() {
-        let excerpts = [Excerpt(contentHash: "h1", documentTitle: "Gödel, Escher, Bach", page: 42, body: "...")]
+        let excerpts = [ProjectChunk(contentHash: "h1", documentTitle: "Gödel, Escher, Bach", page: 42, body: "...")]
         let reply = "Strange loops are central to the argument (Gödel, Escher, Bach, p. 42)."
         let citations = parseCitations(in: reply, excerpts: excerpts)
         XCTAssertEqual(citations.count, 1)
@@ -206,7 +206,7 @@ final class ProjectsCitationTests: XCTestCase {
     }
 
     func testTitleMatchingIsCaseInsensitive() {
-        let excerpts = [Excerpt(contentHash: "h1", documentTitle: "Dune", page: 1, body: "...")]
+        let excerpts = [ProjectChunk(contentHash: "h1", documentTitle: "Dune", page: 1, body: "...")]
         let citations = parseCitations(in: "As shown (dune, p. 1).", excerpts: excerpts)
         XCTAssertEqual(citations.first?.contentHash, "h1")
     }
@@ -216,8 +216,8 @@ final class ProjectsCitationTests: XCTestCase {
     /// not just the first excerpt whose title matches.
     func testSameTitleDifferentDocumentsResolveByPage() {
         let excerpts = [
-            Excerpt(contentHash: "preprint", documentTitle: "Paper", page: 1, body: "first"),
-            Excerpt(contentHash: "published", documentTitle: "Paper", page: 9, body: "ninth"),
+            ProjectChunk(contentHash: "preprint", documentTitle: "Paper", page: 1, body: "first"),
+            ProjectChunk(contentHash: "published", documentTitle: "Paper", page: 9, body: "ninth"),
         ]
         let reply = "First point (Paper, p. 1). Later point (Paper, p. 9)."
         let citations = parseCitations(in: reply, excerpts: excerpts)
@@ -228,7 +228,7 @@ final class ProjectsCitationTests: XCTestCase {
     /// A citation naming a document never actually sent is surfaced with a nil hash
     /// rather than silently linking to whatever excerpt happens to be first.
     func testUnmatchedCitationHasNoContentHash() {
-        let excerpts = [Excerpt(contentHash: "h1", documentTitle: "Real Paper", page: 1, body: "...")]
+        let excerpts = [ProjectChunk(contentHash: "h1", documentTitle: "Real Paper", page: 1, body: "...")]
         let citations = parseCitations(in: "Per (Invented Paper, p. 1).", excerpts: excerpts)
         XCTAssertEqual(citations.count, 1)
         XCTAssertNil(citations[0].contentHash)
@@ -239,7 +239,7 @@ final class ProjectsCitationTests: XCTestCase {
     }
 
     func testCitationRangeCoversTheParenthetical() {
-        let excerpts = [Excerpt(contentHash: "h1", documentTitle: "P", page: 2, body: "...")]
+        let excerpts = [ProjectChunk(contentHash: "h1", documentTitle: "P", page: 2, body: "...")]
         let reply = "See (P, p. 2) for details."
         let citations = parseCitations(in: reply, excerpts: excerpts)
         XCTAssertEqual(String(reply[citations[0].range]), "(P, p. 2)")
@@ -271,9 +271,9 @@ final class ProjectsPrivacyPreviewTests: XCTestCase {
 
     func testCountsDocumentsAndCharacters() {
         let excerpts = [
-            Excerpt(contentHash: "a", documentTitle: "A", page: 1, body: "12345"),
-            Excerpt(contentHash: "a", documentTitle: "A", page: 2, body: "123"),
-            Excerpt(contentHash: "b", documentTitle: "B", page: 1, body: "1234567"),
+            ProjectChunk(contentHash: "a", documentTitle: "A", page: 1, body: "12345"),
+            ProjectChunk(contentHash: "a", documentTitle: "A", page: 2, body: "123"),
+            ProjectChunk(contentHash: "b", documentTitle: "B", page: 1, body: "1234567"),
         ]
         let preview = outboundPreview(excerpts: excerpts, endpoint: defaultAIEndpoint)
         XCTAssertEqual(preview.documentCount, 2)

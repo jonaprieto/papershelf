@@ -727,7 +727,7 @@ struct AddDocumentsSheet: View {
 struct ProjectTurn: Identifiable {
     let id = UUID()
     let question: String
-    var excerpts: [Excerpt] = []
+    var excerpts: [ProjectChunk] = []
     var reply: String = ""
     var citations: [Citation] = []
     var isLoading = true
@@ -750,7 +750,7 @@ final class ProjectConversationModel {
 
     private let env: ProjectsEnvironment
     private var confirmedQuestion: String?
-    private var confirmedExcerpts: [Excerpt] = []
+    private var confirmedExcerpts: [ProjectChunk] = []
 
     var endpointName: String { env.endpoint() }
     var modelName: String { env.model() }

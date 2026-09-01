@@ -35,7 +35,7 @@ public struct ProjectDocument: Sendable, Equatable, Hashable {
 
 /// A page-scoped slice of one document's extracted text, small enough to hand to a model
 /// and precise enough to cite. A chunk never spans two pages: see `chunk(_:softLimit:)`.
-public struct Excerpt: Sendable, Equatable, Identifiable {
+public struct ProjectChunk: Sendable, Equatable, Identifiable {
     public let contentHash: String
     public let documentTitle: String
     public let page: Int
@@ -91,11 +91,11 @@ func pages(of markdown: String) -> [(page: Int, text: String)] {
 /// dense page nor a single throwaway-short paragraph. A single paragraph that alone
 /// exceeds `softLimit` still becomes its own (oversized) chunk rather than being cut
 /// mid-sentence: a quotation that stops mid-thought is worse than one that runs long.
-public func chunk(_ document: ProjectDocument, softLimit: Int = 1_200) -> [Excerpt] {
-    var excerpts: [Excerpt] = []
+public func chunk(_ document: ProjectDocument, softLimit: Int = 1_200) -> [ProjectChunk] {
+    var excerpts: [ProjectChunk] = []
     for (page, text) in pages(of: document.markdown) {
         if text.count <= softLimit {
-            excerpts.append(Excerpt(contentHash: document.contentHash, documentTitle: document.title,
+            excerpts.append(ProjectChunk(contentHash: document.contentHash, documentTitle: document.title,
                                     page: page, body: text))
             continue
         }
@@ -109,13 +109,13 @@ public func chunk(_ document: ProjectDocument, softLimit: Int = 1_200) -> [Excer
             } else if current.count + 2 + paragraph.count <= softLimit {
                 current += "\n\n" + paragraph
             } else {
-                excerpts.append(Excerpt(contentHash: document.contentHash, documentTitle: document.title,
+                excerpts.append(ProjectChunk(contentHash: document.contentHash, documentTitle: document.title,
                                         page: page, body: current))
                 current = paragraph
             }
         }
         if !current.isEmpty {
-            excerpts.append(Excerpt(contentHash: document.contentHash, documentTitle: document.title,
+            excerpts.append(ProjectChunk(contentHash: document.contentHash, documentTitle: document.title,
                                     page: page, body: current))
         }
     }
@@ -123,7 +123,7 @@ public func chunk(_ document: ProjectDocument, softLimit: Int = 1_200) -> [Excer
 }
 
 /// `chunk(_:softLimit:)` over every document, in the order given.
-public func chunk(_ documents: [ProjectDocument], softLimit: Int = 1_200) -> [Excerpt] {
+public func chunk(_ documents: [ProjectDocument], softLimit: Int = 1_200) -> [ProjectChunk] {
     documents.flatMap { chunk($0, softLimit: softLimit) }
 }
 
@@ -160,7 +160,7 @@ public func selectExcerpts(
     budget: Int = 12_000,
     softLimit: Int = 1_200,
     rankedDocuments: (_ question: String, _ contentHashes: [String]) async throws -> [String]
-) async throws -> [Excerpt] {
+) async throws -> [ProjectChunk] {
     let byHash = Dictionary(uniqueKeysWithValues: documents.map { ($0.contentHash, $0) })
     let allChunks = chunk(documents, softLimit: softLimit)
     guard allChunks.reduce(0, { $0 + $1.body.count }) > budget else { return allChunks }
@@ -171,7 +171,7 @@ public func selectExcerpts(
         order.append(hash)
     }
 
-    var selected: [Excerpt] = []
+    var selected: [ProjectChunk] = []
     var used = 0
     for hash in order {
         guard let document = byHash[hash] else { continue }
@@ -210,7 +210,7 @@ not present in what follows.
 /// never asked to remember or compute a page number, only to copy back the label already
 /// sitting right next to the text it used. `parseCitations` then only has to find that
 /// same label shape in the reply, not verify a number the model made up.
-public func readingProjectPrompt(question: String, projectName: String, excerpts: [Excerpt]) -> String {
+public func readingProjectPrompt(question: String, projectName: String, excerpts: [ProjectChunk]) -> String {
     let documentCount = Set(excerpts.map(\.contentHash)).count
     var out = "Question: \(question)\n\n"
     out += "Excerpts from \"\(projectName)\" (\(documentCount) document\(documentCount == 1 ? "" : "s"), "
@@ -337,7 +337,7 @@ private let citationPattern = try! NSRegularExpression(pattern: "\\(([^()]+?),\\
 /// invents a title outright), then narrowed by page when more than one excerpt shares
 /// that title, so a title that appears on several pages still resolves to the specific
 /// page the model actually named, not just the first excerpt with a matching title.
-public func parseCitations(in reply: String, excerpts: [Excerpt]) -> [Citation] {
+public func parseCitations(in reply: String, excerpts: [ProjectChunk]) -> [Citation] {
     let whole = reply as NSString
     let matches = citationPattern.matches(in: reply, range: NSRange(location: 0, length: whole.length))
     return matches.compactMap { match -> Citation? in
@@ -394,7 +394,7 @@ public struct OutboundPreview: Sendable, Equatable {
 }
 
 /// Builds the preview a confirmation dialog shows before `excerpts` are sent to `endpoint`.
-public func outboundPreview(excerpts: [Excerpt], endpoint: String) -> OutboundPreview {
+public func outboundPreview(excerpts: [ProjectChunk], endpoint: String) -> OutboundPreview {
     let trimmed = endpoint.trimmingCharacters(in: .whitespaces)
     let url = URL(string: trimmed)
     return OutboundPreview(
