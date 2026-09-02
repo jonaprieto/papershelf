@@ -614,8 +614,8 @@ struct ContentView: View {
                     in: RoundedRectangle(cornerRadius: Metric.control))
     }
 
-    /// What the sidebar can be told to do, under what it is showing: add a source, narrow
-    /// the tree, and how many sources there are.
+    /// What the sidebar can be told to do under the source tree: narrow the tree and show
+    /// how many sources there are. Adding one has its own labelled row in Sources.
     private var sidebarFooter: some View {
         VStack(spacing: 0) {
             if filteringSources {
@@ -628,10 +628,6 @@ struct ContentView: View {
             }
             Divider()
             HStack(spacing: Space.step) {
-                Button { importing = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless)
-                    .tip("Watch another folder, or add one PDF")
-
                 Button {
                     filteringSources.toggle()
                     if !filteringSources { sourceFilter = "" }
@@ -1178,9 +1174,10 @@ struct ContentView: View {
                 ForEach(selection, id: \.self) { url in
                     sourceRow(url)
                 }
-                // Adding a source is the `+` in the sidebar's footer now, where the count
-                // of them is. A blue link in the middle of the column said the same thing
-                // twice and moved down the window as sources were added.
+                Button { importing = true } label: {
+                    Label("Add source", systemImage: "plus.circle")
+                }
+                .buttonStyle(.link)
             } header: {
                 Text("Sources")
             }
