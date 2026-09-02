@@ -703,8 +703,17 @@ struct ResultsPane: View {
                     contextualActions
                 }
                 Button { setReading(!reading) } label: {
-                    Label("Reading", systemImage: reading ? "book.fill" : "book")
+                    Label("Reading mode", systemImage: reading ? "book.fill" : "book")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 28, height: 20)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(reading ? Color.primary : .secondary)
+                .background(reading ? Color.primary.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: Metric.control))
+                .accessibilityLabel("Reading mode")
+                .accessibilityAddTraits(reading ? .isSelected : [])
                 .tip(reading ? "Show the shelf again" : "Hide everything but the page",
                      key: "⌘⇧R")
                 Button { prefs.inspectorCollapsed.toggle() } label: {

@@ -34,6 +34,7 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 - Keep Reading Mode and native full screen independently usable.
 - Add a Settings > General helper to show and set PaperShelf as the macOS default PDF viewer.
 - Make Space in Catalogue/List open the selected PDF in native Quick Look, with Escape closing it.
+- Keep the Reading Mode toolbar control visibly selected while reading mode is active.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 
