@@ -19,6 +19,9 @@
 - Keep applying unavailable until a current review exists.
 - Restore Finder-style context menus for catalogue cards and list rows, including the
   recoverable **Move to Trash** action that is completed through the existing Apply flow.
+- After applying a batch action, reconcile the folder and force-refresh the catalogue;
+  for example, moving two PDFs to Trash must remove both from the visible list and
+  invalidate any stale selection or action state.
 
 Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 
@@ -146,6 +149,7 @@ extraction helpers.
 Add focused coverage for:
 
 - Rename review/apply palette actions and settings access.
+- Catalogue refresh and stale-selection cleanup after batch actions such as Move to Trash.
 - Reader next/previous navigation.
 - Default PDF viewer detection and configuration from Settings.
 - Finder-style Space and Escape Quick Look behavior in Catalogue/List.
