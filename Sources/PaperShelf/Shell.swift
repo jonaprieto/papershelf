@@ -155,6 +155,7 @@ struct PaperShelfApp: App {
         Settings {
             SettingsWindowView()
         }
+        .windowResizability(.contentMinSize)
     }
 }
 
