@@ -18,7 +18,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     // Views
     case viewList, viewCatalogue, viewBibliography, viewDuplicates
-    case readingMode, toggleNotes, toggleContents
+    case readingMode, zenMode, toggleNotes, toggleContents
 
     // Deciding
     case confirm, editName, askAI, copyCitation, applyOne
@@ -81,7 +81,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .focusSearch, .toggleSidebar, .toggleInspector:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-             .readingMode, .toggleNotes, .toggleContents:
+             .readingMode, .zenMode, .toggleNotes, .toggleContents:
             return .views
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending, .undo:
@@ -135,6 +135,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .viewBibliography: return "BibTeX"
         case .viewDuplicates: return "Duplicates"
         case .readingMode: return "Reading mode"
+        case .zenMode: return "Zen mode (full screen)"
         case .toggleNotes: return "Show or hide the notes"
         case .toggleContents: return "Show or hide the contents"
         case .confirm: return "Confirm the name and go to the next file"
@@ -193,6 +194,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .viewBibliography: return Shortcut("3", .command)
         case .viewDuplicates: return Shortcut("4", .command)
         case .readingMode: return Shortcut("r", [.command, .shift])
+        // Full screen is deliberately palette-only: a shortcut would compete with the
+        // native window command and the toolbar's reading controls.
+        case .zenMode: return nil
         case .toggleNotes: return Shortcut("n", [.command, .shift])
         case .toggleContents: return Shortcut("t", [.command, .shift])
         case .confirm: return Shortcut("\r", [])

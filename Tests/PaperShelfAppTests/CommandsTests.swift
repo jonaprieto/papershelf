@@ -156,6 +156,10 @@ final class CommandsTests: XCTestCase {
                       "reviewing renamings must be reachable from the palette")
         XCTAssertTrue(ResultsPane.performable.contains(.apply),
                       "applying renamings must be reachable from the palette")
+        XCTAssertTrue(ResultsPane.performable.contains(.zenMode),
+                      "full-screen reading must be reachable from the palette")
+        XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("zen mode"))
+        XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("full screen"))
         XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
                        "a command is listed twice")
     }

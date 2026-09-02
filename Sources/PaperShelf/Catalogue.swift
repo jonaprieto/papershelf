@@ -1312,6 +1312,7 @@ struct ResultsPane: View {
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
+        .zenMode,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .nextMark, .previousMark,
@@ -1335,6 +1336,10 @@ struct ResultsPane: View {
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
         case .viewDuplicates: choose(.duplicates)
+        case .zenMode:
+            // The palette is a sheet. Wait for it to resign key status so the native
+            // window toggle reaches the library window rather than the palette.
+            DispatchQueue.main.async { NSApp.keyWindow?.toggleFullScreen(nil) }
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
