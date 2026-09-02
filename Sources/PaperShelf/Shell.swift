@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreImage
 import PDFKit
 import UniformTypeIdentifiers
 import PaperShelfCore
@@ -189,8 +190,9 @@ final class Covers {
 
     /// The cover if one is already rendered. Synchronous and cheap, so a card that has
     /// its cover draws it on the first pass with no flicker.
-    func cached(_ item: Item) -> NSImage? {
-        cache.object(forKey: item.key as NSString)
+    func cached(_ item: Item, appearance: PDFReadingAppearance = .normal,
+                isDark: Bool = false) -> NSImage? {
+        cache.object(forKey: cacheKey(item, appearance: appearance, isDark: isDark) as NSString)
     }
 
     /// This one file's cover, awaited by the card that wants it.
@@ -201,11 +203,15 @@ final class Covers {
     /// told when a render lands.
     /// Whether this file has already been tried and could not be drawn, so a card can say
     /// that rather than showing the placeholder a card still waiting shows.
-    func couldNotRender(_ item: Item) -> Bool { unrenderable.contains(item.key) }
+    func couldNotRender(_ item: Item, appearance: PDFReadingAppearance = .normal,
+                        isDark: Bool = false) -> Bool {
+        unrenderable.contains(cacheKey(item, appearance: appearance, isDark: isDark))
+    }
 
-    func cover(for item: Item, passwords: [String], height: CGFloat) async -> NSImage? {
-        if let hit = cache.object(forKey: item.key as NSString) { return hit }
-        let key = item.key
+    func cover(for item: Item, passwords: [String], height: CGFloat,
+               appearance: PDFReadingAppearance = .normal, isDark: Bool = false) async -> NSImage? {
+        let key = cacheKey(item, appearance: appearance, isDark: isDark)
+        if let hit = cache.object(forKey: key as NSString) { return hit }
         if unrenderable.contains(key) { return nil }
 
         if waiting[key] != nil {
@@ -218,7 +224,10 @@ final class Covers {
         let url = item.currentURL
         let image = await withCheckedContinuation { (continuation: CheckedContinuation<NSImage?, Never>) in
             Covers.queue.addOperation {
-                continuation.resume(returning: Covers.render(url, passwords: passwords, height: height))
+                continuation.resume(returning: Covers.render(
+                    url, passwords: passwords, height: height,
+                    appearance: appearance, isDark: isDark
+                ))
             }
         }
 
@@ -230,6 +239,10 @@ final class Covers {
         return image
     }
 
+    private func cacheKey(_ item: Item, appearance: PDFReadingAppearance, isDark: Bool) -> String {
+        "\(item.key)#\(appearance.rawValue)#\(isDark)"
+    }
+
     /// Renders already in flight are left to finish rather than cancelled: resuming their
     /// waiters here as well as at the end of the render would resume twice, and a
     /// continuation resumed twice traps.
@@ -239,15 +252,18 @@ final class Covers {
         generation &+= 1
     }
 
-    private nonisolated static func render(_ url: URL, passwords: [String], height: CGFloat) -> NSImage? {
-        firstPageImage(of: url, passwords: passwords, height: height)
+    private nonisolated static func render(_ url: URL, passwords: [String], height: CGFloat,
+                                           appearance: PDFReadingAppearance, isDark: Bool) -> NSImage? {
+        firstPageImage(of: url, passwords: passwords, height: height,
+                       appearance: appearance, isDark: isDark)
     }
 }
 
 /// The first page of a PDF, drawn at a given height. Shared by the shelf's covers and by
 /// the duplicate window, which used to be handed a closure that returned nil for every
 /// file and so showed two grey rectangles where the whole point is comparing two pages.
-func firstPageImage(of url: URL, passwords: [String], height: CGFloat) -> NSImage? {
+func firstPageImage(of url: URL, passwords: [String], height: CGFloat,
+                    appearance: PDFReadingAppearance = .normal, isDark: Bool = false) -> NSImage? {
     guard let document = PDFDocument(url: url) else { return nil }
     if document.isLocked {
         for password in passwords where document.unlock(withPassword: password) { break }
@@ -256,7 +272,37 @@ func firstPageImage(of url: URL, passwords: [String], height: CGFloat) -> NSImag
     let box = page.bounds(for: .mediaBox)
     guard box.height > 0 else { return nil }
     let width = max(1, box.width * (height / box.height))
-    return page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+    let thumbnail = page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+    return styledThumbnail(thumbnail, appearance: appearance, isDark: isDark)
+}
+
+private func styledThumbnail(_ image: NSImage, appearance: PDFReadingAppearance,
+                             isDark: Bool) -> NSImage {
+    guard appearance == .whiteOnBlack || (appearance == .tint && isDark),
+          let tiff = image.tiffRepresentation,
+          let source = CIImage(data: tiff) else { return image }
+
+    let output: CIImage?
+    switch appearance {
+    case .whiteOnBlack:
+        let filter = CIFilter(name: "CIColorInvert")
+        filter?.setValue(source, forKey: kCIInputImageKey)
+        output = filter?.outputImage
+    case .tint:
+        let tint = CIImage(color: CIColor(red: 0.42, green: 0.40, blue: 0.36))
+            .cropped(to: source.extent)
+        let filter = CIFilter(name: "CIMultiplyBlendMode")
+        filter?.setValue(source, forKey: kCIInputImageKey)
+        filter?.setValue(tint, forKey: kCIInputBackgroundImageKey)
+        output = filter?.outputImage
+    case .normal:
+        output = nil
+    }
+
+    guard let output,
+          let cgImage = CIContext().createCGImage(output, from: source.extent)
+    else { return image }
+    return NSImage(cgImage: cgImage, size: image.size)
 }
 
 enum ViewMode: String, CaseIterable, Identifiable, Equatable {
@@ -341,6 +387,14 @@ enum Appearance: String, CaseIterable, Identifiable {
         case .system: return nil
         case .light: return NSAppearance(named: .aqua)
         case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 }

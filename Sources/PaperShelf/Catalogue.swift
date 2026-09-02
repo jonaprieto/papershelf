@@ -3441,7 +3441,9 @@ struct CoverCard: View {
     /// Set once a render has been tried and produced nothing, so the card can say the file
     /// could not be read instead of showing the placeholder forever.
     @State private var unreadable = false
+    @Environment(\.colorScheme) private var colorScheme
     private var appearance: PDFReadingAppearance { Prefs.shared.readingAppearance }
+    private var isDark: Bool { colorScheme == .dark }
 
     /// How tall to rasterise, in pixels: the size a card actually draws at, doubled for a
     /// retina display. It used to be a flat 320 whatever the card measured, which on a
@@ -3501,7 +3503,6 @@ struct CoverCard: View {
                         Image(nsImage: cover)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .modifier(PDFReadingAppearanceModifier(appearance: appearance))
                             .clipShape(RoundedRectangle(cornerRadius: Metric.card))
                             .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                     } else {
@@ -3528,13 +3529,18 @@ struct CoverCard: View {
                     }
                 }
             .overlay(alignment: .topTrailing) { badges }
-            .task(id: "\(item.key)#\(covers.generation)") {
-                if let hit = covers.cached(item) { cover = hit; unreadable = false; return }
+            .task(id: "\(item.key)#\(covers.generation)#\(appearance.rawValue)#\(isDark)") {
+                if let hit = covers.cached(item, appearance: appearance, isDark: isDark) {
+                    cover = hit
+                    unreadable = false
+                    return
+                }
                 cover = nil
-                unreadable = covers.couldNotRender(item)
+                unreadable = covers.couldNotRender(item, appearance: appearance, isDark: isDark)
                 guard !unreadable else { return }
                 cover = await covers.cover(for: item, passwords: passwords,
-                                           height: CoverCard.rasterHeight)
+                                           height: CoverCard.rasterHeight,
+                                           appearance: appearance, isDark: isDark)
                 unreadable = cover == nil
             }
 

@@ -31,4 +31,33 @@ final class CoversTests: XCTestCase {
         covers.forget()
         XCTAssertFalse(covers.couldNotRender(missing))
     }
+
+    func testEachPDFContrastHasItsOwnRenderedThumbnail() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("covers-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let pdf = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: pdf, text: "contrast")
+        let paper = item(pdf.path)
+        let covers = Covers()
+
+        let normal = await covers.cover(for: paper, passwords: [], height: 200,
+                                        appearance: .normal, isDark: true)
+        let inverted = await covers.cover(for: paper, passwords: [], height: 200,
+                                          appearance: .whiteOnBlack, isDark: true)
+        let tinted = await covers.cover(for: paper, passwords: [], height: 200,
+                                        appearance: .tint, isDark: true)
+
+        XCTAssertNotNil(normal)
+        XCTAssertNotNil(inverted)
+        XCTAssertNotNil(tinted)
+        XCTAssertNotEqual(normal?.tiffRepresentation, inverted?.tiffRepresentation)
+        XCTAssertNotEqual(normal?.tiffRepresentation, tinted?.tiffRepresentation)
+
+        let normalAgain = await covers.cover(for: paper, passwords: [], height: 200,
+                                             appearance: .normal, isDark: true)
+        XCTAssertEqual(normal?.tiffRepresentation, normalAgain?.tiffRepresentation)
+    }
 }

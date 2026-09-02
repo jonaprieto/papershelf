@@ -9,6 +9,12 @@ final class PDFReadingAppearanceTests: XCTestCase {
                        [.normal, .tint, .whiteOnBlack])
     }
 
+    func testThemeMapsToTheCommandPaletteColorScheme() {
+        XCTAssertNil(Appearance.system.colorScheme)
+        XCTAssertEqual(Appearance.light.colorScheme, .light)
+        XCTAssertEqual(Appearance.dark.colorScheme, .dark)
+    }
+
     func testPaletteSettingCyclesThroughEveryPDFAppearance() {
         let prefs = Prefs.shared
         let before = prefs.readingAppearance

@@ -40,6 +40,7 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
   list/catalogue, theme, and PDF-contrast preferences; automatic narrow-window hiding must
   not overwrite that choice.
 - Apply the selected PDF contrast to catalogue thumbnails and every in-app PDF surface.
+- Keep the command palette in the selected application theme.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 

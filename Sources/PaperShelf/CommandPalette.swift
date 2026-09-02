@@ -257,6 +257,7 @@ struct CommandPalette: View {
         .onKeyPress(.downArrow) { move(1) }
         .onKeyPress(.upArrow) { move(-1) }
         .onKeyPress(.escape) { dismiss(); return .handled }
+        .preferredColorScheme(Prefs.shared.appearance.colorScheme)
     }
 
     /// The library, asked after a pause: a keystroke is not a search. Metadata and text
