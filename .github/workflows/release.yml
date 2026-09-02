@@ -74,28 +74,28 @@ jobs:
           gh repo clone jonaprieto/homebrew-papershelf "$TAP"
           mkdir -p "$TAP/Casks"
           cat > "$TAP/Casks/papershelf.rb" <<EOF
-cask "papershelf" do
-  version "${VERSION}"
-  sha256 "${SHA}"
+          cask "papershelf" do
+            version "${VERSION}"
+            sha256 "${SHA}"
 
-  url "https://github.com/jonaprieto/papershelf/releases/download/v#{version}/PaperShelf-#{version}.dmg"
-  name "PaperShelf"
-  desc "macOS PDF reader and research library"
-  homepage "https://jonaprieto.github.io/papershelf/"
+            url "https://github.com/jonaprieto/papershelf/releases/download/v#{version}/PaperShelf-#{version}.dmg"
+            name "PaperShelf"
+            desc "macOS PDF reader and research library"
+            homepage "https://jonaprieto.github.io/papershelf/"
 
-  app "PaperShelf.app"
+            app "PaperShelf.app"
 
-  caveats <<~EOS
-    PaperShelf is ad-hoc signed while notarization is on the roadmap.
-    If macOS blocks the first launch, right-click PaperShelf.app in Finder and choose Open.
-  EOS
+            caveats <<~EOS
+              PaperShelf is ad-hoc signed while notarization is on the roadmap.
+              If macOS blocks the first launch, right-click PaperShelf.app in Finder and choose Open.
+            EOS
 
-  zap trash: [
-    "~/Library/Application Support/PaperShelf",
-    "~/Library/Preferences/com.jonaprieto.pdfhammer.plist",
-  ]
-end
-EOF
+            zap trash: [
+              "~/Library/Application Support/PaperShelf",
+              "~/Library/Preferences/com.jonaprieto.pdfhammer.plist",
+            ]
+          end
+          EOF
           git -C "$TAP" config user.name "github-actions[bot]"
           git -C "$TAP" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$TAP" add Casks/papershelf.rb
