@@ -4,14 +4,23 @@ import PDFKit
 import UniformTypeIdentifiers
 import PaperShelfCore
 
-private struct PDFReadingAppearanceModifier: ViewModifier {
+struct PDFReadingAppearanceModifier: ViewModifier {
     let appearance: PDFReadingAppearance
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         switch appearance {
         case .whiteOnBlack:
             content.compositingGroup().colorInvert()
-        case .normal, .tint:
+        case .tint:
+            content.overlay {
+                if colorScheme == .dark {
+                    Color(red: 0.42, green: 0.40, blue: 0.36)
+                        .blendMode(.multiply)
+                        .allowsHitTesting(false)
+                }
+            }
+        case .normal:
             content
         }
     }
@@ -103,8 +112,6 @@ struct ReviewInspector: View {
     @State var citationNote: String?
     /// How tall the entry is, measured by the editor that draws it.
     @State var citationHeight: CGFloat = 40
-    @Environment(\.colorScheme) private var colourScheme
-    private var isDark: Bool { colourScheme == .dark }
     @State private var addingNote = false
     @State private var noteText = ""
     @State private var hovered: UUID?
@@ -294,7 +301,6 @@ struct ReviewInspector: View {
                 // narrow, it kept drawing at its old width, straight over the panel
                 // beside it. Clipping is what actually holds it to its pane.
                 .clipped()
-                .overlay { nightTint }
                 .overlay(alignment: .topTrailing) { lockedOverlay }
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     switch phase {
@@ -362,21 +368,6 @@ struct ReviewInspector: View {
                     infoActions
                 }
             }
-        }
-    }
-
-    /// Reading in the dark: the page tinted rather than inverted.
-    ///
-    /// Inverting a scanned plate or a figure turns it into a negative, which is worse than
-    /// a bright page. Multiplying a warm dark colour over the page dims the paper and
-    /// leaves the ink and the artwork where they were, and it takes the highlights down
-    /// with it so they tint the paper instead of glowing off it.
-    @ViewBuilder
-    private var nightTint: some View {
-        if prefs.readingAppearance == .tint && isDark {
-            Color(red: 0.42, green: 0.40, blue: 0.36)
-                .blendMode(.multiply)
-                .allowsHitTesting(false)
         }
     }
 

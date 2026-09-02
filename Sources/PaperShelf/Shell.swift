@@ -9,7 +9,14 @@ import PaperShelfCore
 @MainActor
 @Observable
 final class Chrome {
-    var columnVisibility: NavigationSplitViewVisibility = .all
+    var columnVisibility: NavigationSplitViewVisibility =
+        Prefs.shared.sidebarShown ? .all : .detailOnly {
+        didSet {
+            guard !suppressSidebarPersistence else { return }
+            Prefs.shared.sidebarShown = columnVisibility != .detailOnly
+        }
+    }
+    private var suppressSidebarPersistence = false
     /// Set by the window so the menu can reach the runner without owning it.
     var undo: () -> Void = {}
     var canUndo = false
@@ -71,6 +78,14 @@ final class Chrome {
     func toggleSidebar() {
         // Not animated: see `Chrome.toggleSidebar`'s note.
         columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+    }
+
+    /// The width fit is a layout decision, not a preference. Keep it reversible when the
+    /// window grows, without overwriting the sidebar state the person chose.
+    func setSidebarVisibility(_ visibility: NavigationSplitViewVisibility, persist: Bool) {
+        suppressSidebarPersistence = !persist
+        columnVisibility = visibility
+        suppressSidebarPersistence = false
     }
 }
 

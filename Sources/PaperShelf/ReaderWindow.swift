@@ -36,6 +36,7 @@ struct ReaderWindow: View {
         VStack(spacing: 0) {
             PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
                        onMarkClick: selectMark(at:))
+                .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                 .overlay(alignment: .top) { selectionBar }
                 .inspector(isPresented: $showsNotes) {
                     NotesRail(annotator: annotator, palette: palette,

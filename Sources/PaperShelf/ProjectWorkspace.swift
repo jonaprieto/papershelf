@@ -181,6 +181,7 @@ struct ProjectWorkspace: View {
             Divider()
 
             PDFPreview(url: preview.url, passwords: env.passwords(), page: preview.page)
+                .modifier(PDFReadingAppearanceModifier(appearance: Prefs.shared.readingAppearance))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
         }

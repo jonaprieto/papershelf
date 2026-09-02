@@ -3441,6 +3441,7 @@ struct CoverCard: View {
     /// Set once a render has been tried and produced nothing, so the card can say the file
     /// could not be read instead of showing the placeholder forever.
     @State private var unreadable = false
+    private var appearance: PDFReadingAppearance { Prefs.shared.readingAppearance }
 
     /// How tall to rasterise, in pixels: the size a card actually draws at, doubled for a
     /// retina display. It used to be a flat 320 whatever the card measured, which on a
@@ -3500,6 +3501,7 @@ struct CoverCard: View {
                         Image(nsImage: cover)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
+                            .modifier(PDFReadingAppearanceModifier(appearance: appearance))
                             .clipShape(RoundedRectangle(cornerRadius: Metric.card))
                             .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                     } else {

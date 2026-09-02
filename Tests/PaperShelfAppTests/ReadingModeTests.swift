@@ -25,6 +25,28 @@ final class ReadingModeTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSidebarVisibilityIsRestoredWithoutPersistingAutomaticWidthHiding() {
+        let prefs = Prefs.shared
+        let before = prefs.sidebarShown
+        defer { prefs.sidebarShown = before }
+
+        prefs.sidebarShown = false
+        let hidden = Chrome()
+        XCTAssertEqual(hidden.columnVisibility, .detailOnly)
+
+        hidden.setSidebarVisibility(.all, persist: false)
+        XCTAssertEqual(hidden.columnVisibility, .all)
+        XCTAssertFalse(prefs.sidebarShown)
+
+        hidden.toggleSidebar()
+        XCTAssertEqual(hidden.columnVisibility, .detailOnly)
+        XCTAssertFalse(prefs.sidebarShown)
+
+        hidden.toggleSidebar()
+        XCTAssertEqual(hidden.columnVisibility, .all)
+        XCTAssertTrue(prefs.sidebarShown)
+    }
+
     /// The mode moves the browser out of the way and nothing else. A panel opened by hand
     /// is still open on the way in, and one shut by hand is still shut on the way out.
     func testReadingModeLeavesTheInspectorAlone() {

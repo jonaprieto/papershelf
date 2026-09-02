@@ -36,6 +36,10 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
 - Make Space in Catalogue/List open the selected PDF in native Quick Look, with Escape closing it.
 - Keep the Reading Mode toolbar control visibly selected while reading mode is active.
 - Expose native full-screen reading as `Zen mode (full screen)` in the command palette.
+- Restore the user's left-sidebar visibility alongside the existing inspector and
+  list/catalogue, theme, and PDF-contrast preferences; automatic narrow-window hiding must
+  not overwrite that choice.
+- Apply the selected PDF contrast to catalogue thumbnails and every in-app PDF surface.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 

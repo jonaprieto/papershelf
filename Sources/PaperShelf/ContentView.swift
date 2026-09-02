@@ -1492,13 +1492,13 @@ struct ContentView: View {
             SplitLayout.startsWithSidebar(screenWidth: $0.visibleFrame.width)
         } ?? true
         if SplitLayout.showsSidebar(windowWidth: width) {
-            guard sidebarHiddenByWidth, screenHasRoom else { return }
+            guard sidebarHiddenByWidth, screenHasRoom, prefs.sidebarShown else { return }
             sidebarHiddenByWidth = false
-            chrome.columnVisibility = .all
+            chrome.setSidebarVisibility(.all, persist: false)
         } else {
             guard chrome.columnVisibility != .detailOnly else { return }
             sidebarHiddenByWidth = true
-            chrome.columnVisibility = .detailOnly
+            chrome.setSidebarVisibility(.detailOnly, persist: false)
         }
     }
 
@@ -1509,9 +1509,10 @@ struct ContentView: View {
         // it shrinking to suit. The sidebar starts shut there and ⌘B opens it over the
         // shelf, which is what the platform's own overlay is for.
         if let screen = NSScreen.main,
-           !SplitLayout.startsWithSidebar(screenWidth: screen.visibleFrame.width) {
+           !SplitLayout.startsWithSidebar(screenWidth: screen.visibleFrame.width),
+           chrome.columnVisibility != .detailOnly {
             sidebarHiddenByWidth = true
-            chrome.columnVisibility = .detailOnly
+            chrome.setSidebarVisibility(.detailOnly, persist: false)
         }
         guard UserDefaults.standard.object(forKey: "NSWindow Frame main") == nil,
               let window = NSApp.windows.first else { return }

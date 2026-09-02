@@ -65,6 +65,9 @@ final class Prefs {
     var sortDescending: Bool = Store.flag("sortDescending", false) {
         didSet { Store.put("sortDescending", sortDescending) }
     }
+    var sidebarShown: Bool = Store.flag("sidebarShown", true) {
+        didSet { Store.put("sidebarShown", sidebarShown) }
+    }
     /// Hides everything already decided, so what is left is what is still asking for a
     /// decision.
     var onlyUndecided: Bool = Store.flag("onlyUndecided", false) {
