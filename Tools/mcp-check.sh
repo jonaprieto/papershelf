@@ -134,6 +134,16 @@ CREATE TABLE notes (
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+CREATE TABLE bookmarks (
+    id          INTEGER PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    page        INTEGER NOT NULL,
+    label       TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE(document_id, page)
+);
+CREATE INDEX bookmarks_by_document ON bookmarks(document_id, page, created_at);
 CREATE TABLE extracted_text (
     document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     markdown     TEXT NOT NULL,
@@ -165,6 +175,8 @@ VALUES ('doc-1',
         '2026-01-01T00:00:00Z', 'markdown-v1');
 INSERT INTO notes(document_id, body, created_at, updated_at)
 VALUES ('doc-1', 'compare against Korsgaard', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
+INSERT INTO bookmarks(id, document_id, page, label, created_at, updated_at)
+VALUES (1, 'doc-1', 2, 'Introduction', '2026-01-04T00:00:00Z', '2026-01-04T00:00:00Z');
 
 -- A tag and a project with zero members each: list_tags and list_projects must still show
 -- them, at count zero, rather than an INNER JOIN silently dropping the empty ones.
@@ -352,7 +364,7 @@ BEGIN
     SELECT RAISE(ABORT, 'simulated write failure for mcp-check');
 END;
 
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 SQL
 
 # Coverage for the sweep that removes expired plans: two files planted straight into
@@ -581,6 +593,13 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"113","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"document","document_id":"doc-3"}}}' \
   '{"jsonrpc":"2.0","id":"114","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"document","document_id":"doc-3","style_id":"00000000-0000-0000-0000-000000000001","reset":true}}}' \
   '{"jsonrpc":"2.0","id":"115","method":"tools/call","params":{"name":"list_highlights","arguments":{"document_id":"doc-3"}}}' \
+  '{"jsonrpc":"2.0","id":"116","method":"tools/call","params":{"name":"list_bookmarks","arguments":{"document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"117","method":"tools/call","params":{"name":"list_bookmarks","arguments":{"document_id":"doc-1","since_revision":"1:2026-01-04T00:00:00Z:1"}}}' \
+  '{"jsonrpc":"2.0","id":"118","method":"tools/call","params":{"name":"add_bookmark","arguments":{"document_id":"doc-1","page":3,"label":"Discussion"}}}' \
+  '{"jsonrpc":"2.0","id":"119","method":"tools/call","params":{"name":"add_bookmark","arguments":{"document_id":"doc-1","page":3,"label":"Changed by retry"}}}' \
+  '{"jsonrpc":"2.0","id":"120","method":"tools/call","params":{"name":"rename_bookmark","arguments":{"id":1,"label":"Start here","document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"121","method":"tools/call","params":{"name":"remove_bookmark","arguments":{"id":1,"document_id":"doc-1"}}}' \
+  '{"jsonrpc":"2.0","id":"122","method":"tools/call","params":{"name":"list_bookmarks","arguments":{"document_id":"doc-1"}}}' \
   '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \

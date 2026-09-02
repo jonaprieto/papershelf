@@ -347,6 +347,78 @@ final class LibraryReader {
         }
     }
 
+    struct BookmarkSummary {
+        let id: Int64
+        let documentID: String
+        let page: Int
+        let label: String
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    func bookmarks(forDocument id: String) throws -> [BookmarkSummary] {
+        try withStatement("""
+            SELECT id, document_id, page, label, created_at, updated_at
+            FROM bookmarks WHERE document_id = ? ORDER BY page, created_at, id;
+            """, bind: { statement in bindText(statement, 1, id) }) { statement in
+            var results: [BookmarkSummary] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(bookmarkSummary(from: statement, fallbackDocumentID: id))
+            }
+            return results
+        }
+    }
+
+    func bookmark(documentID id: String, page: Int) throws -> BookmarkSummary? {
+        try withStatement("""
+            SELECT id, document_id, page, label, created_at, updated_at
+            FROM bookmarks WHERE document_id = ? AND page = ?;
+            """, bind: { statement in
+            bindText(statement, 1, id)
+            sqlite3_bind_int64(statement, 2, Int64(max(1, page)))
+        }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return bookmarkSummary(from: statement, fallbackDocumentID: id)
+        }
+    }
+
+    func bookmark(id: Int64) throws -> BookmarkSummary? {
+        try withStatement("""
+            SELECT id, document_id, page, label, created_at, updated_at
+            FROM bookmarks WHERE id = ?;
+            """, bind: { statement in
+            sqlite3_bind_int64(statement, 1, id)
+        }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return bookmarkSummary(from: statement, fallbackDocumentID: "")
+        }
+    }
+
+    /// Includes count and maximum id so adding or removing the newest row changes the
+    /// revision even when the remaining timestamps do not.
+    func bookmarkRevision(forDocument id: String) throws -> String {
+        try withStatement("""
+            SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(MAX(id), 0)
+            FROM bookmarks WHERE document_id = ?;
+            """, bind: { statement in bindText(statement, 1, id) }) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return "0::0" }
+            return "\(sqlite3_column_int64(statement, 0)):\(columnText(statement, 1) ?? ""):"
+                + "\(sqlite3_column_int64(statement, 2))"
+        }
+    }
+
+    private func bookmarkSummary(from statement: OpaquePointer,
+                                 fallbackDocumentID: String) -> BookmarkSummary {
+        BookmarkSummary(
+            id: sqlite3_column_int64(statement, 0),
+            documentID: columnText(statement, 1) ?? fallbackDocumentID,
+            page: max(1, Int(sqlite3_column_int64(statement, 2))),
+            label: columnText(statement, 3) ?? "",
+            createdAt: columnText(statement, 4) ?? "",
+            updatedAt: columnText(statement, 5) ?? ""
+        )
+    }
+
     /// Resolves whatever a caller has in hand to one document: the id a previous result
     /// handed back, a path on disk, or a title. Tried in that order, because an id is
     /// exact, a path is nearly exact, and a title is a guess.

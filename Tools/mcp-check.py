@@ -37,7 +37,7 @@ check.failed = False
 # 87-90) closing out a later re-review: id 84's original request is gone, replaced by a
 # fresh set_tags poison-batch call and its own confirmation, alongside a new add_to_project
 # call and confirmation for the undercount fix itself, for a net change of minus one request
-# plus four, plus 2 for Task 12: an unknown token refused by apply_file_changes (91) and a
+# plus four, plus 7 for document bookmarks (116-122), plus 2 for Task 12: an unknown token refused by apply_file_changes (91) and a
 # proposal against a folder holding a real PDF (92)), plus 8 closing out the final
 # whole-branch review: the Critical fix's mutation coverage against doc-9, whose one
 # recorded location does not exist (97-99), the bibliography cap-visibility fix against a
@@ -49,7 +49,7 @@ check.failed = False
 # with a different token than 92's, and the same folder proposed twice more (94, 95) with
 # only `recursive` differing between the two, which have to answer with different tokens
 # from each other despite describing the same one move.
-check("no reply to a notification", len(seen) == 10 + 5 + 71 + 3)
+check("no reply to a notification", len(seen) == 10 + 5 + 78 + 3)
 
 d = result("d")
 check(
@@ -116,6 +116,11 @@ check(
     "list_highlights exposes revision polling",
     "since_revision"
     in list_highlights_spec.get("inputSchema", {}).get("properties", {}),
+)
+bookmark_tool_names = {"list_bookmarks", "add_bookmark", "rename_bookmark", "remove_bookmark"}
+check(
+    "the MCP server exposes durable bookmark tools",
+    bookmark_tool_names.issubset({tool.get("name") for tool in listed_tools}),
 )
 
 c = result("3")
@@ -820,6 +825,59 @@ big_tag_listing = result("104")
 check(
     "documents_by_tag clamps the upper bound of limit, not only the lower one",
     big_tag_listing.get("structuredContent", {}).get("count") == 1000,
+)
+
+# Bookmarks are document metadata rather than PDF annotations. The first read proves their
+# stable id and page ordering; the second proves revision polling; the two adds prove retrying
+# the same page is idempotent; rename and remove use the stable id; the last read proves the
+# removal left the other page bookmark in place.
+initial_bookmarks = result("116").get("structuredContent", {})
+initial_rows = initial_bookmarks.get("bookmarks", [])
+check(
+    "list_bookmarks returns the durable bookmark row",
+    initial_bookmarks.get("changed") is True
+    and initial_bookmarks.get("revision") == "1:2026-01-04T00:00:00Z:1"
+    and len(initial_rows) == 1
+    and initial_rows[0].get("id") == 1
+    and initial_rows[0].get("page") == 2
+    and initial_rows[0].get("label") == "Introduction",
+)
+polled_bookmarks = result("117").get("structuredContent", {})
+check(
+    "list_bookmarks supports unchanged revision polling",
+    polled_bookmarks.get("changed") is False
+    and polled_bookmarks.get("revision") == "1:2026-01-04T00:00:00Z:1",
+)
+added_bookmark = result("118").get("structuredContent", {})
+added_row = added_bookmark.get("bookmark", {})
+check(
+    "add_bookmark writes a new page bookmark",
+    added_bookmark.get("created") is True
+    and added_row.get("page") == 3
+    and added_row.get("label") == "Discussion",
+)
+retried_bookmark = result("119").get("structuredContent", {})
+check(
+    "adding the same document page is idempotent",
+    retried_bookmark.get("created") is False
+    and retried_bookmark.get("bookmark", {}).get("id") == added_row.get("id")
+    and retried_bookmark.get("bookmark", {}).get("label") == "Discussion",
+)
+renamed_bookmark = result("120").get("structuredContent", {}).get("bookmark", {})
+check(
+    "rename_bookmark updates the stable bookmark",
+    renamed_bookmark.get("id") == 1 and renamed_bookmark.get("label") == "Start here",
+)
+removed_bookmark = result("121").get("structuredContent", {})
+check(
+    "remove_bookmark removes only the selected bookmark",
+    removed_bookmark.get("removed") is True and removed_bookmark.get("id") == 1,
+)
+remaining_bookmarks = result("122").get("structuredContent", {})
+check(
+    "the remaining bookmark is still listed after removal",
+    remaining_bookmarks.get("count") == 1
+    and remaining_bookmarks.get("bookmarks", [{}])[0].get("page") == 3,
 )
 
 # Highlight profiles are shared between the app and MCP through one portable file. The

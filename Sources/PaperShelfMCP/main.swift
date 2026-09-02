@@ -7,7 +7,7 @@ if CommandLine.arguments.contains("--version") {
 }
 
 let server = Server(
-    tools: folderTools + libraryTools + highlightTools + writeTools,
+    tools: folderTools + libraryTools + highlightTools + bookmarkTools + writeTools + bookmarkWriteTools,
     name: "papershelf",
     version: paperShelfVersion,
     instructions: "Read, search and organise a local PDF library. Start with "
@@ -18,8 +18,9 @@ let server = Server(
         + "accept, so nothing needs a file path. list_highlights reads live PDF marks, "
         + "returns a revision for polling, and get_highlight_profile/set_highlight_profile "
         + "share semantic colors and meanings at library, folder, project, and document "
-        + "scope. Paths, where they appear, are absolute paths on this machine, and nothing "
-        + "leaves it."
+        + "scope. list_bookmarks reads durable page bookmarks with a polling revision; "
+        + "add_bookmark, rename_bookmark and remove_bookmark change only local metadata. "
+        + "Paths, where they appear, are absolute paths on this machine, and nothing leaves it."
 )
 
 note("papershelf \(paperShelfVersion) ready, speaking \(Revision.current) and the initialize handshake")

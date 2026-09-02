@@ -39,13 +39,14 @@ final class WebsiteTests: XCTestCase {
     func testLandingPageListsEveryRegisteredMCPTool() throws {
         let html = try String(contentsOf: repositoryRoot.appendingPathComponent("docs/index.html"), encoding: .utf8)
         let pageTools = Set(values(of: "data-mcp-tool", in: html))
-        let files = ["Tools.swift", "LibraryTools.swift", "HighlightTools.swift", "WriteTools.swift"]
+        let files = ["Tools.swift", "LibraryTools.swift", "HighlightTools.swift",
+                     "BookmarkTools.swift", "WriteTools.swift"]
         let source = try files.map {
             try String(contentsOf: repositoryRoot.appendingPathComponent("Sources/PaperShelfMCP/\($0)"), encoding: .utf8)
         }.joined(separator: "\n")
         let expected = toolNames(in: source)
         XCTAssertEqual(pageTools, expected)
-        XCTAssertEqual(pageTools.count, 18)
+        XCTAssertEqual(pageTools.count, 22)
     }
 
     func testLandingPageExplainsScopedHighlightsAndDuplicateWatcher() throws {
