@@ -160,6 +160,10 @@ final class CommandsTests: XCTestCase {
                       "full-screen reading must be reachable from the palette")
         XCTAssertTrue(ResultsPane.performable.contains(.copyCitation),
                       "the current file's BibTeX citation must be reachable from the palette")
+        XCTAssertTrue(ResultsPane.performable.contains(.addBookmark))
+        XCTAssertTrue(ResultsPane.performable.contains(.showBookmarks))
+        XCTAssertTrue(ResultsPane.performable.contains(.removeBookmark))
+        XCTAssertEqual(Command.showBookmarks.title, "Show bookmarks")
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("current file"))
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("citation"))
         XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("zen mode"))

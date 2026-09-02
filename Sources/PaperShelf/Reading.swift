@@ -761,13 +761,14 @@ struct PageBar: View {
 /// what its pages look like. A scan carries no outline and a textbook's outline is the
 /// fastest way through it, so neither one alone is the rail.
 enum ContentsRailMode: String, CaseIterable, Identifiable {
-    case outline, thumbnails
+    case outline, thumbnails, bookmarks
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .outline: return "Contents"
         case .thumbnails: return "Pages"
+        case .bookmarks: return "Bookmarks"
         }
     }
 
@@ -775,6 +776,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
         switch self {
         case .outline: return "text.alignleft"
         case .thumbnails: return "square.grid.2x2"
+        case .bookmarks: return "bookmark"
         }
     }
 }
@@ -795,26 +797,38 @@ struct ContentsRail: View {
     /// rail is the pages, and the switch would be a choice between a list and nothing.
     private var hasOutline: Bool { !annotator.contents.isEmpty }
 
-    private var shown: ContentsRailMode { hasOutline ? prefs.contentsRailMode : .thumbnails }
+    private var availableModes: [ContentsRailMode] {
+        (hasOutline ? [.outline] : []) + [.thumbnails, .bookmarks]
+    }
+
+    private var shown: ContentsRailMode {
+        if prefs.contentsRailMode == .bookmarks { return .bookmarks }
+        return hasOutline ? prefs.contentsRailMode : .thumbnails
+    }
+
+    private var selection: Binding<ContentsRailMode> {
+        Binding(get: { shown }, set: { prefs.contentsRailMode = $0 })
+    }
+
+    @State private var bookmarkToRename: Bookmark?
+    @State private var bookmarkName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.step) {
                 Text(shown.label).font(Face.headline)
                 Spacer(minLength: Space.tight)
-                if hasOutline {
-                    Picker("", selection: $prefs.contentsRailMode) {
-                        ForEach(ContentsRailMode.allCases) { mode in
-                            Image(systemName: mode.icon)
-                                .accessibilityLabel(mode.label)
-                                .tag(mode)
-                        }
+                Picker("", selection: selection) {
+                    ForEach(availableModes) { mode in
+                        Image(systemName: mode.icon)
+                            .accessibilityLabel(mode.label)
+                            .tag(mode)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .tip("The chapters, or the pages themselves")
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .tip("The chapters, pages, or bookmarks")
             }
             .padding(.horizontal, Space.roomy)
             .padding(.vertical, Space.step)
@@ -827,9 +841,25 @@ struct ContentsRail: View {
             switch shown {
             case .outline: outline
             case .thumbnails: PageThumbnails(view: annotator.view)
+            case .bookmarks: bookmarks
             }
         }
         .background(.background.secondary)
+        .alert("Rename bookmark", isPresented: Binding(
+            get: { bookmarkToRename != nil },
+            set: { if !$0 { bookmarkToRename = nil } }
+        )) {
+            TextField("Bookmark name", text: $bookmarkName)
+            Button("Save") {
+                if let bookmark = bookmarkToRename {
+                    _ = annotator.renameBookmark(bookmark, label: bookmarkName)
+                }
+                bookmarkToRename = nil
+            }
+            Button("Cancel", role: .cancel) { bookmarkToRename = nil }
+        } message: {
+            Text("Give this page a name you will recognise later.")
+        }
     }
 
     private var outline: some View {
@@ -881,6 +911,65 @@ struct ContentsRail: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+    }
+
+    private var bookmarks: some View {
+        Group {
+            if annotator.bookmarks.isEmpty {
+                VStack(spacing: Space.step) {
+                    Image(systemName: "bookmark")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text("No bookmarks yet")
+                        .font(Face.body)
+                    Button("Bookmark page \(annotator.page)") {
+                        _ = annotator.toggleBookmark()
+                    }
+                    .buttonStyle(.link)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(Space.roomy)
+            } else {
+                List(annotator.bookmarks) { bookmark in
+                    Button {
+                        annotator.jump(to: bookmark)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
+                            Image(systemName: "bookmark.fill")
+                                .foregroundStyle(Color.accentColor)
+                            Text(bookmark.label)
+                                .lineLimit(2)
+                            Spacer(minLength: Space.tight)
+                            Text("p. \(bookmark.page)")
+                                .font(Face.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, Space.snug)
+                        .padding(.vertical, Space.tight)
+                        .contentShape(Rectangle())
+                        .background(bookmark.page == annotator.page
+                                    ? Color.accentColor.opacity(0.13) : .clear,
+                                    in: RoundedRectangle(cornerRadius: Metric.control))
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Go to Bookmark") { annotator.jump(to: bookmark) }
+                        Button("Rename…") {
+                            bookmarkName = bookmark.label
+                            bookmarkToRename = bookmark
+                        }
+                        Divider()
+                        Button("Remove Bookmark", role: .destructive) {
+                            _ = annotator.removeBookmark(bookmark)
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                    .listRowSeparator(.hidden)
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+            }
+        }
     }
 }
 

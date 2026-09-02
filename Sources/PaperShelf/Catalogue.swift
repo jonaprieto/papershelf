@@ -878,6 +878,14 @@ struct ResultsPane: View {
              ? "Mark the selection and write about it"
              : "The highlights and notes on this document", key: "⌘⇧N")
 
+        Button { _ = annotator.toggleBookmark() } label: {
+            Label(annotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark",
+                  systemImage: annotator.bookmarkOnCurrentPage == nil
+                  ? "bookmark" : "bookmark.fill")
+        }
+        .tip(annotator.bookmarkOnCurrentPage == nil
+             ? "Bookmark the current page" : "Remove the bookmark from the current page")
+
         if let item = readerItem ?? selectedItem {
             ShareLink(item: item.currentURL)
                 .tip("Send this document somewhere else")
@@ -1316,7 +1324,8 @@ struct ResultsPane: View {
         .zenMode,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
-        .addNote, .nextMark, .previousMark,
+        .addNote, .addBookmark, .showBookmarks, .removeBookmark,
+        .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply,
@@ -1388,6 +1397,15 @@ struct ResultsPane: View {
             prefs.inspectorPanel = .notes
             prefs.inspectorCollapsed = false
             addingNote = true
+        case .addBookmark:
+            return annotator.toggleBookmark()
+        case .showBookmarks:
+            guard annotator.hasPages else { return false }
+            prefs.contentsShown = true
+            prefs.contentsRailMode = .bookmarks
+        case .removeBookmark:
+            guard let bookmark = annotator.bookmarkOnCurrentPage else { return false }
+            return annotator.removeBookmark(bookmark)
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)
 

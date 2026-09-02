@@ -315,6 +315,16 @@ struct ReviewInspector: View {
                     PageBar(annotator: annotator, fit: $prefs.pageFit)
                         .padding(.bottom, Space.roomy)
                 }
+                .contextMenu {
+                    Button(annotator.bookmarkOnCurrentPage == nil
+                           ? "Add Bookmark" : "Remove Bookmark") {
+                        _ = annotator.toggleBookmark()
+                    }
+                    Button("Show Bookmarks") {
+                        prefs.contentsShown = true
+                        prefs.contentsRailMode = .bookmarks
+                    }
+                }
             }
             .clipped()
         }
@@ -427,7 +437,7 @@ struct ReviewInspector: View {
                 // Measured from the palette, for the same reason the mark bar's is: these
                 // were 250 and 284, written when the palette had five colours in it, and
                 // the palette is a list the reader edits.
-                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 106 : 72),
+                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 134 : 100),
                                  height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
@@ -555,6 +565,16 @@ struct ReviewInspector: View {
             .accessibilityLabel(mark.note.isEmpty ? "Add note" : "Edit note")
             .tip(mark.note.isEmpty ? "Write a note on this mark" : "Show this mark's note")
 
+            Button { _ = annotator.toggleBookmark() } label: {
+                Image(systemName: annotator.bookmarkOnCurrentPage == nil
+                      ? "bookmark" : "bookmark.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(annotator.bookmarkOnCurrentPage == nil
+                                ? "Add bookmark" : "Remove bookmark")
+            .tip(annotator.bookmarkOnCurrentPage == nil
+                 ? "Bookmark this page" : "Remove the bookmark from this page")
+
             Button { annotator.remove(mark) } label: {
                 Image(systemName: "trash")
             }
@@ -603,6 +623,16 @@ struct ReviewInspector: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add note")
             .onHover { hoveringNote = $0 }
+
+            Button { _ = annotator.toggleBookmark() } label: {
+                Image(systemName: annotator.bookmarkOnCurrentPage == nil
+                      ? "bookmark" : "bookmark.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(annotator.bookmarkOnCurrentPage == nil
+                                ? "Add bookmark" : "Remove bookmark")
+            .tip(annotator.bookmarkOnCurrentPage == nil
+                 ? "Bookmark this page" : "Remove the bookmark from this page")
 
             // One menu, not two more bare icons: the bar is a fixed width and already
             // carries the swatches, a divider and the note button. Hover is reported into

@@ -39,6 +39,12 @@ struct ReaderWindow: View {
                        onMarkClick: selectMark(at:))
                 .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                 .overlay(alignment: .top) { selectionBar }
+                .contextMenu {
+                    Button(annotator.bookmarkOnCurrentPage == nil
+                           ? "Add Bookmark" : "Remove Bookmark") {
+                        _ = annotator.toggleBookmark()
+                    }
+                }
                 .inspector(isPresented: $showsNotes) {
                     NotesRail(annotator: annotator, palette: palette,
                               addingNote: $addingNote, noteText: $noteText,
@@ -184,6 +190,15 @@ struct ReaderWindow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Note on the selection")
+                Button {
+                    _ = annotator.toggleBookmark()
+                } label: {
+                    Image(systemName: annotator.bookmarkOnCurrentPage == nil
+                          ? "bookmark" : "bookmark.fill")
+                }
+                .buttonStyle(.plain)
+                .help(annotator.bookmarkOnCurrentPage == nil
+                      ? "Bookmark this page" : "Remove the bookmark from this page")
             }
             .padding(.horizontal, Space.roomy)
             .padding(.vertical, Space.snug)

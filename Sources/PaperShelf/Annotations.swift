@@ -23,6 +23,8 @@ final class Annotator {
     var selectedMark: UUID?
     /// The document's own table of contents, if it has one.
     private(set) var contents: [Chapter] = []
+    /// Named return points kept in the library, separate from PDF annotations.
+    private(set) var bookmarks: [Bookmark] = []
     /// The page on screen, one-based, and how many there are. Published so the Info panel
     /// can say where you are, and written to the library so the shelf can say which books
     /// are open.
@@ -42,6 +44,10 @@ final class Annotator {
     /// is pages, not chapters -- a scan has none of the latter and is exactly the kind of
     /// document a column of thumbnails is for.
     var hasPages: Bool { pageCount > 0 }
+    var hasBookmarks: Bool { !bookmarks.isEmpty }
+    var bookmarkOnCurrentPage: Bookmark? {
+        bookmarks.first { $0.page == page }
+    }
 
     /// One outline entry, flattened with its depth. A table of contents is read top to
     /// bottom far more often than it is folded, and indentation carries the structure
@@ -115,6 +121,7 @@ final class Annotator {
     /// page turn is cheap; a database write per scroll tick is not.
     private var positionTask: Task<Void, Never>?
     private var writtenPage: Int?
+    private var bookmarksTask: Task<Void, Never>?
 
     func attach(_ view: PDFView, url: URL) {
         // Whatever the previous document still owed the disk, it owes now: the debounce
@@ -127,6 +134,9 @@ final class Annotator {
         generation &+= 1
         marks = []
         contents = []
+        bookmarksTask?.cancel()
+        bookmarksTask = nil
+        bookmarks = []
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
         page = 1
@@ -149,6 +159,82 @@ final class Annotator {
 
     func setDocumentID(_ id: String?) {
         documentID = id
+        bookmarksTask?.cancel()
+        bookmarksTask = nil
+        bookmarks = []
+        loadBookmarks()
+    }
+
+    private func loadBookmarks() {
+        guard let documentID, let library = Library.shared else { return }
+        let mine = generation
+        bookmarksTask = Task { @MainActor [weak self] in
+            let loaded = try? await library.bookmarks(forDocument: documentID)
+            guard let self, mine == self.generation, self.documentID == documentID else { return }
+            self.bookmarks = loaded ?? []
+            self.bookmarksTask = nil
+        }
+    }
+
+    /// Adds or removes the bookmark on the current page. The immediate Boolean lets a
+    /// command report whether it had a document to act on; the database work stays off
+    /// the button's synchronous path.
+    @discardableResult
+    func toggleBookmark() -> Bool {
+        guard let documentID, hasPages, let library = Library.shared else { return false }
+        let targetPage = page
+        let mine = generation
+        bookmarksTask?.cancel()
+        bookmarksTask = Task { @MainActor [weak self] in
+            let existing: Bookmark?
+            do {
+                existing = try await library.bookmark(documentID: documentID, page: targetPage)
+            } catch {
+                return
+            }
+            if let existing {
+                try? await library.removeBookmark(existing.id)
+            } else {
+                _ = try? await library.addBookmark(documentID: documentID, page: targetPage)
+            }
+            guard let self, mine == self.generation, self.documentID == documentID else { return }
+            self.bookmarks = (try? await library.bookmarks(forDocument: documentID)) ?? []
+            self.bookmarksTask = nil
+        }
+        return true
+    }
+
+    @discardableResult
+    func removeBookmark(_ bookmark: Bookmark) -> Bool {
+        guard bookmark.documentID == documentID, let library = Library.shared else { return false }
+        let mine = generation
+        bookmarksTask?.cancel()
+        bookmarksTask = Task { @MainActor [weak self] in
+            try? await library.removeBookmark(bookmark.id)
+            guard let self, mine == self.generation, self.documentID == bookmark.documentID else { return }
+            self.bookmarks = (try? await library.bookmarks(forDocument: bookmark.documentID)) ?? []
+            self.bookmarksTask = nil
+        }
+        return true
+    }
+
+    @discardableResult
+    func renameBookmark(_ bookmark: Bookmark, label: String) -> Bool {
+        guard bookmark.documentID == documentID, let library = Library.shared else { return false }
+        let mine = generation
+        bookmarksTask?.cancel()
+        bookmarksTask = Task { @MainActor [weak self] in
+            _ = try? await library.renameBookmark(bookmark.id, label: label)
+            guard let self, mine == self.generation, self.documentID == bookmark.documentID else { return }
+            self.bookmarks = (try? await library.bookmarks(forDocument: bookmark.documentID)) ?? []
+            self.bookmarksTask = nil
+        }
+        return true
+    }
+
+    func jump(to bookmark: Bookmark) {
+        guard bookmark.documentID == documentID else { return }
+        go(toPage: bookmark.page)
     }
 
     /// A document attribute worth showing: a string, with something in it. PDFs written

@@ -27,7 +27,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     // Reading
     case highlight1, highlight2, highlight3, highlight4, highlight5
-    case addNote, nextMark, previousMark, openExternally
+    case addNote, addBookmark, showBookmarks, removeBookmark
+    case nextMark, previousMark, openExternally
 
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
@@ -87,7 +88,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending, .undo:
             return .deciding
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
-             .addNote, .nextMark, .previousMark, .openExternally:
+             .addNote, .addBookmark, .showBookmarks, .removeBookmark,
+             .nextMark, .previousMark, .openExternally:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .shortcuts:
@@ -99,7 +101,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .focusContents, .toggleContents, .toggleNotes,
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
-             .addNote, .nextMark, .previousMark:
+             .addNote, .addBookmark, .showBookmarks, .removeBookmark,
+             .nextMark, .previousMark:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
@@ -158,6 +161,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight4: return "Highlight with colour 4"
         case .highlight5: return "Highlight with colour 5"
         case .addNote: return "Add a note to the selection"
+        case .addBookmark: return "Add a bookmark at the current page"
+        case .showBookmarks: return "Show bookmarks"
+        case .removeBookmark: return "Remove the bookmark at the current page"
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .openExternally: return "Open in the default PDF viewer"
@@ -219,6 +225,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight4: return Shortcut("4", [])
         case .highlight5: return Shortcut("5", [])
         case .addNote: return Shortcut("n", [])
+        case .addBookmark, .showBookmarks, .removeBookmark: return nil
         case .nextMark: return Shortcut("\u{F701}", .option)
         case .previousMark: return Shortcut("\u{F700}", .option)
         case .openExternally: return Shortcut("o", [])
