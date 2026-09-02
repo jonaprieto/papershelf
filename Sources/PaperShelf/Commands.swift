@@ -141,7 +141,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .confirm: return "Confirm the name and go to the next file"
         case .editName: return "Edit the name"
         case .askAI: return "Ask the model for a name"
-        case .copyCitation: return "Copy this file's BibTeX entry"
+        case .copyCitation: return "Copy the current file's BibTeX citation"
         case .applyOne: return "Apply this one file now"
         case .skip: return "Leave this file alone"
         case .skipFolder: return "Leave the rest of this folder alone"

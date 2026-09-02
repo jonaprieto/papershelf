@@ -341,15 +341,24 @@ struct ReviewInspector: View {
             // of a pane it was supposed to be pinned to.
             if prefs.inspectorPanel == .notes {
                 notesPanel
+            } else if prefs.inspectorPanel == .details {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
+                                      livePage: showsPage ? annotator.page : nil,
+                                      livePageCount: showsPage ? annotator.pageCount : nil)
+                            .padding(Space.roomy)
+                        Divider()
+                        infoActions
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Space.step) {
                         switch prefs.inspectorPanel {
                         case .rename: renamePanel
-                        case .details:
-                            MetadataPanel(item: item, excerpt: excerpt, tags: tags, read: read,
-                                          livePage: showsPage ? annotator.page : nil,
-                                          livePageCount: showsPage ? annotator.pageCount : nil)
+                        case .details: EmptyView()
                         case .bibtex: bibtexPanel
                         case .notes: EmptyView()
                         }
@@ -357,16 +366,10 @@ struct ReviewInspector: View {
                     .padding(Space.roomy)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // Pinned, like the notes tab's export bar. A reviewer presses one of these
-                // on every file; they should not be below however much this particular
-                // document had to say about itself.
+                // Rename decisions stay pinned while the editable name and proposal scroll.
                 if prefs.inspectorPanel == .rename {
                     Divider()
                     renameActions
-                }
-                if prefs.inspectorPanel == .details {
-                    Divider()
-                    infoActions
                 }
             }
         }
