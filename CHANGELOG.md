@@ -4,6 +4,28 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.11.2] - 2026-09-02
+
+### Added
+
+- Make the current file's BibTeX citation directly searchable in the command palette.
+
+### Changed
+
+- Keep PDF contrast consistent in thumbnails, pages, and the surrounding reading canvas.
+- Remember the library window's layout and appearance preferences between launches.
+- Keep Info actions beside the metadata they act on, and restore standard Settings window
+  controls.
+
+### Fixed
+
+- Remove redundant filename lines under catalogue thumbnails.
+- Keep the reading-mode toolbar state and source navigation in sync with the current view.
+- Restore the inspector shortcut even when no file is selected.
+- Make Zen mode hide every panel, fit the page to width, and restore the previous layout
+  when it ends.
+- Handle native trackpad swipes over a PDF as previous/next document navigation.
+
 ## [1.11.1] - 2026-09-01
 
 ### Added
