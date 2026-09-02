@@ -33,6 +33,10 @@ git tag -s v1.0.0 -m "Release v1.0.0"
 git push origin main v1.0.0
 ```
 
+Before committing a release, update `docs/index.html`'s reported release version and release
+link, then run the website tests. After publishing, verify the website and its release link
+report the new version.
+
 The tag starts the GitHub workflow that tests the package, builds the disk image, and
 publishes the DMG and checksum. Signing and notarization use repository secrets when they
 are configured; otherwise the release is ad-hoc signed and requires right-click, Open on

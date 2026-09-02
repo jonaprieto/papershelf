@@ -38,6 +38,8 @@ including Core's.
   `Plugin/papershelf/.codex-plugin/plugin.json` aligned with the new `CHANGELOG.md` entry.
 - Run `swift build`, `swift test`, `Tools/mcp-check.sh`, and `./build.sh` before committing.
   Inspect the built app's version and bundled changelog before installing it.
+- Update `docs/index.html`'s reported release version and release link, then run the website
+  tests. After publishing, verify the website and its release link report the new version.
 - Make a signed Conventional Commit, then create a signed annotated tag such as
   `git tag -s v1.8.0 -m "Release v1.8.0"` and push both with `git push origin main v1.8.0`.
   The tag starts the GitHub release workflow in `.github/workflows/release.yml`.

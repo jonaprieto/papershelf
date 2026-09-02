@@ -1,5 +1,6 @@
 import XCTest
 @testable import PaperShelf
+@testable import PaperShelfCore
 
 @MainActor
 final class WebsiteTests: XCTestCase {
@@ -52,5 +53,12 @@ final class WebsiteTests: XCTestCase {
         XCTAssertTrue(html.contains("extend, edit, and scope to a paper, project, folder, or whole library"))
         XCTAssertTrue(html.contains("The watcher catches the next copy"))
         XCTAssertTrue(html.contains("opens a review before anything is removed"))
+    }
+
+    func testLandingPageReportsTheCurrentRelease() throws {
+        let html = try String(contentsOf: repositoryRoot.appendingPathComponent("docs/index.html"), encoding: .utf8)
+        XCTAssertEqual(values(of: "data-release-version", in: html), [paperShelfVersion])
+        XCTAssertTrue(html.contains("Latest release"))
+        XCTAssertTrue(html.contains("/releases/tag/v\(paperShelfVersion)"))
     }
 }
