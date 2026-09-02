@@ -120,7 +120,7 @@ public actor Library {
     /// dismissed-duplicate-pairs table later is exactly one more string appended here; the
     /// rest of this type does not change shape to make room for it.
     fileprivate static let migrations: [String] = [schemaV1, schemaV2, schemaV3, schemaV4,
-                                                   schemaV5, schemaV6, schemaV7]
+                                                   schemaV5, schemaV6, schemaV7, schemaV8]
 
     fileprivate static let schemaV1 = """
         CREATE TABLE documents (
@@ -288,6 +288,22 @@ public actor Library {
     /// column beside it changes nothing about the index or its triggers.
     fileprivate static let schemaV7 = """
         ALTER TABLE extracted_text ADD COLUMN format TEXT;
+        """
+
+    /// A bookmark is a named page in a document, kept beside the PDF rather than written
+    /// into it. The document ID makes it follow a rename and the unique page constraint
+    /// keeps the UI's add/remove action deterministic.
+    fileprivate static let schemaV8 = """
+        CREATE TABLE bookmarks (
+            id          INTEGER PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            page        INTEGER NOT NULL,
+            label       TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            UNIQUE(document_id, page)
+        );
+        CREATE INDEX bookmarks_by_document ON bookmarks(document_id, page, created_at);
         """
 
     /// FTS5's external-content triggers only fire on row-level writes; a migration that
