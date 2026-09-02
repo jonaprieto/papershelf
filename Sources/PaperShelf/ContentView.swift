@@ -508,14 +508,14 @@ struct ContentView: View {
             restoreSources()
             startWatching()
             if !selection.isEmpty {
-                // Show last time's answer at once, then check the disk behind it.
+                // The shelf is cheap to rebuild and is the launch surface. Keep the
+                // expensive rename plan behind Review renamings, even when its setting
+                // is off.
                 let hadCache = runner.showCached(fingerprint: fingerprint)
-                if prefs.autoPreview || hadCache {
-                    if prefs.viewMode == .catalogue {
-                        libraryPreview(preservingVisibleResults: hadCache)
-                    } else {
-                        preview()
-                    }
+                if prefs.viewMode == .catalogue {
+                    libraryPreview(preservingVisibleResults: hadCache)
+                } else if prefs.autoPreview || hadCache {
+                    preview()
                 }
             }
             if aiReady && availableModels.isEmpty { loadModels() }

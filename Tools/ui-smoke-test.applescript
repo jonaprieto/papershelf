@@ -1,16 +1,16 @@
 use scripting additions
 
-property appName : "PaperShelf"
-
 on run
-    tell application "PaperShelf" to activate
-    tell application "PaperShelf"
+    tell application "__PAPERSHELF_APP_PATH__" to activate
+    set targetPID to my waitForProcess("__PAPERSHELF_EXECUTABLE__")
+
+    tell application "__PAPERSHELF_APP_PATH__"
         set savedTheme to current theme
         set savedContrast to current PDF contrast
     end tell
 
     try
-        tell application "PaperShelf"
+        tell application "__PAPERSHELF_APP_PATH__"
             choose theme "dark"
             choose theme "light"
             choose theme savedTheme
@@ -31,42 +31,49 @@ on run
         end tell
 
         tell application "System Events"
-            tell process "PaperShelf"
-                my waitForWindow("All Documents")
-                set mainWindow to first window whose name starts with "All Documents"
-                my auditToolbar(mainWindow)
-                my clickSidebarTwice(mainWindow)
-                key code 53
-            end tell
+            my waitForWindow("All Documents", targetPID)
+            my assertCatalogueLaunchState(targetPID)
+            my auditToolbar(targetPID)
+            my clickSidebarTwice(targetPID)
+            tell first application process whose unix id is targetPID to key code 53
         end tell
 
-        tell application "PaperShelf" to show settings
+        tell application "__PAPERSHELF_APP_PATH__" to show settings
         tell application "System Events"
-            tell process "PaperShelf"
-                my waitForWindow("General")
-                my auditSettings(window "General")
-                keystroke "w" using command down
-            end tell
+            my waitForWindow("General", targetPID)
+            my auditSettings(targetPID)
+            tell first application process whose unix id is targetPID to keystroke "w" using command down
         end tell
     on error messageText number errorNumber
-        tell application "PaperShelf"
+        tell application "__PAPERSHELF_APP_PATH__"
             choose theme savedTheme
             choose PDF contrast savedContrast
         end tell
         error messageText number errorNumber
     end try
 
-    tell application "PaperShelf"
+    tell application "__PAPERSHELF_APP_PATH__"
         choose theme savedTheme
         choose PDF contrast savedContrast
     end tell
     return "PaperShelf UI smoke test passed"
 end run
 
-on waitForWindow(prefix)
+on waitForProcess(executablePath)
+    repeat 50 times
+        try
+            set processID to do shell script "/usr/bin/pgrep -n -f -x " & quoted form of executablePath
+            if processID is not "" then return processID as integer
+        end try
+        delay 0.1
+    end repeat
+    error "Timed out waiting for PaperShelf at " & executablePath
+end waitForProcess
+
+on waitForWindow(prefix, targetPID)
     tell application "System Events"
-        tell process "PaperShelf"
-            repeat 40 times
+        tell first application process whose unix id is targetPID
+            repeat 120 times
                 repeat with candidate in windows
                     if (name of contents of candidate as text) starts with prefix then return
                 end repeat
@@ -77,58 +84,76 @@ on waitForWindow(prefix)
     error "Timed out waiting for a PaperShelf window named " & prefix
 end waitForWindow
 
-on auditToolbar(theWindow)
+on assertCatalogueLaunchState(targetPID)
     tell application "System Events"
-        tell process "PaperShelf"
-                set theToolbar to toolbar 1 of theWindow
-                repeat with index from 1 to (count of buttons of theToolbar)
-                    my assertNamed(button index of theToolbar, "toolbar")
-                end repeat
+        tell first application process whose unix id is targetPID
+            repeat 50 times
+                if exists static text "Ready to run" of (first window whose name starts with "All Documents") then
+                    error "Launch opened the rename prompt instead of the catalogue"
+                end if
+                delay 0.1
+            end repeat
+        end tell
+    end tell
+end assertCatalogueLaunchState
+
+on auditToolbar(targetPID)
+    tell application "System Events"
+        tell first application process whose unix id is targetPID
+            set labels to description of every button of toolbar 1 of ¬
+                (first window whose name starts with "All Documents")
+            repeat with label in labels
+                set labelText to contents of label as text
+                if labelText is "button" or labelText is "" or labelText is "missing value" then
+                    error "Unnamed toolbar button"
+                end if
+            end repeat
         end tell
     end tell
 end auditToolbar
 
-on clickSidebarTwice(theWindow)
+on clickSidebarTwice(targetPID)
     tell application "System Events"
-        tell process "PaperShelf"
-            set theToolbar to toolbar 1 of theWindow
-            set sidebarButton to first button of theToolbar
-            if (description of sidebarButton as text) is not "Show Sidebar" and ¬
-                (description of sidebarButton as text) is not "Hide Sidebar" then
+        tell first application process whose unix id is targetPID
+            set sidebarDescription to description of ¬
+                (first button of toolbar 1 of (first window whose name starts with "All Documents")) as text
+            if sidebarDescription is not "Show Sidebar" and sidebarDescription is not "Hide Sidebar" then
                 error "The first toolbar button is not the sidebar toggle"
             end if
-            click sidebarButton
+            click first button of toolbar 1 of (first window whose name starts with "All Documents")
             delay 0.25
-            set sidebarButton to first button of toolbar 1 of theWindow
-            click sidebarButton
+            click first button of toolbar 1 of (first window whose name starts with "All Documents")
         end tell
     end tell
 end clickSidebarTwice
 
-on auditSettings(theWindow)
+on auditSettings(targetPID)
     tell application "System Events"
-        tell process "PaperShelf"
-            set controls to buttons of group 1 of scroll area 1 of group 2 of ¬
-                splitter group 1 of group 1 of theWindow
+        tell first application process whose unix id is targetPID
+            set controls to buttons of (group 1 of scroll area 1 of group 2 of ¬
+                splitter group 1 of group 1 of (first window whose name is "General"))
             if (count of controls) < 6 then
                 error "Settings theme and contrast controls are not all exposed"
             end if
             repeat with index from 1 to 3
-                click button index of group 1 of scroll area 1 of group 2 of ¬
-                    splitter group 1 of group 1 of theWindow
+                click first button of (group 1 of scroll area 1 of group 2 of ¬
+                    splitter group 1 of group 1 of (first window whose name is "General")) ¬
+                    whose value of attribute "AXIdentifier" is ¬
+                    "settings.theme." & (item index of {"system", "light", "dark"})
                 delay 0.15
-                tell application "PaperShelf" to set actualTheme to current theme
+                tell application "__PAPERSHELF_APP_PATH__" to set actualTheme to current theme
                 set expectedTheme to item index of {"System", "Light", "Dark"}
                 if actualTheme is not expectedTheme then
                     error "Theme button did not apply its value"
                 end if
             end repeat
             repeat with index from 1 to 3
-                set controlIndex to index + 3
-                click button controlIndex of group 1 of scroll area 1 of group 2 of ¬
-                    splitter group 1 of group 1 of theWindow
+                click first button of (group 1 of scroll area 1 of group 2 of ¬
+                    splitter group 1 of group 1 of (first window whose name is "General")) ¬
+                    whose value of attribute "AXIdentifier" is ¬
+                    "settings.pdfContrast." & (item index of {"normal", "tint", "whiteOnBlack"})
                 delay 0.15
-                tell application "PaperShelf" to set actualContrast to current PDF contrast
+                tell application "__PAPERSHELF_APP_PATH__" to set actualContrast to current PDF contrast
                 set expectedContrast to item index of {"Normal", "Dark tint", "White on black"}
                 if actualContrast is not expectedContrast then
                     error "PDF contrast button did not apply its value"
@@ -137,12 +162,3 @@ on auditSettings(theWindow)
         end tell
     end tell
 end auditSettings
-
-on assertNamed(theButton, area)
-    tell application "System Events"
-        set labelText to description of theButton as text
-        if labelText is "button" or labelText is "" or labelText is "missing value" then
-            error "Unnamed " & area & " button"
-        end if
-    end tell
-end assertNamed

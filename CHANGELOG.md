@@ -4,6 +4,13 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.11.3] - 2026-09-02
+
+### Fixed
+
+- Start directly in the catalogue when catalogue view is selected, even when automatic
+  previews are disabled.
+
 ## [1.11.2] - 2026-09-02
 
 ### Added
