@@ -150,6 +150,8 @@ extraction helpers.
 - Name the file timestamp option **Modified date** and include it in the catalogue sort menu.
 - Persist the selected default catalogue order and expose it in Settings > General.
 - Keep the default direction sensible for each order, with newest modified files first.
+- Avoid repeating a filename below its thumbnail when it is already the card title; keep
+  the actual filename visible when metadata gives the paper a distinct title.
 
 ## Verification
 

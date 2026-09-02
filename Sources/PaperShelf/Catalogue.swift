@@ -3399,6 +3399,12 @@ struct ResultRow: View {
 
 }
 
+/// Whether the filename adds information beyond the title shown on a catalogue card.
+func cardShowsFilename(_ filename: String, title: String) -> Bool {
+    let stem = (filename as NSString).deletingPathExtension
+    return stem.localizedCaseInsensitiveCompare(title) != .orderedSame
+}
+
 /// One book on the shelf: cover, name, and the two badges that matter (what you decided,
 /// and whether another copy of it exists).
 struct CoverCard: View {
@@ -3439,11 +3445,17 @@ struct CoverCard: View {
         return (filename as NSString).deletingPathExtension
     }
 
+    private var showsFilename: Bool {
+        cardShowsFilename(filename, title: bookTitle)
+    }
+
     /// What VoiceOver should say for this card: the title, then the decision and status
     /// in the same words their own tooltips already use (see `Tooltips.swift`), so the
     /// shelf does not invent a second vocabulary for what "confirmed" or "locked" means.
     private var accessibilitySummary: String {
-        "\(bookTitle). \(decision?.explanation ?? undecidedExplanation). \(item.status.explanation)"
+        let filename = showsFilename ? " \(self.filename)." : ""
+        return "\(bookTitle).\(filename) \(decision?.explanation ?? undecidedExplanation). "
+            + item.status.explanation
     }
 
     private var selectionTint: Color {
@@ -3526,11 +3538,13 @@ struct CoverCard: View {
                     .lineLimit(1)
             }
 
-            Text(filename)
-                .font(Face.mono)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(.secondary)
+            if showsFilename {
+                Text(filename)
+                    .font(Face.mono)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+            }
 
             Text(physical)
                 .font(Face.micro.monospacedDigit())

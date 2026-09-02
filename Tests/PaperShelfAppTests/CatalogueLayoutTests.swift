@@ -56,6 +56,12 @@ final class CatalogueLayoutTests: XCTestCase {
         XCTAssertEqual(item.currentFilename, "original.pdf")
     }
 
+    func testCardDoesNotRepeatTheFilenameWhenItIsTheTitle() {
+        XCTAssertFalse(cardShowsFilename("paper.pdf", title: "paper"))
+        XCTAssertFalse(cardShowsFilename("Paper.PDF", title: "paper"))
+        XCTAssertTrue(cardShowsFilename("paper.pdf", title: "A different title"))
+    }
+
     /// Standing in for the sidebar's usual range, from the narrowest the split allows up
     /// to a wide window.
     private let widths: [CGFloat] = [220, 320, 480, 800]
