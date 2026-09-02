@@ -408,6 +408,7 @@ struct ContentView: View {
         // neighbours the width arithmetic had to reserve for. Each of them folds now, so
         // the window's floor is a number the app chose rather than a sum it was handed.
         .frame(minWidth: Metric.windowFloorWidth, minHeight: Metric.windowFloorHeight)
+        .preferredColorScheme(prefs.appearance.colorScheme)
         .dropDestination(for: URL.self) { urls, _ in
             add(urls)
             return true
@@ -458,7 +459,6 @@ struct ContentView: View {
             chrome.undo = { runner.undo() }
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
-            NSApp.appearance = prefs.appearance.nsAppearance
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             guard chrome.zenMode,
@@ -505,7 +505,6 @@ struct ContentView: View {
             }
             if aiReady && availableModels.isEmpty { loadModels() }
         }
-        .onChange(of: prefs.appearance) { _, new in NSApp.appearance = new.nsAppearance }
         .task { await watchSourceAvailability() }
         .task(id: reviewing) { await readSelectionPosition() }
         // Restyling is cheap but not free, so let a run of toggles settle first.

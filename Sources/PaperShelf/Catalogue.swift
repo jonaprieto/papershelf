@@ -774,18 +774,19 @@ struct ResultsPane: View {
     @ViewBuilder
     private var appearanceMenu: some View {
         Menu {
-            Picker("Theme", selection: Binding(
-                get: { prefs.appearance },
-                set: { prefs.appearance = $0 }
-            )) {
-                ForEach(Appearance.allCases) { mode in
-                    Label(mode.label, systemImage: mode.systemImage).tag(mode)
+            ForEach(Appearance.allCases) { mode in
+                Button {
+                    prefs.appearance = mode
+                } label: {
+                    Label(mode.label, systemImage: mode.systemImage)
+                    if prefs.appearance == mode { Image(systemName: "checkmark") }
                 }
             }
         } label: {
-            Label("Appearance", systemImage: prefs.appearance.systemImage)
+            Label("Appearance", systemImage: "circle.lefthalf.filled")
         }
         .labelStyle(.iconOnly)
+        .frame(width: 28)
         .accessibilityLabel("Appearance")
         .accessibilityValue(prefs.appearance.label)
         .tip("Theme: \(prefs.appearance.label)")
@@ -794,18 +795,19 @@ struct ResultsPane: View {
     @ViewBuilder
     private var contrastMenu: some View {
         Menu {
-            Picker("PDF contrast", selection: Binding(
-                get: { prefs.readingAppearance },
-                set: { prefs.readingAppearance = $0 }
-            )) {
-                ForEach(PDFReadingAppearance.allCases) { mode in
-                    Label(mode.label, systemImage: mode.systemImage).tag(mode)
+            ForEach(PDFReadingAppearance.allCases) { mode in
+                Button {
+                    prefs.readingAppearance = mode
+                } label: {
+                    Label(mode.label, systemImage: mode.systemImage)
+                    if prefs.readingAppearance == mode { Image(systemName: "checkmark") }
                 }
             }
         } label: {
-            Label("PDF contrast", systemImage: prefs.readingAppearance.systemImage)
+            Label("PDF contrast", systemImage: "circle.righthalf.filled")
         }
         .labelStyle(.iconOnly)
+        .frame(width: 28)
         .accessibilityLabel("PDF contrast")
         .accessibilityValue(prefs.readingAppearance.label)
         .tip("PDF contrast: \(prefs.readingAppearance.label)")

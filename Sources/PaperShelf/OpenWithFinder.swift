@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        AppDiagnostics.shared.record("terminate")
+    }
+
     /// The dock icon with nothing on screen brings the library back. With a reader already
     /// open it does nothing, which is the point: opening a second paper used to activate the
     /// app, and activating it built the library window nobody asked for.

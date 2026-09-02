@@ -58,6 +58,7 @@ struct AboutWindow: View {
         // Tall enough that the longest of the four -- the licence, or a changelog with a
         // few entries in it -- is read by scrolling a little rather than through a slot.
         .frame(width: 540, height: 620)
+        .preferredColorScheme(Prefs.shared.appearance.colorScheme)
     }
 
     /// The part the stock panel already got right, and the two lines it was missing.

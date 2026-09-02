@@ -88,6 +88,23 @@ final class ReadingModeTests: XCTestCase {
         XCTAssertTrue(chrome.inspectorCollapsed)
     }
 
+    func testLaunchDoesNotRestoreTheRenameInspector() {
+        let prefs = Prefs.shared
+        let originalView = prefs.viewMode
+        let originalPanel = prefs.inspectorPanel
+        defer {
+            prefs.viewMode = originalView
+            prefs.inspectorPanel = originalPanel
+        }
+
+        prefs.viewMode = .list
+        prefs.inspectorPanel = .rename
+        prefs.prepareForLaunch()
+
+        XCTAssertEqual(prefs.viewMode, .list)
+        XCTAssertEqual(prefs.inspectorPanel, .details)
+    }
+
     func testZenModeTemporarilyHidesPanelsAndFitsThePageToWidth() {
         let prefs = Prefs.shared
         let original = (prefs.readingMode, prefs.sidebarShown, prefs.inspectorCollapsed,

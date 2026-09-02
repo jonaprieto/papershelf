@@ -96,6 +96,7 @@ struct SettingsWindowView: View {
         }
         .background(SettingsWindowChrome())
         .frame(minWidth: 820, minHeight: 560)
+        .preferredColorScheme(prefs.appearance.colorScheme)
     }
 
     /// Panes matching what was typed. Never empty: a search that matches nothing leaves
@@ -177,14 +178,41 @@ struct GeneralSettings: View {
     var body: some View {
         Form {
             Section {
-                Picker("Theme", selection: $prefs.appearance) {
-                    ForEach(Appearance.allCases) { Text($0.label).tag($0) }
+                LabeledContent("Theme") {
+                    HStack(spacing: 0) {
+                        ForEach(Appearance.allCases) { mode in
+                            Button(mode.label) { prefs.appearance = mode }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Space.tight)
+                                .foregroundStyle(prefs.appearance == mode ? .white : .primary)
+                                .background(prefs.appearance == mode
+                                            ? Color.accentColor : .clear,
+                                            in: RoundedRectangle(cornerRadius: Metric.control))
+                                .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
+                        }
+                    }
+                    .padding(2)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
                 }
-                .pickerStyle(.segmented)
-                Picker("PDF contrast", selection: $prefs.readingAppearance) {
-                    ForEach(PDFReadingAppearance.allCases) { Text($0.label).tag($0) }
+
+                LabeledContent("PDF contrast") {
+                    HStack(spacing: 0) {
+                        ForEach(PDFReadingAppearance.allCases) { mode in
+                            Button(mode.label) { prefs.readingAppearance = mode }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Space.tight)
+                                .foregroundStyle(prefs.readingAppearance == mode ? .white : .primary)
+                                .background(prefs.readingAppearance == mode
+                                            ? Color.accentColor : .clear,
+                                            in: RoundedRectangle(cornerRadius: Metric.control))
+                                .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
+                        }
+                    }
+                    .padding(2)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
                 }
-                .pickerStyle(.segmented)
             } header: {
                 Text("Appearance")
             } footer: {
@@ -347,6 +375,27 @@ struct GeneralSettings: View {
             } message: {
                 Text("Their tags, notes, place in any reading project and reading position "
                      + "go with them. Nothing on disk is touched.")
+            }
+
+            Section {
+                LabeledContent("Log file") {
+                    HStack(spacing: Space.step) {
+                        ShareLink(item: AppDiagnostics.shared.url) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([AppDiagnostics.shared.url])
+                        }
+                    }
+                }
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                Text("PaperShelf keeps a small local log of app events and setting changes. "
+                     + "It does not include PDF text, passwords or API keys.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

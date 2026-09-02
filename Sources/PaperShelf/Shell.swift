@@ -141,6 +141,14 @@ struct PaperShelfApp: App {
     // See `AppDelegate` for why they are not a scene.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() {
+        AppDiagnostics.shared.start()
+        Prefs.shared.prepareForLaunch()
+        NSSetUncaughtExceptionHandler { exception in
+            AppDiagnostics.uncaughtException(exception)
+        }
+    }
+
     private func openAbout() { openWindow(id: AboutWindow.windowID) }
 
     var body: some Scene {
@@ -423,14 +431,6 @@ enum Appearance: String, CaseIterable, Identifiable {
         case .system: return "circle.lefthalf.filled"
         case .light: return "sun.max"
         case .dark: return "moon.fill"
-        }
-    }
-
-    var nsAppearance: NSAppearance? {
-        switch self {
-        case .system: return nil
-        case .light: return NSAppearance(named: .aqua)
-        case .dark: return NSAppearance(named: .darkAqua)
         }
     }
 

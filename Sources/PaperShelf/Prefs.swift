@@ -57,7 +57,10 @@ final class Prefs {
         didSet { Store.put("viewMode", viewMode) }
     }
     var appearance: Appearance = Store.choice("appearance", .system) {
-        didSet { Store.put("appearance", appearance) }
+        didSet {
+            Store.put("appearance", appearance)
+            AppDiagnostics.shared.record("appearance changed to \(appearance.rawValue)")
+        }
     }
     var sortOrder: ItemSort = Store.choice("sortOrder", .folder) {
         didSet { Store.put("sortOrder", sortOrder) }
@@ -114,7 +117,10 @@ final class Prefs {
     var readingAppearance: PDFReadingAppearance = Store.choice(
         "readingAppearance", Prefs.defaultReadingAppearance
     ) {
-        didSet { Store.put("readingAppearance", readingAppearance) }
+        didSet {
+            Store.put("readingAppearance", readingAppearance)
+            AppDiagnostics.shared.record("PDF contrast changed to \(readingAppearance.rawValue)")
+        }
     }
 
     /// Compatibility for callers that only need the old on/off question.
@@ -149,6 +155,12 @@ final class Prefs {
     /// On by default: the keys are faster once you know them, and nothing says they exist.
     var selectionPalette: Bool = Store.flag("selectionPalette", true) {
         didSet { Store.put("selectionPalette", selectionPalette) }
+    }
+
+    /// A launch should reopen the collection, not a transient editing tab. Keep the
+    /// user's collection view and every other panel preference intact.
+    func prepareForLaunch() {
+        if inspectorPanel == .rename { inspectorPanel = .details }
     }
 
     // MARK: - Sources

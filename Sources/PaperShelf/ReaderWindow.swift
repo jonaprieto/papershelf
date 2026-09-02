@@ -75,6 +75,7 @@ struct ReaderWindow: View {
             .padding(.vertical, Space.tight)
         }
         .navigationTitle(title)
+        .preferredColorScheme(prefs.appearance.colorScheme)
         .frame(minWidth: 520, minHeight: 400)
         .task { await recordAndRestore() }
         .task(id: annotator.page) { await rememberPage() }

@@ -229,8 +229,8 @@ final class SessionSecret {
 }
 
 extension Color {
-    /// Resolves per appearance, so it follows both the system theme and an explicit
-    /// override set on `NSApp.appearance`.
+    /// Resolves per appearance, so it follows both the system theme and the SwiftUI
+    /// color-scheme override used by each window.
     init(light: NSColor, dark: NSColor) {
         self.init(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
