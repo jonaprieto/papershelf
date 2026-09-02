@@ -26,7 +26,14 @@ enum PaletteSettings {
     /// rather than editing free text: an API key typed into a search field is an API key in
     /// a search field's history.
     static func openSettingsWindow() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if let menu = NSApp.mainMenu?.item(withTitle: "PaperShelf")?.submenu,
+           let index = menu.items.firstIndex(where: { $0.title == "Settings…" }),
+           menu.item(at: index)?.isEnabled == true {
+            menu.performActionForItem(at: index)
+        } else {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 
     static func all() -> [PaletteSetting] {

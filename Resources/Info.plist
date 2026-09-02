@@ -47,10 +47,14 @@
 	<string>PaperShelf reads and rewrites the PDFs you select in your Downloads folder.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Jonathan Prieto-Cubides. Licensed under the MIT Licence.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>OSAScriptingDefinition</key>
+	<string>PaperShelf.sdef</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PaperShelf uses the microphone to dictate notes for your PDF annotations.</string>
 	<key>NSRemovableVolumesUsageDescription</key>

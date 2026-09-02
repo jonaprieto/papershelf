@@ -440,6 +440,21 @@ struct ContentView: View {
             if !selection.isEmpty { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openProject), perform: revealProject)
+        .onReceive(NotificationCenter.default.publisher(for: .scriptToggleSidebar)) { _ in
+            chrome.toggleSidebar()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .scriptToggleReading)) { _ in
+            chrome.toggleReading()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .scriptToggleZen)) { _ in
+            let entering = !chrome.zenMode
+            chrome.toggleZenMode()
+            DispatchQueue.main.async {
+                guard let window = NSApp.keyWindow else { return }
+                let fullScreen = window.styleMask.contains(.fullScreen)
+                if entering != fullScreen { window.toggleFullScreen(nil) }
+            }
+        }
         // The pattern editor lives in the settings window now and has no scanner of its
         // own, so the window that does have one publishes the few files it previews
         // against. Keyed on the results token rather than the array: this runs on every

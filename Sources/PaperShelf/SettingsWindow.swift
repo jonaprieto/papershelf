@@ -189,6 +189,7 @@ struct GeneralSettings: View {
                                 .background(prefs.appearance == mode
                                             ? Color.accentColor : .clear,
                                             in: RoundedRectangle(cornerRadius: Metric.control))
+                                .accessibilityIdentifier("settings.theme.\(mode.rawValue)")
                                 .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
                         }
                     }
@@ -207,6 +208,7 @@ struct GeneralSettings: View {
                                 .background(prefs.readingAppearance == mode
                                             ? Color.accentColor : .clear,
                                             in: RoundedRectangle(cornerRadius: Metric.control))
+                                .accessibilityIdentifier("settings.pdfContrast.\(mode.rawValue)")
                                 .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
                         }
                     }

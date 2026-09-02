@@ -529,6 +529,29 @@ struct ResultsPane: View {
                       let shelf = SmartList(rawValue: raw) else { return }
                 showShelf(shelf)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptShowNotes)) { _ in
+                prefs.inspectorPanel = .notes
+                prefs.inspectorCollapsed = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { _ in
+                showingPalette = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptCopyCitation)) { _ in
+                copyCitation()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptAddBookmark)) { _ in
+                guard annotator.bookmarkOnCurrentPage == nil else { return }
+                _ = annotator.toggleBookmark()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptRemoveBookmark)) { _ in
+                guard let bookmark = annotator.bookmarkOnCurrentPage else { return }
+                _ = annotator.removeBookmark(bookmark)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptShowBookmarks)) { _ in
+                guard annotator.hasPages else { return }
+                prefs.contentsShown = true
+                prefs.contentsRailMode = .bookmarks
+            }
     }
 
     private var core: some View {
@@ -714,6 +737,7 @@ struct ResultsPane: View {
                 .background(reading ? Color.primary.opacity(0.12) : .clear,
                             in: RoundedRectangle(cornerRadius: Metric.control))
                 .accessibilityLabel("Reading mode")
+                .accessibilityIdentifier("toolbar.readingMode")
                 .accessibilityAddTraits(reading ? .isSelected : [])
                 .tip(reading ? "Show the shelf again" : "Hide everything but the page",
                      key: "⌘⇧R")
@@ -721,6 +745,8 @@ struct ResultsPane: View {
                     Label("Inspector", systemImage: prefs.inspectorCollapsed
                           ? "sidebar.right" : "sidebar.trailing")
                 }
+                .accessibilityLabel("Inspector")
+                .accessibilityIdentifier("toolbar.inspector")
                 .tip(prefs.inspectorCollapsed
                      ? "Show info, rename, notes and the citation"
                      : "Hide the inspector", key: "⌘⇧B")
@@ -731,6 +757,7 @@ struct ResultsPane: View {
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .accessibilityIdentifier("toolbar.settings")
                 .tip("Naming rules, AI, integrations and shortcuts", key: "⌘,")
             }
         }
@@ -788,6 +815,7 @@ struct ResultsPane: View {
         .labelStyle(.iconOnly)
         .frame(width: 28)
         .accessibilityLabel("Appearance")
+        .accessibilityIdentifier("toolbar.appearance")
         .accessibilityValue(prefs.appearance.label)
         .tip("Theme: \(prefs.appearance.label)")
     }
@@ -809,6 +837,7 @@ struct ResultsPane: View {
         .labelStyle(.iconOnly)
         .frame(width: 28)
         .accessibilityLabel("PDF contrast")
+        .accessibilityIdentifier("toolbar.pdfContrast")
         .accessibilityValue(prefs.readingAppearance.label)
         .tip("PDF contrast: \(prefs.readingAppearance.label)")
     }
@@ -824,6 +853,7 @@ struct ResultsPane: View {
                 Label("Contents", systemImage: "sidebar.squares.left")
             }
             .foregroundStyle(prefs.contentsShown ? Color.accentColor : .secondary)
+            .accessibilityIdentifier("toolbar.contents")
             .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
             .popover(isPresented: Binding(
                 get: { prefs.contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
@@ -863,6 +893,7 @@ struct ResultsPane: View {
             swatchImage(currentStyle?.nsColor ?? .systemYellow, size: 14)
                 .accessibilityLabel("Highlighter")
         }
+        .accessibilityIdentifier("toolbar.highlighter")
         .tip(annotator.hasSelection
              ? "Highlight the selection, in this colour"
              : "Which highlighter the next mark uses")
@@ -876,6 +907,7 @@ struct ResultsPane: View {
         } label: {
             Label("Add note", systemImage: "bubble.left")
         }
+        .accessibilityIdentifier("toolbar.addNote")
         .tip(annotator.hasSelection
              ? "Mark the selection and write about it"
              : "The highlights and notes on this document", key: "⌘⇧N")
@@ -885,6 +917,7 @@ struct ResultsPane: View {
                   systemImage: annotator.bookmarkOnCurrentPage == nil
                   ? "bookmark" : "bookmark.fill")
         }
+        .accessibilityIdentifier("toolbar.bookmark")
         .tip(annotator.bookmarkOnCurrentPage == nil
              ? "Bookmark the current page" : "Remove the bookmark from the current page")
 
@@ -2771,6 +2804,7 @@ struct ResultsPane: View {
                 .background(option == prefs.viewMode ? Color.accentColor.opacity(0.15) : .clear,
                             in: RoundedRectangle(cornerRadius: Metric.control))
                 .accessibilityLabel(option.label)
+                .accessibilityIdentifier("toolbar.view.\(option.rawValue)")
                 .accessibilityAddTraits(option == prefs.viewMode ? .isSelected : [])
                 .tip(option.label, key: "⌘\(index + 1)")
             }
@@ -2794,6 +2828,7 @@ struct ResultsPane: View {
         }
         .menuStyle(.borderlessButton)
         .accessibilityLabel("View: \(prefs.viewMode.label)")
+        .accessibilityIdentifier("toolbar.viewMenu")
         .fixedSize()
         .tip("Which view of the same files", key: "⌘1 to ⌘4")
     }

@@ -25,6 +25,7 @@ swift test                   # XCTest, covers Core and the app
 Tools/mcp-check.sh           # drives the MCP server over stdio, must report zero FAIL
 ./build.sh                   # builds dist/PaperShelf.app, ad-hoc signed
 ./build.sh --install         # also copies it to /Applications
+Tools/ui-smoke-test.sh       # AppleScript accessibility smoke test for the built app
 ```
 
 `swift test --filter X` still builds every target first. SwiftPM plans the whole graph
@@ -36,7 +37,10 @@ including Core's.
 - Release directly from `main`, using the next semantic version. Keep
   `paperShelfVersion`, `Resources/Info.plist`'s short version and build number, and
   `Plugin/papershelf/.codex-plugin/plugin.json` aligned with the new `CHANGELOG.md` entry.
-- Run `swift build`, `swift test`, `Tools/mcp-check.sh`, and `./build.sh` before committing.
+- Run `swift build`, `swift test`, `Tools/mcp-check.sh`, `./build.sh`, and
+  `Tools/ui-smoke-test.sh dist/PaperShelf.app` in an interactive macOS session before
+  committing. The UI smoke test changes theme and contrast only temporarily, toggles
+  reversible panels twice, and does not activate Trash, Apply, Move, or AI actions.
   Inspect the built app's version and bundled changelog before installing it.
 - Update `docs/index.html`'s reported release version and release link, then run the website
   tests. After publishing, verify the website and its release link report the new version.

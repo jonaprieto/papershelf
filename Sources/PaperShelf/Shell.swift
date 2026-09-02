@@ -447,6 +447,15 @@ extension Notification.Name {
     /// Posted by ⌘, and by anything else offering a way into the settings, which are a tab
     /// in the sidebar rather than a window of their own.
     static let showSettings = Notification.Name("PaperShelf.showSettings")
+    static let scriptShowNotes = Notification.Name("PaperShelf.scriptShowNotes")
+    static let scriptToggleSidebar = Notification.Name("PaperShelf.scriptToggleSidebar")
+    static let scriptToggleReading = Notification.Name("PaperShelf.scriptToggleReading")
+    static let scriptToggleZen = Notification.Name("PaperShelf.scriptToggleZen")
+    static let scriptOpenCommandPalette = Notification.Name("PaperShelf.scriptOpenCommandPalette")
+    static let scriptCopyCitation = Notification.Name("PaperShelf.scriptCopyCitation")
+    static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
+    static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")
+    static let scriptShowBookmarks = Notification.Name("PaperShelf.scriptShowBookmarks")
 }
 
 // MARK: - Content

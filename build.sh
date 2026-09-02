@@ -27,6 +27,8 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # The plugin listing in the ChatGPT app shows this, copied into the plugin folder at
 # install time. It has to travel inside the bundle: a built .app has no source checkout.
 cp Resources/PluginLogo.png "$APP/Contents/Resources/PluginLogo.png"
+[[ -f Resources/PaperShelf.sdef ]] || { echo "Resources/PaperShelf.sdef is missing; AppleScript support would be absent" >&2; exit 1; }
+cp Resources/PaperShelf.sdef "$APP/Contents/Resources/PaperShelf.sdef"
 # Same reasoning for the changelog the About window's fourth page reads: there is exactly
 # one copy of it, at the repository root, so nothing here can drift from it the way the
 # three version numbers once did. Checked explicitly, with a message, rather than letting

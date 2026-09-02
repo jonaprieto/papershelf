@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="PaperShelf">
+    <suite name="PaperShelf Suite" code="PSHL" description="Semantic commands for PaperShelf.">
+        <command name="choose theme" code="PSchThm1" description="Set the app theme.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <direct-parameter type="text" description="system, light, or dark"/>
+            <result type="text"/>
+        </command>
+        <command name="choose PDF contrast" code="PSchPdf1" description="Set the PDF contrast.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <direct-parameter type="text" description="normal, dark tint, or white on black"/>
+            <result type="text"/>
+        </command>
+        <command name="current theme" code="PScuThm1" description="Return the current app theme.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <result type="text"/>
+        </command>
+        <command name="current PDF contrast" code="PScuPdf1" description="Return the current PDF contrast.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <result type="text"/>
+        </command>
+        <command name="show catalogue" code="PSshCat1" description="Show the catalogue window."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="show settings" code="PSshSet1" description="Show PaperShelf settings."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="show notes" code="PSshNot1" description="Show the notes panel."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="toggle sidebar" code="PStSid01" description="Show or hide the library sidebar."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="toggle inspector" code="PStInst1" description="Show or hide the inspector."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="toggle reading mode" code="PStRead1" description="Show or hide reading mode."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="toggle zen mode" code="PStZen01" description="Show or hide Zen mode."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="open command palette" code="PSopPal1" description="Open the command palette."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="copy current citation" code="PScpCit1" description="Copy the current file's BibTeX citation."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="bookmark current page" code="PSadBmk1" description="Bookmark the current page."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="remove current bookmark" code="PSrmBmk1" description="Remove the bookmark from the current page."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="show bookmarks" code="PSshBmk1" description="Show bookmarks in the contents rail."><cocoa class="PaperShelfScriptCommand"/></command>
+        <command name="show diagnostics log" code="PSshLog1" description="Return the path to the diagnostics log.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <result type="text"/>
+        </command>
+        <command name="version" code="PSvers01" description="Return the installed PaperShelf version.">
+            <cocoa class="PaperShelfScriptCommand"/>
+            <result type="text"/>
+        </command>
+    </suite>
+</dictionary>
