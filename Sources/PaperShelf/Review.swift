@@ -185,7 +185,7 @@ struct ReviewInspector: View {
         NotesRail(annotator: annotator, palette: palette,
                   addingNote: $addingNote, noteText: $noteText,
                   lastColour: (lastStyle ?? Palette.defaults[0]).nsColor,
-                  title: item.destinationName,
+                  title: item.currentFilename,
                   source: item.currentURL.path,
                   close: {},
                   openAtPage: { page in
@@ -1332,7 +1332,6 @@ struct MetadataPanel: View {
         VStack(alignment: .leading, spacing: Space.roomy) {
             heading
             group("File", rows: fileRows)
-            suggested
             group("Reading", rows: readingRows)
             opening
         }
@@ -1361,7 +1360,7 @@ struct MetadataPanel: View {
     private var title: String {
         let stated = item.documentInfo["Title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let stated, !stated.isEmpty { return stated }
-        return (item.destinationName as NSString).deletingPathExtension
+        return (item.currentFilename as NSString).deletingPathExtension
     }
 
     /// One labelled group, drawn only when it has something to say. An absent field is
@@ -1407,35 +1406,6 @@ struct MetadataPanel: View {
         }
         rows.append(("Status", item.status.rawValue.capitalized))
         return rows
-    }
-
-    /// The rename this file is part of, and why it came out that way. Only for a file the
-    /// plan actually changes: a row saying a name is unchanged is a row about nothing.
-    @ViewBuilder
-    private var suggested: some View {
-        if item.destinationName != item.sourceName {
-            VStack(alignment: .leading, spacing: Space.tight) {
-                Text("Suggested name")
-                    .font(Face.section)
-                    .foregroundStyle(.secondary)
-                Text(item.sourceName)
-                    .font(Face.mono)
-                    .foregroundStyle(.secondary)
-                    .strikethrough()
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                Text(item.destinationName)
-                    .font(Face.mono)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                if !item.message.isEmpty {
-                    Text(item.message)
-                        .font(Face.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
     }
 
     private var readingRows: [(String, String)] {

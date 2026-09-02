@@ -25,7 +25,7 @@ final class Converting {
         defer { working = false }
 
         let source = item.currentURL
-        let title = (item.destinationName as NSString).deletingPathExtension
+        let title = (item.currentFilename as NSString).deletingPathExtension
         // The same conversion the projects use to read their own documents (see
         // `readTextForProject`), so what a person sees in this sheet and what a question
         // is answered from cannot be produced two different ways.
@@ -45,7 +45,7 @@ final class Converting {
             return false
         }
         guard await storeAsDocumentText(markdown, for: item.currentURL, library: library) else {
-            problem = "Could not keep this as \(item.destinationName)'s text."
+            problem = "Could not keep this as \(item.currentFilename)'s text."
             return false
         }
         return true
@@ -95,7 +95,7 @@ struct MarkdownSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.roomy) {
             HStack {
-                Text(item.destinationName).font(Face.headline).lineLimit(1).truncationMode(.middle)
+                Text(item.currentFilename).font(Face.headline).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
@@ -177,7 +177,7 @@ struct MarkdownSheet: View {
         .fileExporter(isPresented: $saving,
                       document: TextDocument(text: converting.result ?? ""),
                       contentType: .plainText,
-                      defaultFilename: (item.destinationName as NSString)
+                      defaultFilename: (item.currentFilename as NSString)
                         .deletingPathExtension + ".md") { _ in }
     }
 }

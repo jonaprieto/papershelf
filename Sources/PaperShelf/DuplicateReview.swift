@@ -83,7 +83,7 @@ struct DuplicateReviewView: View {
                     .fill(.quaternary)
                     .frame(width: 200, height: 240)
             }
-            Text(item.sourceName).font(Face.caption.bold()).lineLimit(2)
+            Text(item.currentFilename).font(Face.caption.bold()).lineLimit(2)
             Text(item.relativePath).font(Face.caption).foregroundStyle(.secondary)
             LabeledContent("Size", value: formattedSize(item.byteCount))
             LabeledContent("Pages", value: item.pageCount.map(String.init) ?? "unknown")

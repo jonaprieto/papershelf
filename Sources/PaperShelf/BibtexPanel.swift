@@ -178,7 +178,7 @@ extension ReviewInspector {
         citationImproving = true
         citationNote = nil
         let current = citationDraft
-        let filename = item.destinationName
+        let filename = item.currentFilename
         let text = excerpt ?? openingText(of: item.currentURL, passwords: passwords, pages: 3)
         // A slow reply must not land on whatever file is on screen by the time it arrives.
         let asked = item.key

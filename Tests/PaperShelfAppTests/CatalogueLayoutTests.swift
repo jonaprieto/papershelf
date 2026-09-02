@@ -35,6 +35,27 @@ final class CatalogueLayoutTests: XCTestCase {
         return Item(root: root, source: url, destination: url, status: .renamed)
     }
 
+    func testDisplayedFilenameFollowsTheFileAfterAnAppliedRename() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let item = Item(root: root,
+                        source: root.appendingPathComponent("original.pdf"),
+                        destination: root.appendingPathComponent("renamed.pdf"),
+                        status: .renamed,
+                        carriedOut: true)
+
+        XCTAssertEqual(item.currentFilename, "renamed.pdf")
+    }
+
+    func testDisplayedFilenameStaysOriginalWhileRenameIsPending() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let item = Item(root: root,
+                        source: root.appendingPathComponent("original.pdf"),
+                        destination: root.appendingPathComponent("suggested.pdf"),
+                        status: .renamed)
+
+        XCTAssertEqual(item.currentFilename, "original.pdf")
+    }
+
     /// Standing in for the sidebar's usual range, from the narrowest the split allows up
     /// to a wide window.
     private let widths: [CGFloat] = [220, 320, 480, 800]

@@ -136,7 +136,7 @@ struct CommandPalette: View {
         switch entry {
         case .command(let command): return command.title
         case .place(let place): return place.title
-        case .document(let item): return item.destinationName
+        case .document(let item): return item.currentFilename
         case .setting(let setting): return setting.title
         case .starter, .page, .text: return nil
         }
@@ -205,7 +205,7 @@ struct CommandPalette: View {
     private var matchingDocuments: [Item] {
         guard mode == nil, !needle.isEmpty else { return [] }
         return documents.filter {
-            matches($0.destinationName) || matches($0.source.lastPathComponent)
+            matches($0.currentFilename) || matches($0.source.lastPathComponent)
         }
         .prefix(6).map { $0 }
     }
@@ -425,7 +425,7 @@ struct CommandPalette: View {
             case .document(let item):
                 Image(systemName: "doc.text")
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                Text(item.destinationName).lineLimit(1)
+                Text(item.currentFilename).lineLimit(1)
                 Spacer(minLength: Space.step)
                 Text(item.root.lastPathComponent)
                     .font(Face.caption)
@@ -562,7 +562,7 @@ struct CommandPalette: View {
             }
             return documents.first { paths.contains($0.currentURL.resolvingSymlinksInPath().path) }
         }
-        return documents.first(where: { $0.destinationName == hit.title })
+        return documents.first(where: { $0.currentFilename == hit.title })
             ?? documents.first(where: { $0.documentInfo["Title"] == hit.title })
     }
 }

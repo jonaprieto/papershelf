@@ -119,7 +119,7 @@ struct DuplicateCompare: View {
                     .font(Face.caption.weight(.semibold))
                     .foregroundStyle(isKeeper ? Ink.green : .secondary)
             }
-            Text(item.sourceName)
+            Text(item.currentFilename)
                 .font(Face.mono)
                 .lineLimit(2)
                 .truncationMode(.middle)

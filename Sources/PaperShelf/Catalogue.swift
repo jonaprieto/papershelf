@@ -2519,7 +2519,7 @@ struct ResultsPane: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let planned, !planned.isEmpty { return planned }
             return runner.ai.guesses[item.key]?.title
-                ?? (item.destinationName as NSString).deletingPathExtension
+                ?? (item.currentFilename as NSString).deletingPathExtension
         }
         let terms = Query(query).terms
         switch prefs.viewMode {
@@ -3306,44 +3306,27 @@ struct ResultRow: View {
     /// it will be, because that is what it is: the one the panel is asking about.
     var isCurrent: Bool = false
 
-    /// Two lines and one pill.
-    ///
-    /// The old name grey above, what it becomes at full weight below, and the state on
-    /// the right. Both are set in the same monospace, because the two of them are read
-    /// against each other character by character -- that is the whole review. Size, pages
-    /// and dates are in the inspector: a plan is read down the column of names, and
-    /// anything else on the row is something to read past.
+    /// The actual filename, the planned outcome, and one state pill. A pending rename is
+    /// deliberately represented by the pill and outcome, never by replacing the filename
+    /// with the proposed destination. Size, pages and dates are in the inspector.
     var body: some View {
         HStack(alignment: .top, spacing: Space.step) {
             state.glyph.frame(width: 15).padding(.top, Space.hair)
 
             VStack(alignment: .leading, spacing: Space.hair) {
-                if isRenamed {
-                    Text(item.sourceName)
-                        .font(Face.mono)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(shownName)
-                        .font(Face.mono)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .strikethrough(decision == .deleted)
-                } else {
-                    Text(item.sourceName)
-                        .font(Face.mono)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .strikethrough(decision == .deleted)
-                    // Not a name, so not set like one: this line says what will happen
-                    // to the file above it, and the plan is read down the names.
-                    Text(outcome)
-                        .font(Face.caption)
-                        .foregroundStyle(item.status == .failed
-                                         ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
-                }
+                Text(item.currentFilename)
+                    .font(Face.mono)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .strikethrough(decision == .deleted)
+                // Not a name, so not set like one: this line says what will happen
+                // to the file above it, and the plan is read down the names.
+                Text(outcome)
+                    .font(Face.caption)
+                    .foregroundStyle(item.status == .failed
+                                     ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
                 // On their own line: a row of chips beside the names would take the room
                 // the names need, and the names are what a plan is read down.
                 if !tags.isEmpty { tagChips }
@@ -3444,18 +3427,16 @@ struct CoverCard: View {
     /// dense shelf is a lot of pixels rendered to be thrown away.
     static let rasterHeight = Metric.coverHeight(forWidth: Metric.coverWidth) * 2
 
-    private var name: String {
-        if case .confirmed(let confirmed) = decision { return confirmed }
-        return item.destinationName
+    private var filename: String {
+        item.currentFilename
     }
 
-    /// What the book calls itself, or the filename without its extension when it says
-    /// nothing. Never the model's guess: that guess is already in the name below, and a
-    /// card claiming a title the file does not carry is a card that lies.
+    /// What the book calls itself, or the actual filename without its extension when it
+    /// says nothing. The filename below is never a rename suggestion.
     private var bookTitle: String {
         let stated = item.documentInfo["Title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let stated, !stated.isEmpty { return stated }
-        return (name as NSString).deletingPathExtension
+        return (filename as NSString).deletingPathExtension
     }
 
     /// What VoiceOver should say for this card: the title, then the decision and status
@@ -3545,7 +3526,7 @@ struct CoverCard: View {
                     .lineLimit(1)
             }
 
-            Text(name)
+            Text(filename)
                 .font(Face.mono)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -3762,7 +3743,7 @@ struct DuplicateRow: View {
                 .help(isKeeper ? "The copy to keep" : "A spare copy")
 
             VStack(alignment: .leading, spacing: Space.hair) {
-                Text(item.sourceName)
+                Text(item.currentFilename)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .strikethrough(decision == .deleted)

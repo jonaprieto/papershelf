@@ -62,7 +62,7 @@ struct FileContextMenu: View {
 
         Divider()
 
-        Button("Copy Name") { copy(item.sourceName) }
+        Button("Copy Name") { copy(item.currentFilename) }
         Button("Copy Path") { copy(item.currentURL.path) }
         Button("Copy Suggested Name") { copy(item.destinationName) }
 

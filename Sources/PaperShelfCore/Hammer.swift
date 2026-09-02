@@ -568,6 +568,7 @@ public struct Item: Identifiable, Sendable, Codable {
     /// PDF. The app layer holds both `key` and `currentURL` once `process()` returns, so it
     /// is the one that records the move (see `Runner.syncLibrary`).
     public var currentURL: URL { carriedOut ? destination : source }
+    public var currentFilename: String { currentURL.lastPathComponent }
 
     /// Path of the source relative to the selected root, used to build the results tree.
     public var relativePath: String { relative(source, under: root) }
