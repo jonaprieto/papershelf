@@ -150,7 +150,14 @@ struct SettingsWindowChrome: NSViewRepresentable {
     private final class WindowHook: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let window { SettingsWindowChrome.configure(window) }
+            if let window {
+                SettingsWindowChrome.configure(window)
+                // SwiftUI applies the Settings scene's window policy after the view is
+                // attached, so repeat this once after that policy has settled.
+                DispatchQueue.main.async { [weak self] in
+                    if let window = self?.window { SettingsWindowChrome.configure(window) }
+                }
+            }
         }
     }
 }
