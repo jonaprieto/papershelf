@@ -45,8 +45,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
-                    "folders", "watch", "scan", "open in", "view", "default PDF viewer",
-                    "PDF app"]
+                    "folders", "watch", "scan", "open in", "view", "sort", "ordering",
+                    "modified date", "default PDF viewer", "PDF app"]
         case .files:
             return ["password", "encrypted", "locked", "originals", "backup", "trash",
                     "cache", "covers"]
@@ -161,6 +161,22 @@ struct GeneralSettings: View {
                 Text("Dark tint preserves figures and scanned plates. White on black "
                      + "inverts the PDF canvas for high-contrast reading; the notes and "
                      + "other controls stay unchanged.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Picker("Default catalogue order", selection: $prefs.sortOrder) {
+                    ForEach(ItemSort.allCases) { order in
+                        Text(order.label).tag(order)
+                    }
+                }
+            } header: {
+                Text("Catalogue")
+            } footer: {
+                Text("This is also the order used by the catalogue toolbar. Modified date "
+                     + "starts with the newest PDF; change the direction there when needed.")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

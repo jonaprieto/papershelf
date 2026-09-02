@@ -836,7 +836,7 @@ public enum ItemSort: String, Sendable, CaseIterable, Identifiable {
         case .originalName: return "Original name"
         case .size: return "Size"
         case .pages: return "Pages"
-        case .modified: return "Date"
+        case .modified: return "Modified date"
         case .status: return "Status"
         }
     }

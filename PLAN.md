@@ -144,12 +144,20 @@ extraction helpers.
 - Reload the shared profile when the Notes rail or settings appears, with document overrides
   surviving file renames through the library document ID.
 
+### 11. Configure catalogue ordering
+
+- Keep the existing catalogue sort choices available from the toolbar.
+- Name the file timestamp option **Modified date** and include it in the catalogue sort menu.
+- Persist the selected default catalogue order and expose it in Settings > General.
+- Keep the default direction sensible for each order, with newest modified files first.
+
 ## Verification
 
 Add focused coverage for:
 
 - Rename review/apply palette actions and settings access.
 - Catalogue refresh and stale-selection cleanup after batch actions such as Move to Trash.
+- Modified-date catalogue sorting and its General settings default.
 - Reader next/previous navigation.
 - Default PDF viewer detection and configuration from Settings.
 - Finder-style Space and Escape Quick Look behavior in Catalogue/List.

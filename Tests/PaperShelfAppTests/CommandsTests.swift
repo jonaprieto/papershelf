@@ -177,6 +177,11 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertFalse(SettingsPane.keyboard.matches("bibtex"))
     }
 
+    func testGeneralSettingsFindCatalogueOrdering() {
+        XCTAssertTrue(SettingsPane.general.matches("sort"))
+        XCTAssertTrue(SettingsPane.general.matches("modified date"))
+    }
+
     /// The words a person uses, not the app's. "Dark mode" appears nowhere in the
     /// interface and is exactly what someone will type looking for the theme.
     func testAPaneIsFoundByWhatSomeoneWouldCallIt() {
