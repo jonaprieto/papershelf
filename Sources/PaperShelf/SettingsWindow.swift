@@ -94,6 +94,7 @@ struct SettingsWindowView: View {
         } detail: {
             detail
         }
+        .background(SettingsWindowChrome())
         .frame(minWidth: 820, minHeight: 560)
     }
 
@@ -129,6 +130,28 @@ struct SettingsWindowView: View {
             }
             .frame(minWidth: 560, minHeight: 420)
             .navigationTitle(prefs.settingsPane.title)
+    }
+}
+
+/// The Settings scene creates standard traffic-light buttons but disables minimize and
+/// zoom. Keep the native buttons and window chrome; just restore the controls users expect
+/// on an ordinary macOS window.
+struct SettingsWindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowHook() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func configure(_ window: NSWindow) {
+        window.styleMask.insert([.miniaturizable, .resizable])
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        window.standardWindowButton(.zoomButton)?.isEnabled = true
+    }
+
+    private final class WindowHook: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { SettingsWindowChrome.configure(window) }
+        }
     }
 }
 
