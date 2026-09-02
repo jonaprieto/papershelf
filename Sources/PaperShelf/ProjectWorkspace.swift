@@ -180,7 +180,8 @@ struct ProjectWorkspace: View {
             .background(.bar)
             Divider()
 
-            PDFPreview(url: preview.url, passwords: env.passwords(), page: preview.page)
+            PDFPreview(url: preview.url, passwords: env.passwords(), appearance: Prefs.shared.readingAppearance,
+                       page: preview.page)
                 .modifier(PDFReadingAppearanceModifier(appearance: Prefs.shared.readingAppearance))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

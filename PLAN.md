@@ -41,6 +41,7 @@ Relevant areas: `Catalogue.swift`, `Commands.swift`, `CommandPalette.swift`.
   not overwrite that choice.
 - Apply the selected PDF contrast to catalogue thumbnails and every in-app PDF surface.
 - Keep the command palette in the selected application theme.
+- Keep the White-on-black PDF canvas dark grey around the inverted page.
 
 Relevant areas: `Review.swift`, `ReaderWindow.swift`, `Commands.swift`.
 

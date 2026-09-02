@@ -292,6 +292,7 @@ struct ReviewInspector: View {
                 }
                 PDFPreview(url: item.currentURL, passwords: passwords,
                            annotator: annotator, fit: prefs.pageFit,
+                           appearance: prefs.readingAppearance,
                            onDocumentSwipe: stepDocument,
                            onMarkClick: selectMark(at:))
                 .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
@@ -1123,6 +1124,7 @@ struct PDFPreview: NSViewRepresentable {
     let passwords: [String]
     var annotator: Annotator?
     var fit: PageFit = .width
+    var appearance: PDFReadingAppearance = .normal
     /// Open at this page, one-based. For a citation, which is about one page rather than
     /// about the document: opening its book at the front and leaving you to find p. 108
     /// is most of the work the citation was supposed to save.
@@ -1159,10 +1161,7 @@ struct PDFPreview: NSViewRepresentable {
                                              right: FitWidthPDFView.margin)
         // Not `.underPageBackgroundColor`, which is very nearly white: against it a page
         // has no edge, and the shadow has nothing to fall on.
-        view.backgroundColor = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? srgb(28, 28, 30) : srgb(232, 232, 235)
-        }
+        view.backgroundColor = Self.canvasColor(for: appearance)
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.selectionChanged),
@@ -1179,6 +1178,7 @@ struct PDFPreview: NSViewRepresentable {
         let coordinator = context.coordinator
         view.onDocumentSwipe = onDocumentSwipe
         view.onMarkClick = onMarkClick
+        view.backgroundColor = Self.canvasColor(for: appearance)
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit
@@ -1222,6 +1222,16 @@ struct PDFPreview: NSViewRepresentable {
             // responder chain. Make the PDF canvas that responder so scrolling and text
             // selection work from the keyboard without first clicking the page.
             view.window?.makeFirstResponder(view)
+        }
+    }
+
+    /// White-on-black inverts the hosted PDF view, including its canvas. Start that canvas
+    /// light so inversion leaves the page black on a dark grey surround.
+    static func canvasColor(for appearance: PDFReadingAppearance) -> NSColor {
+        if appearance == .whiteOnBlack { return srgb(232, 232, 235) }
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? srgb(28, 28, 30) : srgb(232, 232, 235)
         }
     }
 

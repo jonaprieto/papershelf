@@ -35,6 +35,7 @@ struct ReaderWindow: View {
     var body: some View {
         VStack(spacing: 0) {
             PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
+                       appearance: prefs.readingAppearance,
                        onMarkClick: selectMark(at:))
                 .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                 .overlay(alignment: .top) { selectionBar }

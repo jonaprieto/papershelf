@@ -15,6 +15,14 @@ final class PDFReadingAppearanceTests: XCTestCase {
         XCTAssertEqual(Appearance.dark.colorScheme, .dark)
     }
 
+    func testWhiteOnBlackStartsWithALightCanvasSoInversionLeavesDarkGray() {
+        let color = PDFPreview.canvasColor(for: .whiteOnBlack).usingColorSpace(.sRGB)
+        XCTAssertNotNil(color)
+        XCTAssertEqual(Double(color!.redComponent), 232.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(Double(color!.greenComponent), 232.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(Double(color!.blueComponent), 235.0 / 255.0, accuracy: 0.001)
+    }
+
     func testPaletteSettingCyclesThroughEveryPDFAppearance() {
         let prefs = Prefs.shared
         let before = prefs.readingAppearance
