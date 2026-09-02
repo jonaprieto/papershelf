@@ -167,6 +167,12 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
                        "a command is listed twice")
     }
+
+    func testInspectorToggleIsHandledBeforeASelectionIsRequired() {
+        XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.toggleInspector))
+        XCTAssertEqual(Keymap.shared.shortcut(for: .toggleInspector),
+                       Shortcut("b", [.command, .shift]))
+    }
 }
 
 /// The settings window's own search. A pane list of eight is short enough to read and

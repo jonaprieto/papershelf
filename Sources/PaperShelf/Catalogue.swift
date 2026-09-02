@@ -19,6 +19,7 @@ struct ResultsPane: View {
     /// A setter rather than a toggle because the views in the same bar have to be able to
     /// leave the mode outright: see `choose(_:)`.
     var setReading: (Bool) -> Void = { _ in }
+    var toggleZenMode: () -> Void = {}
     let watching: Bool
     var palette: Palette
     /// The live page. Owned by the window rather than by this pane: the status bar sits
@@ -1149,10 +1150,10 @@ struct ResultsPane: View {
         .nextFile, .previousFile,
     ]
 
-    private static let alwaysAvailable: Set<Command> = [
+    static let alwaysAvailable: Set<Command> = [
         .palette, .focusSearch, .shortcuts,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
-        .nextRegion, .previousRegion, .back, .forward,
+        .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
@@ -1336,10 +1337,7 @@ struct ResultsPane: View {
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
         case .viewDuplicates: choose(.duplicates)
-        case .zenMode:
-            // The palette is a sheet. Wait for it to resign key status so the native
-            // window toggle reaches the library window rather than the palette.
-            DispatchQueue.main.async { NSApp.keyWindow?.toggleFullScreen(nil) }
+        case .zenMode: toggleZenMode()
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
@@ -1370,6 +1368,7 @@ struct ResultsPane: View {
         case .shortcuts: showingShortcuts = true
         case .palette: showingPalette = true
         case .focusSearch: searchFocused = true
+        case .toggleInspector: prefs.inspectorCollapsed.toggle()
         case .trash: markDeleted()
         case .reopen: reopenSelected()
         case .nextFile: step(by: 1)

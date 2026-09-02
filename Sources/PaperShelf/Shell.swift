@@ -18,6 +18,15 @@ final class Chrome {
         }
     }
     private var suppressSidebarPersistence = false
+    private struct ZenSnapshot {
+        let reading: Bool
+        let sidebar: NavigationSplitViewVisibility
+        let inspectorCollapsed: Bool
+        let contentsShown: Bool
+        let pageFit: PageFit
+    }
+    private var zenSnapshot: ZenSnapshot?
+    private(set) var zenMode = false
     /// Set by the window so the menu can reach the runner without owning it.
     var undo: () -> Void = {}
     var canUndo = false
@@ -68,6 +77,40 @@ final class Chrome {
     }
 
     func toggleReading() { setReading(!reading) }
+
+    /// Zen mode is transient: it borrows the user's layout for the page and gives it back
+    /// on exit, rather than teaching the next launch that every panel should stay hidden.
+    func toggleZenMode() {
+        if zenMode {
+            leaveZenMode()
+            return
+        }
+        zenSnapshot = ZenSnapshot(reading: reading,
+                                  sidebar: columnVisibility,
+                                  inspectorCollapsed: inspectorCollapsed,
+                                  contentsShown: contentsShown,
+                                  pageFit: Prefs.shared.pageFit)
+        zenMode = true
+        reading = true
+        setSidebarVisibility(.detailOnly, persist: false)
+        inspectorCollapsed = true
+        contentsShown = false
+        Prefs.shared.pageFit = .width
+    }
+
+    func leaveZenMode() {
+        guard let snapshot = zenSnapshot else {
+            zenMode = false
+            return
+        }
+        zenMode = false
+        reading = snapshot.reading
+        setSidebarVisibility(snapshot.sidebar, persist: false)
+        inspectorCollapsed = snapshot.inspectorCollapsed
+        contentsShown = snapshot.contentsShown
+        Prefs.shared.pageFit = snapshot.pageFit
+        zenSnapshot = nil
+    }
 
     /// Not animated, and neither are the notes and contents rails.
     ///

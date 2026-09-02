@@ -1019,6 +1019,32 @@ final class FitWidthPDFView: PDFView {
         return horizontal < 0 ? 1 : -1
     }
 
+    /// AppKit's native swipe event uses the opposite sign convention from scroll deltas:
+    /// positive `deltaX` means a swipe to the left. Keep both input paths explicit so a
+    /// trackpad gesture works whether PDFKit forwards it as a swipe or a scroll.
+    static func documentStep(forSwipeDeltaX deltaX: CGFloat, deltaY: CGFloat) -> Int? {
+        guard abs(deltaX) > abs(deltaY), deltaX != 0 else { return nil }
+        return deltaX > 0 ? 1 : -1
+    }
+
+    override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
+        axis == .horizontal && onDocumentSwipe != nil
+    }
+
+    override func wantsForwardedScrollEvents(for axis: NSEvent.GestureAxis) -> Bool {
+        axis == .horizontal && onDocumentSwipe != nil
+    }
+
+    override func swipe(with event: NSEvent) {
+        guard let onDocumentSwipe,
+              let step = Self.documentStep(forSwipeDeltaX: event.deltaX, deltaY: event.deltaY)
+        else {
+            super.swipe(with: event)
+            return
+        }
+        onDocumentSwipe(step)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 1 {
             let point = convert(event.locationInWindow, from: nil)

@@ -13,6 +13,12 @@ final class ReaderNavigationTests: XCTestCase {
         XCTAssertNil(FitWidthPDFView.documentStep(horizontal: 100, vertical: 90))
     }
 
+    func testNativeSwipeDirectionMovesToTheExpectedDocument() {
+        XCTAssertEqual(FitWidthPDFView.documentStep(forSwipeDeltaX: 1, deltaY: 0), 1)
+        XCTAssertEqual(FitWidthPDFView.documentStep(forSwipeDeltaX: -1, deltaY: 0), -1)
+        XCTAssertNil(FitWidthPDFView.documentStep(forSwipeDeltaX: 1, deltaY: 1))
+    }
+
     func testReaderCommandsIncludeDocumentNavigation() {
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.nextFile))
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.previousFile))

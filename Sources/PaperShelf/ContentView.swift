@@ -353,6 +353,17 @@ struct ContentView: View {
                 passwords: passwords,
                 reading: chrome.reading,
                 setReading: chrome.setReading,
+                toggleZenMode: {
+                    let entering = !chrome.zenMode
+                    chrome.toggleZenMode()
+                    // A palette is a sheet, so let it resign key status before asking
+                    // the library window to enter or leave native full screen.
+                    DispatchQueue.main.async {
+                        guard let window = NSApp.keyWindow else { return }
+                        let fullScreen = window.styleMask.contains(.fullScreen)
+                        if entering != fullScreen { window.toggleFullScreen(nil) }
+                    }
+                },
                 watching: prefs.watchSources && !selection.isEmpty,
                 palette: palette,
                 annotator: annotator,
@@ -448,6 +459,12 @@ struct ContentView: View {
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
             NSApp.appearance = prefs.appearance.nsAppearance
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard chrome.zenMode,
+                  let window = note.object as? NSWindow,
+                  window.isMainWindow else { return }
+            chrome.leaveZenMode()
         }
         // The shelf's own work, held back a beat.
         //
