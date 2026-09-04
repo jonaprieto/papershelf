@@ -4,6 +4,20 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.11.4] - 2026-09-04
+
+### Added
+
+- Show the timestamp for each mark, the Markdown companion's current state, and a direct
+  way to open that companion from Notes.
+
+### Fixed
+
+- Keep a new highlight's exact selected text instead of including the rectangular gap
+  around wrapped lines.
+- Create a library record when bookmarking an open PDF that has not been scanned yet, so
+  the Bookmarks view receives the new bookmark.
+
 ## [1.11.3] - 2026-09-02
 
 ### Fixed

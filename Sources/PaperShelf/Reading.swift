@@ -69,9 +69,12 @@ struct MarkRow: View {
 
                 Spacer(minLength: Space.snug)
 
-                Text("p. \(mark.page)")
-                    .font(Face.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("p. \(mark.page)")
+                    Text(mark.timestamp, format: .dateTime.year().month().day().hour().minute())
+                }
+                .font(Face.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
             }
 
             if !mark.quoted.isEmpty {
@@ -229,6 +232,11 @@ struct NotesRail: View {
 
     /// The marks to show, from whichever annotator holds this document.
     private var marks: [Annotator.Mark] { live.marks }
+
+    private var notesSidecar: URL? {
+        guard !source.isEmpty else { return nil }
+        return notesSidecarURL(for: URL(fileURLWithPath: source))
+    }
 
     /// The document that is selected but not open, read into an annotator of its own.
     ///
@@ -589,7 +597,8 @@ struct NotesRail: View {
     /// What leaves the app with these notes, and in what shape. The format is stated
     /// rather than chosen: there is one, and a menu of one is a menu that lies.
     private var exportBar: some View {
-        HStack(spacing: Space.step) {
+        VStack(alignment: .leading, spacing: Space.step) {
+            HStack(spacing: Space.step) {
             // A save panel rather than `fileExporter`. The shelf already carries one of
             // those for the bibliography, and a second in the same hierarchy presented
             // nothing at all: the button set its flag and no panel ever appeared.
@@ -622,17 +631,35 @@ struct NotesRail: View {
                 .tip("Share every highlight and note with ChatGPT")
             }
 
-            Spacer(minLength: Space.snug)
+                Spacer(minLength: Space.snug)
 
-            // Only for the document in front of you. Removing every mark means rewriting
-            // the file, and the file is not open.
-            if documentIsOpen {
-                Button(role: .destructive) { clearing = true } label: {
-                    Image(systemName: "trash")
+                // Only for the document in front of you. Removing every mark means rewriting
+                // the file, and the file is not open.
+                if documentIsOpen {
+                    Button(role: .destructive) { clearing = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Remove every mark from this document")
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .help("Remove every mark from this document")
+            }
+
+            HStack(spacing: Space.step) {
+                Label(prefs.syncNotesSidecar
+                      ? (live.notesSidecarIsCurrent ? "Notes file is up to date"
+                         : "Notes file needs updating")
+                      : "Notes file sync is off",
+                      systemImage: prefs.syncNotesSidecar && live.notesSidecarIsCurrent
+                      ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                    .foregroundStyle(prefs.syncNotesSidecar && live.notesSidecarIsCurrent
+                                     ? Color.green : .secondary)
+                Spacer(minLength: Space.snug)
+                Button("Open notes file") {
+                    if let notesSidecar { NSWorkspace.shared.open(notesSidecar) }
+                }
+                .disabled(notesSidecar.map { FileManager.default.fileExists(atPath: $0.path) } != true)
+                .tip("Open the Markdown notes file beside this PDF")
             }
         }
         .controlSize(.small)
@@ -655,7 +682,8 @@ struct NotesRail: View {
     private var notesMarkdown: String {
         let exported = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
-                       meaning: palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes))
+                       meaning: palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes),
+                       timestamp: $0.timestamp)
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported)

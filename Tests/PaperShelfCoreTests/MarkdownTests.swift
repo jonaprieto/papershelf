@@ -51,8 +51,9 @@ final class MarkdownTests: XCTestCase {
         let text = markdownNotes(
             title: "Book", source: "/tmp/papers/book.pdf",
             marks: [MarkExport(page: 1, quoted: "text", note: "keep",
-                               meaning: "Delete", colour: "#FFCC00")], date: moment)
+                               meaning: "Delete", colour: "#FFCC00", timestamp: moment)], date: moment)
         XCTAssertTrue(text.contains("Colour: `#FFCC00`"))
+        XCTAssertTrue(text.contains("Marked 2025-08-"))
         XCTAssertEqual(notesSidecarURL(for: URL(fileURLWithPath: "/tmp/papers/book.pdf")).path,
                        "/tmp/papers/book notes.md")
     }

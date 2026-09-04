@@ -6,18 +6,21 @@ public struct MarkExport: Sendable, Equatable {
     public let page: Int
     public let quoted: String
     public let note: String
+    /// When the PDF annotation was last changed.
+    public let timestamp: Date
     /// What the colour it was made with stands for, if the palette names it.
     public let meaning: String
     /// The stored colour, kept so a sidecar can be understood without the app's palette.
     public let colour: String
 
     public init(page: Int, quoted: String, note: String, meaning: String,
-                colour: String = "") {
+                colour: String = "", timestamp: Date = Date()) {
         self.page = page
         self.quoted = quoted
         self.note = note
         self.meaning = meaning
         self.colour = colour
+        self.timestamp = timestamp
     }
 }
 
@@ -65,6 +68,8 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
     out += "\(marks.count) mark\(marks.count == 1 ? "" : "s"), exported \(stamp.string(from: date))\n\n"
 
     var page = -1
+    let markStamp = ISO8601DateFormatter()
+    markStamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     for mark in marks.sorted(by: { $0.page < $1.page }) {
         if mark.page != page {
             page = mark.page
@@ -77,6 +82,7 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         if !mark.note.isEmpty {
             out += "\(markdownEscape(mark.note))\n\n"
         }
+        out += "Marked \(markStamp.string(from: mark.timestamp))\n\n"
         if !mark.colour.isEmpty {
             out += "Colour: `\(mark.colour)`\n\n"
         }

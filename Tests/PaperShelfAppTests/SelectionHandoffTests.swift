@@ -30,6 +30,22 @@ final class SelectionHandoffTests: XCTestCase {
         return try XCTUnwrap(PDFDocument(data: data as Data))
     }
 
+    private func makeWrappedDocument(_ lines: [String]) throws -> PDFDocument {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 240, height: 300)
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data))
+        let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        context.beginPDFPage(nil)
+        for (index, line) in lines.enumerated() {
+            context.textPosition = CGPoint(x: 20, y: 240 - CGFloat(index) * 18)
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(
+                string: line, attributes: [.font: NSFont.systemFont(ofSize: 14)])), context)
+        }
+        context.endPDFPage()
+        context.closePDF()
+        return try XCTUnwrap(PDFDocument(data: data as Data))
+    }
+
     func testNothingOnScreenHandsOverNothing() {
         XCTAssertNil(Annotator().selectionForHandoff())
     }
@@ -112,6 +128,29 @@ final class SelectionHandoffTests: XCTestCase {
         let mark = try XCTUnwrap(annotator.marks.first)
         let normalized = expected.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         XCTAssertEqual(mark.quoted, normalized)
+        annotator.flush()
+    }
+
+    func testHighlightQuoteExcludesTheRaggedPartOfWrappedSelection() throws {
+        let phrase = "target one two three four five six seven eight nine ten eleven"
+        let document = try makeWrappedDocument([
+            "before before target one two",
+            "three four five six seven",
+            "eight nine ten eleven after",
+        ])
+        let view = PDFView()
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: URL(fileURLWithPath: "/tmp/ragged-selection.pdf"))
+        let selection = PDFSelection(document: document)
+        for line in ["target one two", "three four five six seven", "eight nine ten eleven"] {
+            selection.add(try XCTUnwrap(document.findString(line, withOptions: []).first))
+        }
+        view.currentSelection = selection
+
+        XCTAssertEqual(annotator.highlightSelection(colour: .yellow), 1)
+        let actual = try XCTUnwrap(annotator.marks.first?.quoted)
+        XCTAssertEqual(actual, phrase)
         annotator.flush()
     }
 

@@ -25,6 +25,9 @@ final class Annotator {
     private(set) var contents: [Chapter] = []
     /// Named return points kept in the library, separate from PDF annotations.
     private(set) var bookmarks: [Bookmark] = []
+    /// The sibling Markdown companion's last write, so the Notes rail can say whether
+    /// the file on disk still matches this PDF.
+    private(set) var notesSidecarDate: Date?
     /// The page on screen, one-based, and how many there are. Published so the Info panel
     /// can say where you are, and written to the library so the shelf can say which books
     /// are open.
@@ -69,16 +72,19 @@ final class Annotator {
         let note: String
         /// What it was painted with, read back off the annotation.
         let colour: NSColor
+        /// When this mark was last changed, read from the PDF annotation.
+        let timestamp: Date
         let annotation: PDFAnnotation
 
         init(id: UUID = UUID(), page: Int, kind: String, quoted: String, note: String,
-             colour: NSColor, annotation: PDFAnnotation) {
+             colour: NSColor, timestamp: Date? = nil, annotation: PDFAnnotation) {
             self.id = id
             self.page = page
             self.kind = kind
             self.quoted = quoted
             self.note = note
             self.colour = colour
+            self.timestamp = timestamp ?? annotation.modificationDate ?? Date()
             self.annotation = annotation
         }
     }
@@ -137,6 +143,7 @@ final class Annotator {
         bookmarksTask?.cancel()
         bookmarksTask = nil
         bookmarks = []
+        notesSidecarDate = sidecarDate(for: url)
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
         page = 1
@@ -181,11 +188,23 @@ final class Annotator {
     /// the button's synchronous path.
     @discardableResult
     func toggleBookmark() -> Bool {
-        guard let documentID, hasPages, let library = Library.shared else { return false }
+        guard hasPages, let url, let library = Library.shared else { return false }
         let targetPage = page
         let mine = generation
         bookmarksTask?.cancel()
         bookmarksTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let documentID: String
+            if let existing = self.documentID {
+                documentID = existing
+            } else {
+                let file = url.resolvingSymlinksInPath()
+                let input = await Task.detached { indexInput(for: file) }.value
+                guard let record = (try? await library.indexDocuments([input]))?.first,
+                      mine == self.generation else { return }
+                documentID = record.id
+                self.documentID = documentID
+            }
             let existing: Bookmark?
             do {
                 existing = try await library.bookmark(documentID: documentID, page: targetPage)
@@ -197,7 +216,7 @@ final class Annotator {
             } else {
                 _ = try? await library.addBookmark(documentID: documentID, page: targetPage)
             }
-            guard let self, mine == self.generation, self.documentID == documentID else { return }
+            guard mine == self.generation, self.documentID == documentID else { return }
             self.bookmarks = (try? await library.bookmarks(forDocument: documentID)) ?? []
             self.bookmarksTask = nil
         }
@@ -448,6 +467,18 @@ final class Annotator {
         PaperShelfCore.quotedText(of: annotation, on: page)
     }
 
+    /// The selection is the only exact source for a mark just being made. Its union box
+    /// also covers the ragged space before wrapped lines, which is why reading that box
+    /// put words the reader did not highlight into the Notes rail.
+    private func selectedText(in selection: PDFSelection, on page: PDFPage) -> String {
+        selection.selectionsByLine()
+            .filter { $0.pages.contains(page) }
+            .compactMap(\.string)
+            .joined(separator: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
     /// Highlights whatever is selected.
     ///
     /// One annotation per page, not one per line. A highlight has to follow the line
@@ -472,6 +503,7 @@ final class Annotator {
             let union = lines.dropFirst().reduce(lines[0]) { $0.union($1) }
             let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
             mark.color = colour
+            mark.modificationDate = Date()
             if !note.isEmpty { mark.contents = note }
             // Quads are given in the annotation's own coordinate space.
             mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
@@ -485,7 +517,7 @@ final class Annotator {
             }
             page.addAnnotation(mark)
             madeMarks.append(Mark(page: document.index(for: page) + 1, kind: "Highlight",
-                                  quoted: PaperShelfCore.quotedText(of: mark, on: page),
+                                  quoted: selectedText(in: selection, on: page),
                                   note: mark.contents ?? "", colour: colour,
                                   annotation: mark))
         }
@@ -508,8 +540,9 @@ final class Annotator {
     /// Repaints an existing mark.
     func setColour(_ colour: NSColor, on mark: Mark) {
         mark.annotation.color = colour
+        mark.annotation.modificationDate = Date()
         save()
-        replace(mark, colour: colour)
+        replace(mark, colour: colour, timestamp: mark.annotation.modificationDate)
         rescanIfNeeded()
         if let view { view.setNeedsDisplay(view.bounds) }
     }
@@ -545,8 +578,9 @@ final class Annotator {
     /// Rewrites the note on an existing mark.
     func setNote(_ text: String, on mark: Mark) {
         mark.annotation.contents = text
+        mark.annotation.modificationDate = Date()
         save()
-        replace(mark, note: text)
+        replace(mark, note: text, timestamp: mark.annotation.modificationDate)
         rescanIfNeeded()
     }
 
@@ -628,8 +662,22 @@ final class Annotator {
         writeTask = Task { [weak self] in
             _ = await previous?.value
             let failure = await Annotator.persist(data, to: url, sidecar: sidecar)
-            self?.lastError = failure
+            guard let self else { return }
+            self.lastError = failure
+            if failure == nil { self.notesSidecarDate = self.sidecarDate(for: url) }
         }
+    }
+
+    var notesSidecarIsCurrent: Bool {
+        guard Prefs.shared.syncNotesSidecar, let url, let notesSidecarDate else { return false }
+        let pdfDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            ?? .distantFuture
+        return notesSidecarDate >= pdfDate
+    }
+
+    private func sidecarDate(for url: URL) -> Date? {
+        try? notesSidecarURL(for: url).resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
     }
 
     private func notesSidecarText(for url: URL) -> String? {
@@ -640,7 +688,7 @@ final class Annotator {
         let exports = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: Palette.shared.meaning(for: $0.colour, scope: scope),
-                       colour: colourHex($0.colour))
+                       colour: colourHex($0.colour), timestamp: $0.timestamp)
         }
         return markdownNotes(title: title, source: url.path, marks: exports)
     }
@@ -653,12 +701,15 @@ final class Annotator {
                       Int((max(0, min(1, rgb.blueComponent)) * 255).rounded()))
     }
 
-    private func replace(_ mark: Mark, colour: NSColor? = nil, note: String? = nil) {
+    private func replace(_ mark: Mark, colour: NSColor? = nil, note: String? = nil,
+                         timestamp: Date? = nil) {
         guard let index = marks.firstIndex(where: { $0.id == mark.id }) else { return }
         let current = marks[index]
         marks[index] = Mark(id: current.id, page: current.page, kind: current.kind,
                             quoted: current.quoted, note: note ?? current.note,
-                            colour: colour ?? current.colour, annotation: current.annotation)
+                            colour: colour ?? current.colour,
+                            timestamp: timestamp ?? current.timestamp,
+                            annotation: current.annotation)
     }
 
     /// Writing through a temporary file means an interrupted save cannot leave a
