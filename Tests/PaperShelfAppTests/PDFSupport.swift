@@ -52,12 +52,19 @@ private func drawTextPage(in ctx: CGContext, text: String) {
 /// Writes a PDF whose page carries real, extractable text, so content comparison has
 /// something to compare.
 func makeTextPDF(at url: URL, text: String, password: String? = nil) throws {
+    try makeTextPDF(at: url, pages: [text], password: password)
+}
+
+/// Writes a PDF with one extractable text page for each string.
+func makeTextPDF(at url: URL, pages: [String], password: String? = nil) throws {
     let raw = NSMutableData()
     var box = CGRect(x: 0, y: 0, width: 612, height: 792)
     let ctx = CGContext(consumer: CGDataConsumer(data: raw)!, mediaBox: &box, nil)!
-    ctx.beginPDFPage(nil)
-    drawTextPage(in: ctx, text: text)
-    ctx.endPDFPage()
+    for text in pages {
+        ctx.beginPDFPage(nil)
+        drawTextPage(in: ctx, text: text)
+        ctx.endPDFPage()
+    }
     ctx.closePDF()
 
     guard let doc = PDFDocument(data: raw as Data) else {

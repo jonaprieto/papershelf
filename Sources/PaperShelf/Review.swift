@@ -284,7 +284,7 @@ struct ReviewInspector: View {
         GeometryReader { page in
             HStack(spacing: 0) {
                 if prefs.contentsShown && hasContents && !contentsIsPopover {
-                    ContentsRail(annotator: annotator)
+                    ContentsRail(annotator: annotator, findActive: annotator.showsFind)
                         .frame(width: SplitLayout.contentsRailWidth(
                             inspectorWidth: page.size.width))
                         .region(.contents)
@@ -311,8 +311,14 @@ struct ReviewInspector: View {
                 }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
                 .overlay(alignment: .topLeading) { floatingMarkBar }
+                .overlay(alignment: .top) {
+                    if annotator.showsFind {
+                        PDFSearchBar(annotator: annotator)
+                            .padding(.top, Space.roomy)
+                    }
+                }
                 .overlay(alignment: .bottom) {
-                    PageBar(annotator: annotator, fit: $prefs.pageFit)
+                    PageBar(annotator: annotator, fit: $prefs.pageFit, openFind: openFind)
                         .padding(.bottom, Space.roomy)
                 }
                 .contextMenu {
@@ -328,6 +334,13 @@ struct ReviewInspector: View {
             }
             .clipped()
         }
+    }
+
+    private func openFind() {
+        annotator.openFind()
+        guard annotator.showsFind else { return }
+        prefs.contentsShown = true
+        prefs.contentsRailMode = .find
     }
 
     private var panelColumn: some View {

@@ -723,6 +723,7 @@ struct NotesRail: View {
 struct PageBar: View {
     var annotator: Annotator
     @Binding var fit: PageFit
+    var openFind: (() -> Void)? = nil
 
     private var total: Int { max(annotator.pageCount, 0) }
 
@@ -751,6 +752,19 @@ struct PageBar: View {
                 .tip("How big the page is drawn")
 
                 Divider().frame(height: 14)
+
+                if let openFind {
+                    Button(action: openFind) {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Find in PDF")
+                    .accessibilityIdentifier("reader.find")
+                    .tip("Find in this PDF", key: "⌘F")
+
+                    Divider().frame(height: 14)
+                }
 
                 Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -781,6 +795,89 @@ struct PageBar: View {
     }
 }
 
+/// The standard Find controls, shared by the shelf reader and a PDF opened from Finder.
+/// The results themselves stay in `Annotator`, which owns the PDFKit selections needed to
+/// move to an exact repeated phrase.
+struct PDFSearchBar: View {
+    @Bindable var annotator: Annotator
+    @FocusState private var queryFocused: Bool
+
+    private var count: String {
+        guard let selected = annotator.selectedFindHit else {
+            return annotator.findQuery.isEmpty ? "" : "No matches"
+        }
+        return "\(selected + 1) of \(annotator.findHits.count)"
+    }
+
+    var body: some View {
+        HStack(spacing: Space.step) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Find in PDF", text: $annotator.findQuery)
+                .textFieldStyle(.plain)
+                .focused($queryFocused)
+                .accessibilityLabel("Find in PDF")
+                .accessibilityIdentifier("reader.findField")
+                .onSubmit {
+                    if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
+                        annotator.updateFindHits()
+                    }
+                    annotator.stepFind(by: 1)
+                }
+                .onKeyPress(phases: .down) { press in
+                    guard press.key == KeyEquivalent("\r"), press.modifiers == .shift
+                    else { return .ignored }
+                    if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
+                        annotator.updateFindHits()
+                    }
+                    annotator.stepFind(by: -1)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    annotator.closeFind()
+                    return .handled
+                }
+            Text(count)
+                .font(Face.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+                .accessibilityIdentifier("reader.findCount")
+            Button { annotator.stepFind(by: -1) } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(annotator.findHits.isEmpty)
+            .accessibilityLabel("Previous occurrence")
+            .accessibilityIdentifier("reader.findPrevious")
+            Button { annotator.stepFind(by: 1) } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(annotator.findHits.isEmpty)
+            .accessibilityLabel("Next occurrence")
+            .accessibilityIdentifier("reader.findNext")
+            Button { annotator.closeFind() } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Close Find")
+            .accessibilityIdentifier("reader.findClose")
+        }
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.snug)
+        .frame(maxWidth: 460)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
+        .onAppear { queryFocused = true }
+        .onChange(of: annotator.findFocusToken) { _, _ in queryFocused = true }
+        .task(id: annotator.findQuery) {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            annotator.updateFindHits()
+        }
+    }
+}
+
 // MARK: - Metadata
 
 // MARK: - Contents
@@ -789,7 +886,7 @@ struct PageBar: View {
 /// what its pages look like. A scan carries no outline and a textbook's outline is the
 /// fastest way through it, so neither one alone is the rail.
 enum ContentsRailMode: String, CaseIterable, Identifiable {
-    case outline, thumbnails, bookmarks
+    case outline, thumbnails, bookmarks, find
     var id: String { rawValue }
 
     var label: String {
@@ -797,6 +894,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
         case .outline: return "Contents"
         case .thumbnails: return "Pages"
         case .bookmarks: return "Bookmarks"
+        case .find: return "Find"
         }
     }
 
@@ -805,6 +903,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
         case .outline: return "text.alignleft"
         case .thumbnails: return "square.grid.2x2"
         case .bookmarks: return "bookmark"
+        case .find: return "magnifyingglass"
         }
     }
 }
@@ -813,6 +912,7 @@ enum ContentsRailMode: String, CaseIterable, Identifiable {
 /// with its pages as thumbnails behind the same switch.
 struct ContentsRail: View {
     var annotator: Annotator
+    var findActive = false
     @Bindable private var prefs = Prefs.shared
 
     /// The chapter you are inside: the last one that starts at or before the page on
@@ -827,9 +927,11 @@ struct ContentsRail: View {
 
     private var availableModes: [ContentsRailMode] {
         (hasOutline ? [.outline] : []) + [.thumbnails, .bookmarks]
+            + (findActive ? [.find] : [])
     }
 
     private var shown: ContentsRailMode {
+        if findActive && prefs.contentsRailMode == .find { return .find }
         if prefs.contentsRailMode == .bookmarks { return .bookmarks }
         return hasOutline ? prefs.contentsRailMode : .thumbnails
     }
@@ -870,6 +972,7 @@ struct ContentsRail: View {
             case .outline: outline
             case .thumbnails: PageThumbnails(view: annotator.view)
             case .bookmarks: bookmarks
+            case .find: find
             }
         }
         .background(.background.secondary)
@@ -996,6 +1099,57 @@ struct ContentsRail: View {
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
+            }
+        }
+    }
+
+    private var find: some View {
+        Group {
+            if annotator.findQuery.isEmpty {
+                ContentUnavailableView("Find in this PDF",
+                                       systemImage: "magnifyingglass",
+                                       description: Text("Type a phrase in the Find bar."))
+            } else if annotator.findHits.isEmpty {
+                ContentUnavailableView("No matches", systemImage: "magnifyingglass",
+                                       description: Text("This PDF has no selectable match for “\(annotator.findQuery)”."))
+            } else {
+                ScrollViewReader { rail in
+                    List(annotator.findHits) { hit in
+                        Button {
+                            annotator.selectFindHit(at: hit.id)
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
+                                Image(systemName: "text.magnifyingglass")
+                                    .foregroundStyle(hit.id == annotator.selectedFindHit
+                                                     ? Color.accentColor : Color.secondary)
+                                Text(hit.text).lineLimit(2)
+                                Spacer(minLength: Space.tight)
+                                Text("p. \(hit.page)")
+                                    .font(Face.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, Space.snug)
+                            .padding(.vertical, Space.tight)
+                            .contentShape(Rectangle())
+                            .background(hit.id == annotator.selectedFindHit
+                                        ? Color.accentColor.opacity(0.13) : .clear,
+                                        in: RoundedRectangle(cornerRadius: Metric.control))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Occurrence \(hit.id + 1), page \(hit.page), \(hit.text)")
+                        .accessibilityIdentifier("reader.findHit.\(hit.id)")
+                        .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                        .listRowSeparator(.hidden)
+                    }
+                    .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: annotator.selectedFindHit) { _, selected in
+                        guard let selected else { return }
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            rail.scrollTo(selected, anchor: .center)
+                        }
+                    }
+                }
             }
         }
     }

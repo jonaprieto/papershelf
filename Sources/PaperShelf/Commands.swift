@@ -27,7 +27,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     // Reading
     case highlight1, highlight2, highlight3, highlight4, highlight5
-    case addNote, addBookmark, showBookmarks, removeBookmark
+    case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally
 
     // Library
@@ -89,7 +89,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
             return .deciding
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
-             .nextMark, .previousMark, .openExternally:
+             .findInDocument, .nextMark, .previousMark, .openExternally:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .shortcuts:
@@ -102,7 +102,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .focusContents, .toggleContents, .toggleNotes,
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
-             .nextMark, .previousMark:
+             .findInDocument, .nextMark, .previousMark:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
@@ -164,6 +164,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .addBookmark: return "Add a bookmark at the current page"
         case .showBookmarks: return "Show bookmarks"
         case .removeBookmark: return "Remove the bookmark at the current page"
+        case .findInDocument: return "Find in this PDF"
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .openExternally: return "Open in the default PDF viewer"
@@ -226,6 +227,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight5: return Shortcut("5", [])
         case .addNote: return Shortcut("n", [])
         case .addBookmark, .showBookmarks, .removeBookmark: return nil
+        case .findInDocument: return Shortcut("f", .command)
         case .nextMark: return Shortcut("\u{F701}", .option)
         case .previousMark: return Shortcut("\u{F700}", .option)
         case .openExternally: return Shortcut("o", [])

@@ -22,6 +22,8 @@ final class ReaderNavigationTests: XCTestCase {
     func testReaderCommandsIncludeDocumentNavigation() {
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.nextFile))
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.previousFile))
+        XCTAssertEqual(Command.findInDocument.scope, .reader)
+        XCTAssertEqual(Command.findInDocument.defaultShortcut, Shortcut("f", .command))
     }
 
     func testSpaceOpensQuickLookOnlyForASelectedCatalogueOrListFile() {

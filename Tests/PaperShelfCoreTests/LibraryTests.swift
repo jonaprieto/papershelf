@@ -632,6 +632,30 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(afterSet?.markdown, "<!-- page:1 -->\nHello.")
     }
 
+    func testFullTextHitUsesTheStoredPageMarkerRatherThanItsSnippetPosition() async throws {
+        let url = try makeDatabaseURL()
+        defer { tearDownDatabase(url) }
+        let library = try Library(url: url)
+        let record = try await library.indexDocument(path: "/shelf/a.pdf", contentHash: "h",
+                                                     byteCount: 1, pageCount: 7,
+                                                     title: "A", author: nil)
+        try await library.setExtractedText("""
+            ## Page 1
+
+            Opening text.
+
+            ## Page 7
+
+            The categorical imperative binds without condition.
+            """, forDocument: record.id, format: .markdown)
+
+        let hits = try await library.fullTextHits("categorical imperative")
+        let hit = try XCTUnwrap(hits.first)
+        XCTAssertEqual(hit.page, 7)
+        XCTAssertTrue(hit.snippet.contains("binds without condition"))
+        XCTAssertFalse(hit.snippet.contains("## Page"))
+    }
+
     // MARK: - Durability and concurrency
 
     func testReopeningTheDatabasePreservesEverything() async throws {

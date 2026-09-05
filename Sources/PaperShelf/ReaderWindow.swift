@@ -34,28 +34,41 @@ struct ReaderWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
-                       appearance: prefs.readingAppearance,
-                       onMarkClick: selectMark(at:))
-                .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
-                .overlay(alignment: .top) { selectionBar }
-                .contextMenu {
-                    Button(annotator.bookmarkOnCurrentPage == nil
-                           ? "Add Bookmark" : "Remove Bookmark") {
-                        _ = annotator.toggleBookmark()
+            HStack(spacing: 0) {
+                if prefs.contentsShown && annotator.hasPages {
+                    ContentsRail(annotator: annotator, findActive: annotator.showsFind)
+                        .frame(width: SplitLayout.contentsReserved - SplitLayout.dividerBeforeInspector)
+                    Divider()
+                }
+                PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
+                           appearance: prefs.readingAppearance,
+                           onMarkClick: selectMark(at:))
+                    .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
+                    .overlay(alignment: .top) { selectionBar }
+                    .overlay(alignment: .top) {
+                        if annotator.showsFind {
+                            PDFSearchBar(annotator: annotator)
+                                .padding(.top, Space.roomy)
+                        }
                     }
-                }
-                .inspector(isPresented: $showsNotes) {
-                    NotesRail(annotator: annotator, palette: palette,
-                              addingNote: $addingNote, noteText: $noteText,
-                              lastColour: nextColour, title: title, source: url.path,
-                              close: { showsNotes = false }, documentID: documentID,
-                              effectiveProjectScopes: documentProjectScopes)
-                    .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
-                }
+                    .contextMenu {
+                        Button(annotator.bookmarkOnCurrentPage == nil
+                               ? "Add Bookmark" : "Remove Bookmark") {
+                            _ = annotator.toggleBookmark()
+                        }
+                    }
+                    .inspector(isPresented: $showsNotes) {
+                        NotesRail(annotator: annotator, palette: palette,
+                                  addingNote: $addingNote, noteText: $noteText,
+                                  lastColour: nextColour, title: title, source: url.path,
+                                  close: { showsNotes = false }, documentID: documentID,
+                                  effectiveProjectScopes: documentProjectScopes)
+                        .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
+                    }
+            }
             Divider()
             HStack(spacing: Space.roomy) {
-                PageBar(annotator: annotator, fit: $fit)
+                PageBar(annotator: annotator, fit: $fit, openFind: openFind)
                 if let resumeAt {
                     Button("Resume at p. \(resumeAt)") {
                         annotator.go(toPage: resumeAt)
@@ -81,7 +94,13 @@ struct ReaderWindow: View {
         .task(id: annotator.page) { await rememberPage() }
         // The five highlighters and a note, without a menu and without the shelf's command
         // table: this window has no scopes to resolve, so it reads the keys directly.
-        .onKeyPress(phases: .down) { press in mark(with: press) }
+        .onKeyPress(phases: .down) { press in
+            if press.key == KeyEquivalent("f"), press.modifiers == .command {
+                openFind()
+                return .handled
+            }
+            return mark(with: press)
+        }
         .onDisappear { annotator.flush() }
     }
 
@@ -163,6 +182,13 @@ struct ReaderWindow: View {
         guard let mark = annotator.mark(atViewPoint: point) else { return }
         annotator.selectedMark = mark.id
         showsNotes = true
+    }
+
+    private func openFind() {
+        annotator.openFind()
+        guard annotator.showsFind else { return }
+        prefs.contentsShown = true
+        prefs.contentsRailMode = .find
     }
 
     /// The bar that appears beside a selection. The keys are the fast path; this is the one

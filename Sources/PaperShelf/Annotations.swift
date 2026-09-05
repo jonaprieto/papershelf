@@ -25,6 +25,14 @@ final class Annotator {
     private(set) var contents: [Chapter] = []
     /// Named return points kept in the library, separate from PDF annotations.
     private(set) var bookmarks: [Bookmark] = []
+    /// The transient Find session for the document on screen. This belongs to the live
+    /// PDF rather than the library index: a file can be found before a scan, and after it
+    /// has changed on disk but before a later indexing pass reaches it.
+    var showsFind = false
+    private(set) var findFocusToken = 0
+    var findQuery = ""
+    private(set) var findHits: [FindHit] = []
+    private(set) var selectedFindHit: Int?
     /// The sibling Markdown companion's last write, so the Notes rail can say whether
     /// the file on disk still matches this PDF.
     private(set) var notesSidecarDate: Date?
@@ -89,6 +97,16 @@ final class Annotator {
         }
     }
 
+    /// One exact match in the live PDF. Keeping PDFKit's selection is what lets a list
+    /// row return to the right instance of a repeated phrase, rather than merely to its
+    /// page.
+    struct FindHit: Identifiable {
+        let id: Int
+        let page: Int
+        let text: String
+        fileprivate let selection: PDFSelection
+    }
+
     /// Marks in reading order: by page, then down the page, then across it.
     ///
     /// Both ways marks arrive are out of order on their own. The initial scan takes each
@@ -143,6 +161,7 @@ final class Annotator {
         bookmarksTask?.cancel()
         bookmarksTask = nil
         bookmarks = []
+        closeFind()
         notesSidecarDate = sidecarDate(for: url)
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
@@ -400,6 +419,59 @@ final class Annotator {
               let page = document.page(at: min(max(number, 1), document.pageCount) - 1)
         else { return }
         view.go(to: PDFDestination(page: page, at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
+    }
+
+    func openFind() {
+        guard hasPages else { return }
+        findFocusToken &+= 1
+        showsFind = true
+        updateFindHits()
+    }
+
+    func closeFind() {
+        showsFind = false
+        findQuery = ""
+        findHits = []
+        selectedFindHit = nil
+    }
+
+    /// Replaces the visible hit list for the current query. PDFKit owns this document on
+    /// the main actor, so the lookup stays here with the view rather than racing it from
+    /// a background task.
+    func updateFindHits() {
+        let query = findQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let document = view?.document, !query.isEmpty else {
+            findHits = []
+            selectedFindHit = nil
+            return
+        }
+        findHits = document.findString(query, withOptions: [.caseInsensitive]).enumerated()
+            .compactMap { index, selection in
+                guard let page = selection.pages.first else { return nil }
+                return FindHit(id: index, page: document.index(for: page) + 1,
+                               text: Self.findLabel(selection.string ?? query), selection: selection)
+            }
+        selectedFindHit = findHits.isEmpty ? nil : 0
+        if !findHits.isEmpty { selectFindHit(at: 0) }
+    }
+
+    func selectFindHit(at index: Int) {
+        guard findHits.indices.contains(index), let view else { return }
+        let hit = findHits[index]
+        selectedFindHit = index
+        view.go(to: hit.selection)
+        view.setCurrentSelection(hit.selection, animate: true)
+    }
+
+    func stepFind(by delta: Int) {
+        guard !findHits.isEmpty else { return }
+        let current = selectedFindHit ?? (delta > 0 ? -1 : 0)
+        selectFindHit(at: (current + delta + findHits.count) % findHits.count)
+    }
+
+    private static func findLabel(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+            .joined(separator: " ")
     }
 
     /// What the open document says about a phrase: the page, the line it sits on, and a

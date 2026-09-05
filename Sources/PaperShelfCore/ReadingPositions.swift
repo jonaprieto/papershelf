@@ -194,8 +194,8 @@ public struct TextHit: Sendable, Equatable, Identifiable {
     /// The matched run with a little of its sentence on either side, the matched words
     /// marked with the delimiters asked for.
     public let snippet: String
-    /// The page the snippet came from, read back off the `<!-- page:N -->` marker the
-    /// extracted text carries, or nil when the text has no markers.
+    /// The page the passage came from, read from this app's `## Page N` marker, or nil
+    /// when the stored text has no page markers.
     public let page: Int?
 
     public var id: String { documentID + "#" + (page.map(String.init) ?? "?") }
@@ -218,29 +218,29 @@ extension Library {
     /// makes a person open each of them to find out which sentence matched.
     public func fullTextHits(_ text: String, limit: Int = 5) throws -> [TextHit] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        guard !trimmed.isEmpty, limit > 0 else { return [] }
         let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
         return try withStatement("""
-            SELECT d.id, d.title, d.author,
-                   snippet(extracted_text_fts, 0, '', '', '…', 14)
+            SELECT d.id, d.title, d.author, e.markdown
             FROM extracted_text_fts
             JOIN extracted_text e ON e.rowid = extracted_text_fts.rowid
             JOIN documents d ON d.id = e.document_id
             WHERE extracted_text_fts MATCH ?
             ORDER BY bm25(extracted_text_fts)
             LIMIT ?;
-            """, bind: { statement in
+        """, bind: { statement in
             bindText(statement, 1, phrase)
             sqlite3_bind_int64(statement, 2, Int64(limit))
         }) { statement in
             var out: [TextHit] = []
-            while sqlite3_step(statement) == SQLITE_ROW {
-                let snippet = columnText(statement, 3) ?? ""
+            while sqlite3_step(statement) == SQLITE_ROW, out.count < limit {
+                let markdown = columnText(statement, 3) ?? ""
+                guard let excerpt = excerpts(in: markdown, matching: trimmed, limit: 1).first
+                else { continue }
                 out.append(TextHit(documentID: columnText(statement, 0) ?? "",
                                    title: columnText(statement, 1) ?? "untitled",
                                    author: columnText(statement, 2),
-                                   snippet: tidySnippet(snippet),
-                                   page: pageMarker(in: snippet)))
+                                   snippet: excerpt.text, page: excerpt.page))
             }
             return out
         }

@@ -859,7 +859,7 @@ struct ResultsPane: View {
                 get: { prefs.contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
                 set: { prefs.contentsShown = $0 }
             ), arrowEdge: .bottom) {
-                ContentsRail(annotator: annotator)
+                ContentsRail(annotator: annotator, findActive: annotator.showsFind)
                     .frame(width: 300, height: 420)
             }
         }
@@ -870,6 +870,12 @@ struct ResultsPane: View {
     @ViewBuilder
     private var readerActions: some View {
         let styles = palette.styles(for: currentMeaningScopes)
+        Button { openFind() } label: {
+            Label("Find in PDF", systemImage: "magnifyingglass")
+        }
+        .accessibilityIdentifier("toolbar.find")
+        .tip("Find in this PDF", key: "⌘F")
+
         Menu {
             ForEach(styles) { style in
                 Button {
@@ -1359,7 +1365,7 @@ struct ResultsPane: View {
         .zenMode,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
-        .addNote, .addBookmark, .showBookmarks, .removeBookmark,
+        .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
         .nextMark, .previousMark,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
@@ -1412,6 +1418,7 @@ struct ResultsPane: View {
         case .shortcuts: showingShortcuts = true
         case .palette: showingPalette = true
         case .focusSearch: searchFocused = true
+        case .findInDocument: openFind()
         case .toggleInspector: prefs.inspectorCollapsed.toggle()
         case .trash: markDeleted()
         case .reopen: reopenSelected()
@@ -1468,6 +1475,13 @@ struct ResultsPane: View {
         default: return false
         }
         return true
+    }
+
+    private func openFind() {
+        guard annotator.hasPages else { return }
+        annotator.openFind()
+        prefs.contentsShown = true
+        prefs.contentsRailMode = .find
     }
 
     private func focusRegion(by delta: Int) {
