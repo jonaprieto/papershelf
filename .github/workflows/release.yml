@@ -81,9 +81,11 @@ jobs:
             url "https://github.com/jonaprieto/papershelf/releases/download/v#{version}/PaperShelf-#{version}.dmg"
             name "PaperShelf"
             desc "macOS PDF reader and research library"
-            homepage "https://jonaprieto.github.io/papershelf/"
+          homepage "https://jonaprieto.github.io/papershelf/"
 
-            app "PaperShelf.app"
+          depends_on macos: :sonoma
+
+          app "PaperShelf.app"
 
             caveats <<~EOS
               PaperShelf is ad-hoc signed while notarization is on the roadmap.
@@ -98,6 +100,7 @@ jobs:
           EOF
           git -C "$TAP" config user.name "github-actions[bot]"
           git -C "$TAP" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$TAP" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/jonaprieto/homebrew-papershelf.git"
           git -C "$TAP" add Casks/papershelf.rb
           if git -C "$TAP" diff --cached --quiet; then exit 0; fi
           git -C "$TAP" commit -m "chore: update PaperShelf to ${VERSION}"
