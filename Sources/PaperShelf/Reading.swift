@@ -4,6 +4,10 @@ import PDFKit
 import UniformTypeIdentifiers
 import PaperShelfCore
 
+extension Notification.Name {
+    static let noteEditorFocus = Notification.Name("PaperShelf.noteEditorFocus")
+}
+
 /// One highlight or note, in the rail beside the page.
 struct MarkRow: View {
     let mark: Annotator.Mark
@@ -203,6 +207,7 @@ struct NotesRail: View {
     let title: String
     let source: String
     let close: () -> Void
+    var isWritingNote: Binding<Bool>? = nil
     /// Opening this document at a page, for a mark on a document the reader does not have
     /// open. Nil where there is nothing to open onto.
     var openAtPage: ((Int) -> Void)?
@@ -393,6 +398,9 @@ struct NotesRail: View {
                                 .textFieldStyle(.roundedBorder)
                                 .lineLimit(2...5)
                                 .focused($noteInputFocused)
+                                .onChange(of: noteInputFocused) { _, focused in
+                                    publishNoteEditorFocus(focused)
+                                }
                             HStack {
                                 Button {
                                     if dictation.isRecording {
@@ -520,7 +528,9 @@ struct NotesRail: View {
         .onChange(of: addingNote) { _, isAdding in
             noteInputFocused = false
             if isAdding { focusNoteInputIfNeeded() }
+            else { publishNoteEditorFocus(false) }
         }
+        .onDisappear { publishNoteEditorFocus(false) }
         .confirmationDialog("Remove every mark from this document?",
                             isPresented: $clearing) {
             Button("Remove \(marks.count) marks", role: .destructive) {
@@ -535,6 +545,12 @@ struct NotesRail: View {
     private func focusNoteInputIfNeeded() {
         guard addingNote else { return }
         DispatchQueue.main.async { noteInputFocused = true }
+    }
+
+    private func publishNoteEditorFocus(_ focused: Bool) {
+        isWritingNote?.wrappedValue = focused
+        NotificationCenter.default.post(name: .noteEditorFocus, object: source,
+                                        userInfo: ["focused": focused])
     }
 
     /// What the document holds, and the one control that changes what is listed.

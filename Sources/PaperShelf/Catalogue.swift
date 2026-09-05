@@ -75,6 +75,7 @@ struct ResultsPane: View {
     /// tab it names rather than on whichever one was last open.
     @State private var addingNote = false
     @State private var noteText = ""
+    @State private var writingNote = false
     @State private var tagIndex = CatalogueTags()
     /// Which of the four library lists the shelf is showing, shared with the sidebar that
     /// sets it.
@@ -610,6 +611,8 @@ struct ResultsPane: View {
             ensureSelection()
             installKeyMonitor()
         }
+            .onReceive(NotificationCenter.default.publisher(for: .noteEditorFocus),
+                       perform: receiveNoteEditorFocus)
         // A restyle rewrites the suggestions under the current selection.
             .onChange(of: runner.revision) { _, _ in refreshSuggestion() }
             .onChange(of: prefs.sortOrder) { _, order in
@@ -1175,10 +1178,16 @@ struct ResultsPane: View {
     /// exists to replace, so a bare letter over a list of files is a command, not a
     /// search-as-you-type.
     private func isTyping(_ event: NSEvent) -> Bool {
-        if searchFocused { return true }
+        if searchFocused || writingNote { return true }
         guard let responder = event.window?.firstResponder else { return false }
         if responder is NSTableView { return false }
         return responder is NSTextView || responder is NSControl
+    }
+
+    private func receiveNoteEditorFocus(_ note: Notification) {
+        guard let source = note.object as? String,
+              source == (readerItem ?? selectedItem)?.currentURL.path else { return }
+        writingNote = note.userInfo?["focused"] as? Bool ?? false
     }
 
     private func removeKeyMonitor() {

@@ -1,10 +1,24 @@
 import AVFAudio
 import Foundation
+import Speech
 import SwiftUI
 
 @MainActor
 @Observable
 final class NoteDictation {
+    private enum DictationError: LocalizedError {
+        case unavailable, empty
+
+        var errorDescription: String? {
+            switch self {
+            case .unavailable:
+                return "On-device dictation is unavailable for this language. Add it in System Settings."
+            case .empty:
+                return "No speech was recognized."
+            }
+        }
+    }
+
     private enum Status {
         case idle, recording, transcribing
     }
@@ -20,6 +34,51 @@ final class NoteDictation {
     func start() {
         guard status == .idle else { return }
         error = nil
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            requestMicrophone()
+        case .denied, .restricted:
+            error = "Speech recognition is off. Enable it in System Settings."
+        case .notDetermined:
+            SFSpeechRecognizer.requestAuthorization { [weak self] status in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if status == .authorized { self.requestMicrophone() }
+                    else { self.error = "Speech recognition was denied." }
+                }
+            }
+        @unknown default:
+            error = "Speech recognition is unavailable."
+        }
+    }
+
+    func stop() async -> String? {
+        guard status == .recording, let recorder, let audioURL else { return nil }
+        recorder.stop()
+        self.recorder = nil
+        status = .transcribing
+        defer {
+            status = .idle
+            try? FileManager.default.removeItem(at: audioURL)
+            self.audioURL = nil
+        }
+        do {
+            return try await transcribeOnDevice(audioURL)
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    func cancel() {
+        recorder?.stop()
+        recorder = nil
+        if let audioURL { try? FileManager.default.removeItem(at: audioURL) }
+        self.audioURL = nil
+        status = .idle
+    }
+
+    private func requestMicrophone() {
         switch AVAudioApplication.shared.recordPermission {
         case .granted:
             record()
@@ -36,36 +95,6 @@ final class NoteDictation {
         @unknown default:
             error = "Microphone access is unavailable."
         }
-    }
-
-    func stop() async -> String? {
-        guard status == .recording, let recorder, let audioURL else { return nil }
-        recorder.stop()
-        self.recorder = nil
-        status = .transcribing
-        defer {
-            status = .idle
-            try? FileManager.default.removeItem(at: audioURL)
-            self.audioURL = nil
-        }
-        do {
-            return try await AIClient(
-                baseURL: Prefs.shared.aiBaseURL,
-                model: Prefs.shared.aiModel,
-                apiKey: resolvedKey(useEnvironment: Prefs.shared.aiUseEnvironment)
-            ).transcribe(audio: Data(contentsOf: audioURL))
-        } catch {
-            self.error = error.localizedDescription
-            return nil
-        }
-    }
-
-    func cancel() {
-        recorder?.stop()
-        recorder = nil
-        if let audioURL { try? FileManager.default.removeItem(at: audioURL) }
-        self.audioURL = nil
-        status = .idle
     }
 
     private func record() {
@@ -86,5 +115,27 @@ final class NoteDictation {
         } catch {
             self.error = "Could not start microphone recording: \(error.localizedDescription)"
         }
+    }
+
+    private func transcribeOnDevice(_ url: URL) async throws -> String {
+        guard let recognizer = SFSpeechRecognizer(locale: .current), recognizer.isAvailable,
+              recognizer.supportsOnDeviceRecognition else {
+            throw DictationError.unavailable
+        }
+        let request = SFSpeechURLRecognitionRequest(url: url)
+        request.requiresOnDeviceRecognition = true
+        let text: String = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<String, Error>) in
+            recognizer.recognitionTask(with: request) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let result, result.isFinal {
+                    continuation.resume(returning: result.bestTranscription.formattedString)
+                }
+            }
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw DictationError.empty }
+        return trimmed
     }
 }

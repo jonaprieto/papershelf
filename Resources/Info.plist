@@ -57,6 +57,8 @@
 	<string>PaperShelf.sdef</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PaperShelf uses the microphone to dictate notes for your PDF annotations.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>PaperShelf transcribes dictated notes on your Mac.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>PaperShelf reads and rewrites the PDFs you select on removable volumes.</string>
 </dict>

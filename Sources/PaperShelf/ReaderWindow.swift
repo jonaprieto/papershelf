@@ -20,6 +20,7 @@ struct ReaderWindow: View {
     @State private var presentationWindow: NSWindow?
     @State private var noteText = ""
     @State private var addingNote = false
+    @State private var writingNote = false
     @State private var showsNotes = false
     /// The page the library remembers, when it answered too late to move the page under a
     /// reader who had already started. Offered rather than applied.
@@ -60,7 +61,8 @@ struct ReaderWindow: View {
                         NotesRail(annotator: annotator, palette: palette,
                                   addingNote: $addingNote, noteText: $noteText,
                                   lastColour: nextColour, title: title, source: url.path,
-                                  close: { showsNotes = false }, documentID: documentID,
+                                  close: { showsNotes = false }, isWritingNote: $writingNote,
+                                  documentID: documentID,
                                   effectiveProjectScopes: documentProjectScopes)
                         .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
                     }
@@ -104,6 +106,7 @@ struct ReaderWindow: View {
         // The five highlighters and a note, without a menu and without the shelf's command
         // table: this window has no scopes to resolve, so it reads the keys directly.
         .onKeyPress(phases: .down) { press in
+            if writingNote { return .ignored }
             if press.key == KeyEquivalent("f"), press.modifiers == .command {
                 openFind()
                 return .handled
@@ -243,6 +246,7 @@ struct ReaderWindow: View {
                 Button {
                     showsNotes = true
                     addingNote = true
+                    writingNote = true
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -275,6 +279,7 @@ struct ReaderWindow: View {
         if press.key == KeyEquivalent("n") {
             showsNotes = true
             addingNote = true
+            writingNote = true
             return .handled
         }
         guard let digit = Int(press.characters), (1...5).contains(digit),
