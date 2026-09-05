@@ -1017,48 +1017,14 @@ struct ContentsRail: View {
     @State private var bookmarkName = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.step) {
-                Text(shown.label).font(Face.headline)
-                Spacer(minLength: Space.tight)
-                Picker("", selection: selection) {
-                    ForEach(availableModes) { mode in
-                        Image(systemName: mode.icon)
-                            .accessibilityLabel(mode.label)
-                            .tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .tip("The chapters, pages, or bookmarks")
+        Group {
+            if shown == .find {
+                findRail.id("find")
+            } else {
+                browsingRail.id(shown)
             }
-            .padding(.horizontal, Space.roomy)
-            .padding(.vertical, Space.step)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-
-            Divider()
-
-            // A PDFThumbnailView can survive one SwiftUI update while it is being torn
-            // down. Keep every mode in one viewport so that native view cannot reserve a
-            // blank strip above the replacement Find panel.
-            ZStack {
-                switch shown {
-                case .outline: outline
-                case .thumbnails: PageThumbnails(view: annotator.view)
-                case .bookmarks: bookmarks
-                case .find: find
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(.background.secondary)
-        // PDFThumbnailView is an AppKit view. Giving each mode its own identity makes a
-        // mode change dismantle the old native view instead of leaving its blank frame
-        // above the new Find rail.
-        .id(shown)
         .clipped()
         .alert("Rename bookmark", isPresented: Binding(
             get: { bookmarkToRename != nil },
@@ -1074,6 +1040,53 @@ struct ContentsRail: View {
             Button("Cancel", role: .cancel) { bookmarkToRename = nil }
         } message: {
             Text("Give this page a name you will recognise later.")
+        }
+    }
+
+    private var railHeader: some View {
+        HStack(spacing: Space.step) {
+            Text(shown.label).font(Face.headline)
+            Spacer(minLength: Space.tight)
+            Picker("", selection: selection) {
+                ForEach(availableModes) { mode in
+                    Image(systemName: mode.icon)
+                        .accessibilityLabel(mode.label)
+                        .tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .tip("The chapters, pages, or bookmarks")
+        }
+        .padding(.horizontal, Space.roomy)
+        .padding(.vertical, Space.step)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    private var findRail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            railHeader
+            Divider()
+            find.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var browsingRail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            railHeader
+            Divider()
+            Group {
+                switch shown {
+                case .outline: outline
+                case .thumbnails: PageThumbnails(view: annotator.view)
+                case .bookmarks: bookmarks
+                case .find: EmptyView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
