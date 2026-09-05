@@ -311,12 +311,6 @@ struct ReviewInspector: View {
                 }
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
                 .overlay(alignment: .topLeading) { floatingMarkBar }
-                .overlay(alignment: .top) {
-                    if annotator.showsFind {
-                        PDFSearchBar(annotator: annotator)
-                            .padding(.top, Space.roomy)
-                    }
-                }
                 .overlay(alignment: .bottom) {
                     PageBar(annotator: annotator, fit: $prefs.pageFit, openFind: openFind)
                         .padding(.bottom, Space.roomy)

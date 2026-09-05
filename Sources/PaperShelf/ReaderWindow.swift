@@ -45,12 +45,6 @@ struct ReaderWindow: View {
                            onMarkClick: selectMark(at:))
                     .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                     .overlay(alignment: .top) { selectionBar }
-                    .overlay(alignment: .top) {
-                        if annotator.showsFind {
-                            PDFSearchBar(annotator: annotator)
-                                .padding(.top, Space.roomy)
-                        }
-                    }
                     .contextMenu {
                         Button(annotator.bookmarkOnCurrentPage == nil
                                ? "Add Bookmark" : "Remove Bookmark") {

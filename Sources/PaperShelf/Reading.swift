@@ -655,6 +655,11 @@ struct NotesRail: View {
                     .foregroundStyle(prefs.syncNotesSidecar && live.notesSidecarIsCurrent
                                      ? Color.green : .secondary)
                 Spacer(minLength: Space.snug)
+                if prefs.syncNotesSidecar, !live.notesSidecarIsCurrent {
+                    Button("Sync notes file") { live.syncNotesSidecar() }
+                        .buttonStyle(.borderedProminent)
+                        .tip("Write the current highlights and notes beside this PDF")
+                }
                 Button("Open notes file") {
                     if let notesSidecar { NSWorkspace.shared.open(notesSidecar) }
                 }
@@ -800,6 +805,7 @@ struct PageBar: View {
 /// move to an exact repeated phrase.
 struct PDFSearchBar: View {
     @Bindable var annotator: Annotator
+    var inContentsRail = false
     @FocusState private var queryFocused: Bool
 
     private var count: String {
@@ -810,37 +816,80 @@ struct PDFSearchBar: View {
     }
 
     var body: some View {
+        Group {
+            if inContentsRail {
+                VStack(alignment: .leading, spacing: Space.step) {
+                    queryField
+                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: Space.step) {
+                        countLabel
+                        Spacer(minLength: Space.tight)
+                        findNavigation
+                    }
+                }
+                .padding(.horizontal, Space.roomy)
+                .padding(.vertical, Space.step)
+                .background(.bar)
+            } else {
+                HStack(spacing: Space.step) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    queryField.textFieldStyle(.plain)
+                    countLabel
+                    findNavigation
+                }
+                .padding(.horizontal, Space.roomy)
+                .padding(.vertical, Space.snug)
+                .frame(maxWidth: 460)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.separator))
+                .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
+            }
+        }
+        .onAppear { queryFocused = true }
+        .onChange(of: annotator.findFocusToken) { _, _ in queryFocused = true }
+        .task(id: annotator.findQuery) {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            annotator.updateFindHits()
+        }
+    }
+
+    private var queryField: some View {
+        TextField("Find in PDF", text: $annotator.findQuery)
+            .focused($queryFocused)
+            .accessibilityLabel("Find in PDF")
+            .accessibilityIdentifier("reader.findField")
+            .onSubmit {
+                if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
+                    annotator.updateFindHits()
+                }
+                annotator.stepFind(by: 1)
+            }
+            .onKeyPress(phases: .down) { press in
+                guard press.key == KeyEquivalent("\r"), press.modifiers == .shift
+                else { return .ignored }
+                if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
+                    annotator.updateFindHits()
+                }
+                annotator.stepFind(by: -1)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                annotator.closeFind()
+                return .handled
+            }
+    }
+
+    private var countLabel: some View {
+        Text(count)
+            .font(Face.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .fixedSize()
+            .accessibilityIdentifier("reader.findCount")
+    }
+
+    private var findNavigation: some View {
         HStack(spacing: Space.step) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Find in PDF", text: $annotator.findQuery)
-                .textFieldStyle(.plain)
-                .focused($queryFocused)
-                .accessibilityLabel("Find in PDF")
-                .accessibilityIdentifier("reader.findField")
-                .onSubmit {
-                    if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
-                        annotator.updateFindHits()
-                    }
-                    annotator.stepFind(by: 1)
-                }
-                .onKeyPress(phases: .down) { press in
-                    guard press.key == KeyEquivalent("\r"), press.modifiers == .shift
-                    else { return .ignored }
-                    if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
-                        annotator.updateFindHits()
-                    }
-                    annotator.stepFind(by: -1)
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    annotator.closeFind()
-                    return .handled
-                }
-            Text(count)
-                .font(Face.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .fixedSize()
-                .accessibilityIdentifier("reader.findCount")
             Button { annotator.stepFind(by: -1) } label: {
                 Image(systemName: "chevron.up")
             }
@@ -861,19 +910,6 @@ struct PDFSearchBar: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Close Find")
             .accessibilityIdentifier("reader.findClose")
-        }
-        .padding(.horizontal, Space.roomy)
-        .padding(.vertical, Space.snug)
-        .frame(maxWidth: 460)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.separator))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
-        .onAppear { queryFocused = true }
-        .onChange(of: annotator.findFocusToken) { _, _ in queryFocused = true }
-        .task(id: annotator.findQuery) {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            annotator.updateFindHits()
         }
     }
 }
@@ -1104,50 +1140,56 @@ struct ContentsRail: View {
     }
 
     private var find: some View {
-        Group {
-            if annotator.findQuery.isEmpty {
-                ContentUnavailableView("Find in this PDF",
-                                       systemImage: "magnifyingglass",
-                                       description: Text("Type a phrase in the Find bar."))
-            } else if annotator.findHits.isEmpty {
-                ContentUnavailableView("No matches", systemImage: "magnifyingglass",
-                                       description: Text("This PDF has no selectable match for “\(annotator.findQuery)”."))
-            } else {
-                ScrollViewReader { rail in
-                    List(annotator.findHits) { hit in
-                        Button {
-                            annotator.selectFindHit(at: hit.id)
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
-                                Image(systemName: "text.magnifyingglass")
-                                    .foregroundStyle(hit.id == annotator.selectedFindHit
-                                                     ? Color.accentColor : Color.secondary)
-                                Text(hit.text).lineLimit(2)
-                                Spacer(minLength: Space.tight)
-                                Text("p. \(hit.page)")
-                                    .font(Face.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, Space.snug)
-                            .padding(.vertical, Space.tight)
-                            .contentShape(Rectangle())
-                            .background(hit.id == annotator.selectedFindHit
-                                        ? Color.accentColor.opacity(0.13) : .clear,
-                                        in: RoundedRectangle(cornerRadius: Metric.control))
+        VStack(alignment: .leading, spacing: 0) {
+            PDFSearchBar(annotator: annotator, inContentsRail: true)
+            Divider()
+            findResults
+        }
+    }
+
+    @ViewBuilder
+    private var findResults: some View {
+        if annotator.findQuery.isEmpty {
+            ContentUnavailableView("Find in this PDF", systemImage: "magnifyingglass",
+                                   description: Text("Type a phrase above."))
+        } else if annotator.findHits.isEmpty {
+            ContentUnavailableView("No matches", systemImage: "magnifyingglass",
+                                   description: Text("This PDF has no selectable match for “\(annotator.findQuery)”."))
+        } else {
+            ScrollViewReader { rail in
+                List(annotator.findHits) { hit in
+                    Button {
+                        annotator.selectFindHit(at: hit.id)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
+                            Image(systemName: "text.magnifyingglass")
+                                .foregroundStyle(hit.id == annotator.selectedFindHit
+                                                 ? Color.accentColor : Color.secondary)
+                            Text(hit.text).lineLimit(2)
+                            Spacer(minLength: Space.tight)
+                            Text("p. \(hit.page)")
+                                .font(Face.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Occurrence \(hit.id + 1), page \(hit.page), \(hit.text)")
-                        .accessibilityIdentifier("reader.findHit.\(hit.id)")
-                        .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
-                        .listRowSeparator(.hidden)
+                        .padding(.horizontal, Space.snug)
+                        .padding(.vertical, Space.tight)
+                        .contentShape(Rectangle())
+                        .background(hit.id == annotator.selectedFindHit
+                                    ? Color.accentColor.opacity(0.13) : .clear,
+                                    in: RoundedRectangle(cornerRadius: Metric.control))
                     }
-                    .listStyle(.inset)
-                    .scrollContentBackground(.hidden)
-                    .onChange(of: annotator.selectedFindHit) { _, selected in
-                        guard let selected else { return }
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            rail.scrollTo(selected, anchor: .center)
-                        }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Occurrence \(hit.id + 1), page \(hit.page), \(hit.text)")
+                    .accessibilityIdentifier("reader.findHit.\(hit.id)")
+                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                    .listRowSeparator(.hidden)
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .onChange(of: annotator.selectedFindHit) { _, selected in
+                    guard let selected else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        rail.scrollTo(selected, anchor: .center)
                     }
                 }
             }

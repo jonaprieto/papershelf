@@ -747,6 +747,21 @@ final class Annotator {
         return notesSidecarDate >= pdfDate
     }
 
+    /// Refreshes the Markdown companion without rewriting the PDF. A file can become stale
+    /// when another app changes the PDF, and waiting for a new annotation gave that state no
+    /// way out.
+    func syncNotesSidecar() {
+        guard let url, let sidecar = notesSidecarText(for: url) else { return }
+        let previous = writeTask
+        writeTask = Task { [weak self] in
+            _ = await previous?.value
+            let failure = await Annotator.persistNotesSidecar(sidecar, for: url)
+            guard let self else { return }
+            self.lastError = failure
+            if failure == nil { self.notesSidecarDate = self.sidecarDate(for: url) }
+        }
+    }
+
     private func sidecarDate(for url: URL) -> Date? {
         try? notesSidecarURL(for: url).resourceValues(forKeys: [.contentModificationDateKey])
             .contentModificationDate
@@ -815,6 +830,17 @@ final class Annotator {
             } catch {
                 try? FileManager.default.removeItem(at: temporary)
                 if let temporarySidecar { try? FileManager.default.removeItem(at: temporarySidecar) }
+                return error.localizedDescription
+            }
+        }.value
+    }
+
+    private nonisolated static func persistNotesSidecar(_ text: String, for url: URL) async -> String? {
+        await Task.detached(priority: .utility) { () -> String? in
+            do {
+                try text.write(to: notesSidecarURL(for: url), atomically: true, encoding: .utf8)
+                return nil
+            } catch {
                 return error.localizedDescription
             }
         }.value
