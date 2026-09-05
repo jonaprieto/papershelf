@@ -1070,7 +1070,7 @@ struct ContentsRail: View {
         VStack(alignment: .leading, spacing: 0) {
             railHeader
             Divider()
-            find.frame(maxWidth: .infinity, maxHeight: .infinity)
+            find.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -1204,7 +1204,7 @@ struct ContentsRail: View {
         VStack(alignment: .leading, spacing: 0) {
             PDFSearchBar(annotator: annotator, inContentsRail: true)
             Divider()
-            findResults
+            findResults.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
