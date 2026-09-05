@@ -227,6 +227,7 @@ struct ReviewInspector: View {
             }
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
+        .focusedValue(\.findInPDF, showsPage ? FindInPDFAction(perform: openFind) : nil)
         .task(id: item.key + ":" + (documentID ?? "")) { await loadDocumentProjects() }
         .onChange(of: item.key) { _, _ in
             editing = false

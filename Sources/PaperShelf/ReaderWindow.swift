@@ -83,6 +83,7 @@ struct ReaderWindow: View {
         }
         .navigationTitle(title)
         .preferredColorScheme(prefs.appearance.colorScheme)
+        .focusedValue(\.findInPDF, FindInPDFAction(perform: openFind))
         .frame(minWidth: 520, minHeight: 400)
         .task { await recordAndRestore() }
         .task(id: annotator.page) { await rememberPage() }

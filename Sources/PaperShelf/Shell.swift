@@ -137,6 +137,7 @@ final class Chrome {
 struct PaperShelfApp: App {
     @State private var chrome = Chrome()
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.findInPDF) private var findInPDF
     // Finder's files arrive here, and the reader windows they open are the delegate's.
     // See `AppDelegate` for why they are not a scene.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -162,6 +163,11 @@ struct PaperShelfApp: App {
                 Button("About PaperShelf") { openAbout() }
             }
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .textEditing) {
+                Button("Find in PDF") { findInPDF?.perform() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .disabled(findInPDF == nil)
+            }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
                     .keyboardShortcut("z", modifiers: .command)

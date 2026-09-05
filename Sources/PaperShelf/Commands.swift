@@ -1,6 +1,23 @@
 import SwiftUI
 import AppKit
 
+/// A reader-scoped menu action. The menu bar resolves Command-key equivalents before a
+/// hosted PDF view sees them, so the focused reader supplies the action the menu invokes.
+struct FindInPDFAction {
+    let perform: () -> Void
+}
+
+private struct FindInPDFActionKey: FocusedValueKey {
+    typealias Value = FindInPDFAction
+}
+
+extension FocusedValues {
+    var findInPDF: FindInPDFAction? {
+        get { self[FindInPDFActionKey.self] }
+        set { self[FindInPDFActionKey.self] = newValue }
+    }
+}
+
 /// Every command the app can perform, named once.
 ///
 /// The keys were spread across three places that had no idea about each other: a hand-written
