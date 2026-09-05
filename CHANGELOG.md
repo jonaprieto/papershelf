@@ -4,6 +4,19 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.13.0] - 2026-09-05
+
+### Added
+
+- Add a full-screen Presentation mode that fits each PDF page without scrolling, hides every
+  panel initially, and supports optional left and right arrow page turns.
+- Let the command palette teach each command's shortcut and toggle the Sidebar, Inspector,
+  Notes, and Contents while presenting.
+
+### Fixed
+
+- Keep incomplete Find fields from filtering the document list.
+
 ## [1.12.0] - 2026-09-05
 
 ### Added
