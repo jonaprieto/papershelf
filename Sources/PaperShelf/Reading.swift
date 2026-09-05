@@ -729,6 +729,8 @@ struct PageBar: View {
     var annotator: Annotator
     @Binding var fit: PageFit
     var openFind: (() -> Void)? = nil
+    var presentation = false
+    var togglePresentation: (() -> Void)? = nil
 
     private var total: Int { max(annotator.pageCount, 0) }
 
@@ -771,13 +773,18 @@ struct PageBar: View {
                     Divider().frame(height: 14)
                 }
 
-                Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                Button {
+                    if let togglePresentation { togglePresentation() }
+                    else { NSApp.keyWindow?.toggleFullScreen(nil) }
+                } label: {
+                    Image(systemName: presentation
+                          ? "arrow.down.right.and.arrow.up.left"
+                          : "arrow.up.left.and.arrow.down.right")
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Toggle full screen")
-                .tip("Toggle full-screen reading")
+                .accessibilityLabel(presentation ? "Leave presentation mode" : "Presentation mode")
+                .tip(presentation ? "Leave presentation mode" : "Open presentation mode")
             }
             .padding(.horizontal, Space.roomy)
             .padding(.vertical, Space.step)

@@ -19,6 +19,13 @@ final class ReaderNavigationTests: XCTestCase {
         XCTAssertNil(FitWidthPDFView.documentStep(forSwipeDeltaX: 1, deltaY: 1))
     }
 
+    func testLeftAndRightPageTurnsCanBeDisabled() {
+        XCTAssertEqual(FitWidthPDFView.pageStep(for: 123, arrowsEnabled: true), -1)
+        XCTAssertEqual(FitWidthPDFView.pageStep(for: 124, arrowsEnabled: true), 1)
+        XCTAssertNil(FitWidthPDFView.pageStep(for: 123, arrowsEnabled: false))
+        XCTAssertNil(FitWidthPDFView.pageStep(for: 125, arrowsEnabled: true))
+    }
+
     func testReaderCommandsIncludeDocumentNavigation() {
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.nextFile))
         XCTAssertTrue(ResultsPane.decisionsInTheReader.contains(.previousFile))

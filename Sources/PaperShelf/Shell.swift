@@ -95,7 +95,7 @@ final class Chrome {
         setSidebarVisibility(.detailOnly, persist: false)
         inspectorCollapsed = true
         contentsShown = false
-        Prefs.shared.pageFit = .width
+        Prefs.shared.pageFit = .page
     }
 
     func leaveZenMode() {

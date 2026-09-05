@@ -40,6 +40,8 @@ struct ReviewInspector: View {
     /// reader. Showing it everywhere is what gave a shelf of covers half a window of PDF
     /// nobody asked to see.
     let showsPage: Bool
+    /// Presentation mode takes one page at a time and gives it the whole screen.
+    var presentation = false
     /// How much room this whole region has. What folds is decided from it rather than
     /// from the window, since the sidebar and the browser have already taken their share.
     let paneWidth: CGFloat
@@ -68,6 +70,9 @@ struct ReviewInspector: View {
     /// Moves through the same ordered results as the reader's J/K commands. The PDF view
     /// only reports a horizontal trackpad gesture; this view owns what "next" means.
     let stepDocument: (Int) -> Void
+    /// The library window owns native full screen, so the reader bar asks it to enter or
+    /// leave presentation mode instead of toggling the window behind a palette.
+    var togglePresentation: (() -> Void)?
     /// Set only while the reader is open, and the way back out of it. ⎋ does the same
     /// thing; a button is here because a way in that has no visible way out is a trap.
     var leaveReader: (() -> Void)?
@@ -294,6 +299,7 @@ struct ReviewInspector: View {
                 PDFPreview(url: item.currentURL, passwords: passwords,
                            annotator: annotator, fit: prefs.pageFit,
                            appearance: prefs.readingAppearance,
+                           presentation: presentation,
                            onDocumentSwipe: stepDocument,
                            onMarkClick: selectMark(at:))
                 .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
@@ -313,8 +319,11 @@ struct ReviewInspector: View {
                 .overlay(alignment: .topLeading) { floatingSelectionBar }
                 .overlay(alignment: .topLeading) { floatingMarkBar }
                 .overlay(alignment: .bottom) {
-                    PageBar(annotator: annotator, fit: $prefs.pageFit, openFind: openFind)
-                        .padding(.bottom, Space.roomy)
+                    if !presentation {
+                        PageBar(annotator: annotator, fit: $prefs.pageFit, openFind: openFind,
+                                presentation: presentation, togglePresentation: togglePresentation)
+                            .padding(.bottom, Space.roomy)
+                    }
                 }
                 .contextMenu {
                     Button(annotator.bookmarkOnCurrentPage == nil
@@ -1045,9 +1054,33 @@ final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
     var onDocumentSwipe: ((Int) -> Void)?
     var onMarkClick: ((CGPoint) -> Void)?
+    var onPageStep: ((Int) -> Void)?
     private var horizontalSwipe: CGFloat = 0
     private var verticalSwipe: CGFloat = 0
     private var swipeConsumed = false
+    private var pageObserver: NSObjectProtocol?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        observePageChanges()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        observePageChanges()
+    }
+
+    deinit {
+        if let pageObserver { NotificationCenter.default.removeObserver(pageObserver) }
+    }
+
+    private func observePageChanges() {
+        pageObserver = NotificationCenter.default.addObserver(
+            forName: .PDFViewPageChanged, object: self, queue: .main
+        ) { [weak self] _ in
+            self?.needsLayout = true
+        }
+    }
 
     /// A horizontal two-finger scroll is a document gesture only after it is clearly
     /// horizontal and has crossed a small distance. Small horizontal movement remains
@@ -1063,6 +1096,15 @@ final class FitWidthPDFView: PDFView {
     static func documentStep(forSwipeDeltaX deltaX: CGFloat, deltaY: CGFloat) -> Int? {
         guard abs(deltaX) > abs(deltaY), deltaX != 0 else { return nil }
         return deltaX > 0 ? 1 : -1
+    }
+
+    static func pageStep(for keyCode: UInt16, arrowsEnabled: Bool) -> Int? {
+        guard arrowsEnabled else { return nil }
+        switch keyCode {
+        case 123: return -1
+        case 124: return 1
+        default: return nil
+        }
     }
 
     override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
@@ -1089,6 +1131,17 @@ final class FitWidthPDFView: PDFView {
             onMarkClick?(CGPoint(x: point.x, y: bounds.height - point.y))
         }
         super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.intersection([.command, .option, .shift, .control]).isEmpty,
+           let onPageStep,
+           let step = Self.pageStep(for: event.keyCode, arrowsEnabled: true) {
+            onPageStep(step)
+            return
+        }
+        super.keyDown(with: event)
     }
 
     /// The reader owns document navigation, while PDFView owns page scrolling. Horizontal
@@ -1133,10 +1186,23 @@ final class FitWidthPDFView: PDFView {
         didSet { if fit != oldValue { needsLayout = true } }
     }
 
+    var presentation = false {
+        didSet {
+            guard presentation != oldValue else { return }
+            displayMode = presentation ? .singlePage : .singlePageContinuous
+            displaysPageBreaks = !presentation
+            let margin = pageMargin
+            pageBreakMargins = NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
+            needsLayout = true
+        }
+    }
+
     /// The gap between the page and the pane around it. A page drawn edge to edge reads
     /// as the window's background rather than as a sheet of paper, which is what the
     /// shadow and this margin together are for.
     static let margin: CGFloat = 28
+
+    private var pageMargin: CGFloat { presentation ? 16 : Self.margin }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -1159,17 +1225,17 @@ final class FitWidthPDFView: PDFView {
     }
 
     private func fitToWidth() {
-        guard let page = document?.page(at: 0) else { return }
+        guard let page = currentPage ?? document?.page(at: 0) else { return }
         let box = page.bounds(for: displayBox)
         let width = availableWidth
         guard box.width > 0, width > 0 else { return }
 
-        let room = max(1, width - 2 * FitWidthPDFView.margin)
+        let room = max(1, width - 2 * pageMargin)
         let wanted: CGFloat
         switch fit {
         case .width: wanted = room / box.width
         case .page:
-            let height = max(1, bounds.height - 2 * FitWidthPDFView.margin)
+            let height = max(1, bounds.height - 2 * pageMargin)
             wanted = box.height > 0 ? min(room / box.width, height / box.height) : room / box.width
         case .actual: wanted = 1
         }
@@ -1192,6 +1258,7 @@ struct PDFPreview: NSViewRepresentable {
     var annotator: Annotator?
     var fit: PageFit = .width
     var appearance: PDFReadingAppearance = .normal
+    var presentation = false
     /// Open at this page, one-based. For a citation, which is about one page rather than
     /// about the document: opening its book at the front and leaving you to find p. 108
     /// is most of the work the citation was supposed to save.
@@ -1199,6 +1266,9 @@ struct PDFPreview: NSViewRepresentable {
     /// Finder-opened reader windows have one PDF and no collection to move through. The
     /// main reader supplies the collection's existing step function.
     var onDocumentSwipe: ((Int) -> Void)?
+    /// Presentation can handle arrow keys inside a reader window that has no library
+    /// command monitor of its own.
+    var onPageStep: ((Int) -> Void)?
     /// The main reader uses this to select a mark in its Notes tab when the page is clicked.
     var onMarkClick: ((CGPoint) -> Void)?
 
@@ -1208,6 +1278,8 @@ struct PDFPreview: NSViewRepresentable {
         let view = FitWidthPDFView()
         view.onDocumentSwipe = onDocumentSwipe
         view.onMarkClick = onMarkClick
+        view.onPageStep = onPageStep
+        view.presentation = presentation
         // An NSView does not clip its content to its own bounds, so a PDF squeezed by the
         // pane beside it went on drawing at the width it had a moment ago -- straight over
         // the inspector. SwiftUI's own `.clipped()` cannot fix that: the page is a real
@@ -1245,7 +1317,9 @@ struct PDFPreview: NSViewRepresentable {
         let coordinator = context.coordinator
         view.onDocumentSwipe = onDocumentSwipe
         view.onMarkClick = onMarkClick
+        view.onPageStep = onPageStep
         view.backgroundColor = Self.canvasColor(for: appearance)
+        view.presentation = presentation
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit

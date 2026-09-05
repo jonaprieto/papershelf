@@ -46,7 +46,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .general:
             return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
                     "folders", "watch", "scan", "open in", "view", "sort", "ordering",
-                    "modified date", "default PDF viewer", "PDF app"]
+                    "modified date", "default PDF viewer", "PDF app", "presentation", "slides",
+                    "left", "right", "arrows", "pages"]
         case .files:
             return ["password", "encrypted", "locked", "originals", "backup", "trash",
                     "cache", "covers"]
@@ -290,6 +291,19 @@ struct GeneralSettings: View {
                 Text("PaperShelf overwrites the generated <PDF stem> notes.md file from "
                      + "the PDF annotations. Turning this off stops future writes but does "
                      + "not delete an existing file.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Left and right arrows turn PDF pages", isOn: $prefs.leftRightTurnsPages)
+                    .accessibilityIdentifier("settings.leftRightTurnsPages")
+            } header: {
+                Text("Presentation")
+            } footer: {
+                Text("On by default. Presentation mode fits one PDF page to the screen; "
+                     + "turn this off if the arrow keys should stay with the PDF canvas.")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

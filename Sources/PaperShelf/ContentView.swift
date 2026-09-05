@@ -352,6 +352,7 @@ struct ContentView: View {
                 previewIsCurrent: previewIsCurrent,
                 passwords: passwords,
                 reading: chrome.reading,
+                presentation: chrome.zenMode,
                 setReading: chrome.setReading,
                 toggleZenMode: {
                     let entering = !chrome.zenMode
@@ -1975,45 +1976,16 @@ func filterExplorerTree(_ nodes: [ExplorerNode], matching query: String) -> [Exp
 
 // MARK: - Shortcuts
 
-/// Every key in one place, reachable with ? so it does not have to be remembered or
-/// looked up outside the app.
+/// Every command and its current binding, reachable with ? from the command palette.
 struct ShortcutsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    private let keymap = Keymap.shared
 
-    private let groups: [(String, [(String, String)])] = [
-        ("Deciding", [
-            ("Return  C", "confirm the name and go to the next file"),
-            ("E", "edit the name; Escape leaves the field"),
-            ("G", "ask the model for a name"),
-            ("B", "copy this file's BibTeX entry"),
-            ("A", "apply this one file now"),
-            ("S", "leave this file alone"),
-            ("F", "leave the rest of this folder alone"),
-            ("M", "move to another folder"),
-            ("D", "move to the Trash on apply"),
-            ("R", "reopen a decided file"),
-        ]),
-        ("Moving", [
-            ("J  N  ↓", "next file; in the catalogue ↓ moves a whole row"),
-            ("K  P  ↑", "previous file"),
-            ("→  ←", "neighbour in the catalogue"),
-        ]),
-        ("Everything else", [
-            ("⌘1 … ⌘4", "list, catalogue, BibTeX, duplicates"),
-            ("⌘P", "plan"),
-            ("⌘Return", "apply the reviewed plan"),
-            ("⌘⇧Return", "confirm everything still pending"),
-            ("⌘D", "find duplicates"),
-            ("⌘R", "reveal in Finder"),
-            ("O", "open in the default PDF viewer"),
-            ("⌘Z", "undo the last decision"),
-            ("⌘B", "show or hide the sidebar"),
-            ("⌘⇧R", "reading mode: just the page"),
-            ("⌘⇧N", "show or hide the notes beside the page"),
-            ("⌘⇧T", "show or hide the table of contents"),
-            ("?", "this list"),
-        ]),
-    ]
+    private var groups: [(Command.Group, [Command])] {
+        Command.Group.allCases.map { group in
+            (group, Command.allCases.filter { $0.group == group })
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2028,24 +2000,27 @@ struct ShortcutsSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.gutter) {
-                    ForEach(groups, id: \.0) { title, rows in
+                    ForEach(groups, id: \.0) { group, commands in
                         VStack(alignment: .leading, spacing: Space.snug) {
-                            Text(title)
+                            Text(group.label)
                                 .font(Face.control.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            ForEach(rows, id: \.0) { key, meaning in
+                            ForEach(commands) { command in
                                 HStack(alignment: .firstTextBaseline, spacing: Space.roomy) {
-                                    Text(key)
+                                    Text(keymap.shortcut(for: command)?.display ?? "unbound")
                                         .font(Face.code)
                                         .frame(width: 110, alignment: .leading)
-                                    Text(meaning)
+                                    Text(command.title)
+                                    Text(command.scope.label)
+                                        .font(Face.caption)
+                                        .foregroundStyle(.secondary)
                                     Spacer(minLength: 0)
                                 }
                             }
                         }
                     }
-                    Text("Letters work whenever the name field is not focused. Anything with "
-                         + "Command works regardless.")
+                    Text("These are your current bindings. Rebind any of them in Settings › "
+                         + "Keyboard.")
                         .font(Face.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

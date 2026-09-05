@@ -136,6 +136,11 @@ final class Prefs {
     var pageFit: PageFit = Store.choice("pageFit", .width) {
         didSet { Store.put("pageFit", pageFit) }
     }
+    /// Slides are normally advanced with the same arrows as a presentation. Turn this
+    /// off when left and right should remain available to the PDF canvas instead.
+    var leftRightTurnsPages: Bool = Store.flag("leftRightTurnsPages", true) {
+        didSet { Store.put("leftRightTurnsPages", leftRightTurnsPages) }
+    }
     var autoPreview: Bool = Store.flag("autoPreview", true) {
         didSet { Store.put("autoPreview", autoPreview) }
     }

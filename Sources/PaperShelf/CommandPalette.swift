@@ -114,7 +114,7 @@ struct CommandPalette: View {
     /// the results, which is the sort of legend nobody reads: an empty field now offers
     /// them as rows, and picking one types the character for you.
     private static let starters: [(mode: Mode, title: String, detail: String)] = [
-        (.commands, "Commands", "every one, key or no key"),
+        (.commands, "Commands and shortcuts", "every action and its current key"),
         (.tags, "Tags", "documents filed under a tag"),
         (.projects, "Projects", "a project and its papers"),
         (.inDocument, "In this document", "find a passage, turn to it"),
@@ -186,7 +186,10 @@ struct CommandPalette: View {
     private var matchingCommands: [Command] {
         guard mode == nil || mode == .commands else { return [] }
         guard !needle.isEmpty || mode == .commands else { return [] }
-        return commands.filter { matches($0.title) }.prefix(8).map { $0 }
+        return commands.filter {
+            matches($0.title)
+                || (Keymap.shared.shortcut(for: $0)?.display.lowercased().contains(needle) ?? false)
+        }.prefix(8).map { $0 }
     }
 
     private var matchingPlaces: [PalettePlace] {
@@ -462,6 +465,10 @@ struct CommandPalette: View {
                     Text(shortcut.display)
                         .font(Face.mono.weight(.semibold))
                         .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+                } else {
+                    Text("unbound")
+                        .font(Face.caption)
+                        .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
                 }
             }
         }

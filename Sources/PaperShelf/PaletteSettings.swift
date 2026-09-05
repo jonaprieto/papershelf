@@ -61,6 +61,8 @@ enum PaletteSettings {
                     % all.count
                 prefs.readingAppearance = all[next]
             }))
+        flag("leftRightTurnsPages", "Left and right arrows turn PDF pages",
+             { prefs.leftRightTurnsPages }, { prefs.leftRightTurnsPages = $0 })
         flag("selectionPalette", "Show the highlighters beside a selection",
              { prefs.selectionPalette }, { prefs.selectionPalette = $0 })
         flag("labelForeignMarks", "Label marks from other apps with the nearest colour",

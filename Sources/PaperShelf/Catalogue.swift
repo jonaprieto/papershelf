@@ -14,6 +14,7 @@ struct ResultsPane: View {
     let previewIsCurrent: Bool
     let passwords: [String]
     let reading: Bool
+    let presentation: Bool
     /// Reading mode belongs to the window, not to this pane, but the button belongs in
     /// this pane's toolbar group so the order reads views · search · actions · chrome.
     /// A setter rather than a toggle because the views in the same bar have to be able to
@@ -1294,10 +1295,15 @@ struct ResultsPane: View {
         guard modifiers.intersection([.command, .option, .shift, .control]).isEmpty else {
             return false
         }
+        if let delta = FitWidthPDFView.pageStep(for: event.keyCode,
+                                                 arrowsEnabled: prefs.leftRightTurnsPages) {
+            annotator.go(toPage: annotator.page + delta)
+            return true
+        }
         let delta: Int?
         switch event.keyCode {
-        case 123, 126, 116: delta = -1       // ← ↑ Page Up
-        case 49, 124, 125, 121: delta = 1 // Space, → ↓ Page Down
+        case 126, 116: delta = -1            // ↑ Page Up
+        case 49, 125, 121: delta = 1         // Space, ↓ Page Down
         case 115:
             annotator.go(toPage: 1)
             return true
@@ -2408,6 +2414,7 @@ struct ResultsPane: View {
         } else if let item = readerItem ?? selectedItem {
             ReviewInspector(
                 showsPage: showsPage,
+                presentation: presentation,
                 paneWidth: paneWidth,
                 item: item,
                 runner: runner,
@@ -2429,6 +2436,7 @@ struct ResultsPane: View {
                 reopen: reopenSelected,
                 read: { openReader(item.key) },
                 stepDocument: { step(by: $0) },
+                togglePresentation: toggleZenMode,
                 leaveReader: reader == nil ? nil : closeReader,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },

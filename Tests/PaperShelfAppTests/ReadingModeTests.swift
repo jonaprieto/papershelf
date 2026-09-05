@@ -105,7 +105,7 @@ final class ReadingModeTests: XCTestCase {
         XCTAssertEqual(prefs.inspectorPanel, .details)
     }
 
-    func testZenModeTemporarilyHidesPanelsAndFitsThePageToWidth() {
+    func testPresentationModeTemporarilyHidesPanelsAndFitsThePage() {
         let prefs = Prefs.shared
         let original = (prefs.readingMode, prefs.sidebarShown, prefs.inspectorCollapsed,
                         prefs.contentsShown, prefs.pageFit)
@@ -130,8 +130,8 @@ final class ReadingModeTests: XCTestCase {
         XCTAssertEqual(chrome.columnVisibility, .detailOnly)
         XCTAssertTrue(chrome.inspectorCollapsed)
         XCTAssertFalse(chrome.contentsShown)
-        XCTAssertEqual(prefs.pageFit, .width)
-        XCTAssertTrue(prefs.sidebarShown, "Zen mode must not overwrite the saved sidebar choice")
+        XCTAssertEqual(prefs.pageFit, .page)
+        XCTAssertTrue(prefs.sidebarShown, "Presentation mode must not overwrite the saved sidebar choice")
 
         chrome.toggleZenMode()
         XCTAssertFalse(chrome.zenMode)

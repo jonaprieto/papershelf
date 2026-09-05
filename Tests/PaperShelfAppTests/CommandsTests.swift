@@ -166,7 +166,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Command.showBookmarks.title, "Show bookmarks")
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("current file"))
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("citation"))
-        XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("zen mode"))
+        XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("presentation mode"))
         XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("full screen"))
         XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
                        "a command is listed twice")

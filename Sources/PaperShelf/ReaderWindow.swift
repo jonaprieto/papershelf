@@ -15,6 +15,9 @@ struct ReaderWindow: View {
 
     @State private var annotator = Annotator()
     @State private var fit: PageFit = .width
+    @State private var presentation = false
+    @State private var presentationFit: PageFit?
+    @State private var presentationWindow: NSWindow?
     @State private var noteText = ""
     @State private var addingNote = false
     @State private var showsNotes = false
@@ -35,13 +38,15 @@ struct ReaderWindow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                if prefs.contentsShown && annotator.hasPages {
+                if !presentation && prefs.contentsShown && annotator.hasPages {
                     ContentsRail(annotator: annotator, findActive: annotator.showsFind)
                         .frame(width: SplitLayout.contentsReserved - SplitLayout.dividerBeforeInspector)
                     Divider()
                 }
                 PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
-                           appearance: prefs.readingAppearance,
+                           appearance: prefs.readingAppearance, presentation: presentation,
+                           onPageStep: presentation && prefs.leftRightTurnsPages
+                               ? { annotator.go(toPage: annotator.page + $0) } : nil,
                            onMarkClick: selectMark(at:))
                     .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
                     .overlay(alignment: .top) { selectionBar }
@@ -60,26 +65,29 @@ struct ReaderWindow: View {
                         .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
                     }
             }
-            Divider()
-            HStack(spacing: Space.roomy) {
-                PageBar(annotator: annotator, fit: $fit, openFind: openFind)
-                if let resumeAt {
-                    Button("Resume at p. \(resumeAt)") {
-                        annotator.go(toPage: resumeAt)
-                        self.resumeAt = nil
+            if !presentation {
+                Divider()
+                HStack(spacing: Space.roomy) {
+                    PageBar(annotator: annotator, fit: $fit, openFind: openFind,
+                            presentation: presentation, togglePresentation: togglePresentation)
+                    if let resumeAt {
+                        Button("Resume at p. \(resumeAt)") {
+                            annotator.go(toPage: resumeAt)
+                            self.resumeAt = nil
+                        }
+                        .buttonStyle(.link)
+                        .font(Face.caption)
                     }
-                    .buttonStyle(.link)
-                    .font(Face.caption)
+                    Spacer()
+                    Text(url.lastPathComponent)
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                Spacer()
-                Text(url.lastPathComponent)
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                .padding(.horizontal, Space.roomy)
+                .padding(.vertical, Space.tight)
             }
-            .padding(.horizontal, Space.roomy)
-            .padding(.vertical, Space.tight)
         }
         .navigationTitle(title)
         .preferredColorScheme(prefs.appearance.colorScheme)
@@ -87,6 +95,12 @@ struct ReaderWindow: View {
         .frame(minWidth: 520, minHeight: 400)
         .task { await recordAndRestore() }
         .task(id: annotator.page) { await rememberPage() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
+            guard presentation, let window = note.object as? NSWindow,
+                  let presentationWindow, window === presentationWindow
+            else { return }
+            leavePresentation()
+        }
         // The five highlighters and a note, without a menu and without the shelf's command
         // table: this window has no scopes to resolve, so it reads the keys directly.
         .onKeyPress(phases: .down) { press in
@@ -184,6 +198,28 @@ struct ReaderWindow: View {
         guard annotator.showsFind else { return }
         prefs.contentsShown = true
         prefs.contentsRailMode = .find
+    }
+
+    private func togglePresentation() {
+        if presentation {
+            presentationWindow?.toggleFullScreen(nil)
+            leavePresentation()
+            return
+        }
+        guard let window = NSApp.keyWindow else { return }
+        presentationFit = fit
+        fit = .page
+        showsNotes = false
+        presentation = true
+        presentationWindow = window
+        window.toggleFullScreen(nil)
+    }
+
+    private func leavePresentation() {
+        presentation = false
+        if let presentationFit { fit = presentationFit }
+        presentationFit = nil
+        presentationWindow = nil
     }
 
     /// The bar that appears beside a selection. The keys are the fast path; this is the one

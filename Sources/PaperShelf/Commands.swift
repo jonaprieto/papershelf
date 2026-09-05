@@ -155,7 +155,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .viewBibliography: return "BibTeX"
         case .viewDuplicates: return "Duplicates"
         case .readingMode: return "Reading mode"
-        case .zenMode: return "Zen mode (full screen)"
+        case .zenMode: return "Presentation mode (full screen)"
         case .toggleNotes: return "Show or hide the notes"
         case .toggleContents: return "Show or hide the contents"
         case .confirm: return "Confirm the name and go to the next file"
