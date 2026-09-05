@@ -1346,7 +1346,7 @@ struct ResultsPane: View {
         .confirm, .editName, .askAI, .copyCitation, .applyOne,
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
-        .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
+        .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates, .readingMode,
         .zenMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
@@ -1372,6 +1372,7 @@ struct ResultsPane: View {
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
         case .viewDuplicates: choose(.duplicates)
+        case .readingMode: setReading(!reading)
         case .zenMode: toggleZenMode()
         case .back: goBack()
         case .forward: goForward()

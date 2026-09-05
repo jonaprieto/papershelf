@@ -122,6 +122,12 @@ struct CommandPalette: View {
         (.help, "All shortcuts", "the whole table, in a window"),
     ]
 
+    /// The places most people need before they have typed a query.
+    private static let initialCommands: [Command] = [
+        .readingMode, .zenMode,
+        .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
+    ]
+
     /// An empty field has nothing to match, so it shows the way in instead.
     private var showsStarters: Bool { mode == nil && needle.isEmpty }
 
@@ -185,6 +191,11 @@ struct CommandPalette: View {
 
     private var matchingCommands: [Command] {
         guard mode == nil || mode == .commands else { return [] }
+        if showsStarters {
+            return Self.initialCommands.filter { candidate in
+                commands.contains(where: { $0 == candidate })
+            }
+        }
         guard !needle.isEmpty || mode == .commands else { return [] }
         return commands.filter {
             matches($0.title)
@@ -235,7 +246,10 @@ struct CommandPalette: View {
     }
 
     private var entries: [Entry] {
-        if showsStarters { return Self.starters.map { Entry.starter($0.mode) } }
+        if showsStarters {
+            return Self.starters.map { Entry.starter($0.mode) }
+                + matchingCommands.map(Entry.command)
+        }
         return matchingPlaces.map(Entry.place)
             + matchingPages.map(Entry.page)
             + matchingDocuments.map(Entry.document)
@@ -356,7 +370,12 @@ struct CommandPalette: View {
 
     /// The entries under the headings the artboard names, in the order they are listed.
     private var sections: [(title: String, entries: [Entry])] {
-        if showsStarters { return [("Start with", entries)] }
+        if showsStarters {
+            return [
+                ("Start with", Self.starters.map { Entry.starter($0.mode) }),
+                ("Views", matchingCommands.map(Entry.command)),
+            ]
+        }
         var out: [(String, [Entry])] = []
         if !matchingPlaces.isEmpty { out.append(("Go to", matchingPlaces.map(Entry.place))) }
         if !matchingPages.isEmpty {

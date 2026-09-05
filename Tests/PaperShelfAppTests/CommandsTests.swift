@@ -158,6 +158,8 @@ final class CommandsTests: XCTestCase {
                       "applying renamings must be reachable from the palette")
         XCTAssertTrue(ResultsPane.performable.contains(.zenMode),
                       "full-screen reading must be reachable from the palette")
+        XCTAssertTrue(ResultsPane.performable.contains(.readingMode),
+                      "reading mode must be reachable from the palette")
         XCTAssertTrue(ResultsPane.performable.contains(.copyCitation),
                       "the current file's BibTeX citation must be reachable from the palette")
         XCTAssertTrue(ResultsPane.performable.contains(.addBookmark))

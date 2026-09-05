@@ -452,7 +452,7 @@ extension Command {
     /// and a row in the settings table that lies about what the app can do, and there is
     /// no version of that which is acceptable.
     static let handledByTheMenu: Set<Command> = [
-        .undo, .readingMode,
+        .undo,
     ]
 }
 
