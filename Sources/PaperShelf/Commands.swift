@@ -447,7 +447,7 @@ final class Keymap {
 }
 
 extension Command {
-    /// Commands the app's menu bar and toolbar carry out, rather than the results pane.
+    /// Commands the app's menu bar carries out, rather than the results pane or palette.
     ///
     /// Listed so that a test can hold the whole table to the rule this app is built on:
     /// every command does something. A command nobody implements is a line in the palette
@@ -455,7 +455,6 @@ extension Command {
     /// no version of that which is acceptable.
     static let handledByTheMenu: Set<Command> = [
         .undo, .readingMode,
-        .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
     ]
 }
 

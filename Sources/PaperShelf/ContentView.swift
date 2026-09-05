@@ -365,6 +365,7 @@ struct ContentView: View {
                         if entering != fullScreen { window.toggleFullScreen(nil) }
                     }
                 },
+                toggleSidebar: chrome.toggleSidebar,
                 watching: prefs.watchSources && !selection.isEmpty,
                 palette: palette,
                 annotator: annotator,

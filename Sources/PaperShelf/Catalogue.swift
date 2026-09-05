@@ -21,6 +21,7 @@ struct ResultsPane: View {
     /// leave the mode outright: see `choose(_:)`.
     var setReading: (Bool) -> Void = { _ in }
     var toggleZenMode: () -> Void = {}
+    var toggleSidebar: () -> Void = {}
     let watching: Bool
     var palette: Palette
     /// The live page. Owned by the window rather than by this pane: the status bar sits
@@ -1368,7 +1369,7 @@ struct ResultsPane: View {
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-        .zenMode,
+        .zenMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
@@ -1424,8 +1425,17 @@ struct ResultsPane: View {
         case .shortcuts: showingShortcuts = true
         case .palette: showingPalette = true
         case .focusSearch: searchFocused = true
+        case .toggleSidebar: toggleSidebar()
         case .findInDocument: openFind()
         case .toggleInspector: prefs.inspectorCollapsed.toggle()
+        case .toggleNotes:
+            if !prefs.inspectorCollapsed, prefs.inspectorPanel == .notes {
+                prefs.inspectorCollapsed = true
+            } else {
+                prefs.inspectorPanel = .notes
+                prefs.inspectorCollapsed = false
+            }
+        case .toggleContents: prefs.contentsShown.toggle()
         case .trash: markDeleted()
         case .reopen: reopenSelected()
         case .nextFile: step(by: 1)
