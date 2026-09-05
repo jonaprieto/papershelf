@@ -12,13 +12,33 @@ research papers. It is the reader I wished I had years ago.
 
 ## Install
 
+### Homebrew
+
 ```sh
 brew tap jonaprieto/papershelf
+brew trust --cask jonaprieto/papershelf/papershelf
 brew install --cask papershelf
 ```
 
 The cask installs the latest release. Builds are ad-hoc signed while notarization is on the
-roadmap, so the first launch may require right-click, Open in Finder. To build locally:
+roadmap, so the first launch may require right-click, Open in Finder.
+
+### Update
+
+```sh
+brew update
+brew upgrade --cask papershelf
+```
+
+### Build from source
+
+Build the app bundle:
+
+```sh
+./build.sh
+```
+
+Install a fresh local build in `/Applications`:
 
 ```sh
 ./build.sh --install
