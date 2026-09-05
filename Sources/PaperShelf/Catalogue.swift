@@ -60,7 +60,6 @@ struct ResultsPane: View {
     @State private var converting = Converting()
     @State private var showingMarkdown = false
     @State private var query = ""
-    @FocusState private var searchFocused: Bool
     @State private var confirmingBatchAI = false
     /// How wide the document region is: the page and the inspector panel together.
     ///
@@ -703,24 +702,18 @@ struct ResultsPane: View {
         } message: {
             Text(runner.ai.error ?? "")
         }
-        // Built here rather than in ContentView's toolbar because this is where the query
-        // and the mode live, and SwiftUI merges toolbars down the hierarchy. Moving the
-        // state up instead would have meant reimplementing the search field's behaviour —
-        // metadata filtering live, `text:` waiting for Return, `/` to focus — around a
-        // binding, and that behaviour is the useful part.
+        // Built here rather than in ContentView's toolbar because this pane owns the
+        // command palette and SwiftUI merges toolbars down the hierarchy.
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                contentsToggle
-            }
-            ToolbarItem(placement: .principal) {
-                if SplitLayout.showsViewIcons(paneWidth: viewPaneWidth) {
-                    viewIcons
-                } else {
+                HStack(spacing: Space.roomy) {
+                    contentsToggle
                     viewMenu
                 }
+                .fixedSize()
             }
-            ToolbarItem(placement: .primaryAction) {
-                searchField
+            ToolbarItem(placement: .principal) {
+                commandPaletteButton
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 // A document on screen wants a highlighter, a note and a way to send it
@@ -755,10 +748,7 @@ struct ResultsPane: View {
                 .tip(prefs.inspectorCollapsed
                      ? "Show info, rename, notes and the citation"
                      : "Hide the inspector", key: "⌘⇧B")
-                appearanceMenu
-                if showsPage {
-                    contrastMenu
-                }
+                displayMenu
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -803,31 +793,20 @@ struct ResultsPane: View {
                 .forFolder(item.currentURL.deletingLastPathComponent()), .library]
     }
 
-    @ViewBuilder
-    private var appearanceMenu: some View {
+    private var displayMenu: some View {
         Menu {
-            ForEach(Appearance.allCases) { mode in
-                Button {
-                    prefs.appearance = mode
-                } label: {
-                    Label(mode.label, systemImage: mode.systemImage)
-                    if prefs.appearance == mode { Image(systemName: "checkmark") }
+            Section("Appearance") {
+                ForEach(Appearance.allCases) { mode in
+                    Button {
+                        prefs.appearance = mode
+                    } label: {
+                        Label(mode.label, systemImage: mode.systemImage)
+                        if prefs.appearance == mode { Image(systemName: "checkmark") }
+                    }
                 }
             }
-        } label: {
-            Label("Appearance", systemImage: "circle.lefthalf.filled")
-        }
-        .labelStyle(.iconOnly)
-        .frame(width: 28)
-        .accessibilityLabel("Appearance")
-        .accessibilityIdentifier("toolbar.appearance")
-        .accessibilityValue(prefs.appearance.label)
-        .tip("Theme: \(prefs.appearance.label)")
-    }
-
-    @ViewBuilder
-    private var contrastMenu: some View {
-        Menu {
+            if showsPage {
+                Section("PDF contrast") {
             ForEach(PDFReadingAppearance.allCases) { mode in
                 Button {
                     prefs.readingAppearance = mode
@@ -836,15 +815,18 @@ struct ResultsPane: View {
                     if prefs.readingAppearance == mode { Image(systemName: "checkmark") }
                 }
             }
+                }
+            }
         } label: {
-            Label("PDF contrast", systemImage: "circle.righthalf.filled")
+            Label("Display", systemImage: "circle.lefthalf.filled")
         }
         .labelStyle(.iconOnly)
-        .frame(width: 28)
-        .accessibilityLabel("PDF contrast")
-        .accessibilityIdentifier("toolbar.pdfContrast")
-        .accessibilityValue(prefs.readingAppearance.label)
-        .tip("PDF contrast: \(prefs.readingAppearance.label)")
+        .accessibilityLabel("Display")
+        .accessibilityIdentifier("toolbar.display")
+        .accessibilityValue(showsPage
+                            ? "\(prefs.appearance.label), \(prefs.readingAppearance.label)"
+                            : prefs.appearance.label)
+        .tip("Display: \(prefs.appearance.label)")
     }
 
     /// The rail beside the page, from the same group as the sidebar button, because it is
@@ -875,12 +857,6 @@ struct ResultsPane: View {
     @ViewBuilder
     private var readerActions: some View {
         let styles = palette.styles(for: currentMeaningScopes)
-        Button { openFind() } label: {
-            Label("Find in PDF", systemImage: "magnifyingglass")
-        }
-        .accessibilityIdentifier("toolbar.find")
-        .tip("Find in this PDF", key: "⌘F")
-
         Menu {
             ForEach(styles) { style in
                 Button {
@@ -909,33 +885,26 @@ struct ResultsPane: View {
              ? "Highlight the selection, in this colour"
              : "Which highlighter the next mark uses")
 
-        Button {
-            // The Notes rail owns creating the mark, so typing starts in one editor and
-            // the toolbar, floating bar and command palette all take the same route.
-            addingNote = true
-            prefs.inspectorPanel = .notes
-            prefs.inspectorCollapsed = false
+        Menu {
+            Button("Find in PDF", action: openFind)
+            Button("Add note") {
+                addingNote = true
+                prefs.inspectorPanel = .notes
+                prefs.inspectorCollapsed = false
+            }
+            Button(annotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark") {
+                _ = annotator.toggleBookmark()
+            }
+            if let item = readerItem ?? selectedItem {
+                ShareLink(item: item.currentURL, subject: Text(item.currentFilename)) {
+                    Text("Share…")
+                }
+            }
         } label: {
-            Label("Add note", systemImage: "bubble.left")
+            Label("Reader actions", systemImage: "ellipsis.circle")
         }
-        .accessibilityIdentifier("toolbar.addNote")
-        .tip(annotator.hasSelection
-             ? "Mark the selection and write about it"
-             : "The highlights and notes on this document", key: "⌘⇧N")
-
-        Button { _ = annotator.toggleBookmark() } label: {
-            Label(annotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark",
-                  systemImage: annotator.bookmarkOnCurrentPage == nil
-                  ? "bookmark" : "bookmark.fill")
-        }
-        .accessibilityIdentifier("toolbar.bookmark")
-        .tip(annotator.bookmarkOnCurrentPage == nil
-             ? "Bookmark the current page" : "Remove the bookmark from the current page")
-
-        if let item = readerItem ?? selectedItem {
-            ShareLink(item: item.currentURL)
-                .tip("Send this document somewhere else")
-        }
+        .accessibilityIdentifier("toolbar.readerActions")
+        .tip("Find, notes and bookmarks")
     }
 
     /// What this view can do to what is in it, in the place a person looks for an
@@ -1178,7 +1147,7 @@ struct ResultsPane: View {
     /// exists to replace, so a bare letter over a list of files is a command, not a
     /// search-as-you-type.
     private func isTyping(_ event: NSEvent) -> Bool {
-        if searchFocused || writingNote { return true }
+        if writingNote { return true }
         guard let responder = event.window?.firstResponder else { return false }
         if responder is NSTableView { return false }
         return responder is NSTextView || responder is NSControl
@@ -1211,7 +1180,7 @@ struct ResultsPane: View {
     ]
 
     static let alwaysAvailable: Set<Command> = [
-        .palette, .focusSearch, .shortcuts,
+        .palette, .focusSearch, .shortcuts, .zenMode,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
     ]
@@ -1433,7 +1402,7 @@ struct ResultsPane: View {
         case .copyCitation: copyCitation()
         case .shortcuts: showingShortcuts = true
         case .palette: showingPalette = true
-        case .focusSearch: searchFocused = true
+        case .focusSearch: showingPalette = true
         case .toggleSidebar: toggleSidebar()
         case .findInDocument: openFind()
         case .toggleInspector: prefs.inspectorCollapsed.toggle()
@@ -2823,38 +2792,7 @@ struct ResultsPane: View {
         .tip("Reorders within each folder, and across the catalogue")
     }
 
-    /// The four views of the same files, as four icons. A menu costs a click to reach a
-    /// view and says nothing about which views exist; the row is one click and reads as a
-    /// row of choices, which is what it is.
-    private var viewIcons: some View {
-        HStack(spacing: Space.hair) {
-            ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { index, option in
-                Button {
-                    choose(option)
-                } label: {
-                    Image(systemName: option.icon)
-                        .frame(width: 28, height: 20)
-                        .contentShape(Rectangle())
-                        // On the label as well as the button: a toolbar's principal item
-                        // is hosted in the title area, where help on the control alone is
-                        // not always the thing the pointer is over.
-                        .help("\(option.label)  (⌘\(index + 1))")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(option == prefs.viewMode ? Color.accentColor : .secondary)
-                .background(option == prefs.viewMode ? Color.accentColor.opacity(0.15) : .clear,
-                            in: RoundedRectangle(cornerRadius: Metric.control))
-                .accessibilityLabel(option.label)
-                .accessibilityIdentifier("toolbar.view.\(option.rawValue)")
-                .accessibilityAddTraits(option == prefs.viewMode ? .isSelected : [])
-                .tip(option.label, key: "⌘\(index + 1)")
-            }
-        }
-        .fixedSize()
-    }
-
-    /// The same four views where the toolbar has no room for them: search, the actions for
-    /// the mode and the panel buttons are all in this bar too.
+    /// One named menu leaves room for the command palette and keeps the toolbar legible.
     private var viewMenu: some View {
         Menu {
             ForEach(ViewMode.allCases) { option in
@@ -2874,92 +2812,29 @@ struct ResultsPane: View {
         .tip("Which view of the same files", key: "⌘1 to ⌘4")
     }
 
-    private var searchField: some View {
-        HStack(spacing: Space.tight) {
-            fieldsMenu
-            TextField("Search", text: $query)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .onSubmit { runner.search(strippingTagTerms(query), passwords: passwords) }
-                .onChange(of: query) { _, new in
-                    // Metadata is instant; a text query waits for Return so a shelf is
-                    // not read from end to end on every keystroke.
-                    if new.isEmpty || !Query(new).needsText {
-                        runner.search(strippingTagTerms(new), passwords: passwords)
-                    }
-                }
-            if runner.searching { ProgressView().controlSize(.small) }
-            // The tooltip said `/` focuses this, which is a fact you find once and then
-            // have to remember. A key is worth one cap of space in the field it belongs to.
-            if query.isEmpty && !searchFocused {
-                Text("/")
-                    .font(Face.mono)
+    private var commandPaletteButton: some View {
+        Button { showingPalette = true } label: {
+            HStack(spacing: Space.step) {
+                Image(systemName: "magnifyingglass")
+                Text("Search or run a command")
+                    .lineLimit(1)
+                Spacer(minLength: Space.gutter)
+                Text("⌘K")
+                    .font(Face.mono.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, Space.tight)
                     .padding(.vertical, Space.hair)
-                    .fittedBackground(.quaternary, in: RoundedRectangle(cornerRadius: 3))
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
             }
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                    runner.search("", passwords: passwords)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .tip("Clear the search")
-            }
+            .padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.tight)
+            .frame(width: min(340, SplitLayout.commandPaletteWidth(paneWidth: viewPaneWidth)))
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: Metric.control))
         }
-        .padding(.horizontal, Space.step)
-        .padding(.vertical, Space.tight)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-        .frame(width: SplitLayout.searchFieldWidth(paneWidth: viewPaneWidth))
-        .tip("Search names, or narrow by field: title, author, abstract, text, folder, "
-             + "tag, year, pages, size", key: "/")
-    }
-
-    /// The grammar, offered rather than described. It lived in a tooltip, which is a place
-    /// people find a fact once and then have to remember it; a menu is where they can go
-    /// back for it. Choosing a field types it and leaves the caret after the colon.
-    private var fieldsMenu: some View {
-        Menu {
-            ForEach(Query.knownFields, id: \.self) { field in
-                Button(fieldMenuLabel(field)) { appendField(field) }
-            }
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .help("Narrow the search by a field")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Search fields")
-        .tip("Narrow the search by a field")
-    }
-
-    private func fieldMenuLabel(_ field: String) -> String {
-        switch field {
-        case "title": return "title:  what the document calls itself"
-        case "author": return "author:  who it says wrote it"
-        case "abstract": return "abstract:  the opening of the document"
-        case "text": return "text:  anywhere inside the document"
-        case "name": return "name:  the new filename"
-        case "was": return "was:  the original filename"
-        case "folder": return "folder:  the folder it sits in"
-        case "tag": return "tag:  a tag you gave it"
-        case "year": return "year:  the name, the metadata or the file's own year"
-        case "pages": return "pages:  how long it is, with > or <"
-        case "size": return "size:  how big it is, with > or <"
-        default: return "\(field):"
-        }
-    }
-
-    private func appendField(_ field: String) {
-        let separator = query.isEmpty || query.hasSuffix(" ") ? "" : " "
-        query += separator + field + (field == "pages" || field == "size" ? ">" : ":")
-        searchFocused = true
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open command palette")
+        .accessibilityIdentifier("toolbar.commandPalette")
+        .tip("Search the library or run a command", key: "⌘K")
     }
 
     @ViewBuilder

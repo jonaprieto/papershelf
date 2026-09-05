@@ -150,12 +150,6 @@ public extension SplitLayout {
         windowWidth >= sidebarFloor + contentFloor
     }
 
-    /// Below this the four views of the collection collapse from a row of icons into one
-    /// menu. The row is worth its width: it says which views exist and switches in one
-    /// click. The menu is what a toolbar already carrying a search field and the actions
-    /// for the current mode has room for.
-    static let viewIconsBelow: CGFloat = 520
-
     /// The smallest window the app will open at, and the smallest it can be dragged to.
     static let windowFloorWidth: CGFloat = 640
     static let windowFloorHeight: CGFloat = 480
@@ -168,15 +162,9 @@ public extension SplitLayout {
         paneWidth < inspectorOverlaysBelow
     }
 
-    static func showsViewIcons(paneWidth: CGFloat) -> Bool {
-        paneWidth >= viewIconsBelow
-    }
-
-    /// How wide the search field should be. It was 240 points on every window, which on a
-    /// wide screen is a slot for six characters of a query beside half a metre of nothing.
-    /// A third of the pane, held between something readable and something that would start
-    /// crowding out the actions in the same bar.
-    static func searchFieldWidth(paneWidth: CGFloat) -> CGFloat {
+    /// The command palette launcher is wide enough to name itself, without taking over
+    /// the actions beside it on a large window.
+    static func commandPaletteWidth(paneWidth: CGFloat) -> CGFloat {
         min(max(paneWidth / 3, 240), 560)
     }
 

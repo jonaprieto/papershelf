@@ -181,6 +181,12 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Keymap.shared.shortcut(for: .toggleInspector),
                        Shortcut("b", [.command, .shift]))
     }
+
+    func testPresentationModeUsesTheNativeFullScreenShortcut() {
+        XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.zenMode))
+        XCTAssertEqual(Keymap.shared.shortcut(for: .zenMode),
+                       Shortcut("f", [.command, .control]))
+    }
 }
 
 /// The settings window's own search. A pane list of eight is short enough to read and

@@ -147,7 +147,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .previousRegion: return "Move to the previous region"
         case .back: return "Go back to the previous place"
         case .forward: return "Go forward to the next place"
-        case .focusSearch: return "Focus the search field"
+        case .focusSearch: return "Search the library"
         case .toggleSidebar: return "Show or hide the sidebar"
         case .toggleInspector: return "Show or hide the inspector"
         case .viewList: return "List"
@@ -218,9 +218,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .viewBibliography: return Shortcut("3", .command)
         case .viewDuplicates: return Shortcut("4", .command)
         case .readingMode: return Shortcut("r", [.command, .shift])
-        // Full screen is deliberately palette-only: a shortcut would compete with the
-        // native window command and the toolbar's reading controls.
-        case .zenMode: return nil
+        case .zenMode: return Shortcut("f", [.command, .control])
         case .toggleNotes: return Shortcut("n", [.command, .shift])
         case .toggleContents: return Shortcut("t", [.command, .shift])
         case .confirm: return Shortcut("\r", [])

@@ -1041,14 +1041,25 @@ struct ContentsRail: View {
 
             Divider()
 
-            switch shown {
-            case .outline: outline
-            case .thumbnails: PageThumbnails(view: annotator.view)
-            case .bookmarks: bookmarks
-            case .find: find
+            // A PDFThumbnailView can survive one SwiftUI update while it is being torn
+            // down. Keep every mode in one viewport so that native view cannot reserve a
+            // blank strip above the replacement Find panel.
+            ZStack {
+                switch shown {
+                case .outline: outline
+                case .thumbnails: PageThumbnails(view: annotator.view)
+                case .bookmarks: bookmarks
+                case .find: find
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(.background.secondary)
+        // PDFThumbnailView is an AppKit view. Giving each mode its own identity makes a
+        // mode change dismantle the old native view instead of leaving its blank frame
+        // above the new Find rail.
+        .id(shown)
+        .clipped()
         .alert("Rename bookmark", isPresented: Binding(
             get: { bookmarkToRename != nil },
             set: { if !$0 { bookmarkToRename = nil } }
@@ -1252,5 +1263,9 @@ struct PageThumbnails: NSViewRepresentable {
         // Identity, not equality: a new document means a new `PDFView`, and reassigning
         // the same one makes the thumbnail view rebuild every page for nothing.
         if thumbnails.pdfView !== view { thumbnails.pdfView = view }
+    }
+
+    static func dismantleNSView(_ thumbnails: PDFThumbnailView, coordinator: ()) {
+        thumbnails.pdfView = nil
     }
 }
