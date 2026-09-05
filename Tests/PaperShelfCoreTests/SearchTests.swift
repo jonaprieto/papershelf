@@ -200,6 +200,12 @@ final class SearchTests: XCTestCase {
         XCTAssertTrue(matches(file, Query("notes")))
         XCTAssertTrue(Query("   ").isEmpty)
     }
+
+    func testAnIncompleteKnownFieldDoesNotFilterWhileTyping() {
+        XCTAssertTrue(Query("title:").isEmpty)
+        XCTAssertTrue(Query("pages>").isEmpty)
+        XCTAssertFalse(Query("nonsense:").isEmpty, "unknown fields stay literal")
+    }
 }
 
 extension SearchTests {

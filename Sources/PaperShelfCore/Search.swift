@@ -100,7 +100,10 @@ public struct Query: Sendable, Equatable {
             guard let index = piece.firstIndex(of: Character(comparison.0)) else { continue }
             let field = String(piece[piece.startIndex..<index]).lowercased()
             let value = String(piece[piece.index(after: index)...])
-            guard fields.contains(field), !value.isEmpty else { continue }
+            guard fields.contains(field) else { continue }
+            // A field inserted from the catalogue menu is briefly incomplete while its
+            // value is typed. It must not turn into a literal search for "title:".
+            guard !value.isEmpty else { return nil }
             return Term(field: field, value: value, comparison: comparison.1)
         }
         let bare = piece.trimmingCharacters(in: .whitespaces)
