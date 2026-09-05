@@ -4,6 +4,18 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.12.0] - 2026-09-05
+
+### Added
+
+- Find text in an open PDF with ⌘F, a focused query field, every occurrence listed by page,
+  keyboard selection, and Return to jump to the selected occurrence.
+
+### Fixed
+
+- Put Find controls in the Find panel so searching stays usable in reading mode.
+- Let a stale Markdown notes companion be synchronized directly from Notes.
+
 ## [1.11.4] - 2026-09-04
 
 ### Added
