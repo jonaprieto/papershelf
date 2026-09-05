@@ -452,21 +452,26 @@ final class Annotator {
                                text: Self.findLabel(selection.string ?? query), selection: selection)
             }
         selectedFindHit = findHits.isEmpty ? nil : 0
-        if !findHits.isEmpty { selectFindHit(at: 0) }
     }
 
-    func selectFindHit(at index: Int) {
-        guard findHits.indices.contains(index), let view else { return }
-        let hit = findHits[index]
+    func selectFindHit(at index: Int, jumping: Bool = true) {
+        guard findHits.indices.contains(index) else { return }
         selectedFindHit = index
+        guard jumping, let view else { return }
+        let hit = findHits[index]
         view.go(to: hit.selection)
         view.setCurrentSelection(hit.selection, animate: true)
     }
 
-    func stepFind(by delta: Int) {
+    func stepFind(by delta: Int, jumping: Bool = true) {
         guard !findHits.isEmpty else { return }
         let current = selectedFindHit ?? (delta > 0 ? -1 : 0)
-        selectFindHit(at: (current + delta + findHits.count) % findHits.count)
+        selectFindHit(at: (current + delta + findHits.count) % findHits.count, jumping: jumping)
+    }
+
+    func jumpToSelectedFindHit() {
+        guard let selectedFindHit else { return }
+        selectFindHit(at: selectedFindHit)
     }
 
     private static func findLabel(_ text: String) -> String {

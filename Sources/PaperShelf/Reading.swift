@@ -863,8 +863,12 @@ struct PDFSearchBar: View {
                 if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
                     annotator.updateFindHits()
                 }
-                annotator.stepFind(by: 1)
+                annotator.jumpToSelectedFindHit()
             }
+            // The field remains the keyboard focus while searching. Make its arrows move
+            // through the result list, then let Return make the selected occurrence the page.
+            .onKeyPress(.downArrow) { moveFindSelection(by: 1) }
+            .onKeyPress(.upArrow) { moveFindSelection(by: -1) }
             .onKeyPress(phases: .down) { press in
                 guard press.key == KeyEquivalent("\r"), press.modifiers == .shift
                 else { return .ignored }
@@ -878,6 +882,14 @@ struct PDFSearchBar: View {
                 annotator.closeFind()
                 return .handled
             }
+    }
+
+    private func moveFindSelection(by delta: Int) -> KeyPress.Result {
+        if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
+            annotator.updateFindHits()
+        }
+        annotator.stepFind(by: delta, jumping: false)
+        return .handled
     }
 
     private var countLabel: some View {
@@ -897,6 +909,7 @@ struct PDFSearchBar: View {
             .disabled(annotator.findHits.isEmpty)
             .accessibilityLabel("Previous occurrence")
             .accessibilityIdentifier("reader.findPrevious")
+            .tip("Previous occurrence, or ↑")
             Button { annotator.stepFind(by: 1) } label: {
                 Image(systemName: "chevron.down")
             }
@@ -904,6 +917,7 @@ struct PDFSearchBar: View {
             .disabled(annotator.findHits.isEmpty)
             .accessibilityLabel("Next occurrence")
             .accessibilityIdentifier("reader.findNext")
+            .tip("Next occurrence, or ↓")
             Button { annotator.closeFind() } label: {
                 Image(systemName: "xmark")
             }

@@ -26,11 +26,15 @@ final class ReaderFindTests: XCTestCase {
 
         XCTAssertEqual(annotator.findHits.map(\.page), [1, 1, 2])
         XCTAssertEqual(annotator.selectedFindHit, 0)
-        annotator.stepFind(by: 1)
+        XCTAssertNil(view.currentSelection)
+        annotator.stepFind(by: 1, jumping: false)
         XCTAssertEqual(annotator.selectedFindHit, 1)
-        annotator.stepFind(by: -1)
+        XCTAssertNil(view.currentSelection)
+        annotator.jumpToSelectedFindHit()
+        XCTAssertEqual(view.currentSelection?.string?.lowercased(), "needle")
+        annotator.stepFind(by: -1, jumping: false)
         XCTAssertEqual(annotator.selectedFindHit, 0)
-        annotator.stepFind(by: -1)
+        annotator.stepFind(by: -1, jumping: false)
         XCTAssertEqual(annotator.selectedFindHit, 2, "previous wraps to the final occurrence")
     }
 
