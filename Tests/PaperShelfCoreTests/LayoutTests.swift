@@ -382,4 +382,14 @@ final class FoldingTests: XCTestCase {
         XCTAssertEqual(SplitLayout.panelWidth(paneWidth: 560), 560)
         XCTAssertTrue(SplitLayout.showsPageBesidePanel(paneWidth: 561))
     }
+
+    /// The reader's rail used to be a fixed width whatever the window was. It is the
+    /// same 196 points wherever there is room, and narrows rather than squeezing the
+    /// page where there is not.
+    func testTheReadersRailIsUnchangedWhereverThereIsRoom() {
+        let ideal = SplitLayout.contentsReserved - SplitLayout.dividerBeforeInspector
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: 900), ideal)
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: 520), ideal)
+        XCTAssertLessThan(SplitLayout.contentsRailWidth(inspectorWidth: 420), ideal)
+    }
 }

@@ -104,6 +104,25 @@ final class DocumentPaneLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(page.maxX, narrow + 0.5, "the page reached \(page.maxX)")
     }
 
+    /// Once the rail has narrowed to nothing there is nothing left for a divider to
+    /// divide, so the page starts at the pane's own edge and gets the whole of it. Keeping
+    /// the divider drew a line down the left of the page with no rail behind it, which is
+    /// what a reader window at its 520 point floor with the notes open actually showed.
+    func testNoDividerIsDrawnAheadOfAPageWithNoRailBesideIt() {
+        // Every width here is one where the ramp has already reached zero: below the
+        // page's floor, and at it.
+        for width in [200, 260, SplitLayout.previewFloorBesideContents] as [CGFloat] {
+            XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: width), 0,
+                           "at pane width \(width) the rail is not the case under test")
+            let page = pageRect(contentsRail: true, width: width)
+            XCTAssertEqual(page.minX, 0, accuracy: 0.5,
+                           "at pane width \(width) the page starts at x \(page.minX), "
+                           + "so something is drawn ahead of it")
+            XCTAssertEqual(page.width, width, accuracy: 0.5,
+                           "at pane width \(width) the page got \(page.width)")
+        }
+    }
+
     /// What a host hands in through `overlays` is bars that belong against the corners of
     /// the page, and one of them, the label on a document that will not open, is only as
     /// big as its own text. So the pane has to hand the overlay the page's top-leading

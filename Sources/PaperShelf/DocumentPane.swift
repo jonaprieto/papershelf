@@ -48,11 +48,17 @@ struct DocumentPane<Overlay: View>: View {
         // pane too narrow for both it is the chapter list that narrows and not the page
         // that is squeezed to nothing, or worse, pushed off the edge.
         GeometryReader { page in
+            // The divider goes with the rail rather than with the request for one. That
+            // width ramps to nothing on a narrow pane, and a divider drawn anyway is a
+            // line down the left edge of the page with no rail behind it, holding the
+            // page a point in from the edge it should start at.
+            let railWidth = showsContentsRail
+                ? SplitLayout.contentsRailWidth(inspectorWidth: page.size.width)
+                : 0
             HStack(spacing: 0) {
-                if showsContentsRail {
+                if railWidth > 0 {
                     ContentsRail(annotator: annotator, findActive: annotator.showsFind)
-                        .frame(width: SplitLayout.contentsRailWidth(
-                            inspectorWidth: page.size.width))
+                        .frame(width: railWidth)
                         .region(.contents)
                     Divider()
                 }

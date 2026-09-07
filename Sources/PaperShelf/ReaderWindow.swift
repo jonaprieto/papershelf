@@ -38,34 +38,32 @@ struct ReaderWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if !presentation && prefs.contentsShown && annotator.hasPages {
-                    ContentsRail(annotator: annotator, findActive: annotator.showsFind)
-                        .frame(width: SplitLayout.contentsReserved - SplitLayout.dividerBeforeInspector)
-                    Divider()
-                }
-                PDFPreview(url: url, passwords: passwords, annotator: annotator, fit: fit,
-                           appearance: prefs.readingAppearance, presentation: presentation,
-                           onPageStep: presentation && prefs.leftRightTurnsPages
-                               ? { annotator.go(toPage: annotator.page + $0) } : nil,
-                           onMarkClick: selectMark(at:))
-                    .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
-                    .overlay(alignment: .top) { selectionBar }
-                    .contextMenu {
-                        Button(annotator.bookmarkOnCurrentPage == nil
-                               ? "Add Bookmark" : "Remove Bookmark") {
-                            _ = annotator.toggleBookmark()
-                        }
-                    }
-                    .inspector(isPresented: $showsNotes) {
-                        NotesRail(annotator: annotator, palette: palette,
-                                  addingNote: $addingNote, noteText: $noteText,
-                                  lastColour: nextColour, title: title, source: url.path,
-                                  close: { showsNotes = false }, isWritingNote: $writingNote,
-                                  documentID: documentID,
-                                  effectiveProjectScopes: documentProjectScopes)
-                        .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
-                    }
+            DocumentPane(
+                url: url,
+                passwords: passwords,
+                annotator: annotator,
+                fit: $fit,
+                appearance: prefs.readingAppearance,
+                presentation: presentation,
+                showsContentsRail: !presentation && prefs.contentsShown && annotator.hasPages,
+                // This window keeps its page controls in the row underneath, with the
+                // filename beside them, so it asks for no bar over the page.
+                showsPageBar: false,
+                onPageStep: presentation && prefs.leftRightTurnsPages
+                    ? { annotator.go(toPage: annotator.page + $0) } : nil,
+                onMarkClick: selectMark(at:),
+                openFind: openFind
+            ) {
+                selectionBar
+            }
+            .inspector(isPresented: $showsNotes) {
+                NotesRail(annotator: annotator, palette: palette,
+                          addingNote: $addingNote, noteText: $noteText,
+                          lastColour: nextColour, title: title, source: url.path,
+                          close: { showsNotes = false }, isWritingNote: $writingNote,
+                          documentID: documentID,
+                          effectiveProjectScopes: documentProjectScopes)
+                .inspectorColumnWidth(min: SplitLayout.panelFloor, ideal: 320)
             }
             if !presentation {
                 Divider()
@@ -229,6 +227,10 @@ struct ReaderWindow: View {
     /// The bar that appears beside a selection. The keys are the fast path; this is the one
     /// somebody finds without being told, which is why both exist and why this can be
     /// switched off once you no longer need it.
+    ///
+    /// The pane hands an overlay the page's top-leading corner, so the bar asks for the
+    /// page's width to sit centred over it as it always has. Width only: a height as well
+    /// would centre it vertically and park it halfway down the page.
     @ViewBuilder
     private var selectionBar: some View {
         if prefs.selectionPalette, annotator.hasSelection {
@@ -268,6 +270,7 @@ struct ReaderWindow: View {
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(.separator))
             .padding(.top, Space.roomy)
+            .frame(maxWidth: .infinity, alignment: .top)
             .transition(.opacity)
         }
     }
