@@ -2521,41 +2521,48 @@ struct ResultsPane: View {
 
             Spacer(minLength: Space.snug)
 
-            searchWarning
-
-            if selection.count > 1 {
-                Text("\(selection.count) selected")
-                    .font(Face.caption.monospacedDigit())
-                    .foregroundStyle(Color.accentColor)
-                    .fixedSize()
-                    .tip("Skip, trash and Move to act on all of them")
+            // Nothing after the chips can be squeezed: every control here is
+            // `.fixedSize()`, and an HStack answers a proposal it cannot meet by drawing
+            // its children past its own frame and over whatever is beside them. The chips
+            // give way first and then run out. On a 13 inch laptop the shelf is about 530
+            // points wide and this row is 689 once a plan is running, so the bar needs
+            // somewhere to put a control rather than a narrower way to draw one.
+            ViewThatFits(in: .horizontal) {
+                filterBarControls(folding: .nothing)
+                filterBarControls(folding: .switches)
+                filterBarControls(folding: .everything)
             }
-
-            Text(shownLabel)
-                .font(Face.caption.monospacedDigit())
-                .foregroundStyle(visibleKeys?.isEmpty == true ? Ink.amber : .secondary)
-                .fixedSize()
-
-            if prefs.viewMode == .list {
-                // A switch, not a button that looks pressed. It answers yes or no to one
-                // question -- show me only what I have not decided -- which is what a
-                // switch is for, and it reads as on or off from across the window.
-                Toggle("Only undecided", isOn: $prefs.onlyUndecided)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .font(Face.caption)
-                    .fixedSize()
-                    .tip("Hide everything already confirmed, skipped or trashed")
-
-                planActions
-            }
-
-            sortMenu
+            // Ahead of the chips rather than after them. At the default priority the
+            // HStack offers this an even share of the row rather than what the chips
+            // leave, so it measured itself against a fraction of the width it actually
+            // gets and folded on a window with room to spare.
+            .layoutPriority(1)
         }
         .padding(.horizontal, Space.roomy)
         .frame(height: Metric.filterBar)
         .frame(maxWidth: .infinity)
         .background(.bar)
+    }
+
+    private func filterBarControls(folding fold: BarFold) -> some View {
+        FilterBarControls(
+            fold: fold,
+            list: prefs.viewMode == .list,
+            selectionCount: selection.count,
+            shown: shownLabel,
+            shownIsEmpty: visibleKeys?.isEmpty == true,
+            onlyUndecided: $prefs.onlyUndecided,
+            autoIdentify: $prefs.autoIdentify,
+            aiReady: aiReady,
+            hasResults: !runner.results.isEmpty,
+            pendingCount: runner.pendingCount,
+            askAI: { confirmingBatchAI = true },
+            confirmAll: {
+                runner.confirmAllPending()
+                ensureSelection()
+            },
+            warning: { searchWarning },
+            sort: { sortMenu })
     }
 
     /// What the window is looking at, in the title where the platform puts it.
@@ -2671,49 +2678,6 @@ struct ResultsPane: View {
     /// The two ways a search can quietly answer the wrong question: a field that does not
     /// exist, which the grammar turns into a literal word, and a question about the inside
     /// of documents nothing has read. Neither is worth an alert; both are worth saying.
-    /// What can be done to the plan on screen, in the bar that describes it.
-    ///
-    /// These were the first three things in the window toolbar. Renaming is a feature of
-    /// this app rather than the whole of it, and a toolbar is read before anything else;
-    /// putting them here also gives the setting room to be a switch with its name beside
-    /// it, which a toolbar's icon-only label style would not draw.
-    ///
-    /// "Name as I go" rather than "Ask as I go", because it sat next to "Ask AI for 3"
-    /// and the two read as the same offer.
-    @ViewBuilder
-    private var planActions: some View {
-        if !runner.results.isEmpty {
-            Divider().frame(height: 16)
-
-            if aiReady {
-                Toggle("Name as I go", isOn: $prefs.autoIdentify)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .font(Face.caption)
-                    .fixedSize()
-                    .tip("Ask the model for a name on each file as you reach it")
-
-                if runner.pendingCount > 0 {
-                    Button("Ask AI for \(runner.pendingCount)") { confirmingBatchAI = true }
-                        .controlSize(.small)
-                        .fixedSize()
-                        .tip("One request per undecided file. You are billed by the provider.")
-                }
-            }
-
-            if runner.pendingCount > 0 {
-                Button("Confirm all") {
-                    runner.confirmAllPending()
-                    ensureSelection()
-                }
-                .controlSize(.small)
-                .fixedSize()
-                .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .tip("Take every name still pending as it stands", key: "⌘⇧Return")
-            }
-        }
-    }
-
     @ViewBuilder
     private var searchWarning: some View {
         let unknown = Query.unknownFields(in: query)
@@ -3253,6 +3217,143 @@ struct PlanCountPill: View {
             .padding(.vertical, Space.hair)
             .fittedBackground(state.colour.opacity(Ink.fill), in: RoundedRectangle(cornerRadius: Metric.control))
             .tip(state.explanation)
+    }
+}
+
+
+/// How much of the filter bar has been put away, in the order it gives things up.
+///
+/// The count, the overflow menu and the order always stay: they are what the bar is for.
+/// The switches go first, because they are settings rather than actions and a menu states
+/// them as plainly as a switch does. The plan's own buttons go last: confirming a batch of
+/// names is what this window is for, and it should leave the bar only when there is
+/// genuinely no room for it.
+enum BarFold { case nothing, switches, everything }
+
+/// Everything in the filter bar except the chips: what is on screen, what is filtering it,
+/// and what can be done to the plan.
+///
+/// A view of its own rather than a method on `ResultsPane`, for the reason `ResultRow` is
+/// one: nothing here needs a `Runner` or a library, so a test can host it at the widths a
+/// real pane has and measure what it draws. The bug it exists to prevent is not visible
+/// any other way, because an HStack of `.fixedSize()` children does not clip -- it paints
+/// them over the pane beside it, and reports a perfectly ordinary size while doing so.
+struct FilterBarControls<Warning: View, Sort: View>: View {
+    let fold: BarFold
+    let list: Bool
+    let selectionCount: Int
+    let shown: String
+    let shownIsEmpty: Bool
+    @Binding var onlyUndecided: Bool
+    @Binding var autoIdentify: Bool
+    let aiReady: Bool
+    let hasResults: Bool
+    let pendingCount: Int
+    let askAI: () -> Void
+    let confirmAll: () -> Void
+    @ViewBuilder let warning: () -> Warning
+    @ViewBuilder let sort: () -> Sort
+
+    var body: some View {
+        HStack(spacing: Space.step) {
+            if fold != .everything {
+                warning()
+
+                if selectionCount > 1 {
+                    Text("\(selectionCount) selected")
+                        .font(Face.caption.monospacedDigit())
+                        .foregroundStyle(Color.accentColor)
+                        .fixedSize()
+                        .tip("Skip, trash and Move to act on all of them")
+                }
+            }
+
+            Text(shown)
+                .font(Face.caption.monospacedDigit())
+                .foregroundStyle(shownIsEmpty ? Ink.amber : .secondary)
+                .fixedSize()
+
+            if list {
+                if fold == .nothing {
+                    // A switch, not a button that looks pressed. It answers yes or no to
+                    // one question -- show me only what I have not decided -- which is
+                    // what a switch is for, and it reads as on or off from across the
+                    // window.
+                    Toggle("Only undecided", isOn: $onlyUndecided)
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .font(Face.caption)
+                        .fixedSize()
+                        .tip("Hide everything already confirmed, skipped or trashed")
+
+                    planSwitch
+                }
+                if fold != .everything { planButtons }
+                if fold != .nothing { folded }
+            }
+
+            sort()
+        }
+    }
+
+    /// Whether each name is asked for as you reach the file.
+    ///
+    /// This was in the window toolbar. Renaming is a feature of this app rather than the
+    /// whole of it, and a toolbar is read before anything else; here it also has room to
+    /// be a switch with its name beside it, which a toolbar's icon-only label style would
+    /// not draw. "Name as I go" rather than "Ask as I go", because it sits next to "Ask
+    /// AI for 3" and the two read as the same offer.
+    @ViewBuilder
+    private var planSwitch: some View {
+        if hasResults, aiReady {
+            Divider().frame(height: 16)
+
+            Toggle("Name as I go", isOn: $autoIdentify)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .font(Face.caption)
+                .fixedSize()
+                .tip("Ask the model for a name on each file as you reach it")
+        }
+    }
+
+    /// What can be done to the whole plan on screen, in the bar that describes it.
+    @ViewBuilder
+    private var planButtons: some View {
+        if hasResults, pendingCount > 0 {
+            if aiReady {
+                Button("Ask AI for \(pendingCount)", action: askAI)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .tip("One request per undecided file. You are billed by the provider.")
+            }
+
+            Button("Confirm all", action: confirmAll)
+                .controlSize(.small)
+                .fixedSize()
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .tip("Take every name still pending as it stands", key: "⌘⇧Return")
+        }
+    }
+
+    /// Whatever the row could not fit, said the way a menu says it.
+    private var folded: some View {
+        Menu {
+            Toggle("Only undecided", isOn: $onlyUndecided)
+            if aiReady, hasResults { Toggle("Name as I go", isOn: $autoIdentify) }
+            if fold == .everything, hasResults, pendingCount > 0 {
+                Divider()
+                if aiReady { Button("Ask AI for \(pendingCount)", action: askAI) }
+                Button("Confirm all", action: confirmAll)
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("More filters")
+        .accessibilityIdentifier("filterBar.overflow")
+        .tip("The controls this window has no room to show")
     }
 }
 
