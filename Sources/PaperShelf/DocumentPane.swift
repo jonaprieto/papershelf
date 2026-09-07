@@ -1,6 +1,4 @@
 import SwiftUI
-import AppKit
-import PDFKit
 import PaperShelfCore
 
 /// One open document: the page, the outline beside it, and the bar that says where you

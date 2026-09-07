@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import PDFKit
 import PaperShelfCore
 
 /// A window that is a page.

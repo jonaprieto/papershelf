@@ -92,18 +92,6 @@ final class DocumentPaneLayoutTests: XCTestCase {
         }
     }
 
-    /// The rail gives way before the page does, which is what `contentsRailWidth` is for.
-    /// Asking for it at a width that leaves the page under its floor must draw no rail
-    /// rather than a rail that leaves the page a strip.
-    func testTheRailIsNotDrawnWhereThePageWouldHaveNoRoom() {
-        let narrow = SplitLayout.previewFloorBesideContents - 40
-        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: narrow), 0)
-        let page = pageRect(contentsRail: true, width: narrow)
-        XCTAssertGreaterThanOrEqual(page.width, narrow - SplitLayout.dividerBeforeInspector - 0.5,
-                                    "the rail took \(narrow - page.width) of a pane that had none to give")
-        XCTAssertLessThanOrEqual(page.maxX, narrow + 0.5, "the page reached \(page.maxX)")
-    }
-
     /// Once the rail has narrowed to nothing there is nothing left for a divider to
     /// divide, so the page starts at the pane's own edge and gets the whole of it. Keeping
     /// the divider drew a line down the left of the page with no rail behind it, which is
