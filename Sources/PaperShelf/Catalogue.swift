@@ -176,10 +176,7 @@ struct ResultsPane: View {
 
     /// The document the reader is on, falling back to the selection when the key no
     /// longer names a file (a rename applied, a source removed).
-    private var readerItem: Item? {
-        guard let reader else { return nil }
-        return runner.results.first { $0.key == reader }
-    }
+    private var readerItem: Item? { reader.flatMap(runner.item) }
 
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
                                     reading: Bool, readerOpen: Bool,
@@ -322,9 +319,20 @@ struct ResultsPane: View {
         return runner.results.filter { keys.contains($0.key) }
     }
 
-    private var selectedItem: Item? {
-        runner.results.first { $0.key == selected }
-    }
+    /// Through `Runner.item`, which answers from `indexByKey`, rather than by walking
+    /// `results` and comparing keys.
+    ///
+    /// `Item.key` is `source.resolvingSymlinksInPath().path`: computed, and a filesystem
+    /// call on every read. A walk therefore stats every file it passes, which measured at
+    /// 48ms over five thousand real files and scales linearly. This is read several times
+    /// in a single body pass -- the inspector, the window title and both highlighter
+    /// scopes all ask for it -- and a body pass is what toggling any panel causes, so the
+    /// walk was most of what a toggle cost.
+    ///
+    /// Safe to read from the index because every path that changes `results` ends in
+    /// `Runner.finish`, which rebuilds it, and an item's key never moves: it comes from
+    /// `source`, which is a `let`.
+    private var selectedItem: Item? { selected.flatMap(runner.item) }
 
     /// Everything that could change what `visibleKeys` answers, or what the shelf's
     /// `shown` list holds. Shared so the two caches agree on when to recompute instead of
