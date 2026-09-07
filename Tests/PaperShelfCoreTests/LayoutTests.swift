@@ -171,13 +171,33 @@ final class LayoutTests: XCTestCase {
     }
 
     func testTheContentsRailNarrowsRatherThanSqueezingThePageAway() {
-        let width = SplitLayout.contentsRailWidth(inspectorWidth: 400)
-        XCTAssertEqual(width, 400 - SplitLayout.previewFloorBesideContents)
+        // 460 rather than 400: at 400 the rail is now dropped instead of narrowed, since
+        // the 100 points left over are under what a chapter title needs.
+        let width = SplitLayout.contentsRailWidth(inspectorWidth: 460)
+        XCTAssertEqual(width, 460 - SplitLayout.previewFloorBesideContents)
         XCTAssertGreaterThan(width, 0, "a rail with no width is not a table of contents")
     }
 
     func testTheContentsRailDisappearsRatherThanGoingNegative() {
         XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: 80), 0)
+    }
+
+    /// Narrowing has a floor. Under it the rail is dropped rather than drawn as a column
+    /// of clipped chapter titles, which is a strip that costs the page room and tells a
+    /// reader nothing.
+    func testAnOutlineTooNarrowToReadIsNotDrawnAtAll() {
+        let floor = SplitLayout.contentsRailFloor
+        let smallest = SplitLayout.previewFloorBesideContents + floor
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: smallest), floor)
+        XCTAssertEqual(SplitLayout.contentsRailWidth(inspectorWidth: smallest - 1), 0)
+        // The reviewer only ever asked at widths above 779, so the whole of this ramp was
+        // unreachable until the reader started drawing the same rail.
+        let unreadable = stride(from: CGFloat(0), through: 900, by: 1)
+            .map { SplitLayout.contentsRailWidth(inspectorWidth: $0) }
+            .filter { $0 > 0 && $0 < floor }
+        XCTAssertTrue(unreadable.isEmpty,
+                      "\(unreadable.count) pane widths draw a rail too narrow to read, "
+                      + "the widest of them \(unreadable.max() ?? 0) points")
     }
 
     /// At the window's own stated minimum, `inspectorMaximum` must never be asked to

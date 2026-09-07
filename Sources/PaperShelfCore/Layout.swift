@@ -86,13 +86,24 @@ public enum SplitLayout {
     /// overlays the page rather than turning a document into an unreadable thumbnail.
     public static let previewFloorBesideContents: CGFloat = 300
 
-    /// The rail's drawn width inside an inspector this wide.
+    /// The narrowest an outline can be and still be one. A list of chapter titles reads at
+    /// 130 points; under that every title is an ellipsis, which takes room from the page
+    /// and tells nobody where they are in the document.
+    public static let contentsRailFloor: CGFloat = 130
+
+    /// The rail's drawn width inside an inspector this wide, and nothing where what is
+    /// left over would be too narrow to read.
     ///
-    /// The rail gives way before the page does: a list of chapter titles still reads at
-    /// 130 points, whereas a page squeezed to the same is not a page any more.
+    /// The rail gives way before the page does: it narrows to `contentsRailFloor` rather
+    /// than let the page be squeezed under its own floor, and under that it is dropped
+    /// rather than narrowed further. The reviewer never reached the bottom of this ramp,
+    /// because it asks for no rail at all on a pane under 1100 points. The reader has no
+    /// such fold and reaches all of it: at 640 points with the notes open it was drawing a
+    /// 79 point strip and calling it a table of contents.
     public static func contentsRailWidth(inspectorWidth: CGFloat) -> CGFloat {
         let ideal = contentsReserved - dividerBeforeInspector
-        return max(0, min(ideal, inspectorWidth - previewFloorBesideContents))
+        let room = min(ideal, inspectorWidth - previewFloorBesideContents)
+        return room < contentsRailFloor ? 0 : room
     }
 
     /// The width the inspector actually gets: what was asked for, held between its own
