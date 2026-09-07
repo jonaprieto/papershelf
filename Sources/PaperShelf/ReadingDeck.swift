@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// What a window has open, and which of it is on screen.
 ///
@@ -142,4 +143,64 @@ extension Deck.Tab: Equatable {
     static func == (a: Self, b: Self) -> Bool {
         a.id == b.id && a.key == b.key && a.isPreview == b.isPreview
     }
+}
+
+/// What is written down between launches: the order, and which one was showing.
+///
+/// Keys rather than tabs. An `Annotator` is built fresh on the way back in, and the page you
+/// were on comes from `ReadingPositions` as it always has.
+struct StoredDeck: Codable, Equatable {
+    var panes: [[String]]
+    /// The index of the active tab in each pane, or -1 where the pane holds nothing. It
+    /// counts the tabs that were stored, so a preview tab standing ahead of them does not
+    /// shift it onto the wrong paper.
+    var active: [Int]
+    var activePane: Int
+
+    init(_ deck: Deck) {
+        // The preview tab is the reviewer's selection rather than something anybody opened,
+        // so it is not carried across a launch.
+        let kept = deck.panes.map { $0.tabs.filter { !$0.isPreview } }
+        panes = kept.map { $0.map(\.key) }
+        active = zip(deck.panes, kept).map { pane, tabs in
+            tabs.firstIndex { $0.id == pane.active } ?? (tabs.isEmpty ? -1 : 0)
+        }
+        activePane = deck.panes.firstIndex { $0.id == deck.activePane } ?? 0
+    }
+}
+
+extension Deck {
+    /// Rebuild what was open, dropping whatever is no longer there.
+    ///
+    /// A file renamed, moved or trashed since the last launch goes without comment, the same
+    /// bargain an unreachable source already makes. If the one that was showing is the one
+    /// that went, the pane shows something else rather than opening onto nothing.
+    static func restoring(_ stored: StoredDeck, reachable: (String) -> Bool,
+                          makeAnnotator: (String) -> Annotator) -> Deck {
+        var panes: [Pane] = []
+        for (index, keys) in stored.panes.enumerated() {
+            let wanted = stored.active.indices.contains(index) ? stored.active[index] : -1
+            let wantedKey = keys.indices.contains(wanted) ? keys[wanted] : nil
+            let tabs = keys.filter(reachable).map {
+                Tab(id: UUID(), key: $0, isPreview: false, annotator: makeAnnotator($0))
+            }
+            let active = tabs.first { $0.key == wantedKey }?.id ?? tabs.first?.id
+            panes.append(Pane(id: UUID(), tabs: tabs, active: active))
+        }
+        // A window always has somewhere to put a document, even when nothing came back.
+        if panes.isEmpty { panes = [Pane(id: UUID())] }
+        let at = panes.indices.contains(stored.activePane) ? stored.activePane : 0
+        return Deck(panes: panes, activePane: panes[at].id)
+    }
+}
+
+/// The deck a window holds, so SwiftUI can watch it.
+///
+/// A box around the value rather than a model with methods: every rule lives on `Deck`,
+/// where a test can reach it, and this exists only to be observed.
+@MainActor
+@Observable
+final class ReadingDeck {
+    var deck: Deck
+    init(deck: Deck) { self.deck = deck }
 }

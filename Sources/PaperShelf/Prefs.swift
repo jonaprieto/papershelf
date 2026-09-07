@@ -79,6 +79,11 @@ final class Prefs {
     var settingsPane: SettingsPane = Store.choice("settingsPane", .general) {
         didSet { Store.put("settingsPane", settingsPane) }
     }
+    /// The documents that were open, as `StoredDeck` JSON. One string rather than a key per
+    /// tab, because the order is part of the answer.
+    var openTabs: String = Store.text("openTabs", "") {
+        didSet { Store.put("openTabs", openTabs) }
+    }
 
     // MARK: - Panels
 

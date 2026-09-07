@@ -148,4 +148,80 @@ final class ReadingDeckTests: XCTestCase {
         let deck = empty()
         XCTAssertEqual(deck.stepping(by: 1), deck)
     }
+
+    // MARK: what is remembered between launches
+
+    func testTheStoredShapeIsTheOrderAndWhatWasShowing() {
+        var deck = open(empty(), ["a.pdf", "b.pdf", "c.pdf"])
+        deck = deck.activating(deck.active!.tabs[1].id)
+        let stored = StoredDeck(deck)
+        XCTAssertEqual(stored.panes, [["a.pdf", "b.pdf", "c.pdf"]])
+        XCTAssertEqual(stored.active, [1])
+        XCTAssertEqual(stored.activePane, 0)
+    }
+
+    /// The preview tab is the reviewer's selection, not something anybody opened, so it is
+    /// not worth carrying across a launch.
+    func testThePreviewTabIsNotStored() {
+        var deck = open(empty(), ["a.pdf"])
+        deck = deck.opening("b.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(StoredDeck(deck).panes, [["a.pdf"]])
+    }
+
+    /// The stored index counts what was stored, and the preview tab is not part of that.
+    /// Counting it would point the next launch at the paper beside the one you were
+    /// reading, or off the end of the bar entirely.
+    func testTheStoredIndexCountsOnlyTheTabsThatWereStored() {
+        var deck = open(empty(), ["a.pdf", "b.pdf"])
+        deck = deck.opening("c.pdf", kept: false, makeAnnotator: annotator)
+        deck = deck.activating(deck.active!.tabs[2].id)
+        let stored = StoredDeck(deck)
+        XCTAssertEqual(stored.panes, [["a.pdf", "b.pdf"]])
+        XCTAssertEqual(stored.active, [1])
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.activeTab?.key, "b.pdf")
+    }
+
+    func testAStoredDeckComesBackInOrder() {
+        var deck = open(empty(), ["a.pdf", "b.pdf", "c.pdf"])
+        deck = deck.activating(deck.active!.tabs[1].id)
+        let back = Deck.restoring(StoredDeck(deck), reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.active?.tabs.map(\.key), ["a.pdf", "b.pdf", "c.pdf"])
+        XCTAssertEqual(back.activeTab?.key, "b.pdf")
+    }
+
+    /// A file that has been renamed, moved or trashed since the last launch is dropped
+    /// without comment, the way an unreachable source already is.
+    func testATabWhoseFileIsGoneIsDropped() {
+        let deck = open(empty(), ["a.pdf", "gone.pdf", "c.pdf"])
+        let back = Deck.restoring(StoredDeck(deck), reachable: { $0 != "gone.pdf" },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.active?.tabs.map(\.key), ["a.pdf", "c.pdf"])
+    }
+
+    /// And if the one that was showing is the one that went, something else shows rather
+    /// than the window opening onto nothing.
+    func testTheActiveTabGoingLeavesSomethingElseShowing() {
+        var deck = open(empty(), ["a.pdf", "gone.pdf"])
+        deck = deck.activating(deck.active!.tabs[1].id)
+        let back = Deck.restoring(StoredDeck(deck), reachable: { $0 != "gone.pdf" },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.activeTab?.key, "a.pdf")
+    }
+
+    func testAnEmptyStoredDeckRestoresToAnEmptyPane() {
+        let back = Deck.restoring(StoredDeck(empty()), reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.panes.count, 1)
+        XCTAssertNil(back.activeTab)
+    }
+
+    func testStoredDecksSurviveJSON() throws {
+        var deck = open(empty(), ["a.pdf", "b.pdf"])
+        deck = deck.activating(deck.active!.tabs[0].id)
+        let data = try JSONEncoder().encode(StoredDeck(deck))
+        XCTAssertEqual(try JSONDecoder().decode(StoredDeck.self, from: data), StoredDeck(deck))
+    }
 }
