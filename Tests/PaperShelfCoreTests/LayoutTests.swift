@@ -287,6 +287,58 @@ final class FoldingTests: XCTestCase {
         XCTAssertTrue(SplitLayout.inspectorOverlays(paneWidth: 400))
     }
 
+    // MARK: A width dragged on one display does not starve the next
+
+    /// `documentRegionWidth` is one absolute number shared by every display the app is
+    /// ever opened on, and it ships at 840. These are the detail columns a maximised
+    /// window actually gets on the three Macs people read on: 1440 and 1470 point
+    /// laptops, less the sidebar, and a 16 inch for contrast.
+    private static let detailColumns: [(String, CGFloat)] = [
+        ("13.3 inch, 1440 wide", 1440 - 264),
+        ("13.6 inch, 1470 wide", 1470 - 264),
+        ("16 inch, 1728 wide", 1728 - 264),
+    ]
+
+    /// The shipped default left the shelf at exactly `contentFloor` on both laptops: a
+    /// 360 point file list, from first launch, with 815 points of inspector beside it.
+    /// A floor is what a pane may be squeezed to, not what it should open at.
+    func testTheShelfGetsMoreThanItsBareFloorOnALaptop() {
+        for (name, available) in Self.detailColumns {
+            let inspector = SplitLayout.inspectorWidth(
+                preferred: 840, available: available, contentsShown: true)
+            let browser = available - inspector - SplitLayout.dividerBeforeInspector
+            XCTAssertGreaterThan(browser, SplitLayout.contentFloor + 100,
+                                 "\(name): browser \(browser), inspector \(inspector)")
+        }
+    }
+
+    /// The cap is a share, so the same stored width re-proportions itself rather than
+    /// taking a fixed 840 out of whatever the display happens to offer.
+    func testTheInspectorNeverTakesMoreThanItsShare() {
+        for (name, available) in Self.detailColumns {
+            let inspector = SplitLayout.inspectorWidth(
+                preferred: 4000, available: available, contentsShown: false)
+            XCTAssertLessThanOrEqual(inspector,
+                                     (available * SplitLayout.inspectorShareCeiling).rounded(),
+                                     name)
+        }
+    }
+
+    /// The divider may not be dragged somewhere the split will not draw. `maximum` feeds
+    /// the drag clamp directly, so a maximum above what `inspectorWidth` returns is a
+    /// divider that sticks: it moves under the hand and springs back.
+    func testTheDragCannotReachAWidthTheSplitWillNotDraw() {
+        for (name, available) in Self.detailColumns {
+            for contents in [false, true] {
+                let maximum = SplitLayout.inspectorMaximum(
+                    available: available, contentsShown: contents)
+                let drawn = SplitLayout.inspectorWidth(
+                    preferred: maximum, available: available, contentsShown: contents)
+                XCTAssertEqual(drawn, maximum, "\(name), contents=\(contents)")
+            }
+        }
+    }
+
     /// Under the width that holds both, the page is the one that folds -- it costs no
     /// horizontal room to fold, because the reader opens it across the whole region.
     func testThePageFoldsBeforeThePanelDoes() {

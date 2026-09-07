@@ -22,6 +22,19 @@ public enum SplitLayout {
     /// HStack, so it eats into the inspector's width instead of the window's.
     public static let contentsReserved: CGFloat = 196 + 1
 
+    /// The most of a pane the inspector may take, however wide it was last dragged.
+    ///
+    /// The width is one absolute number shared by every display the app is ever opened
+    /// on, and it ships at 840. On a 16 inch window's detail column that is a page and a
+    /// panel; on a 13 inch laptop's 1176 it left the shelf exactly `contentFloor`, so the
+    /// file list a person came here to read was 360 points wide from first launch with
+    /// 815 points of inspector beside it. A floor is what a pane may be squeezed to, not
+    /// what it should open at.
+    ///
+    /// A share rather than a second absolute, because the same window gets dragged
+    /// between displays and the proportion is the part that should follow it.
+    public static let inspectorShareCeiling: CGFloat = 0.55
+
     /// The divider `split` draws between the browser and the inspector.
     public static let dividerBeforeInspector: CGFloat = 1
 
@@ -44,7 +57,13 @@ public enum SplitLayout {
     /// needed.
     public static func inspectorMaximum(available: CGFloat, contentsShown: Bool) -> CGFloat {
         let minimum = inspectorMinimum(contentsShown: contentsShown)
-        return max(minimum, available - contentFloor - dividerBeforeInspector)
+        let roomy = min(available - contentFloor - dividerBeforeInspector, share(of: available))
+        return max(minimum, roomy)
+    }
+
+    /// `inspectorShareCeiling` of a pane this wide, rounded to a whole point.
+    public static func share(of available: CGFloat) -> CGFloat {
+        (available * inspectorShareCeiling).rounded()
     }
 
     /// What the window has to be at least this wide for: the browser's floor, the divider
@@ -91,7 +110,9 @@ public enum SplitLayout {
         let room = max(0, available - dividerBeforeInspector)
         let floor = inspectorMinimum(contentsShown: contentsShown)
         guard room >= floor + contentFloor else { return (room / 2).rounded() }
-        return min(max(preferred, floor), room - contentFloor)
+        // The share is a ceiling on what was asked for, not on the floor: a pane still
+        // gets what its own controls need on a window too small to give it a share.
+        return min(max(min(preferred, share(of: available)), floor), room - contentFloor)
     }
 }
 
