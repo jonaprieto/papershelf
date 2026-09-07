@@ -31,18 +31,27 @@ on run
         end tell
 
         tell application "System Events"
-            my waitForWindow("All Documents", targetPID)
+            my waitForLibraryWindow(targetPID)
+            -- Before the audits, not after. The last command above opens the palette, and its
+            -- sheet is what made a toolbar lookup resolve somewhere unintended.
+            tell first application process whose unix id is targetPID to key code 53
+            delay 0.3
             my assertCatalogueLaunchState(targetPID)
             my auditToolbar(targetPID)
             my clickSidebarTwice(targetPID)
-            tell first application process whose unix id is targetPID to key code 53
         end tell
 
         tell application "__PAPERSHELF_APP_PATH__" to show settings
         tell application "System Events"
             my waitForWindow("General", targetPID)
             my auditSettings(targetPID)
-            tell first application process whose unix id is targetPID to keystroke "w" using command down
+            -- Guarded: an unconditional close here shut the library window on any run where
+            -- settings never opened, which left the app running with nothing on screen.
+            tell first application process whose unix id is targetPID
+                if (exists (first window whose name is "General")) then
+                    keystroke "w" using command down
+                end if
+            end tell
         end tell
     on error messageText number errorNumber
         tell application "__PAPERSHELF_APP_PATH__"
@@ -84,11 +93,49 @@ on waitForWindow(prefix, targetPID)
     error "Timed out waiting for a PaperShelf window named " & prefix
 end waitForWindow
 
+-- The library window, found by the one thing that distinguishes it rather than by its title.
+--
+-- It used to be found by title, on the assumption that the shelf names it. The window is named
+-- after whatever it is showing: `placeTitle` answers with the open document's own title
+-- whenever there is one, so an app that restored into a paper produced no window called "All
+-- Documents" and every wait here ran to its timeout. There is no command to close a reader, so
+-- the title cannot be forced either.
+--
+-- Not `window 1` either, which is what this reached for first and which wedged the app: with
+-- the command palette open its sheet can be the first window, and a toolbar lookup against it
+-- resolves somewhere unintended. A click then landed on the page instead of the toolbar, which
+-- puts PDFKit into `trackStandardTextSelection`, a modal loop that runs until a mouse-up that
+-- a synthetic click never sends. The main thread blocks, every later AppleEvent times out, and
+-- the app has to be killed.
+--
+-- The library window is the one carrying a toolbar, which no sheet and no reader window does.
+on libraryWindow(targetPID)
+    tell application "System Events"
+        tell first application process whose unix id is targetPID
+            repeat with candidate in windows
+                if (exists toolbar 1 of candidate) then return contents of candidate
+            end repeat
+        end tell
+    end tell
+    error "PaperShelf has no window with a toolbar"
+end libraryWindow
+
+on waitForLibraryWindow(targetPID)
+    repeat 120 times
+        try
+            return my libraryWindow(targetPID)
+        on error
+            delay 0.1
+        end try
+    end repeat
+    error "Timed out waiting for the PaperShelf library window"
+end waitForLibraryWindow
+
 on assertCatalogueLaunchState(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             repeat 50 times
-                if exists static text "Ready to run" of (first window whose name starts with "All Documents") then
+                if exists static text "Ready to run" of (my libraryWindow(targetPID)) then
                     error "Launch opened the rename prompt instead of the catalogue"
                 end if
                 delay 0.1
@@ -101,7 +148,7 @@ on auditToolbar(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             set labels to description of every button of toolbar 1 of ¬
-                (first window whose name starts with "All Documents")
+                (my libraryWindow(targetPID))
             repeat with label in labels
                 set labelText to contents of label as text
                 if labelText is "button" or labelText is "" or labelText is "missing value" then
@@ -116,13 +163,13 @@ on clickSidebarTwice(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             set sidebarDescription to description of ¬
-                (first button of toolbar 1 of (first window whose name starts with "All Documents")) as text
+                (first button of toolbar 1 of (my libraryWindow(targetPID))) as text
             if sidebarDescription is not "Show Sidebar" and sidebarDescription is not "Hide Sidebar" then
                 error "The first toolbar button is not the sidebar toggle"
             end if
-            click first button of toolbar 1 of (first window whose name starts with "All Documents")
+            click first button of toolbar 1 of (my libraryWindow(targetPID))
             delay 0.25
-            click first button of toolbar 1 of (first window whose name starts with "All Documents")
+            click first button of toolbar 1 of (my libraryWindow(targetPID))
         end tell
     end tell
 end clickSidebarTwice
