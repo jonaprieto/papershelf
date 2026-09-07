@@ -282,61 +282,36 @@ struct ReviewInspector: View {
         !showsPanel || SplitLayout.showsPageBesidePanel(paneWidth: paneWidth)
     }
 
-    /// The page, with the outline beside it where the window is wide enough to hold both.
+    /// The page, with the outline beside it where the pane is wide enough to hold both.
     private var pageRegion: some View {
-        // The contents rail's width is read off the room the page actually got, so
-        // on a window too narrow for both it is the chapter list that narrows and
-        // not the page that is squeezed to nothing, or worse, pushed off the edge.
-        GeometryReader { page in
-            HStack(spacing: 0) {
-                if prefs.contentsShown && hasContents && !contentsIsPopover {
-                    ContentsRail(annotator: annotator, findActive: annotator.showsFind)
-                        .frame(width: SplitLayout.contentsRailWidth(
-                            inspectorWidth: page.size.width))
-                        .region(.contents)
-                    Divider()
-                }
-                PDFPreview(url: item.currentURL, passwords: passwords,
-                           annotator: annotator, fit: prefs.pageFit,
-                           appearance: prefs.readingAppearance,
-                           presentation: presentation,
-                           onDocumentSwipe: stepDocument,
-                           onMarkClick: selectMark(at:))
-                .modifier(PDFReadingAppearanceModifier(appearance: prefs.readingAppearance))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // The page is an AppKit view hosted in SwiftUI, and a hosted view does
-                // not honour the frame it was given while it is being resized: squeezed
-                // narrow, it kept drawing at its old width, straight over the panel
-                // beside it. Clipping is what actually holds it to its pane.
-                .clipped()
-                .overlay(alignment: .topTrailing) { lockedOverlay }
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    switch phase {
-                    case .active(let point): pointer(at: point)
-                    case .ended: hideMarkBar(after: .milliseconds(350))
-                    }
-                }
-                .overlay(alignment: .topLeading) { floatingSelectionBar }
-                .overlay(alignment: .topLeading) { floatingMarkBar }
-                .overlay(alignment: .bottom) {
-                    if !presentation {
-                        PageBar(annotator: annotator, fit: $prefs.pageFit, openFind: openFind,
-                                presentation: presentation, togglePresentation: togglePresentation)
-                            .padding(.bottom, Space.roomy)
-                    }
-                }
-                .contextMenu {
-                    Button(annotator.bookmarkOnCurrentPage == nil
-                           ? "Add Bookmark" : "Remove Bookmark") {
-                        _ = annotator.toggleBookmark()
-                    }
-                    Button("Show Bookmarks") {
-                        prefs.contentsShown = true
-                        prefs.contentsRailMode = .bookmarks
-                    }
-                }
+        DocumentPane(
+            url: item.currentURL,
+            passwords: passwords,
+            annotator: annotator,
+            fit: $prefs.pageFit,
+            appearance: prefs.readingAppearance,
+            presentation: presentation,
+            showsContentsRail: prefs.contentsShown && hasContents && !contentsIsPopover,
+            onDocumentSwipe: stepDocument,
+            onMarkClick: selectMark(at:),
+            onPointer: { point in
+                if let point { pointer(at: point) } else { hideMarkBar(after: .milliseconds(350)) }
+            },
+            openFind: openFind,
+            togglePresentation: togglePresentation
+        ) {
+            // Only one of these is ever showing: a document that will not open has no
+            // selection to mark and no highlight to hover. So this stack must not be
+            // stretched to the pane and centred in it. It was, and the locked label, the
+            // one thing here that is only as tall as itself, sat halfway down the page
+            // instead of at the top corner where it belongs. The two floating bars need
+            // no help: each is a GeometryReader, which takes the whole pane on its own.
+            ZStack(alignment: .topLeading) {
+                lockedOverlay
+                    .frame(maxWidth: .infinity, alignment: .topTrailing)
+                floatingSelectionBar
+                floatingMarkBar
             }
-            .clipped()
         }
     }
 
