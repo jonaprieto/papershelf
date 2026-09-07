@@ -26,6 +26,15 @@ struct DocumentPane<Overlay: View>: View {
     /// the reader asked for it, whether the document has pages to list, and whether the
     /// pane is narrow enough that it should be a popover instead.
     var showsContentsRail = true
+    /// The region the outline claims when it is clicked, and none when the host hands in
+    /// nothing.
+    ///
+    /// Focus is one thing for the whole process rather than one per window, so a rail that
+    /// claims a region claims it everywhere: a reader opened from Finder took the arrow
+    /// keys off an open library window's sidebar and greyed the shelf's selection, for a
+    /// click in a window that had nothing to do with either. Only the window that keeps
+    /// `Regions.available` honest asks for a claim.
+    var railRegion: Region?
     /// The reader window puts its page controls in a row under the page, with the
     /// filename beside them, so it asks for no bar of its own here.
     var showsPageBar = true
@@ -57,9 +66,7 @@ struct DocumentPane<Overlay: View>: View {
                 : 0
             HStack(spacing: 0) {
                 if railWidth > 0 {
-                    ContentsRail(annotator: annotator, findActive: annotator.showsFind)
-                        .frame(width: railWidth)
-                        .region(.contents)
+                    rail(width: railWidth)
                     Divider()
                 }
                 PDFPreview(url: url, passwords: passwords,
@@ -103,6 +110,18 @@ struct DocumentPane<Overlay: View>: View {
                 }
             }
             .clipped()
+        }
+    }
+
+    /// The outline at the width the pane can spare, claiming the host's region if it was
+    /// given one.
+    @ViewBuilder private func rail(width: CGFloat) -> some View {
+        let rail = ContentsRail(annotator: annotator, findActive: annotator.showsFind)
+            .frame(width: width)
+        if let railRegion {
+            rail.region(railRegion)
+        } else {
+            rail
         }
     }
 }

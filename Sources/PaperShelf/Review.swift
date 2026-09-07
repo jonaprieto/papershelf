@@ -292,6 +292,10 @@ struct ReviewInspector: View {
             appearance: prefs.readingAppearance,
             presentation: presentation,
             showsContentsRail: prefs.contentsShown && hasContents && !contentsIsPopover,
+            // The library window is the one that draws a sidebar, a shelf and a status bar
+            // beside this, and the one that keeps `Regions.available` current, so it is the
+            // only one whose outline is a place focus can be.
+            railRegion: .contents,
             onDocumentSwipe: stepDocument,
             onMarkClick: selectMark(at:),
             onPointer: { point in
