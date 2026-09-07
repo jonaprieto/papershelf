@@ -1933,6 +1933,19 @@ struct ExplorerOutline: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(node.url.path, forType: .string)
                 }
+            } else {
+                // A file used to reach the same empty menu a folder fills, and an empty
+                // menu is drawn as nothing at all, so right-clicking a paper here looked
+                // like the tree had no menu.
+                Button("Show in the shelf") { select(node.itemKey ?? "") }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([node.url])
+                }
+                Divider()
+                Button("Copy path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(node.url.path, forType: .string)
+                }
             }
         }
     }
