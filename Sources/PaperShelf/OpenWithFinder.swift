@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PaperShelfCore
 
 /// What happens when the machine hands the app a file.
 ///
@@ -59,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Where a reader's own size and position are kept between launches.
+    static let readerFrameName = "reader"
+
     func openReader(for url: URL) {
         let key = url.resolvingSymlinksInPath().path
         if let existing = readers[key] {
@@ -67,8 +71,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Sized to the display rather than to a constant. At a flat 900 by 1000 a reader
+        // was taller than the 875 points a 13 inch laptop has, so AppKit trimmed it on
+        // the way to the screen and every reader there opened at full screen height.
+        let visible = NSScreen.main?.visibleFrame.size
+            ?? CGSize(width: SplitLayout.readerIdealWidth, height: SplitLayout.readerIdealHeight)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000),
+            contentRect: NSRect(origin: .zero, size: SplitLayout.readerWindowSize(visible: visible)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
@@ -76,8 +85,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = false
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: ReaderWindow(url: url))
-        window.setFrameAutosaveName("reader")
-        window.center()
+        // The autosave name only turns saving on; reading the frame back is a separate
+        // call, and without it a reader opened at the size above however the last one had
+        // been left. center() ran unconditionally after it, which would have thrown away
+        // a restored position in any case.
+        window.setFrameAutosaveName(Self.readerFrameName)
+        if !window.setFrameUsingName(Self.readerFrameName) { window.center() }
 
         let controller = NSWindowController(window: window)
         readers[key] = controller

@@ -94,7 +94,8 @@ struct ReaderWindow: View {
         .navigationTitle(title)
         .preferredColorScheme(prefs.appearance.colorScheme)
         .focusedValue(\.findInPDF, FindInPDFAction(perform: openFind))
-        .frame(minWidth: 520, minHeight: 400)
+        .frame(minWidth: SplitLayout.readerFloorWidth,
+               minHeight: SplitLayout.readerFloorHeight)
         .task { await recordAndRestore() }
         .task(id: annotator.page) { await rememberPage() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in

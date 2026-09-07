@@ -175,6 +175,32 @@ public extension SplitLayout {
     static let windowFloorWidth: CGFloat = 640
     static let windowFloorHeight: CGFloat = 480
 
+    /// A reader is a page and the bar under it, so it is taller than the library window
+    /// and narrower. What it opens at where the display can show it.
+    static let readerIdealWidth: CGFloat = 900
+    static let readerIdealHeight: CGFloat = 1000
+    /// And the smallest it is worth drawing: below this the page bar's own controls start
+    /// running into each other.
+    static let readerFloorWidth: CGFloat = 520
+    static let readerFloorHeight: CGFloat = 400
+
+    /// What a reader opens at on a display that leaves this much room.
+    ///
+    /// It used to open at a flat 900 by 1000 wherever it was opened. A 13 inch laptop has
+    /// 875 points of height once the menu bar has taken its own, so AppKit trimmed the
+    /// window on its way to the screen and every reader there opened at full screen
+    /// height, which is not a size anybody chose. The margin is so the window reads as a
+    /// window rather than as the desktop.
+    ///
+    /// The floor wins over the fit: a display too small for both is a window that hangs
+    /// off the edge, which the person can move, rather than a page too small to read.
+    static func readerWindowSize(visible: CGSize) -> CGSize {
+        let margin: CGFloat = 48
+        return CGSize(
+            width: max(readerFloorWidth, min(readerIdealWidth, visible.width - margin)),
+            height: max(readerFloorHeight, min(readerIdealHeight, visible.height - margin)))
+    }
+
     static func contentsIsPopover(paneWidth: CGFloat) -> Bool {
         paneWidth < contentsFoldsBelow
     }

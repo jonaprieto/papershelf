@@ -339,6 +339,42 @@ final class FoldingTests: XCTestCase {
         }
     }
 
+    // MARK: A window opens at a size the display can show
+
+    /// What each display actually leaves once the menu bar has taken its own.
+    private static let desktops: [(String, CGSize)] = [
+        ("13.3 inch", CGSize(width: 1440, height: 875)),
+        ("13.6 inch", CGSize(width: 1470, height: 931)),
+        ("16 inch", CGSize(width: 1728, height: 1092)),
+    ]
+
+    /// The reader opened at a flat 900 by 1000 whatever it was opened on. A 13 inch
+    /// laptop has 875 points of height, so AppKit trimmed the window on its way to the
+    /// screen and every reader opened at full screen height.
+    func testAReaderOpensInsideTheDisplayItIsOpenedOn() {
+        for (name, visible) in Self.desktops {
+            let size = SplitLayout.readerWindowSize(visible: visible)
+            XCTAssertLessThanOrEqual(size.width, visible.width, name)
+            XCTAssertLessThanOrEqual(size.height, visible.height, name)
+        }
+    }
+
+    /// A display with room gets the size the reader was designed at, not a fraction of
+    /// whatever it happens to offer.
+    func testADisplayWithRoomGetsTheWholeReader() {
+        let size = SplitLayout.readerWindowSize(visible: CGSize(width: 3008, height: 1600))
+        XCTAssertEqual(size, CGSize(width: SplitLayout.readerIdealWidth,
+                                    height: SplitLayout.readerIdealHeight))
+    }
+
+    /// Fitting the display never wins over the window's own floor: a reader squeezed
+    /// below what its page bar needs is not a reader.
+    func testTheReaderKeepsItsFloorOnADisplayWithNoRoom() {
+        let size = SplitLayout.readerWindowSize(visible: CGSize(width: 640, height: 400))
+        XCTAssertGreaterThanOrEqual(size.width, SplitLayout.readerFloorWidth)
+        XCTAssertGreaterThanOrEqual(size.height, SplitLayout.readerFloorHeight)
+    }
+
     /// Under the width that holds both, the page is the one that folds -- it costs no
     /// horizontal room to fold, because the reader opens it across the whole region.
     func testThePageFoldsBeforeThePanelDoes() {
