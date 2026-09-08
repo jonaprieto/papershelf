@@ -108,6 +108,49 @@ final class ReaderNavigationTests: XCTestCase {
                                              viewMode: .duplicates))
     }
 
+    /// The strip of open papers belongs over a page, and the bibliography and the
+    /// duplicates view draw something else in that region: a panel of metadata, or two
+    /// copies side by side. A strip over either of those names papers the view is not
+    /// showing, and ⌘3 with anything restored used to put one there.
+    func testTheTabStripIsOnlyDrawnOverAPage() {
+        XCTAssertTrue(ResultsPane.showsTabBar(showsPage: true, presentation: false, hasTabs: true))
+        XCTAssertFalse(ResultsPane.showsTabBar(showsPage: false, presentation: false,
+                                               hasTabs: true),
+                       "a strip over the bibliography names papers it is not showing")
+        XCTAssertFalse(ResultsPane.showsTabBar(showsPage: true, presentation: true,
+                                               hasTabs: true),
+                       "presenting is the page on its own")
+        XCTAssertFalse(ResultsPane.showsTabBar(showsPage: true, presentation: false,
+                                               hasTabs: false))
+    }
+
+    /// ⎋ leaves the reader with everything still open. It is one rung of a ladder that
+    /// means "out of this, into what contains it" everywhere else, and closing what was
+    /// showing made it destroy a paper per press: the deck hands the reader a neighbour
+    /// each time, so three open papers took three presses and cost all three.
+    @MainActor
+    func testEscapeLeavesTheReaderWithEveryPaperStillOpen() {
+        var deck = Deck.one(pane: UUID())
+        for key in ["/lib/a.pdf", "/lib/b.pdf", "/lib/c.pdf"] {
+            deck = deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        }
+        let after = ResultsPane.stillOpenAfterEscape(deck)
+        XCTAssertEqual(after.active?.tabs.map(\.key), ["/lib/a.pdf", "/lib/b.pdf", "/lib/c.pdf"])
+        XCTAssertEqual(after.activeTab?.key, "/lib/c.pdf")
+    }
+
+    /// The panel beside the page describes the paper you are looking at, and while you are
+    /// browsing that is the row under the selection rather than whatever the window still
+    /// has open. A panel of fields about a document left open somewhere else, standing
+    /// beside the row you just clicked, is worse than no panel at all.
+    func testTheReaderOnlyNamesADocumentWhileItHasTheMiddle() {
+        XCTAssertEqual(ResultsPane.readerKey(readerOpen: true, showing: "/lib/a.pdf"),
+                       "/lib/a.pdf")
+        XCTAssertNil(ResultsPane.readerKey(readerOpen: false, showing: "/lib/a.pdf"),
+                     "browsing: the panel is about the selected row")
+        XCTAssertNil(ResultsPane.readerKey(readerOpen: true, showing: nil))
+    }
+
     func testSpaceOpensQuickLookOnlyForASelectedCatalogueOrListFile() {
         XCTAssertTrue(ResultsPane.shouldOpenQuickLook(keyCode: 49, viewMode: .catalogue,
                                                        reading: false, readerOpen: false,

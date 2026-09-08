@@ -203,15 +203,22 @@ struct ResultsPane: View {
     /// Whether the browser keeps the middle. Reading mode and the reader both take it.
     private var showsBrowser: Bool { !reading && !readerOpen }
 
-    /// The document the reader is on, falling back to the selection when the key no
-    /// longer names a file (a rename applied, a source removed).
+    /// Which document the reader is about, out of what the deck is showing.
     ///
     /// Only while the reader has the middle: what the deck holds is not what the window is
     /// looking at while you are browsing, and a panel describing a document left open
     /// somewhere else, beside the row you just clicked, is worse than no panel at all.
+    /// This is the whole of the difference between what is open and what you are looking
+    /// at, which is why it is a function rather than a clause inside one.
+    static func readerKey(readerOpen: Bool, showing: String?) -> String? {
+        readerOpen ? showing : nil
+    }
+
+    /// The document the reader is on, falling back to the selection when the key no
+    /// longer names a file (a rename applied, a source removed).
     private var readerItem: Item? {
-        guard readerOpen, let tab = deck.deck.activeTab else { return nil }
-        return runner.item(tab.key)
+        Self.readerKey(readerOpen: readerOpen, showing: deck.deck.activeTab?.key)
+            .flatMap { runner.item($0) }
     }
 
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
@@ -1481,6 +1488,15 @@ struct ResultsPane: View {
         "\(reading)\(prefs.inspectorCollapsed)\(prefs.contentsShown)\(annotator.hasPages)\(showsPage)"
     }
 
+    /// What is still open once ⎋ has left the reader: all of it.
+    ///
+    /// Leaving is where you are standing, and the papers on the bar are not where you are
+    /// standing. Closing what was showing instead destroyed a paper per press, and since
+    /// the deck hands the reader a neighbour each time, three open papers took three
+    /// presses and cost all three. A function because the rung itself lives inside a key
+    /// monitor, where nobody but a person at the keyboard can reach it.
+    static func stillOpenAfterEscape(_ deck: Deck) -> Deck { deck }
+
     /// One key, always meaning "out of this, into what contains it".
     ///
     /// Returning false hands ⎋ on to whoever else wants it -- a sheet, a popover, the
@@ -1512,10 +1528,8 @@ struct ResultsPane: View {
             runner.search("", passwords: passwords)
         case .leavePlace:
             // Leaves the reader, which is what this rung means everywhere else: the
-            // project, the palette and the popover are all still there afterwards. Closing
-            // the tab instead destroyed a paper per press, and since the deck hands the
-            // reader a neighbour each time, three open papers took three presses and cost
-            // all three.
+            // project, the palette and the popover are all still there afterwards.
+            deck.deck = Self.stillOpenAfterEscape(deck.deck)
             showCollection()
         case .nothing:
             return false
@@ -2665,7 +2679,7 @@ struct ResultsPane: View {
         }
     }
 
-    /// What this pane has open, above the page it is about.
+    /// Whether the strip of open papers is drawn.
     ///
     /// Only where the region draws a document. The same region also holds the
     /// bibliography's panel of metadata and the two copies the duplicates view puts side by
@@ -2673,9 +2687,16 @@ struct ResultsPane: View {
     /// not showing: ⌘3 with anything restored used to put one there. Nothing while
     /// presenting either, since a mode whose whole point is the page on its own has no room
     /// for a strip naming the others.
+    static func showsTabBar(showsPage: Bool, presentation: Bool, hasTabs: Bool) -> Bool {
+        showsPage && !presentation && hasTabs
+    }
+
+    /// What this pane has open, above the page it is about.
     @ViewBuilder
     private var tabBar: some View {
-        if showsPage, !presentation, let pane = deck.deck.active, !pane.tabs.isEmpty {
+        if let pane = deck.deck.active,
+           Self.showsTabBar(showsPage: showsPage, presentation: presentation,
+                            hasTabs: !pane.tabs.isEmpty) {
             TabBar(tabs: pane.tabs, active: pane.active,
                    title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
                    activate: activateTab,
