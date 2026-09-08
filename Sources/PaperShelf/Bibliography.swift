@@ -338,6 +338,7 @@ struct BibRow: View {
                     .menuStyle(.borderlessButton)
                     .font(Face.micro)
                     .fixedSize()
+                    .tip("Restore a field to its value before lookup")
                 }
             }
         case .guessed:

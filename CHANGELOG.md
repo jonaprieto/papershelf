@@ -20,6 +20,8 @@ numbers rather than dates.
 
 ### Fixed
 
+- Keep a compact command-palette button beside the website and highlighter controls.
+  Restore toolbar help and add tooltips to reader, tab, search, naming and settings actions.
 - Simplify notes export and file actions, align saved-website details, and keep the web
   highlighter compact. Wait for equations and fonts before capture, and retain refreshed
   citation metadata and revision dates without altering older versions.

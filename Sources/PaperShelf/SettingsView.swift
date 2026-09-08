@@ -8,6 +8,7 @@ struct AIFeaturesSection: View {
         Section {
             Toggle("AI features", isOn: $prefs.aiEnabled)
                 .accessibilityIdentifier("settings.aiEnabled")
+                .tip("Enable model tools and assistant access, or turn them off and cancel pending requests")
         } header: { Text("Optional AI") } footer: {
             Text("Turn off to hide AI tools, block model requests and ChatGPT handoffs, and disable MCP assistant access. Pending requests are cancelled; text already sent cannot be recalled. Reading, notes, search and citation metadata still work.")
                 .font(Face.caption).foregroundStyle(.secondary)
@@ -123,10 +124,13 @@ struct SettingsPanel: View {
             Section {
                 HStack {
                     Button("LM Studio") { prefs.aiBaseURL = "http://localhost:1234/v1" }
+                        .tip("Use localhost:1234/v1 as the API endpoint")
                     Button("llama.cpp") { prefs.aiBaseURL = "http://localhost:8080/v1" }
+                        .tip("Use localhost:8080/v1 as the API endpoint")
                 }
                 TextField("Base URL", text: $prefs.aiBaseURL)
                     .font(Face.code)
+                    .tip("The API server that receives model requests")
             } header: {
                 Text("Endpoint")
             } footer: {
@@ -138,6 +142,7 @@ struct SettingsPanel: View {
 
             Section {
                 TextField("Model ID", text: $prefs.aiModel).font(Face.code)
+                    .tip("The exact model name accepted by your API server")
                 Picker("Model", selection: $prefs.aiModel) {
                     if !availableModels.contains(prefs.aiModel) { Text(prefs.aiModel).tag(prefs.aiModel) }
                     ForEach(availableModels, id: \.self) { Text($0).tag($0) }
@@ -156,6 +161,7 @@ struct SettingsPanel: View {
             Section {
                 HStack {
                     Button("Test connection", action: test).disabled(testing)
+                        .tip("Fetch the available models from the configured API server")
                     if testing { ProgressView().controlSize(.small) }
                     switch status {
                     case .idle: EmptyView()

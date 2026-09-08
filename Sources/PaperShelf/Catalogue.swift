@@ -1010,53 +1010,56 @@ struct ResultsPane: View {
                 }
                 .fixedSize()
             }
-            ToolbarItem(placement: .principal) {
-                commandPaletteButton
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button { openWebsite() } label: {
-                    Label("Open Website", systemImage: "globe")
+            ToolbarItem(placement: .primaryAction) {
+                // Keep the SwiftUI controls together so native toolbar promotion does not drop their help.
+                HStack(spacing: Space.step) {
+                    commandPaletteButton
+                    Button { openWebsite() } label: {
+                        Label("Open Website", systemImage: "globe")
+                            .tip("Open a website to save, highlight and cite", key: "⌘L")
+                    }
+                    .accessibilityIdentifier("toolbar.openWebsite")
+                    // A document on screen wants a highlighter, a note and a way to send it
+                    // on. A collection wants the actions for the view it is in. They are
+                    // never both what the bar should hold, so only one of them is here.
+                    if showsReaderActions {
+                        readerActions
+                    } else {
+                        contextualActions
+                    }
+                    Button { setReading(!reading) } label: {
+                        Label("Reading mode", systemImage: reading ? "book.fill" : "book")
+                            .labelStyle(.iconOnly)
+                            .frame(width: 28, height: 20)
+                            .contentShape(Rectangle())
+                            .tip(reading ? "Show the shelf again" : "Hide everything but the page",
+                                 key: "⌘⇧R")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(reading ? Color.primary : .secondary)
+                    .background(reading ? Color.primary.opacity(0.12) : .clear,
+                                in: RoundedRectangle(cornerRadius: Metric.control))
+                    .accessibilityLabel("Reading mode")
+                    .accessibilityIdentifier("toolbar.readingMode")
+                    .accessibilityAddTraits(reading ? .isSelected : [])
+                    Button { prefs.inspectorCollapsed.toggle() } label: {
+                        Label("Inspector", systemImage: prefs.inspectorCollapsed
+                              ? "sidebar.right" : "sidebar.trailing")
+                            .tip(prefs.inspectorCollapsed
+                                 ? "Show info, rename, notes and the citation"
+                                 : "Hide the inspector", key: "⌘⇧B")
+                    }
+                    .accessibilityLabel("Inspector")
+                    .accessibilityIdentifier("toolbar.inspector")
+                    displayMenu
+                    SettingsLink {
+                        Label("Settings", systemImage: "gearshape")
+                            .tip("Naming rules, AI, integrations and shortcuts", key: "⌘,")
+                    }
+                    .accessibilityIdentifier("toolbar.settings")
                 }
-                .help("Open a website to save, highlight and cite")
-                .accessibilityIdentifier("toolbar.openWebsite")
-                // A document on screen wants a highlighter, a note and a way to send it
-                // on. A collection wants the actions for the view it is in. They are
-                // never both what the bar should hold, so only one of them is here.
-                if showsReaderActions {
-                    readerActions
-                } else {
-                    contextualActions
-                }
-                Button { setReading(!reading) } label: {
-                    Label("Reading mode", systemImage: reading ? "book.fill" : "book")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 28, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(reading ? Color.primary : .secondary)
-                .background(reading ? Color.primary.opacity(0.12) : .clear,
-                            in: RoundedRectangle(cornerRadius: Metric.control))
-                .accessibilityLabel("Reading mode")
-                .accessibilityIdentifier("toolbar.readingMode")
-                .accessibilityAddTraits(reading ? .isSelected : [])
-                .tip(reading ? "Show the shelf again" : "Hide everything but the page",
-                     key: "⌘⇧R")
-                Button { prefs.inspectorCollapsed.toggle() } label: {
-                    Label("Inspector", systemImage: prefs.inspectorCollapsed
-                          ? "sidebar.right" : "sidebar.trailing")
-                }
-                .accessibilityLabel("Inspector")
-                .accessibilityIdentifier("toolbar.inspector")
-                .tip(prefs.inspectorCollapsed
-                     ? "Show info, rename, notes and the citation"
-                     : "Hide the inspector", key: "⌘⇧B")
-                displayMenu
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .accessibilityIdentifier("toolbar.settings")
-                .tip("Naming rules, AI, integrations and shortcuts", key: "⌘,")
+                .fixedSize()
+                .accessibilityElement(children: .contain)
             }
         }
         .fileExporter(isPresented: $savingBib,
@@ -1141,10 +1144,10 @@ struct ResultsPane: View {
         if showsPage && readerAnnotator.hasPages {
             Button { prefs.contentsShown.toggle() } label: {
                 Label("Contents", systemImage: "sidebar.squares.left")
+                    .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
             }
             .foregroundStyle(prefs.contentsShown ? Color.accentColor : .secondary)
             .accessibilityIdentifier("toolbar.contents")
-            .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
             .popover(isPresented: Binding(
                 get: { prefs.contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
                 set: { prefs.contentsShown = $0 }
@@ -1166,13 +1169,13 @@ struct ResultsPane: View {
             readerAnnotator.toggleAutomaticHighlight(colour: currentStyle.nsColor)
         } label: {
             Label("Highlight", systemImage: "highlighter")
+                .tip(readerAnnotator.automaticHighlighting
+                     ? "Highlight selections automatically. Click to stop."
+                     : "Highlight text selections automatically")
         }
         .foregroundStyle(readerAnnotator.automaticHighlighting ? Color.accentColor : .secondary)
         .accessibilityIdentifier("toolbar.highlight")
         .accessibilityAddTraits(readerAnnotator.automaticHighlighting ? .isSelected : [])
-        .tip(readerAnnotator.automaticHighlighting
-             ? "Highlight selections automatically. Click to stop."
-             : "Highlight text selections automatically")
 
         Menu {
             ForEach(styles) { style in
@@ -3009,6 +3012,7 @@ struct ResultsPane: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(palette.meaning(for: style, scopes: scopes))
+                    .tip("Highlight as \(palette.meaning(for: style, scopes: scopes))")
                 }
             }
             .padding(.horizontal, Space.step)
@@ -3333,6 +3337,8 @@ struct ResultsPane: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .accessibilityLabel("Remove filter: \(text)")
+            .tip("Remove filter: \(text)")
         }
         .padding(.horizontal, Space.step)
         .padding(.vertical, Space.tight)
@@ -3389,27 +3395,11 @@ struct ResultsPane: View {
 
     private var commandPaletteButton: some View {
         Button { showingPalette = true } label: {
-            HStack(spacing: Space.step) {
-                Image(systemName: "magnifyingglass")
-                Text("Search or run a command")
-                    .lineLimit(1)
-                Spacer(minLength: Space.gutter)
-                Text("⌘K")
-                    .font(Face.mono.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, Space.tight)
-                    .padding(.vertical, Space.hair)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
-            }
-            .padding(.horizontal, Space.roomy)
-            .padding(.vertical, Space.tight)
-            .frame(width: min(340, SplitLayout.commandPaletteWidth(paneWidth: viewPaneWidth)))
-            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: Metric.control))
+            Label("Open command palette", systemImage: "magnifyingglass")
+                .tip("Search the library or run a command", key: "⌘K")
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("Open command palette")
         .accessibilityIdentifier("toolbar.commandPalette")
-        .tip("Search the library or run a command", key: "⌘K")
     }
 
     @ViewBuilder

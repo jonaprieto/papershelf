@@ -161,6 +161,22 @@ on auditToolbar(targetPID)
                     error "Unnamed toolbar button"
                 end if
             end repeat
+            set paletteFound to false
+            set controls to entire contents of toolbar 1 of (window (my libraryWindowIndex(targetPID)))
+            repeat with candidateControl in controls
+                set identifier to ""
+                try
+                    set identifier to value of attribute "AXIdentifier" of candidateControl
+                end try
+                if identifier starts with "toolbar." then
+                    set tooltip to help of candidateControl
+                    if tooltip is missing value or tooltip is "" then
+                        error "Toolbar tooltip is missing: " & identifier
+                    end if
+                    if identifier is "toolbar.commandPalette" then set paletteFound to true
+                end if
+            end repeat
+            if not paletteFound then error "Command palette button is missing from the toolbar"
         end tell
     end tell
 end auditToolbar

@@ -85,6 +85,7 @@ struct TabBar: View {
                 .italic(tab.isPreview)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .tip(title(tab))
             Button { close(tab.id) } label: {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
                     .frame(width: 22, height: 24)
@@ -92,6 +93,7 @@ struct TabBar: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close \(title(tab))")
+            .tip("Close \(title(tab))")
         }
         .padding(.horizontal, Space.snug)
         .frame(maxWidth: TabBar.maximumTabWidth)

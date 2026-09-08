@@ -315,6 +315,7 @@ struct NameRulesSettings: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove \(namingLabel(for: token.kind))")
+            .tip("Remove \(namingLabel(for: token.kind)) from the filename pattern")
         }
         .padding(.horizontal, Space.step)
         .padding(.vertical, Space.tight)
@@ -343,6 +344,7 @@ struct NameRulesSettings: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .accessibilityLabel("Remove separator")
+            .tip("Remove this separator from the filename pattern")
         }
         .padding(.horizontal, Space.tight)
         .padding(.vertical, Space.tight)

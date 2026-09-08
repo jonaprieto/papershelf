@@ -126,6 +126,7 @@ struct DuplicateCompare: View {
             if !isKeeper {
                 Button("Keep this one instead") { keep(item) }
                     .controlSize(.small)
+                    .tip("Keep this copy and mark the other copies for Trash on Apply")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,6 +148,7 @@ struct DuplicateCompare: View {
             .buttonStyle(.borderedProminent)
             .tint(Ink.red)
             .disabled(group.extras.isEmpty)
+            .tip("Mark the spare copies for Trash when you apply the review")
 
             Spacer(minLength: 0)
             Text("To the Trash on apply, never an outright removal")

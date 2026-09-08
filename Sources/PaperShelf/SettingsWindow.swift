@@ -194,6 +194,7 @@ struct GeneralSettings: View {
                                             ? Color.accentColor : .clear,
                                             in: RoundedRectangle(cornerRadius: Metric.control))
                                 .accessibilityIdentifier("settings.theme.\(mode.rawValue)")
+                                .tip("Use the \(mode.label.lowercased()) application theme")
                                 .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
                         }
                     }
@@ -217,6 +218,7 @@ struct GeneralSettings: View {
                                             ? Color.accentColor : .clear,
                                             in: RoundedRectangle(cornerRadius: Metric.control))
                                 .accessibilityIdentifier("settings.pdfContrast.\(mode.rawValue)")
+                                .tip("Read PDFs with \(mode.label.lowercased()) contrast")
                                 .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
                         }
                     }
@@ -339,6 +341,7 @@ struct GeneralSettings: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Stop reading \(url.lastPathComponent)")
+                        .tip("Remove this source from PaperShelf; its files stay on disk")
                     }
                 }
                 Button {
@@ -752,6 +755,7 @@ struct KeyboardSettings: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 168, alignment: .trailing)
+                .tip(recording == command ? "Press a new shortcut, or click to cancel" : "Change the shortcut for \(command.title)")
 
                 Button {
                     keymap.reset(command)
@@ -1100,6 +1104,7 @@ struct FileSettings: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Remove password \(index + 1)")
+                        .tip("Stop trying this password when opening PDFs")
                     }
                 }
                 Button {

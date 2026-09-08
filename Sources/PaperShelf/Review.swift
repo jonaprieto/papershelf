@@ -551,6 +551,7 @@ struct ReviewInspector: View {
                 .buttonStyle(.plain)
                 .onHover { hovered = $0 ? style.id : nil }
                 .accessibilityLabel(palette.meaning(for: style, scopes: effectiveMeaningScopes))
+                .tip("Change this mark to \(palette.meaning(for: style, scopes: effectiveMeaningScopes))")
             }
 
             Divider().frame(height: 16)
@@ -612,6 +613,8 @@ struct ReviewInspector: View {
                 // waits a second or two: too slow for a palette whose whole point is
                 // knowing what a colour stands for.
                 .onHover { hovered = $0 ? style.id : nil }
+                .accessibilityLabel(palette.meaning(for: style, scopes: effectiveMeaningScopes))
+                .tip("Highlight as \(palette.meaning(for: style, scopes: effectiveMeaningScopes))")
             }
 
             Divider().frame(height: 16)
@@ -625,6 +628,7 @@ struct ReviewInspector: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Add note")
+            .tip("Write a note on the selected text")
             .onHover { hoveringNote = $0 }
 
             Button { _ = annotator.toggleBookmark() } label: {
@@ -664,6 +668,7 @@ struct ReviewInspector: View {
                 .fixedSize()
                 .onHover { hoveringChatGPT = $0 }
                 .accessibilityLabel("Send the selected passage to ChatGPT")
+                .tip("Open or copy the selected passage for ChatGPT")
             }
         }
         .padding(.horizontal, Space.step)

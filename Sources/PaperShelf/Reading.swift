@@ -422,6 +422,7 @@ struct NotesRail: View {
                                 .buttonStyle(.bordered)
                                 .disabled(dictation.isTranscribing)
                                 .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate note")
+                                .tip(dictation.isRecording ? "Stop recording and add the words to this note" : "Dictate this note on your Mac")
                                 if let error = dictation.error {
                                     Text(error)
                                         .font(Face.caption)
@@ -967,6 +968,7 @@ struct PDFSearchBar: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Close Find")
             .accessibilityIdentifier("reader.findClose")
+            .tip("Close Find", key: "⎋")
         }
     }
 }
@@ -1200,6 +1202,7 @@ struct ContentsRail: View {
                                     in: RoundedRectangle(cornerRadius: Metric.control))
                     }
                     .buttonStyle(.plain)
+                    .tip("Go to \(bookmark.label), page \(bookmark.page)")
                     .contextMenu {
                         Button("Go to Bookmark") { annotator.jump(to: bookmark) }
                         Button("Rename…") {
@@ -1262,6 +1265,7 @@ struct ContentsRail: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Occurrence \(hit.id + 1), page \(hit.page), \(hit.text)")
                     .accessibilityIdentifier("reader.findHit.\(hit.id)")
+                    .tip("Show this occurrence on page \(hit.page)")
                     .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
                     .listRowSeparator(.hidden)
                 }

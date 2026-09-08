@@ -9,6 +9,7 @@ struct SelectionNoteButton: View {
     var body: some View {
         Button("Add note", systemImage: "square.and.pencil") { editing = true }
             .disabled(!annotator.hasSelection)
+            .tip("Write a note on the selected text")
             .sheet(isPresented: $editing) {
                 ReadingNoteEditor(annotator: annotator, colour: colour)
             }

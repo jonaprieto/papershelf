@@ -104,6 +104,7 @@ extension ReviewInspector {
                             citationImprovedByAI = false
                         }
                         .buttonStyle(.link)
+                        .tip("Replace this draft with the generated citation")
                     }
                 }
                 .font(Face.control)

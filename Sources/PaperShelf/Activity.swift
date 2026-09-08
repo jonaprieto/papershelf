@@ -87,9 +87,11 @@ struct ActivityLog: View {
                     NSPasteboard.general.setString(logText(entries), forType: .string)
                 }
                 .disabled(entries.isEmpty)
+                .tip("Copy the activity log")
                 Spacer()
                 Button("Save…") { saving = true }
                     .disabled(entries.isEmpty)
+                    .tip("Save the activity log as a text file")
             }
             .padding(.horizontal, Space.roomy)
             .padding(.vertical, Space.step)

@@ -1920,6 +1920,7 @@ struct ExplorerOutline: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(expanded.contains(node.id) ? "Fold this folder" : "Unfold this folder")
+                .tip(expanded.contains(node.id) ? "Hide this folder's contents" : "Show this folder's contents")
             } else {
                 // A file gets the same blank column, so names line up with the folders
                 // above them instead of stepping in and out by a triangle's width.

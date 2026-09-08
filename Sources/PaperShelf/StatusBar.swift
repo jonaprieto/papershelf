@@ -412,6 +412,7 @@ struct StatusBar: View {
                 Button("Stop") { runner.stopIndexing() }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
+                    .tip("Stop text indexing; keep the documents already indexed")
             }
         case .idle where activity.absorbing:
             // The watcher taking in files it just noticed. Its own line until now, in a

@@ -38,6 +38,8 @@ struct AboutWindow: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .accessibilityLabel("About PaperShelf sections")
+            .tip("Read the app information, licences or changelog")
             .padding(.horizontal, Space.gutter)
             .padding(.vertical, Space.step)
             Divider()

@@ -319,7 +319,9 @@ struct WebReader: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { model.navigate() }
                     .accessibilityIdentifier("webReader.address")
+                    .tip("Enter a website address, then press Return")
                 Button("Go") { model.navigate() }.disabled(model.saving)
+                    .tip("Open the website at this address")
                 Button(model.saving ? "Saving…" : model.previous == nil ? "Save copy" : "Save new version") {
                     Task { if let url = await model.freeze() { saved(url) } }
                 }
@@ -379,9 +381,12 @@ struct WebReader: View {
                         .focused($findFocused)
                         .onSubmit { find(backwards: false) }
                     Button("Previous") { find(backwards: true) }
+                        .tip("Find the previous occurrence on this website")
                     Button("Next") { find(backwards: false) }
+                        .tip("Find the next occurrence on this website")
                     if noMatch { Text("No match").foregroundStyle(.secondary) }
                     Button("Done") { showsFind = false }
+                        .tip("Close website search")
                 }
                 .padding(Space.snug)
             }

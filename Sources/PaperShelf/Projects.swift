@@ -1211,6 +1211,7 @@ private struct TurnView: View {
         }
         .buttonStyle(.plain)
         .disabled(!resolved)
+        .tip(resolved ? "Open \(citation.documentTitle) at page \(citation.page)" : "This citation has no matching document")
     }
 
     /// A quotation is evidence, not an excerpt of the whole page: three lines of it is

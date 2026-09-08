@@ -429,6 +429,7 @@ struct HighlightMeaningEditor: View {
 
                     Button("Reset all overrides") { palette.resetMeanings(in: scope) }
                         .buttonStyle(.link)
+                        .tip("Remove this scope's custom meanings and inherit the defaults")
                 } footer: {
                     Text("The library owns the role list. Add a role there, then return here to give it this scope's meaning and colour.")
                         .font(Face.caption)
