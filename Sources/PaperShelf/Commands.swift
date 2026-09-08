@@ -193,7 +193,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .openExternally: return "Open in the default PDF viewer"
-        case .openInNewTab: return "Keep this document open"
+        case .openInNewTab: return "Keep this document open in a tab"
         case .closeTab: return "Close this tab"
         case .nextTab: return "Next tab"
         case .previousTab: return "Previous tab"

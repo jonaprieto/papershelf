@@ -4,6 +4,30 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [Unreleased]
+
+### Added
+
+- Hold more than one document open at a time, drawn as tabs above the page. The reviewer's
+  selection is a preview tab, replaced as the selection moves rather than accumulating, so
+  walking a folder of two hundred files still opens nothing; Return or the new command keeps
+  one. Four commands come with it, in the palette and rebindable: keep this document open in
+  a tab, close this tab, next tab, previous tab. What was open comes back at the next launch.
+- Right-clicking a file in the Sources tree opens a menu. Only folders had one, so a file
+  reached an empty menu, which macOS draws as nothing at all.
+
+### Fixed
+
+- Keep the shelf wider than its bare floor beside the inspector. One absolute width was
+  shared by every display, so a 13 inch laptop opened with a 360 point file list.
+- Fold the filter bar into an overflow menu rather than drawing it over the inspector. Its
+  controls could not shrink, so a running plan painted up to 305 points past the pane.
+- Open a reader from Finder at a size the display can show, and reopen it where you left it.
+- Draw no outline where it would be too narrow to read, rather than a sliver of one.
+- Find the selected file by key instead of walking the shelf. Every walk resolved symlinks
+  per file, which measured 48ms over five thousand documents on each pass.
+- Hold the file list's rows instead of flattening the whole tree on every redraw.
+
 ## [1.13.0] - 2026-09-05
 
 ### Added
