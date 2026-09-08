@@ -111,6 +111,20 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertEqual(deck.activeTab?.isPreview, false)
     }
 
+    /// The selection landing on a paper that is already open takes its own old tab with
+    /// it. The preview tab is where the selection is, so one left standing beside the
+    /// paper the selection has moved to names, in italics, a paper nobody is looking at.
+    func testPreviewingAPaperAlreadyOpenTakesTheStaleTabWithIt() {
+        var deck = open(empty(), ["kept.pdf"])
+        deck = deck.opening("prev.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(deck.active?.tabs.map(\.key), ["prev.pdf", "kept.pdf"])
+
+        deck = deck.opening("kept.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(deck.active?.tabs.map(\.key), ["kept.pdf"])
+        XCTAssertEqual(deck.activeTab?.key, "kept.pdf")
+        XCTAssertEqual(deck.activeTab?.isPreview, false, "somebody asked for this one")
+    }
+
     /// The same invariant with two panes, which is where it used to break. The selection
     /// replaces the deck's preview wherever it sits, so what is showing has to follow it
     /// into that pane. Left behind, the deck shows the other pane's paper instead.
@@ -149,7 +163,8 @@ final class ReadingDeckTests: XCTestCase {
         deck = deck.opening("p.pdf", kept: false, makeAnnotator: annotator)
         deck.activePane = second
         deck = deck.opening("x.pdf", kept: false, makeAnnotator: annotator)
-        XCTAssertEqual(deck.panes[0].tabs.map(\.key), ["p.pdf", "x.pdf"])
+        XCTAssertEqual(deck.panes[0].tabs.map(\.key), ["x.pdf"],
+                       "and the preview it left behind goes with it")
         XCTAssertEqual(deck.activeTab?.key, "x.pdf")
         XCTAssertEqual(deck.activePane, deck.panes[0].id, "showing it means being where it is")
     }

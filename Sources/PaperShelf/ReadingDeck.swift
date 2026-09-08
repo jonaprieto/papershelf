@@ -11,6 +11,16 @@ struct Deck: Equatable {
     /// Which pane the rails, the notes and the highlighter keys describe. One pane today;
     /// the split adds the second.
     var activePane: Pane.ID
+    /// Whether what the deck is showing is showing because the reviewer's selection is on
+    /// it.
+    ///
+    /// A preview tab says as much by being one, and that is what stops a walk down a
+    /// folder from rewriting which paper the next launch opens. A paper somebody kept open
+    /// says nothing of the kind, and the selection landing on one is still browsing rather
+    /// than reading, so the deck has to say it here: three papers restored with the shelf
+    /// standing on the first of them used to change the remembered paper before anybody
+    /// had read a word.
+    var showingSelection = false
 
     struct Pane: Identifiable, Equatable {
         let id: UUID
@@ -68,6 +78,7 @@ struct Deck: Equatable {
     func opening(_ key: String, kept: Bool, makeAnnotator: () -> Annotator) -> Deck {
         var deck = self
         guard let index = deck.panes.firstIndex(where: { $0.id == activePane }) else { return deck }
+        deck.showingSelection = !kept
 
         // The selection moving replaces the deck's preview wherever it sits, not only one
         // the active pane happens to hold. Looking in a single pane would let a second
@@ -83,7 +94,15 @@ struct Deck: Equatable {
 
         if let existing = deck.panes[target].tabs.firstIndex(where: { $0.key == key }) {
             if kept { deck.panes[target].tabs[existing].isPreview = false }
-            deck.panes[target].active = deck.panes[target].tabs[existing].id
+            let showing = deck.panes[target].tabs[existing].id
+            // The preview tab is where the selection is, and the selection is here now, on
+            // a paper somebody had already asked to keep. Left where it was, it sits on the
+            // bar in italics naming a paper nobody is looking at. Taken by id rather than
+            // by index, because removing the one ahead of it moves the other along.
+            if let preview, preview.tab != existing {
+                deck.panes[preview.pane].tabs.remove(at: preview.tab)
+            }
+            deck.panes[target].active = showing
             // Showing it also means being in the pane that shows it.
             deck.activePane = deck.panes[target].id
             return deck
@@ -114,6 +133,9 @@ struct Deck: Equatable {
         guard let index = deck.panes.firstIndex(where: { $0.id == activePane }),
               deck.panes[index].tabs.contains(where: { $0.id == tab }) else { return deck }
         deck.panes[index].active = tab
+        // Somebody picked this one, so what is showing is no longer where the selection
+        // happens to have got to, and it is worth writing down again.
+        deck.showingSelection = false
         return deck
     }
 
@@ -127,6 +149,8 @@ struct Deck: Equatable {
 
         let wasActive = deck.panes[index].active == tab
         deck.panes[index].tabs.remove(at: at)
+        // A close is worth writing down, whatever the selection was doing when it came.
+        deck.showingSelection = false
         guard wasActive else { return deck }
         let next = min(at, deck.panes[index].tabs.count - 1)
         deck.panes[index].active = next >= 0 ? deck.panes[index].tabs[next].id : nil
@@ -136,6 +160,8 @@ struct Deck: Equatable {
     /// Turn the preview tab into one that stays.
     func promotingPreview() -> Deck {
         var deck = self
+        // Asked for, so no longer the selection passing through.
+        deck.showingSelection = false
         for pane in deck.panes.indices {
             for tab in deck.panes[pane].tabs.indices where deck.panes[pane].tabs[tab].isPreview {
                 deck.panes[pane].tabs[tab].isPreview = false

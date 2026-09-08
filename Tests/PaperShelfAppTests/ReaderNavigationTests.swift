@@ -89,6 +89,34 @@ final class ReaderNavigationTests: XCTestCase {
         XCTAssertEqual(back.activeTab?.key, "/lib/c.pdf")
     }
 
+    /// And it is still that paper after the shelf's selection has brushed past a row the
+    /// window already has open.
+    ///
+    /// `restoreTabs` previews whatever is selected on the way in, and `.onChange(of:
+    /// selected)` does the same on every arrow key. The selection landing on a paper the
+    /// pane already holds shows that paper's kept tab, and a kept tab showing is a write:
+    /// three papers restored with the shelf standing on the first of them rewrote the
+    /// remembered paper before anybody had read a word.
+    @MainActor
+    func testTheSelectionBrushingAnOpenPaperLeavesTheRememberedOneAlone() throws {
+        var deck = Deck.one(pane: UUID())
+        for key in ["/lib/a.pdf", "/lib/b.pdf", "/lib/c.pdf"] {
+            deck = deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        }
+        var written = try XCTUnwrap(ResultsPane.tabsToStore(deck), "reading c.pdf")
+
+        deck = Deck.restoring(try XCTUnwrap(ResultsPane.storedDeck(written)),
+                              reachable: { _ in true }, makeAnnotator: { _ in Annotator() })
+        deck = deck.opening("/lib/a.pdf", kept: false, makeAnnotator: { Annotator() })
+        if let moved = ResultsPane.tabsToStore(deck) { written = moved }
+
+        let stored = try XCTUnwrap(ResultsPane.storedDeck(written))
+        XCTAssertEqual(stored.active, [2], "c.pdf is still the paper being read")
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in Annotator() })
+        XCTAssertEqual(back.activeTab?.key, "/lib/c.pdf")
+    }
+
     /// A document open takes the middle of the window whichever view it was opened from,
     /// and the two views that are about a collection rather than about files keep their own
     /// second pane when nothing is open. Getting this wrong is invisible until somebody

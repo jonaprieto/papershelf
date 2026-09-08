@@ -330,8 +330,8 @@ struct ResultsPane: View {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// What to write down for a deck, and nothing at all while the reviewer's selection is
-    /// the tab on screen.
+    /// What to write down for a deck, and nothing at all while what is on screen is there
+    /// because the reviewer's selection is on it.
     ///
     /// The preview tab is never stored, so a write made while it is the one showing cannot
     /// record which paper is being read. All such a write can change is the stored index,
@@ -339,8 +339,12 @@ struct ResultsPane: View {
     /// read the third of three papers, move the selection, and you came back to the first.
     /// The last write made while a kept tab was showing is the last real answer, so it is
     /// left standing.
+    ///
+    /// A paper you have kept open and then brushed past on the shelf is showing for the
+    /// same reason and says as little about what is being read, and it is not a preview
+    /// tab, so `Deck.showingSelection` is what says so.
     static func tabsToStore(_ deck: Deck) -> String? {
-        guard deck.activeTab?.isPreview != true else { return nil }
+        guard deck.activeTab?.isPreview != true, !deck.showingSelection else { return nil }
         return storedText(StoredDeck(deck))
     }
 
