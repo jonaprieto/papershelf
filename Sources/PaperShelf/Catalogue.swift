@@ -106,12 +106,15 @@ struct ResultsPane: View {
 
     /// Places are the navigable state, not each selected row. This keeps ⌘[ / ⌘] useful
     /// without turning ordinary arrow-key browsing into a history entry per document.
+    ///
+    /// What is on the shelf, and nothing about what is open. A place used to carry the
+    /// document being read, which made going back close the paper you were reading: not
+    /// what ⌘[ says it does, and impossible to mean once a window can hold several.
     private struct Place: Equatable {
         let mode: ViewMode
         let shelf: SmartList
         let folderPath: String?
         let query: String
-        let reader: String?
     }
 
     @State private var backPlaces: [Place] = []
@@ -227,8 +230,7 @@ struct ResultsPane: View {
     /// Documents first -- opening it against the current list would name a file the list
     /// does not hold, and land on nothing.
     private func openAnywhere(_ key: String) {
-        navigate(to: Place(mode: prefs.viewMode, shelf: .all, folderPath: nil,
-                           query: "", reader: key))
+        navigate(to: Place(mode: prefs.viewMode, shelf: .all, folderPath: nil, query: ""))
         openReader(key)
     }
 
@@ -248,9 +250,17 @@ struct ResultsPane: View {
         if deck.deck.activeTab == nil { readerFocused = false }
     }
 
+    /// Back to the collection, with what is open left open.
+    ///
+    /// A shelf, a folder, a tag and the four views are places in the collection, and going
+    /// to one means looking at it. The papers stay where they were: they are what the
+    /// window has open, not where it is standing, and closing them because somebody
+    /// clicked a shelf is what the single reader key used to do.
+    private func showCollection() { readerFocused = false }
+
     private var currentPlace: Place {
         Place(mode: prefs.viewMode, shelf: shelves.current, folderPath: folderScope?.path,
-              query: query, reader: readerOpen ? deck.deck.activeTab?.key : nil)
+              query: query)
     }
 
     /// Picking one of the four views means going to it.
@@ -261,8 +271,9 @@ struct ResultsPane: View {
     /// what the icons, the menu and ⌘1 to ⌘4 all say they do.
     private func choose(_ option: ViewMode) {
         setReading(false)
+        showCollection()
         navigate(to: Place(mode: option, shelf: shelves.current,
-                           folderPath: folderScope?.path, query: query, reader: nil))
+                           folderPath: folderScope?.path, query: query))
     }
 
     private func navigate(to destination: Place) {
@@ -278,19 +289,22 @@ struct ResultsPane: View {
         shelves.current = destination.shelf
         folderScope = destination.folderPath.map { URL(fileURLWithPath: $0) }
         query = destination.query
-        if let reader = destination.reader { openReader(reader) } else { closeReader() }
         runner.search(strippingTagTerms(destination.query), passwords: passwords)
     }
 
     private func goBack() {
         guard let destination = backPlaces.popLast() else { return }
         forwardPlaces.append(currentPlace)
+        // Where the shelf was, and looking at it. Going back stopped closing the document
+        // being read, which on its own would leave ⌘[ moving a shelf nobody can see.
+        showCollection()
         show(destination)
     }
 
     private func goForward() {
         guard let destination = forwardPlaces.popLast() else { return }
         backPlaces.append(currentPlace)
+        showCollection()
         show(destination)
     }
 
@@ -492,8 +506,9 @@ struct ResultsPane: View {
         // folder narrows the list or the shelf you are on rather than moving you to the
         // shelf. Only the two views that are not about files at all switch.
         let showing = prefs.viewMode == .list ? ViewMode.list : .catalogue
+        showCollection()
         navigate(to: Place(mode: showing, shelf: shelves.current, folderPath: url.path,
-                           query: query, reader: nil))
+                           query: query))
     }
 
     /// Shows a document the file explorer's own row was clicked on.
@@ -529,8 +544,9 @@ struct ResultsPane: View {
     /// is dropped: a tag spans the shelf, and leaving a folder filter on top of it would
     /// silently show a fraction of the tag.
     private func showTag(_ name: String) {
+        showCollection()
         navigate(to: Place(mode: .catalogue, shelf: shelves.current, folderPath: nil,
-                           query: Query.tagSearch(name), reader: nil))
+                           query: Query.tagSearch(name)))
     }
 
     /// A sidebar shelf is a place in the collection, not a filter applied to the page the
@@ -538,11 +554,12 @@ struct ResultsPane: View {
     /// is the small bridge that lets a click close the reader even when the chosen shelf was
     /// already active.
     private func showShelf(_ shelf: SmartList) {
-        // Spelled out rather than derived from the current place: `replacing(reader: nil)`
-        // read as "close the reader" and meant "keep whichever one is open", since a nil
-        // argument is exactly how that helper spelled "leave this alone".
+        // The collection comes forward whether or not the place changed: clicking the shelf
+        // you are already on is still asking to see it, and the navigation below would
+        // decide there was nowhere to go.
+        showCollection()
         navigate(to: Place(mode: prefs.viewMode, shelf: shelf, folderPath: folderScope?.path,
-                           query: query, reader: nil))
+                           query: query))
     }
 
     private var aiClient: AIClient {
@@ -569,7 +586,7 @@ struct ResultsPane: View {
     private func withShelfNavigation<V: View>(_ view: V) -> some View {
         view
             .onChange(of: shelves.current) { _, _ in
-                if readerOpen { closeReader() }
+                showCollection()
             }
             .onReceive(NotificationCenter.default.publisher(for: .showShelfInCatalogue)) { note in
                 guard let raw = note.userInfo?["shelf"] as? String,
@@ -1083,8 +1100,9 @@ struct ResultsPane: View {
         var places: [PalettePlace] = SmartList.allCases.map { list in
             PalettePlace(id: "list:" + list.rawValue, title: list.title,
                          detail: list.explanation, kind: .list) {
+                showCollection()
                 navigate(to: Place(mode: prefs.viewMode, shelf: list, folderPath: nil,
-                                   query: query, reader: nil))
+                                   query: query))
             }
         }
         places += runner.tree.filter { $0.children != nil }.prefix(40).map { node in
