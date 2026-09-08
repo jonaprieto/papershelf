@@ -784,6 +784,18 @@ struct ContentView: View {
         }
     }
 
+    /// Keeps one paper open in a tab of its own. The deck is the catalogue's, so the
+    /// intent is posted rather than reached for, the same as narrowing to a folder.
+    ///
+    /// The project workspace stands in the place the reader would take, and a notification
+    /// posted at a pane that is not on screen is heard by nobody, so the project is closed
+    /// first and the request goes out once the catalogue is back.
+    private func keepDocumentOpen(_ key: String) {
+        openProject = nil
+        sidebarTarget = .document(key)
+        DispatchQueue.main.async { requestKeepDocumentOpen(key) }
+    }
+
     private func expandSidebarTarget() -> Bool {
         guard let target = sidebarTarget else { return true }
         switch target {
@@ -1244,6 +1256,7 @@ struct ContentView: View {
                                 },
                                 focusPath: { sidebarTarget = .folder($0) },
                                 openFolder: showFolder,
+                                keepOpen: keepDocumentOpen,
                                 focusedPath: focusedSidebarPath)
             } label: {
                 sourceLabel(url, count: countOfFiles(in: root))
@@ -1843,6 +1856,11 @@ struct ExplorerOutline: View {
     /// folder to look inside; the row itself is the filter, which is what a folder in a
     /// sidebar means everywhere else.
     var openFolder: (String) -> Void = { _ in }
+    /// Asking for a paper to stay open. Separate from `select`, which is the selection
+    /// moving over it: that leaves the preview tab, and the preview tab is gone by the
+    /// next click. Defaulted like the two above so a tree drawn with no catalogue beside
+    /// it still builds.
+    var keepOpen: (String) -> Void = { _ in }
     var focusedPath: String? = nil
 
     var body: some View {
@@ -1929,25 +1947,39 @@ struct ExplorerOutline: View {
                     NSWorkspace.shared.activateFileViewerSelecting([node.url])
                 }
                 Divider()
-                Button("Copy path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(node.url.path, forType: .string)
-                }
+                Button("Copy path") { copy(node.url.path) }
             } else {
                 // A file used to reach the same empty menu a folder fills, and an empty
                 // menu is drawn as nothing at all, so right-clicking a paper here looked
                 // like the tree had no menu.
-                Button("Show in the shelf") { select(node.itemKey ?? "") }
+                //
+                // What it holds is what can be asked of one paper with the pointer already
+                // on its row: two ways to look at it, two ways to find it, two ways to
+                // take its name away with you. Deciding a name, moving a file and trashing
+                // one are all a right-click away in the shelf's own menu, and none of them
+                // belongs behind a click this easy to make by accident.
+                let key = node.itemKey ?? ""
+                // The first thing a right-click here is for. Clicking the row shows the
+                // paper in the preview tab, which the next row clicked takes back; this
+                // is how you say the paper is worth a tab that stays.
+                Button("Keep this document open") { keepOpen(key) }
+                Button("Quick Look") { QuickLook.show(node.url) }
+                Button("Show in the shelf") { select(key) }
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([node.url])
                 }
                 Divider()
-                Button("Copy path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(node.url.path, forType: .string)
-                }
+                // The row truncates a long name through the middle, so the name is
+                // something you can want and cannot read off the tree.
+                Button("Copy name") { copy(node.url.lastPathComponent) }
+                Button("Copy path") { copy(node.url.path) }
             }
         }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

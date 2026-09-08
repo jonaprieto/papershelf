@@ -826,6 +826,15 @@ struct ResultsPane: View {
                 guard let key = note.userInfo?["key"] as? String else { return }
                 reveal(key)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .keepDocumentOpenInCatalogue)) { note in
+                guard let key = keptDocumentKey(note), runner.item(key) != nil else { return }
+                // Revealed first, and for the same reason a click on the row is. The tab
+                // reads the results rather than the shelf, so it would open either way;
+                // the collection it is closed back onto is what would be left saying
+                // nothing matches, with the paper you had just been reading in it.
+                reveal(key)
+                openReader(key)
+            }
     }
 
     private func withDialogs<V: View>(_ view: V) -> some View {
@@ -3239,6 +3248,30 @@ extension Notification.Name {
     /// Posted with a project's `Int64` id in `userInfo["id"]` by the palette, which can
     /// reach a project the sidebar would have to be scrolled to.
     static let openProject = Notification.Name("PaperShelf.openProject")
+    /// Posted by the file explorer when a paper should be kept open rather than looked at
+    /// in passing. The deck belongs to the catalogue and the sidebar has no way to reach
+    /// it, so the intent is posted the same way choosing a folder there is.
+    ///
+    /// Not the same request as `.showDocumentInCatalogue`, which moves the selection and
+    /// leaves it in the preview tab the next click replaces. This one asks for a tab that
+    /// stays.
+    static let keepDocumentOpenInCatalogue =
+        Notification.Name("PaperShelf.keepDocumentOpenInCatalogue")
+}
+
+/// Asks the catalogue to keep one document open in a tab of its own.
+///
+/// A pair of functions rather than a dictionary literal at each end, unlike the requests
+/// above: the poster is in `ContentView.swift` and the receiver is in this file, and a
+/// `userInfo` key renamed on one side of that gap still compiles and then quietly opens
+/// nothing. Written down once, the two cannot disagree.
+func requestKeepDocumentOpen(_ key: String, in centre: NotificationCenter = .default) {
+    centre.post(name: .keepDocumentOpenInCatalogue, object: nil, userInfo: ["key": key])
+}
+
+/// The document a `.keepDocumentOpenInCatalogue` names, or nil when it names none.
+func keptDocumentKey(_ note: Notification) -> String? {
+    note.userInfo?["key"] as? String
 }
 
 // MARK: - Review inspector

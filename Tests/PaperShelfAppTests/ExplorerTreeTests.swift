@@ -150,4 +150,31 @@ final class ExplorerTreeTests: XCTestCase {
         XCTAssertEqual(deep.map(\.depth), [0, 1, 2, 0])
         XCTAssertEqual(deep.map(\.isFolder), [true, true, false, false])
     }
+
+    /// Keeping a paper open is the deck's business and the deck is in the pane beside the
+    /// sidebar, so the request travels as a notification. It is written in one file and
+    /// read in another, and neither end can see the other: rename the key on one side and
+    /// the app still builds, still right-clicks, and still opens nothing.
+    ///
+    /// The document a request names is the whole of what it carries, so this walks the
+    /// real round trip rather than asserting either half against a literal.
+    func testKeepingADocumentOpenCarriesTheDocumentItNames() throws {
+        let centre = NotificationCenter()
+        var heard: [Notification] = []
+        let token = centre.addObserver(forName: .keepDocumentOpenInCatalogue, object: nil,
+                                       queue: nil) { heard.append($0) }
+        defer { centre.removeObserver(token) }
+
+        requestKeepDocumentOpen("papers/2020/a.pdf", in: centre)
+
+        XCTAssertEqual(heard.count, 1, "the catalogue is listening for another name")
+        let request = try XCTUnwrap(heard.first)
+        XCTAssertEqual(keptDocumentKey(request), "papers/2020/a.pdf")
+    }
+
+    /// A request carrying nothing has to read as nothing, since the receiver opens a tab
+    /// on whatever comes back and there is no document called "".
+    func testARequestNamingNoDocumentReadsAsNone() {
+        XCTAssertNil(keptDocumentKey(Notification(name: .keepDocumentOpenInCatalogue)))
+    }
 }
