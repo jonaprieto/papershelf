@@ -282,7 +282,7 @@ struct ContentView: View {
     }
 
     private func apply() {
-        runner.apply(options: options(dryRun: false))
+        Task { await runner.apply(options: options(dryRun: false)) }
     }
 
     /// Anything irreversible gets a prompt: files headed for the Trash, or renames with
@@ -405,7 +405,7 @@ struct ContentView: View {
                 refresh: forceRefresh,
                 apply: confirmApply,
                 applyOne: { item, name in
-                    runner.applyNow(item, as: name, options: options(dryRun: false))
+                    Task { await runner.applyNow(item, as: name, options: options(dryRun: false)) }
                 }
             )
                 // Derived from the same arithmetic `split` clamps the inspector with, so

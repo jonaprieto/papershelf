@@ -22,6 +22,9 @@ numbers rather than dates.
 
 ### Fixed
 
+- Remove successfully trashed PDFs from the shelf and open readers as soon as Apply
+  finishes. Save pending annotations before moving them, and forget their library
+  locations instead of indexing the copies in Trash.
 - Keep a compact command-palette button beside the website and highlighter controls.
   Restore toolbar help and add tooltips to reader, tab, search, naming and settings actions.
 - Simplify notes export and file actions, align saved-website details, and keep the web

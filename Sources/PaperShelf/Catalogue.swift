@@ -771,6 +771,15 @@ struct ResultsPane: View {
     private func withTabs<V: View>(_ view: V) -> some View {
         view
             .onAppear(perform: restoreTabs)
+            .onReceive(NotificationCenter.default.publisher(for: .readingFileRemoved)) { note in
+                guard let url = note.object as? URL else { return }
+                let key = url.resolvingSymlinksInPath().path
+                for pane in deck.deck.panes {
+                    for tab in pane.tabs where tab.key == key { closeTab(tab.id, in: pane.id) }
+                }
+                selection.remove(key)
+                if selected == key { ensureSelection() }
+            }
             // Keyed on what would be written rather than on the deck itself, so walking a
             // folder moves the selection through a hundred documents and rewrites nothing.
             // The key goes to nothing while the selection is what is showing, so the tab

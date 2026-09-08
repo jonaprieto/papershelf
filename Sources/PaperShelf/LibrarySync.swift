@@ -35,8 +35,8 @@ extension Runner {
     /// next successful sync catches the library back up. Nothing about tagging, notes,
     /// or identity is a precondition for the app's actual job of renaming and converting
     /// PDFs, so a hiccup here must not surface as a failure of the run itself.
-    func syncLibrary(with items: [Item]) async {
-        guard let library = Library.shared else { return }
+    func syncLibrary(with items: [Item], library: Library? = Library.shared) async {
+        guard let library else { return }
 
         // `document(atPath:)` below and the `recordLocation` it feeds are two separate
         // awaits on the `Library` actor, not one atomic call, so two `syncLibrary` calls
@@ -58,6 +58,15 @@ extension Runner {
         var seen: [Library.IndexInput] = []
         for item in items where item.status != .failed {
             let current = item.currentURL.resolvingSymlinksInPath().path
+            if item.wasTrashed {
+                do {
+                    try await library.forgetLocation(item.key)
+                    if current != item.key { try await library.forgetLocation(current) }
+                } catch {
+                    Runner.logSyncFailure(error, path: item.key)
+                }
+                continue
+            }
             if item.carriedOut, current != item.key {
                 moved.append((item, current))
             } else {
@@ -98,6 +107,11 @@ extension Runner {
             _ = try? await library.indexDocuments(seen)
         }
         await Runner.syncGate.release()
+        if items.contains(where: \.wasTrashed) {
+            NotificationCenter.default.post(name: .libraryTagsChanged, object: nil)
+            await Shelves.shared.refresh()
+            await refreshLibraryFacts()
+        }
     }
 
     private static func logSyncFailure(_ error: Error, path: String) {

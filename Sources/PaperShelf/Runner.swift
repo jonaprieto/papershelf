@@ -325,18 +325,44 @@ final class Runner {
 
     /// Carries out one file right now instead of queueing it. Runs on the main actor:
     /// it is a single document, and doing it inline keeps the result and the row in step.
-    func applyNow(_ item: Item, as name: String, options: Options) {
-        guard let job = jobs.first(where: { $0.key == item.key }) else { return }
-        let done = decisions[item.key] == .deleted
+    func applyNow(_ item: Item, as name: String, options: Options) async {
+        guard !busy, let job = jobs.first(where: { $0.key == item.key }) else { return }
+        let trashing = decisions[item.key] == .deleted
+        guard await prepareToTrash(trashing ? [job] : []) else { return }
+        let done = trashing
             ? moveToTrash(job, dryRun: false)
             : process(job: job, options: options, overrideName: name)
-        replace(item.key, with: done)
-        set(.applied, for: item.key)
+        if done.wasTrashed {
+            removeReadingFile(item.key)
+            Annotator.didRemove(item.source)
+        } else {
+            replace(item.key, with: done)
+            if done.carriedOut { set(.applied, for: item.key) }
+        }
         note(kind(for: done.status), for: item, detail: "-> \(done.destinationName)")
         moveNotesSidecar(for: done)
-        // Applying one file on its own never reaches `finish`, and it moves the file just
-        // as a whole run does, so the library has to hear about this one too.
+        // The library needs the operation report, including the destination of a file
+        // that has already disappeared from the shelf.
         Task { await self.syncLibrary(with: [done]) }
+    }
+
+    private func prepareToTrash(_ jobs: [Job]) async -> Bool {
+        guard !jobs.isEmpty else { return true }
+        let generation = workGeneration
+        phase = .processing
+        defer { if workGeneration == generation { phase = .idle } }
+        for job in jobs {
+            do {
+                // Detaching a reader flushes its notes. Finish that write before moving
+                // the PDF so its last edits reach the copy recoverable from Trash.
+                try await Annotator.prepareToRemove(job.file)
+            } catch {
+                note(.failed, subject: job.file.lastPathComponent, detail: error.localizedDescription)
+                return false
+            }
+            guard workGeneration == generation, !Task.isCancelled else { return false }
+        }
+        return true
     }
 
     /// Updates one row in place. The tree holds keys, so it needs no rebuilding.
@@ -817,7 +843,7 @@ final class Runner {
                     // for real (it calls `moveToTrash(dryRun: false)` outright), so this
                     // reaches the Trash even though `absorbChanges` itself always previews.
                     self.markForDeletion(copy)
-                    self.applyNow(copy, as: copy.destinationName, options: options)
+                    Task { await self.applyNow(copy, as: copy.destinationName, options: options) }
                 },
                 onKeepBoth: { [weak self] id in self?.duplicateIndex?.dismiss(id) }
             )
@@ -951,7 +977,8 @@ final class Runner {
 
     /// Runs the reviewed plan. Skipped files are dropped, confirmed names are passed
     /// through verbatim, so the result matches the preview line for line.
-    func apply(options: Options) {
+    func apply(options: Options) async {
+        guard !busy else { return }
         let startedAt = ProcessInfo.processInfo.systemUptime
         let decisions = self.decisions
         // Skipped files are left alone, and anything already applied is finished.
@@ -971,6 +998,7 @@ final class Runner {
             }
         }
 
+        guard await prepareToTrash(options.dryRun ? [] : queue.filter { trashed.contains($0.key) }) else { return }
         begin(fingerprint: fingerprint, dry: false)
         let generation = workGeneration
         total = queue.count
@@ -1122,12 +1150,15 @@ final class Runner {
         )
     }
 
-    private func finish(_ out: [Item], keepingDecisions: Bool = false,
-                        derived: Derived? = nil, syncLibrary: Bool = true) {
+    func finish(_ out: [Item], keepingDecisions: Bool = false,
+                derived: Derived? = nil, syncLibrary: Bool = true) {
         for item in out { moveNotesSidecar(for: item) }
         if !keepingDecisions { cursor = 0 }
-        results = out
-        let parts = derived ?? Runner.derive(out)
+        // The activity log keeps the operation report. The shelf keeps only files that
+        // are still there; a failed or previewed Trash action must remain visible.
+        let removed = out.filter(\.wasTrashed)
+        results = out.filter { !$0.wasTrashed }
+        let parts = removed.isEmpty ? (derived ?? Runner.derive(results)) : Runner.derive(results)
         tree = parts.tree
         statusCounts = parts.statusCounts
         byFolder = parts.byFolder
@@ -1139,6 +1170,19 @@ final class Runner {
         done = out.count
         current = ""
         phase = .idle
+        if !removed.isEmpty {
+            let keys = Set(removed.map(\.key))
+            jobs.removeAll { keys.contains($0.key) }
+            for item in removed {
+                set(nil, for: item.key)
+                ai.forget(item.key)
+                duplicateIndex?.remove(item.key)
+                Annotator.didRemove(item.source)
+            }
+            duplicates = []
+            duplicateKind = [:]
+            duplicatesChecked = false
+        }
 
         // Every path that produces results ends here: a preview, a real run, and the
         // watcher absorbing what changed on disk. One call covers all three, and it is the
@@ -1151,6 +1195,10 @@ final class Runner {
             }
         }
     }
+}
+
+extension Item {
+    var wasTrashed: Bool { carriedOut && status == .trashed }
 }
 
 // MARK: - Rule labels
