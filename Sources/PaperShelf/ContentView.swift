@@ -309,6 +309,28 @@ struct ContentView: View {
     }
 
     var body: some View {
+        mainContent
+            .onReceive(NotificationCenter.default.publisher(for: .webArticleSaved), perform: registerWebSource)
+    }
+
+    private func registerWebSource(_ note: Notification) {
+        guard let url = note.object as? URL else { return }
+        selection = mergedSources(selection, adding: [url.deletingLastPathComponent()])
+        persistSources()
+        startWatching()
+    }
+
+    @Environment(\.openWindow) private var openWindow
+
+    private func receiveDroppedURLs(_ urls: [URL]) -> Bool {
+        let files = urls.filter(\.isFileURL)
+        if !files.isEmpty { add(files) }
+        let websites = urls.filter { !$0.isFileURL }.compactMap { WebArticle.navigationURL($0.absoluteString) }
+        for website in websites { openWindow(id: "web", value: website) }
+        return !files.isEmpty || !websites.isEmpty
+    }
+
+    private var mainContent: some View {
         // The rail sits outside the split view on purpose: it is how every part of the app
         // is reached, and a NavigationSplitView on macOS collapses its own sidebar column,
         // and everything in it, once the window is too narrow for both columns. With the
@@ -412,8 +434,7 @@ struct ContentView: View {
         .frame(minWidth: Metric.windowFloorWidth, minHeight: Metric.windowFloorHeight)
         .preferredColorScheme(prefs.appearance.colorScheme)
         .dropDestination(for: URL.self) { urls, _ in
-            add(urls)
-            return true
+            receiveDroppedURLs(urls)
         }
         .confirmationDialog(removing.map { "Remove \($0.url.lastPathComponent)?" } ?? "",
                             isPresented: Binding(get: { removing != nil },

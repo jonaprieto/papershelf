@@ -15,6 +15,8 @@ import PaperShelfCore
 final class Annotator {
     private(set) var marks: [Mark] = []
     private(set) var hasSelection = false
+    private(set) var webArticle: WebArticle?
+    var readingLiveWebsite = false
     /// The active highlighter follows each completed text selection until it is toggled off.
     private var automaticHighlightColour: NSColor?
     private var selectionClearTask: Task<Void, Never>?
@@ -175,6 +177,7 @@ final class Annotator {
         pageCount = view.document?.pageCount ?? 0
         page = 1
         let attributes = view.document?.documentAttributes
+        webArticle = view.document.flatMap(WebArticle.read)
         statedTitle = stated(attributes?[PDFDocumentAttribute.titleAttribute])
         statedAuthor = stated(attributes?[PDFDocumentAttribute.authorAttribute])
         NotificationCenter.default.addObserver(
@@ -629,29 +632,8 @@ final class Annotator {
         guard let view, let document = view.document, let selection = view.currentSelection else { return 0 }
         var madeMarks: [Mark] = []
 
-        for page in selection.pages {
-            let lines = selection.selectionsByLine()
-                .filter { $0.pages.contains(page) }
-                .map { $0.bounds(for: page) }
-                .filter { $0.width > 0 && $0.height > 0 }
-            guard !lines.isEmpty else { continue }
-
-            let union = lines.dropFirst().reduce(lines[0]) { $0.union($1) }
-            let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
-            mark.color = colour
-            mark.modificationDate = Date()
-            if !note.isEmpty { mark.contents = note }
-            // Quads are given in the annotation's own coordinate space.
-            mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
-                let box = line.offsetBy(dx: -union.minX, dy: -union.minY)
-                return [
-                    NSValue(point: NSPoint(x: box.minX, y: box.maxY)),
-                    NSValue(point: NSPoint(x: box.maxX, y: box.maxY)),
-                    NSValue(point: NSPoint(x: box.minX, y: box.minY)),
-                    NSValue(point: NSPoint(x: box.maxX, y: box.minY)),
-                ]
-            }
-            page.addAnnotation(mark)
+        for mark in addPDFHighlights(for: selection, colour: colour, note: note) {
+            guard let page = mark.page else { continue }
             madeMarks.append(Mark(page: document.index(for: page) + 1, kind: "Highlight",
                                   quoted: selectedText(in: selection, on: page),
                                   note: mark.contents ?? "", colour: colour,

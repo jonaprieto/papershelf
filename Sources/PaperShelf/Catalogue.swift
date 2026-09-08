@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 import PaperShelfCore
 
 struct ResultsPane: View {
+    @Environment(\.openWindow) private var openWindow
     var runner: Runner
     var covers: Covers
     @Binding var expanded: Set<String>
@@ -73,7 +74,6 @@ struct ResultsPane: View {
     /// The same two keys the inspector reads, so the toolbar's note button lands on the
     /// tab it names rather than on whichever one was last open.
     @State private var addingNote = false
-    @State private var noteText = ""
     @State private var writingNote = false
     @State private var tagIndex = CatalogueTags()
     /// Which of the four library lists the shelf is showing, shared with the sidebar that
@@ -316,8 +316,15 @@ struct ResultsPane: View {
     /// A sidebar drag onto a reader is a request to read that paper here. The first one
     /// beside an open paper makes the two panes the drag is asking for.
     private func openDropped(_ urls: [URL], in pane: Deck.Pane.ID) -> Bool {
-        guard let url = urls.first,
-              let item = runner.results.first(where: {
+        guard let url = urls.first else { return false }
+        if !url.isFileURL, let website = WebArticle.navigationURL(url.absoluteString) {
+            openWindow(id: "web", value: website)
+            return true
+        }
+        if url.isFileURL, url.pathExtension.lowercased() == "pdf", !runner.busy {
+            runner.includeReadingFile(url)
+        }
+        guard let item = runner.results.first(where: {
                   $0.currentURL.resolvingSymlinksInPath() == url.resolvingSymlinksInPath()
               })
         else { return false }
@@ -756,6 +763,17 @@ struct ResultsPane: View {
 
     private func withShelfNavigation<V: View>(_ view: V) -> some View {
         view
+            .onReceive(NotificationCenter.default.publisher(for: .webArticleSaved)) { note in
+                guard let url = note.object as? URL else { return }
+                Task {
+                    while runner.busy {
+                        try? await Task.sleep(for: .milliseconds(100))
+                        guard !Task.isCancelled else { return }
+                    }
+                    runner.includeReadingFile(url)
+                    openReader(url.path)
+                }
+            }
             .onChange(of: shelves.current) { _, _ in
                 showCollection()
             }
@@ -913,6 +931,9 @@ struct ResultsPane: View {
 
     private func withDialogs<V: View>(_ view: V) -> some View {
         view
+            .sheet(isPresented: $addingNote) {
+                ReadingNoteEditor(annotator: readerAnnotator, colour: currentStyle?.nsColor ?? .systemYellow)
+            }
             .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
             .sheet(isPresented: $showingMarkdown) {
                 if let item = selectedItem {
@@ -964,6 +985,11 @@ struct ResultsPane: View {
                 commandPaletteButton
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                Button { openWindow(id: "web") } label: {
+                    Label("Open Website", systemImage: "globe")
+                }
+                .help("Open a website to save, highlight and cite")
+                .accessibilityIdentifier("toolbar.openWebsite")
                 // A document on screen wants a highlighter, a note and a way to send it
                 // on. A collection wants the actions for the view it is in. They are
                 // never both what the bar should hold, so only one of them is here.
@@ -1478,12 +1504,19 @@ struct ResultsPane: View {
         // it, is not a row the gate below can find, and these four want a tab rather than
         // a row. Left under the gate, ⌘W would fall through to File > Close and take the
         // whole window down with papers still open in it.
-        .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit,
+        .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite,
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
         guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
-        if Self.requestsPDFSearch(event), readerAnnotator.hasPages {
+        if readerAnnotator.readingLiveWebsite {
+            if Self.requestsPDFSearch(event) {
+                NotificationCenter.default.post(name: .openPDFSearch, object: event.window)
+                return true
+            }
+            if !event.modifierFlags.contains(.command) { return false }
+        }
+        if Self.requestsPDFSearch(event), readerAnnotator.hasPages, !readerAnnotator.readingLiveWebsite {
             openFind()
             return true
         }
@@ -1664,6 +1697,7 @@ struct ResultsPane: View {
     /// offered that would do nothing. Anything absent here is still reachable — it simply
     /// belongs to a different surface, and its key event falls through to whoever owns it.
     static let performable: [Command] = [
+        .openWebsite,
         .confirm, .editName, .askAI, .copyCitation, .applyOne,
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
@@ -1690,6 +1724,7 @@ struct ResultsPane: View {
     @discardableResult
     func perform(_ command: Command) -> Bool {
         switch command {
+        case .openWebsite: openWindow(id: "web")
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
@@ -2758,6 +2793,9 @@ struct ResultsPane: View {
             splitReader(paneWidth: paneWidth)
         } else if let item = readerItem ?? selectedItem {
             inspector(item, annotator: readerAnnotator, showsPage: showsPage, paneWidth: paneWidth)
+                .dropDestination(for: URL.self) { urls, _ in
+                    openDropped(urls, in: deck.deck.activePane)
+                }
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(
                 "Every file reviewed",
@@ -2842,9 +2880,7 @@ struct ResultsPane: View {
                     fit: $prefs.pageFit,
                     appearance: prefs.readingAppearance,
                     showsContentsRail: false,
-                    onPointer: { point in
-                        if point != nil { focusPane(pane.id) }
-                    },
+                    onMarkClick: { _ in focusPane(pane.id) },
                     openFind: { tab.annotator.openFind() }
                 ) {
                     splitSelectionBar(item: item, annotator: tab.annotator)
@@ -2874,6 +2910,14 @@ struct ResultsPane: View {
                 .library,
             ]
             HStack(spacing: Space.step) {
+                SelectionNoteButton(annotator: annotator, colour: .systemYellow)
+                    .buttonStyle(.plain)
+                AskReadingAssistant {
+                    guard let selection = annotator.selectionForHandoff() else { return nil }
+                    return ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
+                                                 page: selection.page, title: selection.title)
+                }
+                .buttonStyle(.plain)
                 ForEach(palette.styles(for: scopes)) { style in
                     Button {
                         _ = annotator.highlightSelection(colour: style.nsColor)

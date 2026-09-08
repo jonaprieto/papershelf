@@ -87,6 +87,8 @@ struct TabBar: View {
                 .truncationMode(.middle)
             Button { close(tab.id) } label: {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                    .frame(width: 22, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close \(title(tab))")
@@ -97,9 +99,10 @@ struct TabBar: View {
         .background(isActive ? Color.primary.opacity(0.10) : .clear)
         .contentShape(Rectangle())
         .onTapGesture { activate(tab.id) }
+        .draggable(URL(fileURLWithPath: tab.key))
         .contextMenu {
             if let split {
-                Button("Read side by side", action: split)
+                Button("Read side by side") { activate(tab.id); split() }
             }
             Button("Close tab") { close(tab.id) }
             if let closeAll {

@@ -4,6 +4,24 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [Unreleased]
+
+### Added
+
+- Navigate websites, save versioned reading copies and web archives, and cite page-supplied
+  metadata with the source URL and capture date. Saved articles use the PDF reader's notes,
+  highlights, search and split panes. Reopening the live page and freezing again retains
+  the old annotated version.
+- Ask the configured API provider about a passage, a mark or all notes without requiring
+  the ChatGPT application.
+
+### Fixed
+
+- Show the note editor from the reader toolbar and command palette.
+- Keep the split inspector attached to the clicked page instead of changing on hover.
+- Accept file drops in the single reader, drag tabs between panes, and enlarge tab close
+  targets. Add selection highlighting, copying and notes to the reader context menu.
+
 ## [1.14.1] - 2026-09-07
 
 ### Fixed

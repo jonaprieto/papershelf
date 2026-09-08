@@ -588,6 +588,15 @@ final class Runner {
         while bibLoading { await Task.yield() }
     }
 
+    /// A saved web reading copy joins the shelf without discarding the open review.
+    func includeReadingFile(_ url: URL) {
+        guard item(url.path) == nil,
+              let job = collectJobs(roots: [url], recursive: false).first else { return }
+        let added = libraryItem(for: job, options: Options(passwords: [], recursive: false, dryRun: true))
+        jobs.append(job)
+        finish(results + [added], keepingDecisions: true)
+    }
+
     func findDuplicates(passwords: [String] = []) {
         guard !results.isEmpty, !findingDuplicates else { return }
         let startedAt = ProcessInfo.processInfo.systemUptime

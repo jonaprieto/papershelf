@@ -152,6 +152,8 @@ struct MarkRow: View {
     /// row they had already chosen.
     @ViewBuilder
     private var rowActions: some View {
+        AskReadingAssistant { handoffPrompt }
+            .buttonStyle(.borderless)
         if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy,
            !mark.quoted.isEmpty || !mark.note.isEmpty {
             Menu {
@@ -614,7 +616,7 @@ struct NotesRail: View {
     /// rather than chosen: there is one, and a menu of one is a menu that lies.
     private var exportBar: some View {
         VStack(alignment: .leading, spacing: Space.step) {
-            HStack(spacing: Space.step) {
+            FlowRow(spacing: Space.step) {
             // A save panel rather than `fileExporter`. The shelf already carries one of
             // those for the bibliography, and a second in the same hierarchy presented
             // nothing at all: the button set its flag and no panel ever appeared.
@@ -627,6 +629,9 @@ struct NotesRail: View {
 
             Button("Copy all") { copyNotes() }
                 .tip("Every mark on this document, as text")
+
+            AskReadingAssistant { chatGPTNotesPrompt }
+                .disabled(marks.isEmpty)
 
             if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy {
                 Menu {
@@ -646,8 +651,6 @@ struct NotesRail: View {
                 .menuStyle(.borderlessButton)
                 .tip("Share every highlight and note with ChatGPT")
             }
-
-                Spacer(minLength: Space.snug)
 
                 // Only for the document in front of you. Removing every mark means rewriting
                 // the file, and the file is not open.

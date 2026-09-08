@@ -252,6 +252,11 @@ struct ReaderWindow: View {
                     .help(palette.meaning(for: style.nsColor, scopes: currentMeaningScopes))
                 }
                 Divider().frame(height: 14)
+                AskReadingAssistant {
+                    guard let selection = annotator.selectionForHandoff() else { return nil }
+                    return ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
+                                                 page: selection.page, title: selection.title)
+                }
                 Button {
                     showsNotes = true
                     addingNote = true

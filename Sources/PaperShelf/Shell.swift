@@ -183,7 +183,10 @@ struct PaperShelfApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About PaperShelf") { openAbout() }
             }
-            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .newItem) {
+                Button("Open Website…") { openWindow(id: "web") }
+                    .keyboardShortcut("l", modifiers: .command)
+            }
             CommandGroup(after: .textEditing) {
                 Button("Find in PDF", action: openPDFSearch)
                     .keyboardShortcut("f", modifiers: .command)
@@ -224,6 +227,12 @@ struct PaperShelfApp: App {
                     .keyboardShortcut("0", modifiers: .command)
             }
         }
+
+        WindowGroup("Web Articles", id: "web", for: URL.self) { $url in
+            WebReader(initialURL: url) { _ in openWindow(id: "main") }
+                .frame(minWidth: 700, minHeight: 500)
+        }
+        .defaultSize(width: 1000, height: 750)
 
         Window("About PaperShelf", id: AboutWindow.windowID) {
             AboutWindow()

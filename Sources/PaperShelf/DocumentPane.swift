@@ -49,8 +49,37 @@ struct DocumentPane<Overlay: View>: View {
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the memberwise initialiser is how a host builds a pane.
     private var prefs: Prefs { Prefs.shared }
+    private var webArticle: WebArticle? { annotator.url == url ? annotator.webArticle : nil }
+    @State private var showingLive = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let webArticle {
+                FlowRow(spacing: Space.step) {
+                    Label(showingLive ? "Live website" : "Saved website", systemImage: "globe")
+                    Text(webArticle.capturedAt, format: .dateTime.year().month().day().hour().minute())
+                        .foregroundStyle(.secondary)
+                    Button(showingLive ? "Return to saved copy" : "Open live / resync") { showingLive.toggle() }
+                    Button("Copy BibTeX") { ChatGPTHandoff.copy(webArticle.bibtex) }
+                }
+                .font(Face.caption)
+                .padding(Space.snug)
+                .background(.bar)
+                .help(webArticle.url.absoluteString)
+                Divider()
+            }
+            if showingLive, let webArticle {
+                WebReader(previous: webArticle) { _ in showingLive = false }
+            } else {
+                savedPage
+            }
+        }
+        .onChange(of: url) { _, _ in showingLive = false }
+        .onChange(of: showingLive) { _, live in annotator.readingLiveWebsite = live }
+        .onDisappear { annotator.readingLiveWebsite = false }
+    }
+
+    private var savedPage: some View {
         // The contents rail's width is read off the room the page actually got, so on a
         // pane too narrow for both it is the chapter list that narrows and not the page
         // that is squeezed to nothing, or worse, pushed off the edge.
@@ -97,6 +126,18 @@ struct DocumentPane<Overlay: View>: View {
                     }
                 }
                 .contextMenu {
+                    Menu("Highlight selection") {
+                        ForEach(Palette.shared.styles(for: [.forDocument(url), .library])) { style in
+                            Button(style.meaning) { _ = annotator.highlightSelection(colour: style.nsColor) }
+                        }
+                    }
+                    .disabled(!annotator.hasSelection)
+                    SelectionNoteButton(annotator: annotator, colour: .systemYellow)
+                    Button("Copy selection") {
+                        if let selection = annotator.selectionForHandoff() { ChatGPTHandoff.copy(selection.quoted) }
+                    }
+                    .disabled(!annotator.hasSelection)
+                    Divider()
                     Button(annotator.bookmarkOnCurrentPage == nil
                            ? "Add Bookmark" : "Remove Bookmark") {
                         _ = annotator.toggleBookmark()

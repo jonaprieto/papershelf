@@ -63,7 +63,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally
-    case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit
+    case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
@@ -125,7 +125,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally,
-             .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
+             .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .shortcuts:
@@ -211,6 +211,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .previousMark: return "Previous highlight"
         case .openExternally: return "Open in the default PDF viewer"
         case .openInNewTab: return "Keep this document open in a tab"
+        case .openWebsite: return "Open a website to read and annotate"
         case .closeTab: return "Close this tab"
         case .closeAllTabs: return "Close all open tabs and return to the library"
         case .nextTab: return "Next tab"
@@ -278,6 +279,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .previousMark: return Shortcut("\u{F700}", .option)
         case .openExternally: return Shortcut("o", [])
         case .openInNewTab: return Shortcut("t", .command)
+        case .openWebsite: return Shortcut("l", .command)
         // Closing what is open before closing what it is open in, the way Safari and Xcode
         // read this key. `perform` hands ⌘W back once the deck is empty, so File > Close
         // still gets it and the window still closes.
