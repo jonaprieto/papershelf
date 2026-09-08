@@ -124,7 +124,7 @@ struct CommandPalette: View {
 
     /// The places most people need before they have typed a query.
     private static let initialCommands: [Command] = [
-        .readingMode, .zenMode,
+        .readingMode, .zenMode, .normalMode,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
     ]
 
@@ -409,22 +409,29 @@ struct CommandPalette: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: Space.tight) {
-            HStack(spacing: Space.roomy) {
-                hint("↩", "open")
-                hint("↑↓", "move")
-                hint("⎋", "close")
-                Spacer()
-            }
-            Text(ghost.isEmpty
-                 ? "> commands · # tags · @ projects · / in this document · : page · ? help"
-                 : "⇥ or → completes “\(completion ?? "")”")
-                .foregroundStyle(.secondary)
+        HStack(spacing: Space.gutter) {
+            hint(["↩"], selectedAction)
+            Spacer(minLength: Space.step)
+            hint(["↑", "↓"], "Navigate")
+            if !ghost.isEmpty { hint(["⇥"], "Complete") }
+            hint(["⎋"], "Close")
         }
         .font(Face.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, Space.roomy)
-        .padding(.vertical, Space.step)
+        .padding(.horizontal, Space.gutter)
+        .padding(.vertical, Space.roomy)
+        .background(.bar)
+    }
+
+    private var selectedAction: String {
+        guard entries.indices.contains(index) else { return "Select" }
+        switch entries[index] {
+        case .command: return "Run command"
+        case .starter: return "Choose"
+        case .setting(let setting): return setting.opensSettings ? "Open settings" : "Change setting"
+        case .page: return "Go to page"
+        case .document, .place, .text: return "Open"
+        }
     }
 
     @ViewBuilder
@@ -498,10 +505,6 @@ struct CommandPalette: View {
                     Text(shortcut.display)
                         .font(Face.mono.weight(.semibold))
                         .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
-                } else {
-                    Text("unbound")
-                        .font(Face.caption)
-                        .foregroundStyle(selected ? Color.white.opacity(0.75) : Color.secondary)
                 }
             }
         }
@@ -512,15 +515,24 @@ struct CommandPalette: View {
         .foregroundStyle(selected ? Color.white : Color.primary)
     }
 
-    private func hint(_ key: String, _ meaning: String) -> some View {
-        HStack(spacing: Space.tight) {
-            Text(key)
-                .font(Face.mono.weight(.bold))
-                .padding(.horizontal, Space.tight)
-                .padding(.vertical, Space.hair)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
-            Text(meaning)
+    private func hint(_ keys: [String], _ meaning: String) -> some View {
+        HStack(spacing: Space.snug) {
+            HStack(spacing: Space.hair) {
+                ForEach(keys, id: \.self) { key in
+                    Text(key)
+                        .font(Face.mono.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .frame(minWidth: 22, minHeight: 20)
+                        .background(.quaternary.opacity(0.5),
+                                    in: RoundedRectangle(cornerRadius: Metric.keyCap))
+                        .overlay(RoundedRectangle(cornerRadius: Metric.keyCap)
+                            .strokeBorder(.separator.opacity(0.7)))
+                }
+            }
+            Text(meaning).lineLimit(1)
         }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {

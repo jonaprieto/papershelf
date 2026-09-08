@@ -1547,7 +1547,7 @@ struct ResultsPane: View {
     ]
 
     static let alwaysAvailable: Set<Command> = [
-        .palette, .focusSearch, .shortcuts, .zenMode,
+        .palette, .focusSearch, .shortcuts, .zenMode, .normalMode,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
         // What is open and what is on the shelf are different questions. A paper put back
@@ -1757,7 +1757,7 @@ struct ResultsPane: View {
         .skip, .skipFolder, .moveTo, .trash, .reopen,
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates, .readingMode,
-        .zenMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
+        .zenMode, .normalMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
         .removeFromLibrary, .trashNow, .suggestTags,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
@@ -1790,6 +1790,11 @@ struct ResultsPane: View {
         case .viewDuplicates: choose(.duplicates)
         case .readingMode: setReading(!reading)
         case .zenMode: toggleZenMode()
+        case .normalMode:
+            if presentation { toggleZenMode() }
+            else if let window = paneWindow.window, window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()

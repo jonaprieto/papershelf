@@ -303,6 +303,15 @@ final class CommandsTests: XCTestCase {
         }
     }
 
+    func testNormalModeIsDiscoverableWithoutAPDFSelection() {
+        XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.normalMode))
+        for query in ["normal mode", "exit presentation", "leave full screen", "restore window"] {
+            XCTAssertEqual(CommandPalette.matchingCommands(in: ResultsPane.performable,
+                                                          query: query, commandsOnly: true),
+                           [.normalMode])
+        }
+    }
+
     func testPageCommandsResizeAndNavigateTheAttachedPDF() {
         let document = PDFDocument()
         for _ in 0..<3 {

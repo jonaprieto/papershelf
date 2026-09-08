@@ -332,6 +332,18 @@ struct ContentView: View {
         return !files.isEmpty || !websites.isEmpty
     }
 
+    private func togglePresentation() {
+        // The palette can still be key while dismissing. Full screen belongs to its
+        // parent window, even if another window takes focus before the next run loop.
+        let window = NSApp.keyWindow?.sheetParent ?? NSApp.keyWindow
+        let entering = !chrome.zenMode
+        chrome.toggleZenMode()
+        DispatchQueue.main.async {
+            guard let window, entering != window.styleMask.contains(.fullScreen) else { return }
+            window.toggleFullScreen(nil)
+        }
+    }
+
     private var mainContent: some View {
         // The rail sits outside the split view on purpose: it is how every part of the app
         // is reached, and a NavigationSplitView on macOS collapses its own sidebar column,
@@ -378,17 +390,7 @@ struct ContentView: View {
                 reading: chrome.reading,
                 presentation: chrome.zenMode,
                 setReading: chrome.setReading,
-                toggleZenMode: {
-                    let entering = !chrome.zenMode
-                    chrome.toggleZenMode()
-                    // A palette is a sheet, so let it resign key status before asking
-                    // the library window to enter or leave native full screen.
-                    DispatchQueue.main.async {
-                        guard let window = NSApp.keyWindow else { return }
-                        let fullScreen = window.styleMask.contains(.fullScreen)
-                        if entering != fullScreen { window.toggleFullScreen(nil) }
-                    }
-                },
+                toggleZenMode: togglePresentation,
                 toggleSidebar: chrome.toggleSidebar,
                 watching: prefs.watchSources && !selection.isEmpty,
                 palette: palette,
@@ -472,13 +474,7 @@ struct ContentView: View {
             chrome.toggleReading()
         }
         .onReceive(NotificationCenter.default.publisher(for: .scriptToggleZen)) { _ in
-            let entering = !chrome.zenMode
-            chrome.toggleZenMode()
-            DispatchQueue.main.async {
-                guard let window = NSApp.keyWindow else { return }
-                let fullScreen = window.styleMask.contains(.fullScreen)
-                if entering != fullScreen { window.toggleFullScreen(nil) }
-            }
+            togglePresentation()
         }
         // The pattern editor lives in the settings window now and has no scanner of its
         // own, so the window that does have one publishes the few files it previews

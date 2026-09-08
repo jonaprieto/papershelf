@@ -133,7 +133,8 @@ final class ReadingModeTests: XCTestCase {
         XCTAssertEqual(prefs.pageFit, .page)
         XCTAssertTrue(prefs.sidebarShown, "Presentation mode must not overwrite the saved sidebar choice")
 
-        chrome.toggleZenMode()
+        chrome.leaveZenMode()
+        chrome.leaveZenMode()
         XCTAssertFalse(chrome.zenMode)
         XCTAssertFalse(chrome.reading)
         XCTAssertEqual(chrome.columnVisibility, .all)
