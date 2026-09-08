@@ -122,14 +122,19 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark,
-             .openInNewTab, .closeTab, .nextTab, .previousTab:
+             .closeTab, .nextTab, .previousTab:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
             return .reviewing
+        // Keeping a document sits with the library rather than with the other three tab
+        // keys, and for the same reason opening one elsewhere does: the preview tab is the
+        // reviewer's selection passing through, so it is already there while you are
+        // browsing. Heard only in the reader, ⌘T was silent at the moment it is most
+        // wanted, and answering only while browsing would just move the hole.
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .openExternally:
+             .openExternally, .openInNewTab:
             return .library
         default:
             return .anywhere

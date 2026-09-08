@@ -112,6 +112,34 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(keymap.shortcut(for: .previousTab)?.display, "⇧⌘[")
     }
 
+    /// Keeping a document has to answer on the shelf, not only over an open one. The
+    /// preview tab is the reviewer's selection passing through, so it exists while you are
+    /// still browsing; scoped to the reader, ⌘T said nothing at the one moment it is most
+    /// wanted, looking at a paper and deciding to hold on to it.
+    ///
+    /// The other three act on a deck you can only see with the reader open, and a ⌘W that
+    /// quietly shut a tab behind the shelf would be worse than one that closes the window,
+    /// so they stay where they were put.
+    func testKeepingADocumentOpenAnswersWhileBrowsingTheShelf() {
+        let keymap = Keymap(store: scratchStore())
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                     modifierFlags: .command,
+                                     timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: "t", charactersIgnoringModifiers: "t",
+                                     isARepeat: false, keyCode: 17)!
+        XCTAssertTrue(Command.openInNewTab.scope.reachable(from: .reviewing),
+                      "the preview tab is there before the reader is")
+        XCTAssertEqual(keymap.command(for: event, in: .reviewing), .openInNewTab)
+        XCTAssertEqual(keymap.command(for: event, in: .reader), .openInNewTab,
+                       "and it still has to answer over the page it opened")
+
+        for command in [Command.closeTab, .nextTab, .previousTab] {
+            XCTAssertEqual(command.scope, .reader,
+                           "\(command.rawValue) wants a deck you can see")
+            XCTAssertFalse(command.scope.reachable(from: .reviewing))
+        }
+    }
+
     func testResetAllClearsEverything() {
         let keymap = Keymap(store: scratchStore())
         keymap.bind(.plan, to: Shortcut("y", .command))
