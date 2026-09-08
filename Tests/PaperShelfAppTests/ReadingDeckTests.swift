@@ -136,6 +136,23 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertEqual(deck.activeTab?.key, "second.pdf")
     }
 
+    /// The pane the tab lands in is the pane that has to be asked whether the document is
+    /// already open. The selection replaces the deck's preview wherever it sits, so a
+    /// document kept in that pane comes back as a second tab on the same paper when the
+    /// question is put to the active pane instead. Two panes are needed to reach it.
+    func testOpeningDoesNotAddASecondTabForWhatThatPaneAlreadyHolds() {
+        let second = UUID()
+        var deck = empty()
+        deck.panes.append(Deck.Pane(id: second))
+        deck = deck.opening("x.pdf", kept: true, makeAnnotator: annotator)
+        deck = deck.opening("p.pdf", kept: false, makeAnnotator: annotator)
+        deck.activePane = second
+        deck = deck.opening("x.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(deck.panes[0].tabs.map(\.key), ["p.pdf", "x.pdf"])
+        XCTAssertEqual(deck.activeTab?.key, "x.pdf")
+        XCTAssertEqual(deck.activePane, deck.panes[0].id, "showing it means being where it is")
+    }
+
     // MARK: closing
 
     func testClosingTheActiveTabActivatesTheOneAfterIt() {
@@ -256,10 +273,58 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertNil(back.activeTab)
     }
 
-    func testStoredDecksSurviveJSON() throws {
+    /// Which pane was active is part of what was open, and one pane hides whether either
+    /// side of the round trip remembers it: every index is 0 by construction there, so the
+    /// writing side and the reading side cannot disagree.
+    func testWhichPaneWasActiveComesBack() {
+        let second = UUID()
+        var deck = empty()
+        deck.panes.append(Deck.Pane(id: second))
+        deck = deck.opening("a.pdf", kept: true, makeAnnotator: annotator)
+        deck.activePane = second
+        deck = deck.opening("c.pdf", kept: true, makeAnnotator: annotator)
+
+        let stored = StoredDeck(deck)
+        XCTAssertEqual(stored.panes, [["a.pdf"], ["c.pdf"]])
+        XCTAssertEqual(stored.activePane, 1)
+
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.panes.map { $0.tabs.map(\.key) }, [["a.pdf"], ["c.pdf"]])
+        XCTAssertEqual(back.active?.tabs.map(\.key), ["c.pdf"], "the second pane was the one in use")
+        XCTAssertEqual(back.activeTab?.key, "c.pdf")
+    }
+
+    /// Nothing this app writes has zero panes, but a truncated or hand-edited preferences
+    /// string decodes to one, and a window with no pane has nowhere to put a document.
+    /// Restoring it has to hand back a pane rather than reading off the end of the array.
+    func testADeckStoredWithNoPanesComesBackWithOne() throws {
+        let stored = try JSONDecoder().decode(
+            StoredDeck.self, from: Data(#"{"panes":[],"active":[],"activePane":0}"#.utf8))
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.panes.count, 1)
+        XCTAssertEqual(back.activePane, back.panes[0].id)
+        XCTAssertNil(back.activeTab)
+    }
+
+    /// What goes to disk has to be pinned by its names on disk. Encoding and decoding
+    /// through the same initialiser and comparing the two cancels any error in it, and
+    /// leaves every field free to be renamed under a version that has to read it back.
+    func testTheStoredNamesOnDiskAreTheOnesReadBack() throws {
         var deck = open(empty(), ["a.pdf", "b.pdf"])
         deck = deck.activating(deck.active!.tabs[0].id)
-        let data = try JSONEncoder().encode(StoredDeck(deck))
-        XCTAssertEqual(try JSONDecoder().decode(StoredDeck.self, from: data), StoredDeck(deck))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let written = String(decoding: try encoder.encode(StoredDeck(deck)), as: UTF8.self)
+        XCTAssertEqual(written, #"{"active":[0],"activePane":0,"panes":[["a.pdf","b.pdf"]]}"#)
+
+        let stored = try JSONDecoder().decode(
+            StoredDeck.self,
+            from: Data(#"{"panes":[["a.pdf","b.pdf"]],"active":[1],"activePane":0}"#.utf8))
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in self.annotator() })
+        XCTAssertEqual(back.active?.tabs.map(\.key), ["a.pdf", "b.pdf"])
+        XCTAssertEqual(back.activeTab?.key, "b.pdf")
     }
 }

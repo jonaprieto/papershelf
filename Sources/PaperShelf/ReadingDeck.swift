@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 /// What a window has open, and which of it is on screen.
 ///
@@ -65,17 +64,28 @@ struct Deck: Equatable {
         var deck = self
         guard let index = deck.panes.firstIndex(where: { $0.id == activePane }) else { return deck }
 
-        if let existing = deck.panes[index].tabs.firstIndex(where: { $0.key == key }) {
-            if kept { deck.panes[index].tabs[existing].isPreview = false }
-            deck.panes[index].active = deck.panes[index].tabs[existing].id
+        // The selection moving replaces the deck's preview wherever it sits, not only one
+        // the active pane happens to hold. Looking in a single pane would let a second
+        // preview stand beside the first the day a window has two.
+        let preview = kept ? nil : previewPosition
+        // Which means the tab does not always land in the pane the eye is on, so whether it
+        // is already open has to be asked of the pane it lands in. Asked of the active pane
+        // alone, a document already kept in the pane that holds the preview gets opened a
+        // second time beside itself: the same paper twice on one bar, and a stored deck the
+        // next launch resolves by key and cannot tell the two apart. The same paper in two
+        // different panes stays allowed; that one is deliberate.
+        let target = preview?.pane ?? index
+
+        if let existing = deck.panes[target].tabs.firstIndex(where: { $0.key == key }) {
+            if kept { deck.panes[target].tabs[existing].isPreview = false }
+            deck.panes[target].active = deck.panes[target].tabs[existing].id
+            // Showing it also means being in the pane that shows it.
+            deck.activePane = deck.panes[target].id
             return deck
         }
 
         let tab = Tab(id: UUID(), key: key, isPreview: !kept, annotator: makeAnnotator())
-        if !kept, let preview = previewPosition {
-            // The selection moving replaces the deck's preview wherever it sits, not only
-            // one the active pane happens to hold. Looking in a single pane would let a
-            // second preview stand beside the first the day a window has two.
+        if let preview {
             deck.panes[preview.pane].tabs[preview.tab] = tab
             deck.panes[preview.pane].active = tab.id
             // And the focus follows it there, so an open shows what it opened. Left behind,
