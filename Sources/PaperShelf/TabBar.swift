@@ -14,25 +14,52 @@ struct TabBar: View {
     let title: (Deck.Tab) -> String
     let activate: (Deck.Tab.ID) -> Void
     let close: (Deck.Tab.ID) -> Void
+    /// What the + asks for. A tab here is a document, so there is no blank one to open and
+    /// nothing to show until a paper is chosen; this hands the pointer the list ⌘K already
+    /// gives rather than standing up a second document picker beside it.
+    let open: () -> Void
 
     static let height: CGFloat = 28
     /// Wide enough for a recognisable stem, narrow enough that four tabs fit a narrow pane.
     private static let maximumTabWidth: CGFloat = 180
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                ForEach(tabs) { tab in
-                    tabView(tab)
-                    Divider().frame(height: TabBar.height - Space.step)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    ForEach(tabs) { tab in
+                        tabView(tab)
+                        Divider().frame(height: TabBar.height - Space.step)
+                    }
                 }
             }
+            .scrollIndicators(.hidden)
+            openButton
         }
-        .scrollIndicators(.hidden)
         .frame(height: TabBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
         .clipped()
+    }
+
+    /// Beside the scroll view, not in it, and pinned to the trailing edge.
+    ///
+    /// A dozen papers open is the case this has to survive, and it is also the case where
+    /// somebody most wants another one. Inside the scroll view the + scrolls away with the
+    /// tabs; after the tabs in a plain row their own width pushes it past the pane's edge,
+    /// where the bar's clip erases it. Pinned here it is in the same place at every tab
+    /// count, and the tabs scroll under it.
+    private var openButton: some View {
+        Button(action: open) {
+            Image(systemName: "plus")
+                .font(Face.control)
+                .frame(width: TabBar.height, height: TabBar.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open a paper")
+        .accessibilityIdentifier("tabBar.open")
+        .tip("Open a paper", key: "⌘K")
     }
 
     private func tabView(_ tab: Deck.Tab) -> some View {

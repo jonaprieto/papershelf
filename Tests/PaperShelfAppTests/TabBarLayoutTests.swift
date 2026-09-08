@@ -87,6 +87,59 @@ final class TabBarLayoutTests: XCTestCase {
         return 0
     }
 
+    /// How many pixel columns two renders disagree about between two points across them.
+    /// `rightmostDifference` answers where the last one is, which says nothing about a
+    /// region that has to be looked at on its own, such as the square the + sits in.
+    ///
+    /// A pair that cannot be compared counts as every column: a measurement that did not
+    /// happen is not a pair that matched.
+    private func differingColumns(_ a: NSBitmapImageRep?, _ b: NSBitmapImageRep?,
+                                  from: CGFloat, to: CGFloat, total: CGFloat) -> Int {
+        guard let a, let b, let left = a.bitmapData, let right = b.bitmapData,
+              a.pixelsWide == b.pixelsWide, a.pixelsHigh == b.pixelsHigh,
+              a.bytesPerRow == b.bytesPerRow else { return .max }
+        let bytesPerPixel = a.bitsPerPixel / 8
+        var differing = 0
+        for x in columns(of: a, from: from, to: to, total: total) {
+            for y in 0..<a.pixelsHigh {
+                let at = y * a.bytesPerRow + x * bytesPerPixel
+                if (0..<bytesPerPixel).contains(where: { left[at + $0] != right[at + $0] }) {
+                    differing += 1
+                    break
+                }
+            }
+        }
+        return differing
+    }
+
+    /// The pixel columns covering a span given in points. The bar is described in points
+    /// and the bitmap is drawn at whatever scale the machine running this has, so the two
+    /// are not the same number and only one of them is worth writing a test in.
+    private func columns(of rep: NSBitmapImageRep, from: CGFloat, to: CGFloat,
+                         total: CGFloat) -> Range<Int> {
+        let scale = CGFloat(rep.pixelsWide) / total
+        let first = max(0, Int((from * scale).rounded(.up)))
+        let last = min(rep.pixelsWide, Int((to * scale).rounded(.down)))
+        return first..<max(first, last)
+    }
+
+    /// The bar's background carrying nothing at all.
+    ///
+    /// The material is opaque and covers the bar's whole width, so asking whether anything
+    /// is painted in a given square is answered yes by the background on its own. What
+    /// differencing against this control leaves is what was painted onto the material,
+    /// which is the only way to see the + rather than the bar under it. It repeats the
+    /// bar's background chain; the check that uses it is two-sided so that a control which
+    /// has drifted out of step with the bar reads as every column differing rather than as
+    /// a + that is present.
+    private var backdrop: some View {
+        Color.clear
+            .frame(height: TabBar.height)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+            .clipped()
+    }
+
     private func bar(_ count: Int) -> some View {
         let tabs = (0..<count).map {
             Deck.Tab(id: UUID(), key: "/library/paper-\($0).pdf",
@@ -94,7 +147,7 @@ final class TabBarLayoutTests: XCTestCase {
         }
         return TabBar(tabs: tabs, active: tabs.first?.id,
                       title: { _ in "2017-gomes-verifying-strong-eventual-consistency.pdf" },
-                      activate: { _ in }, close: { _ in })
+                      activate: { _ in }, close: { _ in }, open: {})
     }
 
     /// A 13 inch shelf's document region split in two is about 328 points, the window's own
@@ -130,5 +183,40 @@ final class TabBarLayoutTests: XCTestCase {
         XCTAssertGreaterThan(five, 4 * one,
                              "five tabs reached \(five), one tab \(one), so they are not "
                              + "standing beside each other")
+    }
+
+    /// The + is pinned to the trailing edge, and it is still there once the tabs overflow.
+    ///
+    /// Two things at once, because either on its own passes on a bar that is broken. The
+    /// trailing square of a bar with one tab has something painted onto its material, so a
+    /// + that was never drawn, or that the tabs' width pushed past the trailing edge where
+    /// the bar's own clip erases it, fails here. And that square holds the same pixels at
+    /// twelve tabs as at one, so a + carried along inside the scroll view fails too, since
+    /// an overflowing bar scrolls it out of the square and leaves tab text in its place.
+    ///
+    /// A point is left at the leading side of the square so that what is measured is the
+    /// button and not the scroll view's clip boundary beside it. One tab is the case that
+    /// carries the first check: a tab is at most 180 points wide, so at every width here it
+    /// stops well short of the square and cannot be mistaken for the +.
+    func testThePlusIsPinnedAtTheTrailingEdgeHoweverManyTabsThereAre() throws {
+        for width in widths {
+            let total = width + Self.beside
+            let square = width - TabBar.height + 1
+            let plain = render(backdrop, width: width)
+            let alone = try XCTUnwrap(render(bar(1), width: width))
+            let all = columns(of: alone, from: square, to: width, total: total).count
+            let drawn = differingColumns(alone, plain, from: square, to: width, total: total)
+            XCTAssertTrue(drawn > 0 && drawn < all,
+                          "a \(width) point bar with one tab painted \(drawn) of the \(all) "
+                          + "columns in its trailing square; a + is some of them, not none and "
+                          + "not all of them")
+            for count in [2, 5, 12] {
+                let crowded = render(bar(count), width: width)
+                XCTAssertEqual(
+                    differingColumns(alone, crowded, from: square, to: width, total: total), 0,
+                    "\(count) tabs at width \(width) changed what the trailing square holds, "
+                    + "so the + travels with the tabs rather than staying put")
+            }
+        }
     }
 }

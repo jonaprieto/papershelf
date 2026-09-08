@@ -2679,7 +2679,11 @@ struct ResultsPane: View {
             TabBar(tabs: pane.tabs, active: pane.active,
                    title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
                    activate: activateTab,
-                   close: closeTab)
+                   close: closeTab,
+                   // The palette is already this window's answer to "which paper", with
+                   // every document in it and a field to narrow them. The + is the pointer's
+                   // way to the same place ⌘K goes, not a picker of its own.
+                   open: { showingPalette = true })
             Divider()
         }
     }
