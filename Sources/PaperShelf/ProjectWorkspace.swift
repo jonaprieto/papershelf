@@ -72,16 +72,18 @@ struct ProjectWorkspace: View {
         // proposes the space that exists, so nothing inside can ask for more.
         GeometryReader { room in
             HStack(spacing: 0) {
+                if Prefs.shared.aiEnabled {
                 ProjectConversationView(documents: asking,
                                         totalDocuments: model.members.count,
                                         model: conversation,
                                         openCitation: show)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
+                }
                 if let previewing {
                     citationPreview(previewing).frame(width: Metric.contentsRail + 220)
                 } else {
-                    documents.frame(width: Metric.inspectorIdeal)
+                    documents.frame(maxWidth: Prefs.shared.aiEnabled ? Metric.inspectorIdeal : .infinity)
                 }
             }
             .frame(width: room.size.width, height: room.size.height)

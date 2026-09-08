@@ -102,7 +102,8 @@ struct Server {
             // this is every other tool's coverage, at the one place all of them funnel through.
             let outcome: ToolOutput
             do {
-                outcome = try tool.run(arguments)
+                outcome = Prefs.aiEnabled ? try tool.run(arguments)
+                    : .failure("AI features and MCP assistant access are off. Enable AI features in PaperShelf Settings > General to use this tool.")
             } catch {
                 outcome = .failure(readableMessage(for: error))
             }

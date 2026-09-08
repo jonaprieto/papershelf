@@ -121,12 +121,15 @@ enum KeyStore {
 // MARK: - Client
 
 enum AIError: LocalizedError {
+    case disabled
     case noKey
     case http(Int, String)
     case unreadable(String)
 
     var errorDescription: String? {
         switch self {
+        case .disabled:
+            return "AI features are off. You can enable them in Settings > General."
         case .noKey:
             return "No API key. Add one in Settings, or set OPENAI_API_KEY before launching."
         case .http(let code, let body):
@@ -150,6 +153,27 @@ struct AIClient {
     /// ledger stayed empty while real money was being spent. A client that records is the
     /// one you get by not thinking about it; pass nil deliberately to opt out.
     var spendRecorder: SpendRecorder? = Library.shared
+
+    static func isLoopback(_ address: String) -> Bool {
+        guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return false }
+        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host?.lowercased() ?? "")
+    }
+
+    var isConfigured: Bool { !apiKey.isEmpty || Self.isLoopback(baseURL) }
+
+    func request(path: String) throws -> URLRequest {
+        guard isConfigured else { throw AIError.noKey }
+        let base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: base + "/" + path),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil, url.user == nil, url.password == nil else {
+            throw AIError.unreadable("bad base URL")
+        }
+        var request = URLRequest(url: url)
+        if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        return request
+    }
 
     /// Reads the key from the environment when the field is empty, so the app can be used
     /// without the key ever being stored anywhere by us.
@@ -192,15 +216,10 @@ struct AIClient {
     /// name its models whatever it likes, and hiding one the user has is worse than
     /// listing one they cannot use.
     func models() async throws -> [String] {
-        guard !apiKey.isEmpty else { throw AIError.noKey }
-        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/models")
-        else { throw AIError.unreadable("bad base URL") }
-
-        var request = URLRequest(url: url)
+        var request = try request(path: "models")
         request.timeoutInterval = 30
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await AIRequests.send(request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             throw AIError.http(code, String(data: data, encoding: .utf8) ?? "")
@@ -215,15 +234,10 @@ struct AIClient {
     /// `feature` only labels the spend entry; it changes nothing about the request. It
     /// defaults to `.identify` because that is what every caller before this round meant.
     func identify(filename: String, excerpt: String, feature: AIFeature = .identify) async throws -> BookGuess {
-        guard !apiKey.isEmpty else { throw AIError.noKey }
-        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")
-        else { throw AIError.unreadable("bad base URL") }
-
-        var request = URLRequest(url: url)
+        var request = try request(path: "chat/completions")
         request.httpMethod = "POST"
         request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": model,
             "temperature": 0,
@@ -233,7 +247,7 @@ struct AIClient {
             ],
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await AIRequests.send(request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
 
         // Usage is read here, before anything below can throw: a 2xx reply the provider
@@ -256,16 +270,11 @@ struct AIClient {
     /// which is right for naming a file and useless for asking about a reading project,
     /// where the answer is prose with citations in it.
     func ask(system: String, user: String, feature: AIFeature) async throws -> String {
-        guard !apiKey.isEmpty else { throw AIError.noKey }
-        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/chat/completions")
-        else { throw AIError.unreadable("bad base URL") }
-
-        var request = URLRequest(url: url)
+        var request = try request(path: "chat/completions")
         request.httpMethod = "POST"
         // Longer than identify's: a project question reads far more than three pages.
         request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": model,
             "messages": [
@@ -274,7 +283,7 @@ struct AIClient {
             ],
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await AIRequests.send(request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 
@@ -294,21 +303,16 @@ struct AIClient {
     }
 
     func transcribe(audio: Data, filename: String = "note.m4a") async throws -> String {
-        guard !apiKey.isEmpty else { throw AIError.noKey }
-        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces) + "/audio/transcriptions")
-        else { throw AIError.unreadable("bad base URL") }
-
         let boundary = "PaperShelf-\(UUID().uuidString)"
-        var request = URLRequest(url: url)
+        var request = try request(path: "audio/transcriptions")
         request.httpMethod = "POST"
         request.timeoutInterval = 120
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)",
                          forHTTPHeaderField: "Content-Type")
         request.httpBody = audioMultipartBody(audio: audio, filename: filename,
                                                model: model, boundary: boundary)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await AIRequests.send(request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let text = (body?["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

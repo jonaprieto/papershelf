@@ -130,7 +130,7 @@ final class BibLookupStore {
             return
         }
 
-        guard !aiClient.apiKey.isEmpty,
+        guard Prefs.shared.aiEnabled, aiClient.isConfigured,
               let guess = try? await aiClient.identify(filename: url.lastPathComponent, excerpt: text)
         else { return }
         guesses[itemKey] = guess
@@ -687,9 +687,10 @@ struct FillGapsButton: View {
     private let kept: KeptBibtex = .shared
     @State private var confirming = false
 
-    private var ready: Bool { !client.apiKey.isEmpty }
+    private var ready: Bool { Prefs.shared.aiEnabled && client.isConfigured }
 
     var body: some View {
+        if Prefs.shared.aiEnabled {
         if let running = batch.progress {
             HStack(spacing: Space.snug) {
                 ProgressView(value: Double(running.done), total: Double(max(running.total, 1)))
@@ -724,6 +725,7 @@ struct FillGapsButton: View {
                      + "did. A model can be confidently wrong: check the entries after.")
             }
         }
+    }
     }
 }
 

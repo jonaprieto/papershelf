@@ -748,7 +748,7 @@ struct ResultsPane: View {
                  apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
-    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
+    private var aiReady: Bool { prefs.aiEnabled && aiClient.isConfigured }
 
     private func identifySelected() {
         guard let item = selectedItem, aiReady else { return }
@@ -1065,7 +1065,7 @@ struct ResultsPane: View {
                       defaultFilename: bibFileName) { _ in }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
-                commands: Self.performable.filter { $0 != .palette },
+                commands: Self.performable.filter { $0 != .palette && (prefs.aiEnabled || $0 != .askAI) },
                 documents: runner.results,
                 run: { perform($0) },
                 open: { openReader($0.key) },

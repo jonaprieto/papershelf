@@ -67,6 +67,7 @@ enum PaletteSettings {
              { prefs.selectionPalette }, { prefs.selectionPalette = $0 })
         flag("labelForeignMarks", "Label marks from other apps with the nearest colour",
              { prefs.labelForeignMarks }, { prefs.labelForeignMarks = $0 })
+        flag("aiEnabled", "AI features", { prefs.aiEnabled }, { prefs.aiEnabled = $0 })
         flag("offerChatGPT", "Offer “Open in ChatGPT” beside a highlight",
              { prefs.offerChatGPT }, { prefs.offerChatGPT = $0 })
 

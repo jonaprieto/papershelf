@@ -183,16 +183,9 @@ end clickSidebarTwice
 on auditSettings(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
-            set controls to buttons of (group 1 of scroll area 1 of group 2 of ¬
-                splitter group 1 of group 1 of (first window whose name is "General"))
-            if (count of controls) < 7 then
-                error "Settings theme and contrast controls are not all exposed"
-            end if
             repeat with index from 1 to 3
-                click first button of (group 1 of scroll area 1 of group 2 of ¬
-                    splitter group 1 of group 1 of (first window whose name is "General")) ¬
-                    whose value of attribute "AXIdentifier" is ¬
-                    "settings.theme." & (item index of {"system", "light", "dark"})
+                my clickSettingsControl("settings.theme." & ¬
+                    (item index of {"system", "light", "dark"}), targetPID)
                 delay 0.15
                 tell application "__PAPERSHELF_APP_PATH__" to set actualTheme to current theme
                 set expectedTheme to item index of {"System", "Light", "Dark"}
@@ -201,11 +194,8 @@ on auditSettings(targetPID)
                 end if
             end repeat
             repeat with index from 1 to 4
-                click first button of (group 1 of scroll area 1 of group 2 of ¬
-                    splitter group 1 of group 1 of (first window whose name is "General")) ¬
-                    whose value of attribute "AXIdentifier" is ¬
-                    "settings.pdfContrast." & ¬
-                    (item index of {"normal", "sepia", "tint", "whiteOnBlack"})
+                my clickSettingsControl("settings.pdfContrast." & ¬
+                    (item index of {"normal", "sepia", "tint", "whiteOnBlack"}), targetPID)
                 delay 0.15
                 tell application "__PAPERSHELF_APP_PATH__" to set actualContrast to current PDF contrast
                 set expectedContrast to ¬
@@ -217,3 +207,23 @@ on auditSettings(targetPID)
         end tell
     end tell
 end auditSettings
+
+-- Sections can move without changing the controls a keyboard or screen reader reaches.
+on clickSettingsControl(identifier, targetPID)
+    tell application "System Events"
+        tell first application process whose unix id is targetPID
+            set controls to entire contents of (first window whose name is "General")
+            repeat with candidateControl in controls
+                set controlIdentifier to ""
+                try
+                    set controlIdentifier to value of attribute "AXIdentifier" of candidateControl
+                end try
+                if controlIdentifier is identifier then
+                    click candidateControl
+                    return
+                end if
+            end repeat
+        end tell
+    end tell
+    error "Settings control is not exposed: " & identifier
+end clickSettingsControl

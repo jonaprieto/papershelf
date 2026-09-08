@@ -11,6 +11,64 @@ import PaperShelfCore
 /// still passed.
 final class AIClientTests: XCTestCase {
 
+    func testLocalEndpointsNeedNoCloudKey() throws {
+        for base in ["http://localhost:1234/v1", "http://127.0.0.1:8080/v1/", "http://[::1]:8080/v1"] {
+            let client = AIClient(baseURL: base, model: "local-model", apiKey: "", spendRecorder: nil)
+            let request = try client.request(path: "chat/completions")
+            XCTAssertTrue(client.isConfigured)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertTrue(request.url!.path.hasSuffix("/v1/chat/completions"))
+        }
+        for base in ["https://localhost.example.org/v1", "https://example.org/v1", "http://192.168.1.4/v1"] {
+            XCTAssertThrowsError(try AIClient(baseURL: base, model: "test", apiKey: "", spendRecorder: nil).request(path: "models"))
+        }
+    }
+
+    @MainActor
+    func testDisablingAIBlocksEveryRequestAndCancelsPendingWork() async throws {
+        let wasEnabled = Prefs.shared.aiEnabled
+        let previousSession = AIRequests.session
+        defer {
+            AIRequests.session.invalidateAndCancel()
+            AIRequests.session = previousSession
+            Prefs.shared.aiEnabled = wasEnabled
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LocalAIProtocol.self]
+        AIRequests.session = URLSession(configuration: configuration)
+        Prefs.shared.aiEnabled = true
+        LocalAIProtocol.holding = false
+        LocalAIProtocol.started = nil
+        let client = AIClient(baseURL: "http://localhost:1234/v1", model: "local-model", apiKey: "", spendRecorder: nil)
+        let answer = try await client.ask(system: "Test", user: "A local question", feature: .readingAssistant)
+        XCTAssertEqual(answer, "Local answer")
+
+        LocalAIProtocol.holding = true
+        let started = expectation(description: "Local request started")
+        LocalAIProtocol.started = { started.fulfill() }
+        let pending = Task { try await client.ask(system: "Test", user: "Pending", feature: .readingAssistant) }
+        await fulfillment(of: [started], timeout: 2)
+        Prefs.shared.aiEnabled = false
+        do { _ = try await pending.value; XCTFail("Disabling AI must cancel a pending request") }
+        catch { XCTAssertEqual((error as NSError).code, NSURLErrorCancelled) }
+        LocalAIProtocol.started = nil
+
+        let calls: [() async throws -> Void] = [
+            { _ = try await client.models() },
+            { _ = try await client.identify(filename: "test.pdf", excerpt: "test") },
+            { _ = try await client.ask(system: "Test", user: "Blocked", feature: .readingAssistant) },
+            { _ = try await client.transcribe(audio: Data()) },
+        ]
+        for call in calls {
+            do { try await call(); XCTFail("AI-off must refuse before networking") }
+            catch AIError.disabled { }
+            catch { XCTFail("Wrong error: \(error)") }
+        }
+        XCTAssertFalse(ChatGPTHandoff.open("Do not open"))
+        XCTAssertFalse(ChatGPTHandoff.isInstalled)
+        XCTAssertEqual(resolvedKey(useEnvironment: true), "")
+    }
+
     /// Constructing a client reaches for `Library.shared`, which opens the store at the
     /// standard path. Left alone, running these tests would open and migrate the library a
     /// person keeps their books in, so the suite is pointed at a scratch file instead.
@@ -76,4 +134,21 @@ final class AIClientTests: XCTestCase {
             XCTFail("unexpected error: \(error)")
         }
     }
+}
+
+private final class LocalAIProtocol: URLProtocol {
+    static var holding = false
+    static var started: (() -> Void)?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.started?()
+        guard !Self.holding else { return }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"choices":[{"message":{"content":"Local answer"}}]}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

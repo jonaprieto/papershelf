@@ -178,8 +178,11 @@ struct GeneralSettings: View {
 
     var body: some View {
         Form {
+            AIFeaturesSection()
             Section {
-                LabeledContent("Theme") {
+                HStack {
+                    Text("Theme")
+                    Spacer()
                     HStack(spacing: 0) {
                         ForEach(Appearance.allCases) { mode in
                             Button(mode.label) { prefs.appearance = mode }
@@ -196,9 +199,13 @@ struct GeneralSettings: View {
                     }
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
+                    .frame(maxWidth: 310)
                 }
+                .accessibilityElement(children: .contain)
 
-                LabeledContent("PDF contrast") {
+                HStack {
+                    Text("PDF contrast")
+                    Spacer()
                     HStack(spacing: 0) {
                         ForEach(PDFReadingAppearance.allCases) { mode in
                             Button(mode.label) { prefs.readingAppearance = mode }
@@ -215,7 +222,9 @@ struct GeneralSettings: View {
                     }
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
+                    .frame(maxWidth: 310)
                 }
+                .accessibilityElement(children: .contain)
             } header: {
                 Text("Appearance")
             } footer: {
@@ -897,6 +906,7 @@ struct IntegrationSettings: View {
 
     var body: some View {
         Form {
+            if prefs.aiEnabled {
             Section {
                 Text("Your PDFs stay on this Mac. Turning this on lets an assistant you "
                      + "already use, such as ChatGPT, Claude Code or Codex, search your "
@@ -958,6 +968,7 @@ struct IntegrationSettings: View {
             }
 
             SettingsPanel(sections: .plugin)
+            }
 
             Section {
                 Picker("Converter", selection: $prefs.defaultConverter) {
@@ -987,6 +998,7 @@ struct IntegrationSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
+            if prefs.aiEnabled {
             Section {
                 Toggle("Offer “Open in ChatGPT” beside a highlight", isOn: $prefs.offerChatGPT)
                     .disabled(!ChatGPTHandoff.isInstalled)
@@ -1004,6 +1016,7 @@ struct IntegrationSettings: View {
                      + "already have open, which is why copying is offered as well.")
                 .font(Face.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
             }
 
             Section {

@@ -1,6 +1,20 @@
 import SwiftUI
 import PaperShelfCore
 
+struct AIFeaturesSection: View {
+    @Bindable private var prefs = Prefs.shared
+
+    var body: some View {
+        Section {
+            Toggle("AI features", isOn: $prefs.aiEnabled)
+                .accessibilityIdentifier("settings.aiEnabled")
+        } header: { Text("Optional AI") } footer: {
+            Text("Turn off to hide AI tools, block model requests and ChatGPT handoffs, and disable MCP assistant access. Pending requests are cancelled; text already sent cannot be recalled. Reading, notes, search and citation metadata still work.")
+                .font(Face.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// The settings, as bare `Section`s for the sidebar's own `Form`.
 ///
 /// They used to be a window of their own. That window sized itself to the whole form at
@@ -59,9 +73,13 @@ struct SettingsPanel: View {
         // second one inside it boxes and indents this tab differently from its siblings.
         Group {
             if sections.contains(.ai) {
+            AIFeaturesSection()
+            if prefs.aiEnabled {
             Section {
-                Toggle("Use OPENAI_API_KEY from the environment", isOn: $prefs.aiUseEnvironment)
-                if prefs.aiUseEnvironment {
+                if !AIClient.isLoopback(prefs.aiBaseURL) {
+                    Toggle("Use OPENAI_API_KEY from the environment", isOn: $prefs.aiUseEnvironment)
+                }
+                if prefs.aiUseEnvironment, !AIClient.isLoopback(prefs.aiBaseURL) {
                     LabeledContent("Environment") {
                         if let found = environmentKey ?? DiscoveredKey.shared.value {
                             Label("Found, ending \(String(found.suffix(4)))",
@@ -83,15 +101,15 @@ struct SettingsPanel: View {
                 HStack {
                     Button("Save key", action: saveKey).disabled(key.isEmpty)
                     Button("Remove") {
-                        KeyStore.remove(account: "openai")
-                        StoredKey.shared.update(nil)
+                        KeyStore.remove(account: keyStore.account)
+                        keyStore.update(nil)
                         key = ""
                         status = .ok("Key removed")
                     }
                     .disabled(key.isEmpty)
                 }
             } header: {
-                Text("OpenAI")
+                Text("API credentials")
             } footer: {
                 Text("The key is kept in your Keychain, never in preferences, which are a plain "
                      + "file anything running as you can read. A Finder-launched app inherits "
@@ -103,19 +121,23 @@ struct SettingsPanel: View {
             }
 
             Section {
+                HStack {
+                    Button("LM Studio") { prefs.aiBaseURL = "http://localhost:1234/v1" }
+                    Button("llama.cpp") { prefs.aiBaseURL = "http://localhost:8080/v1" }
+                }
                 TextField("Base URL", text: $prefs.aiBaseURL)
                     .font(Face.code)
             } header: {
                 Text("Endpoint")
             } footer: {
-                Text("Any OpenAI-compatible endpoint. The model list is read from it, "
-                     + "and picked in the AI panel of the sidebar.")
+                Text("Start your local server and load a model, then test the connection. Localhost needs no API key unless your server requires one. Local credentials are kept separately from cloud credentials.")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
+                TextField("Model ID", text: $prefs.aiModel).font(Face.code)
                 Picker("Model", selection: $prefs.aiModel) {
                     if !availableModels.contains(prefs.aiModel) { Text(prefs.aiModel).tag(prefs.aiModel) }
                     ForEach(availableModels, id: \.self) { Text($0).tag($0) }
@@ -174,8 +196,9 @@ struct SettingsPanel: View {
                 Text("AI spend")
             }
             }
+            }
 
-            if sections.contains(.plugin) {
+            if sections.contains(.plugin), prefs.aiEnabled {
             Section {
                 chatGPTPluginRow
             } header: {
@@ -193,13 +216,17 @@ struct SettingsPanel: View {
             }
             }
         }
-        .onAppear { key = StoredKey.shared.value ?? "" }
-        .task {
-            guard sections.contains(.ai) else { return }
+        .onAppear { if prefs.aiEnabled { key = keyStore.value ?? "" } }
+        .onChange(of: prefs.aiBaseURL) { _, _ in
+            key = prefs.aiEnabled ? keyStore.value ?? "" : ""
+            availableModels = []
+        }
+        .task(id: prefs.aiEnabled) {
+            guard sections.contains(.ai), prefs.aiEnabled else { return }
             await loadEntries()
             let client = AIClient(baseURL: prefs.aiBaseURL, model: prefs.aiModel,
                                   apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
-            guard !client.apiKey.isEmpty else { return }
+            guard client.isConfigured else { return }
             availableModels = (try? await client.models()) ?? []
         }
     }
@@ -429,10 +456,12 @@ struct SettingsPanel: View {
 
     private func saveKey() {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        KeyStore.set(trimmed, account: "openai")
-        StoredKey.shared.update(trimmed)
+        KeyStore.set(trimmed, account: keyStore.account)
+        keyStore.update(trimmed)
         status = .ok("Key saved to the Keychain")
     }
+
+    private var keyStore: StoredKey { AIClient.isLoopback(prefs.aiBaseURL) ? .local : .shared }
 
     private func test() {
         testing = true
@@ -478,7 +507,10 @@ final class PriceBook {
 }
 
 /// The stored key wins when there is one; the environment is the fallback.
+@MainActor
 func resolvedKey(useEnvironment: Bool) -> String {
+    guard Prefs.shared.aiEnabled else { return "" }
+    if AIClient.isLoopback(Prefs.shared.aiBaseURL) { return StoredKey.local.value ?? "" }
     if let stored = StoredKey.shared.value, !stored.isEmpty { return stored }
     guard useEnvironment else { return "" }
     if let inherited = AIClient.environmentKey() { return inherited }
@@ -492,6 +524,9 @@ func resolvedKey(useEnvironment: Bool) -> String {
 /// unlock prompt every few seconds; one read per launch produces at most one.
 final class StoredKey: @unchecked Sendable {
     static let shared = StoredKey()
+    static let local = StoredKey(account: "local-ai")
+    let account: String
+    init(account: String = "openai") { self.account = account }
     private let lock = NSLock()
     private var loaded = false
     private var cached: String?
@@ -501,7 +536,7 @@ final class StoredKey: @unchecked Sendable {
         defer { lock.unlock() }
         if !loaded {
             loaded = true
-            cached = KeyStore.get(account: "openai")
+            cached = KeyStore.get(account: account)
         }
         return cached
     }

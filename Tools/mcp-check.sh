@@ -631,3 +631,8 @@ printf '%s\n' \
 } | RENAMES_STAT_FILE="$RENAMES_STAT_FILE" \
     SWEEP_STALE_PLAN="$STALE_PLAN" SWEEP_FRESH_PLAN="$FRESH_PLAN" \
     python3 Tools/mcp-check.py
+
+# The policy blocks tool execution, not JSON-RPC framing or the handshake.
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_documents","arguments":{}}}' \
+  | PAPERSHELF_AI_DISABLED=1 PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" "$BIN" 2>/dev/null \
+  | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["result"]["isError"] is True; assert "AI features" in r["result"]["content"][0]["text"]; print("PASS: AI disabled blocks MCP access")'

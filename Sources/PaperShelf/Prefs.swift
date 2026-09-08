@@ -326,6 +326,13 @@ final class Prefs {
 
     // MARK: - The model, and what it is allowed to do
 
+    var aiEnabled: Bool = Store.flag("aiEnabled", true) {
+        didSet {
+            Store.put("aiEnabled", aiEnabled)
+            if !aiEnabled { AIRequests.cancelAll() }
+        }
+    }
+
     var aiModel: String = Store.text("aiModel", "gpt-4o-mini") {
         didSet { Store.put("aiModel", aiModel) }
     }

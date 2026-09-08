@@ -881,6 +881,15 @@ struct ProjectConversationView: View {
     @State private var saving: ProjectTurn?
 
     var body: some View {
+        if Prefs.shared.aiEnabled {
+            conversationContent
+        } else {
+            ContentUnavailableView("AI features are off", systemImage: "books.vertical",
+                                   description: Text("Your project documents remain available. Enable AI in Settings > General to ask questions."))
+        }
+    }
+
+    private var conversationContent: some View {
         ScrollView {
             // Not lazy. A conversation is tens of turns, so laziness buys nothing.
             VStack(alignment: .leading, spacing: Space.gutter) {

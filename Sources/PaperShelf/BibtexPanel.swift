@@ -61,6 +61,7 @@ extension ReviewInspector {
                     .tip("Keep this entry with the document, so it survives a relaunch "
                          + "and is used instead of one guessed from the filename")
 
+                    if prefs.aiEnabled {
                     Button {
                         confirmingImprove = true
                     } label: {
@@ -77,6 +78,7 @@ extension ReviewInspector {
                     .tip(aiReady
                          ? "Send this entry and the opening text, and take back a corrected one"
                          : "Needs an API key, in Settings")
+                    }
 
                     // The bibliography draws no page of its own, so checking an entry
                     // against the title page it came from meant leaving the view that

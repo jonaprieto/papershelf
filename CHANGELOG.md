@@ -8,6 +8,9 @@ numbers rather than dates.
 
 ### Added
 
+- Turn off AI features in General settings to hide model tools, cancel pending requests,
+  and block assistant handoffs and MCP access. Reading, notes, search and citation metadata
+  remain available. Configure local model servers with separate local credentials.
 - Navigate websites, save versioned reading copies and web archives, and cite page-supplied
   metadata with the source URL and capture date. Saved articles use the PDF reader's notes,
   highlights, search and split panes. Reopening the live page and freezing again retains

@@ -85,6 +85,15 @@ appearance; equations drawn as images or SVG may not have selectable text.
 Settings. It shows the text and destination before Send question. The ChatGPT handoff is
 an additional option; it is not required for these reading questions.
 
+To use a local model, start its server, then choose **LM Studio** or **llama.cpp** in
+Settings > AI & spend. Set the model ID and test the connection. Localhost can use an empty API
+key; local credentials are stored separately from cloud credentials.
+
+Turn off **AI features** in Settings > General to hide model tools, cancel pending model
+requests, and block ChatGPT handoffs and MCP tool access. Reading, annotations, local
+search and citation metadata lookup remain available. Requests already sent cannot be
+recalled.
+
 ## Roadmap
 
 - [ ] Notarized and signed releases

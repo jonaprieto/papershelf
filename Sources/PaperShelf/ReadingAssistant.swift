@@ -57,6 +57,7 @@ struct AskReadingAssistant: View {
     @State private var passage: String?
 
     var body: some View {
+        if Prefs.shared.aiEnabled {
         Button {
             passage = context()
         } label: {
@@ -65,6 +66,7 @@ struct AskReadingAssistant: View {
         .help("Ask the API provider configured in Settings about this text")
         .sheet(isPresented: Binding(get: { passage != nil }, set: { if !$0 { passage = nil } })) {
             if let passage { ReadingAssistant(context: passage) }
+        }
         }
     }
 }
@@ -97,7 +99,7 @@ private struct ReadingAssistant: View {
             HStack {
                 Button(request == nil ? "Send question" : "Asking…") { ask() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(request != nil || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!prefs.aiEnabled || request != nil || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if request != nil {
                     ProgressView().controlSize(.small)
                     Button("Cancel") { request?.cancel(); request = nil }

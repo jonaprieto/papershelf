@@ -14,8 +14,8 @@ import PaperShelfCore
 /// is the only route into a conversation already in progress, which is why both are offered.
 enum ChatGPTHandoff {
 
-    static var isInstalled: Bool {
-        NSWorkspace.shared.urlForApplication(toOpen: URL(string: "codex://threads/new")!) != nil
+    @MainActor static var isInstalled: Bool {
+        Prefs.shared.aiEnabled && NSWorkspace.shared.urlForApplication(toOpen: URL(string: "codex://threads/new")!) != nil
     }
 
     /// A passage, with enough around it that the answer is about the right document.
@@ -37,7 +37,8 @@ enum ChatGPTHandoff {
 
     /// Opens a new conversation with the passage already in the composer.
     @discardableResult
-    static func open(_ prompt: String) -> Bool {
+    @MainActor static func open(_ prompt: String) -> Bool {
+        guard Prefs.shared.aiEnabled else { return false }
         var allowed = CharacterSet.urlQueryAllowed
         // These are legal in a query by RFC 3986 and ambiguous in practice, so they are
         // escaped rather than left for the receiving app to guess at.

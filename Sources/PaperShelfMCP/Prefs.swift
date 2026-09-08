@@ -12,6 +12,11 @@ import PaperShelfCore
 enum Prefs {
     private static let defaults = UserDefaults(suiteName: "com.jonaprieto.pdfhammer")
 
+    static var aiEnabled: Bool {
+        ProcessInfo.processInfo.environment["PAPERSHELF_AI_DISABLED"] != "1"
+            && (defaults?.object(forKey: "aiEnabled") as? Bool ?? true)
+    }
+
     /// The passwords the reader has already given the app, so a document it can open is a
     /// document this server can open. Never placed in a tool result, an error message, or
     /// a line written to stderr.

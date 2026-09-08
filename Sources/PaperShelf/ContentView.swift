@@ -137,7 +137,7 @@ struct ContentView: View {
                  apiKey: resolvedKey(useEnvironment: prefs.aiUseEnvironment))
     }
 
-    private var aiReady: Bool { !aiClient.apiKey.isEmpty }
+    private var aiReady: Bool { prefs.aiEnabled && aiClient.isConfigured }
 
     /// The list is asked for once a key exists, and on demand after that.
     private func loadModels() {
