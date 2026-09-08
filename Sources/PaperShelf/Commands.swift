@@ -68,6 +68,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
     case removeFromLibrary, trashNow
+    case suggestTags
 
     var id: String { rawValue }
 
@@ -76,6 +77,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .removeFromLibrary: return "delete forget remove pdf library catalogue"
         case .trashNow: return "delete send move pdf file trash bin"
         case .revealInFinder: return "open pdf file finder location folder reveal"
+        case .suggestTags: return "ai suggest generate subject tags labels current pdf paper"
         default: return ""
         }
     }
@@ -138,7 +140,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .shortcuts, .removeFromLibrary, .trashNow:
+             .shortcuts, .removeFromLibrary, .trashNow, .suggestTags:
             return .library
         }
     }
@@ -161,7 +163,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // wanted, and answering only while browsing would just move the hole.
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .openExternally, .openInNewTab, .removeFromLibrary, .trashNow:
+             .openExternally, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags:
             return .library
         default:
             return .anywhere
@@ -235,6 +237,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .revealInFinder: return "Reveal in Finder"
         case .removeFromLibrary: return "Remove this PDF from the library"
         case .trashNow: return "Move this PDF to Trash…"
+        case .suggestTags: return "Suggest tags for this PDF…"
         case .newTag: return "New tag…"
         case .shortcuts: return "Every shortcut"
         }
@@ -316,7 +319,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .refresh: return Shortcut("r", .command)
         case .revealInFinder: return Shortcut("r", [.command, .option])
         case .newTag: return nil
-        case .removeFromLibrary, .trashNow: return nil
+        case .removeFromLibrary, .trashNow, .suggestTags: return nil
         case .shortcuts: return Shortcut("?", [])
         }
     }

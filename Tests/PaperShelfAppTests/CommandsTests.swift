@@ -24,7 +24,7 @@ final class CommandsTests: XCTestCase {
     }
 
     func testDocumentManagementIsAvailableInThePaletteWhileReading() {
-        for command in [Command.removeFromLibrary, .trashNow, .revealInFinder, .openExternally] {
+        for command in [Command.removeFromLibrary, .trashNow, .revealInFinder, .openExternally, .suggestTags] {
             XCTAssertTrue(ResultsPane.performable.contains(command))
             XCTAssertTrue(command.scope.reachable(from: .reader))
         }

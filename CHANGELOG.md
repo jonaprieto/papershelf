@@ -8,6 +8,8 @@ numbers rather than dates.
 
 ### Added
 
+- Suggest subject tags for the current PDF with the configured model, review and edit
+  them before saving, and browse a library-wide tag cloud with document counts.
 - Turn off AI features in General settings to hide model tools, cancel pending requests,
   and block assistant handoffs and MCP access. Reading, notes, search and citation metadata
   remain available. Configure local model servers with separate local credentials.

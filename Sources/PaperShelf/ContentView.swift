@@ -1125,14 +1125,21 @@ struct ContentView: View {
             } else if tagCounts.isEmpty {
                 Text("No tags yet").foregroundStyle(.secondary)
             } else {
-                ForEach(tagCounts) { tag in
-                    tagRow(tag)
+                FlowRow(spacing: Space.snug) {
+                    ForEach(tagCounts) { tag in
+                        tagRow(tag)
+                    }
                 }
+                .padding(.vertical, Space.tight)
+                .accessibilityIdentifier("library.tagCloud")
             }
         } header: {
             Text("Tags")
         }
         .task { await reloadTagCounts() }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryTagsChanged)) { _ in
+            Task { await reloadTagCounts() }
+        }
         .alert("Rename Tag", isPresented: $renamingTag, presenting: tagBeingRenamed) { tag in
             TextField("Name", text: $renamedTagText)
             Button("Rename") { Task { await performRenameTag(tag) } }
@@ -1171,23 +1178,19 @@ struct ContentView: View {
             }
             sidebarTarget = .tag(tag.name)
         } label: {
-            sidebarRow(sidebarTarget == .tag(tag.name)) {
-                HStack(spacing: Space.snug) {
-                    // A dot in the tag's own colour rather than a tag glyph on every row:
-                    // a column of identical icons carries no information, and a colour
-                    // makes a tag recognisable before its name is read.
-                    Circle()
-                        .fill(tagColour(tag.name))
-                        .frame(width: 9, height: 9)
-                        .padding(.horizontal, Space.hair)
-                    Text(tag.name)
-                }
-            } trailing: {
-                Text(tag.documents.formatted())
+            HStack(spacing: Space.tight) {
+                Text(tag.name).lineLimit(1).truncationMode(.middle)
+                Text(tag.documents.formatted()).monospacedDigit().foregroundStyle(.secondary)
             }
+            .font(Face.caption)
+            .padding(.horizontal, Space.snug).padding(.vertical, Space.tight)
+            .background(tagColour(tag.name).opacity(sidebarTarget == .tag(tag.name) ? 0.28 : 0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(sidebarTarget == .tag(tag.name) ? tagColour(tag.name) : .clear))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(sidebarTarget == .tag(tag.name) ? .isSelected : [])
+        .accessibilityLabel("\(tag.name), \(tag.documents) documents")
         .tip("Show the \(tag.documents) document\(tag.documents == 1 ? "" : "s") carrying this tag")
         .contextMenu {
             Button("Rename…") {
@@ -1215,12 +1218,14 @@ struct ContentView: View {
         let name = renamedTagText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != tag.name else { return }
         try? await library.renameTag(tag.name, to: name)
+        NotificationCenter.default.post(name: .libraryTagsChanged, object: nil)
         await reloadTagCounts()
     }
 
     private func performDeleteTag(_ tag: TagCount) async {
         guard let library = Library.shared else { return }
         try? await library.deleteTag(tag.name)
+        NotificationCenter.default.post(name: .libraryTagsChanged, object: nil)
         await reloadTagCounts()
     }
 

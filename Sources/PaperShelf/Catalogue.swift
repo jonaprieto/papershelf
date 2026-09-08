@@ -58,6 +58,7 @@ struct ResultsPane: View {
     /// -- a key, a decision, a search landing somewhere else -- has to be scrolled to.
     @State private var pickedByPointer = false
     @State private var showingShortcuts = false
+    @State private var suggestingTags: Item?
     @State private var websites: [String: WebReaderModel] = [:]
     @State private var converting = Converting()
     @State private var showingMarkdown = false
@@ -935,6 +936,9 @@ struct ResultsPane: View {
     /// through, and a generic wrapper is checked on its own.
     private func withSidebarRequests<V: View>(_ view: V) -> some View {
         view
+            .onReceive(NotificationCenter.default.publisher(for: .libraryTagsChanged)) { _ in
+                Task { await tagIndex.refresh(items: runner.results) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openFolderInCatalogue)) { note in
                 guard let path = note.userInfo?["path"] as? String else { return }
                 openFolder(URL(fileURLWithPath: path))
@@ -964,6 +968,12 @@ struct ResultsPane: View {
                 ReadingNoteEditor(annotator: readerAnnotator, colour: currentStyle?.nsColor ?? .systemYellow)
             }
             .sheet(isPresented: $showingShortcuts) { ShortcutsSheet() }
+            .sheet(item: $suggestingTags) { item in
+                TagSuggestionsSheet(item: item, available: tagIndex.everyTag,
+                                    existing: tagIndex.tags(for: item), passwords: passwords) { tag in
+                    await tagIndex.add(tag, to: item)
+                }
+            }
             .sheet(isPresented: $showingMarkdown) {
                 if let item = selectedItem {
                     MarkdownSheet(item: item, passwords: passwords, converting: converting)
@@ -1068,7 +1078,7 @@ struct ResultsPane: View {
                       defaultFilename: bibFileName) { _ in }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
-                commands: Self.performable.filter { $0 != .palette && (prefs.aiEnabled || $0 != .askAI) },
+                commands: Self.performable.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags].contains($0)) },
                 documents: runner.results,
                 run: { perform($0) },
                 open: { openReader($0.key) },
@@ -1736,7 +1746,7 @@ struct ResultsPane: View {
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates, .readingMode,
         .zenMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
-        .removeFromLibrary, .trashNow,
+        .removeFromLibrary, .trashNow, .suggestTags,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
         .nextMark, .previousMark,
@@ -1769,6 +1779,8 @@ struct ResultsPane: View {
         case .revealInFinder: revealInFinder()
         case .removeFromLibrary: removeCurrentFile(trashing: false)
         case .trashNow: removeCurrentFile(trashing: true)
+        case .suggestTags:
+            if prefs.aiEnabled { suggestingTags = readerItem ?? selectedItem }
         case .refresh: refresh()
         case .findDuplicates: runner.findDuplicates(passwords: passwords)
         case .indexText:
@@ -2108,7 +2120,8 @@ struct ResultsPane: View {
             new: {
                 newTagName = ""
                 taggingItem = item
-            }
+            },
+            suggest: { suggestingTags = item }
         )
     }
 
@@ -3553,6 +3566,8 @@ final class CatalogueTags {
             everyTag.append(trimmed)
             everyTag.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         }
+        revision &+= 1
+        NotificationCenter.default.post(name: .libraryTagsChanged, object: nil)
         return true
     }
 
@@ -3564,6 +3579,8 @@ final class CatalogueTags {
         guard let library, let id = documentID[item.key] else { return false }
         guard (try? await library.removeTag(name, fromDocument: id)) != nil else { return false }
         byDocument[id]?.removeAll { $0 == name }
+        revision &+= 1
+        NotificationCenter.default.post(name: .libraryTagsChanged, object: nil)
         return true
     }
 }

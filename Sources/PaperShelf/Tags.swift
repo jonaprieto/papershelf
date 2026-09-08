@@ -1,6 +1,10 @@
 import SwiftUI
 import PaperShelfCore
 
+extension Notification.Name {
+    static let libraryTagsChanged = Notification.Name("PaperShelf.libraryTagsChanged")
+}
+
 /// Everything a view needs to show and change one file's tags, in one value.
 ///
 /// Tagging is offered in three places now: the right-click menu, the catalogue's cards,
@@ -21,6 +25,7 @@ struct TagActions {
     var remove: (String) -> Void = { _ in }
     /// Opens the prompt for a tag that does not exist yet.
     var new: () -> Void = {}
+    var suggest: (() -> Void)? = nil
 
     /// What is worth offering: every tag this file does not already carry. Offering one it
     /// has would either do nothing or, worse, read as a way to remove it.
@@ -40,7 +45,7 @@ struct TagStrip: View {
 
     var body: some View {
         if actions.isAvailable {
-            HStack(spacing: Space.snug) {
+            VStack(alignment: .leading, spacing: Space.snug) {
                 if actions.tags.isEmpty {
                     Text(emptyLabel)
                         .font(Face.caption)
@@ -54,8 +59,16 @@ struct TagStrip: View {
                         }
                     }
                 }
-                Spacer(minLength: 0)
-                addControl
+                HStack(spacing: Space.step) {
+                    addControl
+                    if Prefs.shared.aiEnabled, let suggest = actions.suggest {
+                        Button("Suggest tags", systemImage: "sparkles", action: suggest)
+                            .buttonStyle(.borderless)
+                            .tip("Ask the configured model for tags, then review them before adding")
+                            .accessibilityIdentifier("tags.openSuggestions")
+                    }
+                }
+                .controlSize(.small)
             }
         }
     }
@@ -72,7 +85,7 @@ struct TagStrip: View {
             Divider()
             Button("New Tag…", action: actions.new)
         } label: {
-            Image(systemName: "plus.circle")
+            Label("Add tag", systemImage: "plus.circle")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -126,7 +139,7 @@ struct FlowRow: Layout {
         for row in arrange(subviews: subviews, width: bounds.width) {
             var x = bounds.minX
             for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
+                let size = subviews[index].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
                 subviews[index].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
                                       proposal: ProposedViewSize(size))
                 x += size.width + spacing
@@ -144,7 +157,7 @@ struct FlowRow: Layout {
         var lineHeight: CGFloat = 0
 
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
+            let size = subviews[index].sizeThatFits(ProposedViewSize(width: width.isFinite ? width : nil, height: nil))
             let needed = current.isEmpty ? size.width : lineWidth + spacing + size.width
             if !current.isEmpty && needed > width {
                 rows.append((current, lineWidth, lineHeight))

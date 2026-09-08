@@ -28,6 +28,17 @@ final class TagStripTests: XCTestCase {
         XCTAssertFalse(TagActions.none.isAvailable)
         XCTAssertTrue(TagActions.none.tags.isEmpty)
     }
+
+    func testModelSuggestionsReuseTagsAndRejectUnusableReplies() throws {
+        let reply = "```json\n{\"tags\":[\" TYPE   THEORY \",\"reading\",\"logic\",\"LOGIC\",\"\"]}\n```"
+        XCTAssertEqual(try TagSuggestions.parse(reply, available: ["Type Theory"], existing: ["Reading"]),
+                       ["Type Theory", "logic"])
+        XCTAssertThrowsError(try TagSuggestions.parse("{\"tags\":\"logic\"}", available: [], existing: []))
+        XCTAssertThrowsError(try TagSuggestions.parse("{\"tags\":[17]}", available: [], existing: []))
+        XCTAssertThrowsError(try TagSuggestions.parse(String(repeating: "x", count: 64_001), available: [], existing: []))
+        let names = [String(repeating: "x", count: 49), "bad\u{0}tag"] + (1...10).map { "tag \($0)" }
+        XCTAssertEqual(TagSuggestions.normalized(names, available: [], existing: []), (1...8).map { "tag \($0)" })
+    }
 }
 
 /// `FlowRow` is what wraps the chips. A row that never wraps puts a file's eighth tag off
@@ -71,9 +82,29 @@ final class FlowRowTests: XCTestCase {
     func testChipsThatDoNotFitWrap() {
         XCTAssertGreaterThan(rowCount(width: 140, chips: 4), 1)
     }
+
+    func testLongTagFitsWithinANarrowCloud() {
+        let box = SizeBox()
+        let probe = FlowRow {
+            Text(String(repeating: "long subject ", count: 10)).lineLimit(1)
+                .background(GeometryReader { proxy in
+                    Color.clear.onAppear { box.width = proxy.size.width }
+                })
+        }.frame(width: 140)
+        let hosting = NSHostingView(rootView: probe)
+        hosting.frame = NSRect(x: 0, y: 0, width: 140, height: 100)
+        let deadline = Date().addingTimeInterval(10)
+        while box.width == nil && Date() < deadline {
+            hosting.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertNotNil(box.width)
+        XCTAssertLessThanOrEqual(box.width ?? .infinity, 140)
+    }
 }
 
 @MainActor
 private final class SizeBox {
     var height: CGFloat?
+    var width: CGFloat?
 }

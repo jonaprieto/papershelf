@@ -253,6 +253,7 @@ public enum AIFeature: String, Sendable, CaseIterable, Codable, Hashable {
     case bibtex           // improving a bibliography entry
     case noteTranscription // dictating a note
     case readingAssistant // a passage or notes sent to the configured provider
+    case tags             // suggested subject tags for one paper
 
     public var displayName: String {
         switch self {
@@ -263,6 +264,7 @@ public enum AIFeature: String, Sendable, CaseIterable, Codable, Hashable {
         case .bibtex: return "Bibliography"
         case .noteTranscription: return "Note transcription"
         case .readingAssistant: return "Reading assistant"
+        case .tags: return "Tag suggestions"
         }
     }
 }

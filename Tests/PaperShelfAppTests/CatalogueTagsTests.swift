@@ -49,12 +49,16 @@ final class CatalogueTagsTests: XCTestCase {
         let library = try Library(url: url)
         let tagIndex = CatalogueTags(library: library)
         let item = makeItem("statement.pdf")
+        let revision = tagIndex.revision
+        let changed = expectation(forNotification: .libraryTagsChanged, object: nil)
 
         XCTAssertEqual(tagIndex.tags(for: item), [], "not indexed yet, so it has nothing")
 
         let added = await tagIndex.add("Bank", to: item)
         XCTAssertTrue(added)
         XCTAssertEqual(tagIndex.tags(for: item), ["Bank"])
+        XCTAssertGreaterThan(tagIndex.revision, revision)
+        await fulfillment(of: [changed], timeout: 1)
 
         let path = item.currentURL.resolvingSymlinksInPath().path
         let record = try await library.document(atPath: path)
