@@ -163,6 +163,16 @@ struct PaperShelfApp: App {
         }
     }
 
+    /// A PDFKit view owns the first responder while a paper is open, which can leave
+    /// SwiftUI without the focused action its menu command would normally call.
+    private func openPDFSearch() {
+        if let findInPDF {
+            findInPDF.perform()
+        } else if let window = NSApp.keyWindow {
+            NotificationCenter.default.post(name: .openPDFSearch, object: window)
+        }
+    }
+
     var body: some Scene {
         Window("PaperShelf", id: "main") {
             ContentView(chrome: chrome)
@@ -175,9 +185,8 @@ struct PaperShelfApp: App {
             }
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .textEditing) {
-                Button("Find in PDF") { findInPDF?.perform() }
+                Button("Find in PDF", action: openPDFSearch)
                     .keyboardShortcut("f", modifiers: .command)
-                    .disabled(findInPDF == nil)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
@@ -478,6 +487,7 @@ extension Notification.Name {
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")
     static let scriptShowBookmarks = Notification.Name("PaperShelf.scriptShowBookmarks")
+    static let openPDFSearch = Notification.Name("PaperShelf.openPDFSearch")
 }
 
 // MARK: - Content

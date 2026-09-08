@@ -17,6 +17,7 @@ final class Annotator {
     private(set) var hasSelection = false
     /// The active highlighter follows each completed text selection until it is toggled off.
     private var automaticHighlightColour: NSColor?
+    private var selectionClearTask: Task<Void, Never>?
     var automaticHighlighting: Bool { automaticHighlightColour != nil }
     /// Where the selection sits, in the preview's own coordinates, so the bar can be put
     /// next to it rather than parked at the bottom of the page.
@@ -512,10 +513,11 @@ final class Annotator {
     func selectionChanged() {
         guard let view, let selection = view.currentSelection,
               !(selection.string?.isEmpty ?? true), let page = selection.pages.first else {
-            hasSelection = false
-            selectionRect = nil
+            scheduleSelectionClear()
             return
         }
+        selectionClearTask?.cancel()
+        selectionClearTask = nil
         hasSelection = true
 
         if automaticHighlightColour != nil {
@@ -535,6 +537,21 @@ final class Annotator {
         // AppKit measures from the bottom, SwiftUI from the top.
         selectionRect = CGRect(x: box.minX, y: view.bounds.height - box.maxY,
                                width: box.width, height: box.height)
+    }
+
+    /// PDFKit briefly clears the live selection while it recomputes a drag. Do not tear
+    /// down the selection bar until that transient has had a chance to settle.
+    private func scheduleSelectionClear() {
+        selectionClearTask?.cancel()
+        selectionClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard let self, !Task.isCancelled else { return }
+            if self.view?.currentSelection?.string?.isEmpty != false {
+                self.hasSelection = false
+                self.selectionRect = nil
+            }
+            self.selectionClearTask = nil
+        }
     }
 
     /// Arms the current colour for text selections, or returns the reader to ordinary

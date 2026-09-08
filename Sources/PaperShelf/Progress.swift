@@ -1,6 +1,24 @@
 import SwiftUI
 import PaperShelfCore
 
+/// The most recent completed operation and the monotonic time it took.
+struct OperationTiming: Equatable {
+    let name: String
+    let seconds: TimeInterval
+
+    var label: String {
+        let elapsed: String
+        if seconds < 1 {
+            elapsed = "\(Int((seconds * 1_000).rounded())) ms"
+        } else if seconds < 10 {
+            elapsed = String(format: "%.2f s", seconds)
+        } else {
+            elapsed = String(format: "%.1f s", seconds)
+        }
+        return "\(name) \(elapsed)"
+    }
+}
+
 /// What is happening right now, apart from what is on the shelf.
 ///
 /// It was thirty published fields on one object handed to every row, so a scan tick, an
@@ -35,6 +53,14 @@ final class Activity {
     /// this is every file, and a list of fourteen thousand names says nothing a number
     /// does not.
     var indexFailures = 0
+    private(set) var lastOperation: OperationTiming?
+
+    func record(_ name: String, startedAt: TimeInterval) {
+        lastOperation = OperationTiming(
+            name: name,
+            seconds: max(0, ProcessInfo.processInfo.systemUptime - startedAt)
+        )
+    }
 
     func note(_ kind: LogEntry.Kind, subject: String, detail: String = "") {
         log.append(LogEntry(kind: kind, subject: subject, detail: detail))

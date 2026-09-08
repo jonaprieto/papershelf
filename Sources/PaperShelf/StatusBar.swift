@@ -195,6 +195,7 @@ struct StatusBar: View {
 
             Text(plan.built)
             separator
+            lastOperation
             Text("? for every shortcut")
             separator
             buildStamp
@@ -232,6 +233,7 @@ struct StatusBar: View {
                 separator
             }
 
+            lastOperation
             watchingDot
             separator
             buildStamp
@@ -283,6 +285,7 @@ struct StatusBar: View {
             Text(sizeLabel)
             separator
 
+            lastOperation
             watchingDot
             separator
             buildStamp
@@ -313,6 +316,16 @@ struct StatusBar: View {
         return Text(Self.buildLabel(version: version, build: build, revision: revision))
             .font(Face.mono)
             .tip("PaperShelf version \(version), build \(build), commit \(revision ?? "unrecorded")")
+    }
+
+    @ViewBuilder
+    private var lastOperation: some View {
+        if let timing = activity.lastOperation {
+            Text("Last: \(timing.label)")
+                .font(Face.mono)
+                .tip("Most recent completed operation: \(timing.label)")
+            separator
+        }
     }
 
     static func buildLabel(version: String, build: String, revision: String?) -> String {

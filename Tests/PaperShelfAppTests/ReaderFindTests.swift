@@ -1,9 +1,25 @@
 import XCTest
 import PDFKit
+import AppKit
 @testable import PaperShelf
 
 @MainActor
 final class ReaderFindTests: XCTestCase {
+
+    func testReaderKeyboardClaimsCommandFBeforePDFKit() throws {
+        let find = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                                   modifierFlags: .command, timestamp: 0,
+                                                   windowNumber: 0, context: nil,
+                                                   characters: "f", charactersIgnoringModifiers: "f",
+                                                   isARepeat: false, keyCode: 3))
+        let other = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                                    modifierFlags: .command, timestamp: 0,
+                                                    windowNumber: 0, context: nil,
+                                                    characters: "g", charactersIgnoringModifiers: "g",
+                                                    isARepeat: false, keyCode: 5))
+        XCTAssertTrue(ResultsPane.requestsPDFSearch(find))
+        XCTAssertFalse(ResultsPane.requestsPDFSearch(other))
+    }
 
     func testFindListsEveryOccurrenceAndMovesBetweenExactSelections() throws {
         let directory = FileManager.default.temporaryDirectory

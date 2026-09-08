@@ -771,6 +771,10 @@ struct ResultsPane: View {
             .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { _ in
                 showingPalette = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
+                guard let window = note.object as? NSWindow, window === paneWindow.window else { return }
+                openFind()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .scriptCopyCitation)) { _ in
                 copyCitation()
             }
@@ -1479,6 +1483,10 @@ struct ResultsPane: View {
 
     private func handle(_ event: NSEvent) -> Bool {
         guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
+        if Self.requestsPDFSearch(event), readerAnnotator.hasPages {
+            openFind()
+            return true
+        }
         guard !runner.busy else { return false }
         // A palette field owns its arrows and Return. The local monitor otherwise sees
         // them first and turns the PDF page before the palette can move its selection.
@@ -1562,6 +1570,11 @@ struct ResultsPane: View {
 
         guard let match else { return false }
         return perform(match)
+    }
+
+    static func requestsPDFSearch(_ event: NSEvent) -> Bool {
+        event.charactersIgnoringModifiers?.lowercased() == "f"
+            && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
     }
 
     private func handleReaderNavigation(_ event: NSEvent) -> Bool {

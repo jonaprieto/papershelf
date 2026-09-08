@@ -13,6 +13,7 @@ import PaperShelfCore
 extension Runner {
     func indexText(passwords: [String]) {
         guard Library.shared != nil, !results.isEmpty, !activity.indexing else { return }
+        let startedAt = ProcessInfo.processInfo.systemUptime
         let snapshot = results
         indexGeneration &+= 1
         let generation = indexGeneration
@@ -22,7 +23,7 @@ extension Runner {
         activity.indexFailures = 0
 
         indexTask = Task { [weak self] in
-            defer { Task { @MainActor [weak self] in self?.finishIndexing(generation) } }
+            defer { Task { @MainActor [weak self] in self?.finishIndexing(generation, startedAt: startedAt) } }
             guard let library = Library.shared,
                   let rows = try? await library.textIndexRows() else { return }
 
@@ -95,11 +96,12 @@ extension Runner {
     }
 
     @MainActor
-    private func finishIndexing(_ generation: Int) {
+    private func finishIndexing(_ generation: Int, startedAt: TimeInterval) {
         guard indexGeneration == generation else { return }
         activity.indexing = false
         activity.current = ""
         indexTask = nil
+        activity.record("Index \(activity.indexed) files", startedAt: startedAt)
         Task { await refreshIndexedCount() }
     }
 

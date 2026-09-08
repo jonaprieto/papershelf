@@ -28,6 +28,7 @@ struct ReaderWindow: View {
     /// never renames, moves or files anything.
     @State private var documentID: String?
     @State private var documentProjectScopes: [HighlightMeaningScope] = []
+    @State private var readerWindow = PaneWindow()
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the delegate is the one that builds this window.
     private var palette: Palette { Palette.shared }
@@ -94,6 +95,11 @@ struct ReaderWindow: View {
         .focusedValue(\.togglePane, TogglePaneAction { showsNotes.toggle() })
         .frame(minWidth: SplitLayout.readerFloorWidth,
                minHeight: SplitLayout.readerFloorHeight)
+        .background { WindowReader { readerWindow.window = $0 }.frame(width: 0, height: 0) }
+        .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
+            guard let window = note.object as? NSWindow, window === readerWindow.window else { return }
+            openFind()
+        }
         .task { await recordAndRestore() }
         .task(id: annotator.page) { await rememberPage() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in

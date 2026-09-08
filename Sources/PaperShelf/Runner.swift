@@ -590,6 +590,7 @@ final class Runner {
 
     func findDuplicates(passwords: [String] = []) {
         guard !results.isEmpty, !findingDuplicates else { return }
+        let startedAt = ProcessInfo.processInfo.systemUptime
         findingDuplicates = true
         let snapshot = results
         Task.detached(priority: .userInitiated) { [self] in
@@ -603,6 +604,7 @@ final class Runner {
                 )
                 self.findingDuplicates = false
                 self.duplicatesChecked = true
+                self.activity.record("Duplicate check", startedAt: startedAt)
             }
         }
     }
@@ -803,6 +805,7 @@ final class Runner {
     }
 
     func preview(roots: [URL], options: Options, fingerprint: String) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
         let wasCached = showingCached
         begin(fingerprint: fingerprint, dry: true)
         let generation = workGeneration
@@ -854,6 +857,7 @@ final class Runner {
                 self.showingCached = false
                 self.finish(out, derived: derived)
                 self.workTask = nil
+                self.activity.record("Review \(out.count) files", startedAt: startedAt)
             }
         }
     }
@@ -863,6 +867,7 @@ final class Runner {
     /// external volume bounded by its directory walk rather than its PDF contents.
     func libraryPreview(roots: [URL], options: Options, fingerprint: String,
                         preservingVisibleResults: Bool = false) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
         if preservingVisibleResults {
             cancelWork()
             cancelSearch()
@@ -919,6 +924,7 @@ final class Runner {
                     await self.refreshLibraryFacts()
                 }
                 self.workTask = nil
+                self.activity.record("Refresh \(out.count) files", startedAt: startedAt)
             }
         }
     }
@@ -926,6 +932,7 @@ final class Runner {
     /// Runs the reviewed plan. Skipped files are dropped, confirmed names are passed
     /// through verbatim, so the result matches the preview line for line.
     func apply(options: Options) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
         let decisions = self.decisions
         // Skipped files are left alone, and anything already applied is finished.
         let queue = jobs.filter {
@@ -966,6 +973,7 @@ final class Runner {
                                             detail: "-> \(item.destinationName)") }
                 self.finish(out, derived: derived)
                 self.workTask = nil
+                self.activity.record("Apply \(out.count) files", startedAt: startedAt)
             }
         }
     }
