@@ -155,13 +155,27 @@ struct ResultsPane: View {
     /// The projects a file can be filed into from its own menu. Loaded with the shelf
     /// rather than when the palette opens, since the menu is right there on every row.
     @State private var projects: [ProjectSummary] = []
-    /// The document the reader is open on, by key. Nil means the browser has the middle
-    /// of the window.
+    /// What this window has open. Replaces a single `reader` key: the window can hold more
+    /// than one document now, and which one is showing is the deck's business.
     ///
     /// The page used to be beside every view, so a shelf of covers spent half a window on
     /// a PDF nobody had asked to open. The middle region shows one thing now: the
     /// collection, or a document.
-    @State private var reader: String?
+    @State private var deck = ReadingDeck(deck: Deck.one(pane: UUID()))
+
+    /// Whether the document the deck is showing has the middle of the window, rather than
+    /// the collection.
+    ///
+    /// The deck says what is open; this says which of the two the window is looking at.
+    /// They are different questions once a document can stay open while you go back to the
+    /// shelf, and the deck is the wrong place to answer the second: what a pane holds says
+    /// nothing about where you are standing.
+    @State private var readerFocused = false
+
+    /// Whether a document has the middle of the window to itself. The deck has the last
+    /// word: closing what was showing leaves nothing to look at, so the collection comes
+    /// back whether or not anything cleared the flag.
+    private var readerOpen: Bool { readerFocused && deck.deck.activeTab != nil }
 
     /// Whether the page is one of the panes.
     ///
@@ -170,16 +184,27 @@ struct ResultsPane: View {
     /// document is, and answering with a panel of fields while the page itself is one
     /// click away in another view is the long way round. The bibliography and the
     /// duplicates view have their own second pane and keep it.
+    static func showsPage(readerOpen: Bool, reading: Bool, viewMode: ViewMode) -> Bool {
+        readerOpen || reading || viewMode == .list || viewMode == .catalogue
+    }
+
     private var showsPage: Bool {
-        reader != nil || reading || prefs.viewMode == .list || prefs.viewMode == .catalogue
+        Self.showsPage(readerOpen: readerOpen, reading: reading, viewMode: prefs.viewMode)
     }
 
     /// Whether the browser keeps the middle. Reading mode and the reader both take it.
-    private var showsBrowser: Bool { !reading && reader == nil }
+    private var showsBrowser: Bool { !reading && !readerOpen }
 
     /// The document the reader is on, falling back to the selection when the key no
     /// longer names a file (a rename applied, a source removed).
-    private var readerItem: Item? { reader.flatMap(runner.item) }
+    ///
+    /// Only while the reader has the middle: what the deck holds is not what the window is
+    /// looking at while you are browsing, and a panel describing a document left open
+    /// somewhere else, beside the row you just clicked, is worse than no panel at all.
+    private var readerItem: Item? {
+        guard readerOpen, let tab = deck.deck.activeTab else { return nil }
+        return runner.item(tab.key)
+    }
 
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
                                     reading: Bool, readerOpen: Bool,
@@ -188,12 +213,12 @@ struct ResultsPane: View {
             && (viewMode == .catalogue || viewMode == .list)
     }
 
+    /// Opens a document and looks at it. A tab that stays: this is somebody asking to read
+    /// the paper rather than the selection moving over it.
     private func openReader(_ key: String?) {
         guard let key else { return }
-        if reader != key {
-            navigate(to: Place(mode: prefs.viewMode, shelf: shelves.current,
-                               folderPath: folderScope?.path, query: query, reader: key))
-        }
+        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        readerFocused = true
         selected = key
     }
 
@@ -204,18 +229,28 @@ struct ResultsPane: View {
     private func openAnywhere(_ key: String) {
         navigate(to: Place(mode: prefs.viewMode, shelf: .all, folderPath: nil,
                            query: "", reader: key))
-        selected = key
+        openReader(key)
     }
 
     /// One rung of the ⎋ ladder: out of the reader, back into the collection.
+    ///
+    /// What is left of the deck decides what the window shows next. Another document kept
+    /// open is one to carry on reading; anything else means the collection, since a deck
+    /// with nothing in it has nothing to show.
     private func closeReader() {
-        if reader != nil, !backPlaces.isEmpty { goBack(); return }
-        reader = nil
+        guard let tab = deck.deck.activeTab else { readerFocused = false; return }
+        closeTab(tab.id)
+    }
+
+    /// Closes one tab, wherever the click came from.
+    private func closeTab(_ tab: Deck.Tab.ID) {
+        deck.deck = deck.deck.closing(tab)
+        if deck.deck.activeTab == nil { readerFocused = false }
     }
 
     private var currentPlace: Place {
         Place(mode: prefs.viewMode, shelf: shelves.current, folderPath: folderScope?.path,
-              query: query, reader: reader)
+              query: query, reader: readerOpen ? deck.deck.activeTab?.key : nil)
     }
 
     /// Picking one of the four views means going to it.
@@ -243,8 +278,7 @@ struct ResultsPane: View {
         shelves.current = destination.shelf
         folderScope = destination.folderPath.map { URL(fileURLWithPath: $0) }
         query = destination.query
-        reader = destination.reader
-        if let reader = destination.reader { selected = reader }
+        if let reader = destination.reader { openReader(reader) } else { closeReader() }
         runner.search(strippingTagTerms(destination.query), passwords: passwords)
     }
 
@@ -535,7 +569,7 @@ struct ResultsPane: View {
     private func withShelfNavigation<V: View>(_ view: V) -> some View {
         view
             .onChange(of: shelves.current) { _, _ in
-                if reader != nil { reader = nil }
+                if readerOpen { closeReader() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .showShelfInCatalogue)) { note in
                 guard let raw = note.userInfo?["shelf"] as? String,
@@ -785,7 +819,7 @@ struct ResultsPane: View {
     }
 
     /// Whether the bar is looking at a document rather than at a collection.
-    private var showsReaderActions: Bool { showsPage && (reading || reader != nil) }
+    private var showsReaderActions: Bool { showsPage && (reading || readerOpen) }
 
     /// The colour the next highlight will be painted with, and what it means.
     private var currentStyle: HighlightStyle? {
@@ -1177,7 +1211,7 @@ struct ResultsPane: View {
 
     /// Which commands can be heard here. This pane is where a plan is decided, so the
     /// reviewing keys are live along with everything scoped anywhere or to the library.
-    private var activeScope: Command.Scope { reading || reader != nil ? .reader : .reviewing }
+    private var activeScope: Command.Scope { reading || readerOpen ? .reader : .reviewing }
 
     /// The commands that do not need a file in front of them, and so must still work on
     /// an empty shelf — which is exactly when someone reaches for the palette.
@@ -1217,7 +1251,7 @@ struct ResultsPane: View {
         if bare, isTyping(event) { return false }
 
         if Self.shouldOpenQuickLook(keyCode: event.keyCode, viewMode: prefs.viewMode,
-                                    reading: reading, readerOpen: reader != nil,
+                                    reading: reading, readerOpen: readerOpen,
                                     hasSelection: selectedItem != nil),
            let item = selectedItem {
             QuickLook.show(item.currentURL)
@@ -1225,7 +1259,7 @@ struct ResultsPane: View {
         }
 
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
-        if reading || reader != nil {
+        if reading || readerOpen {
             if handleReaderNavigation(event) { return true }
             // A book open on screen is still a file with a decision pending, and none of
             // these keys is a page key. Without this, reaching for D over an open document
@@ -1252,7 +1286,7 @@ struct ResultsPane: View {
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
         let arrows: Set<UInt16> = [123, 124, 125, 126]
-        if reading || reader != nil {
+        if reading || readerOpen {
             // PDFView owns the page, but its AppKit responder is not reliable when the
             // reader was opened from the keyboard. Keep the common navigation keys here;
             // this also means opening a book never leaves arrows moving the hidden shelf.
@@ -1326,7 +1360,7 @@ struct ResultsPane: View {
                               rowFocused: regions.rowFocused,
                               filtering: !query.isEmpty || folderScope != nil
                                           || shelves.current != .all,
-                              insidePlace: reader != nil) {
+                              insidePlace: readerOpen) {
         case .leaveField:
             // Keeps what was typed: a second press would undo it, and that is a different
             // decision from leaving the field.
@@ -1399,7 +1433,7 @@ struct ResultsPane: View {
         case .confirm:
             // On the shelf ⏎ opens the book: a shelf is for reading, and the name is
             // decided in the list, where the page is beside it.
-            if prefs.viewMode == .catalogue, reader == nil, let item = selectedItem {
+            if prefs.viewMode == .catalogue, !readerOpen, let item = selectedItem {
                 openReader(item.key)
             } else {
                 confirm()
@@ -1597,9 +1631,14 @@ struct ResultsPane: View {
         pickedByPointer = false
         let key = runner.results[next].key
         selected = key
-        // In reader place, `reader` is the displayed document; changing only `selected`
-        // leaves the page stuck on the old file even though the selection moved.
-        if reader != nil { reader = key }
+        // In the reader the page follows the selection: changing only `selected` leaves
+        // the page on the old file even though the selection moved. What was showing is
+        // replaced rather than added to, so J and K down a folder open one document, not
+        // two hundred.
+        if readerOpen, let showing = deck.deck.activeTab?.id {
+            deck.deck = deck.deck.closing(showing)
+                .opening(key, kept: true, makeAnnotator: { Annotator() })
+        }
     }
 
     private func confirm() {
@@ -2439,7 +2478,7 @@ struct ResultsPane: View {
                 read: { openReader(item.key) },
                 stepDocument: { step(by: $0) },
                 togglePresentation: toggleZenMode,
-                leaveReader: reader == nil ? nil : closeReader,
+                leaveReader: readerOpen ? closeReader : nil,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
