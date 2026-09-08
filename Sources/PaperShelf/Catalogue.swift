@@ -58,6 +58,7 @@ struct ResultsPane: View {
     /// -- a key, a decision, a search landing somewhere else -- has to be scrolled to.
     @State private var pickedByPointer = false
     @State private var showingShortcuts = false
+    @State private var websites: [String: WebReaderModel] = [:]
     @State private var converting = Converting()
     @State private var showingMarkdown = false
     @State private var query = ""
@@ -229,7 +230,21 @@ struct ResultsPane: View {
     /// use the focused tab's own state, so the inspector and reader commands follow the
     /// paper the pointer last touched.
     private var readerAnnotator: Annotator {
-        deck.deck.isSplit ? (deck.deck.activeTab?.annotator ?? annotator) : annotator
+        deck.deck.isSplit || activeWebsite != nil ? (deck.deck.activeTab?.annotator ?? annotator) : annotator
+    }
+
+    private var activeWebsite: WebReaderModel? {
+        guard readerFocused, let key = deck.deck.activeTab?.key else { return nil }
+        return websites[key]
+    }
+
+    private func openWebsite(_ url: URL? = nil) {
+        let key = "website:" + UUID().uuidString
+        websites[key] = WebReaderModel(initialURL: url)
+        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        deck.deck.activeTab?.annotator.readingLiveWebsite = true
+        readerFocused = true
+        selected = key
     }
 
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
@@ -283,6 +298,7 @@ struct ResultsPane: View {
 
     private func closeAllTabs() {
         deck.deck = deck.deck.closingAll()
+        websites = [:]
         readerFocused = false
     }
 
@@ -318,7 +334,8 @@ struct ResultsPane: View {
     private func openDropped(_ urls: [URL], in pane: Deck.Pane.ID) -> Bool {
         guard let url = urls.first else { return false }
         if !url.isFileURL, let website = WebArticle.navigationURL(url.absoluteString) {
-            openWindow(id: "web", value: website)
+            focusPane(pane)
+            openWebsite(website)
             return true
         }
         if url.isFileURL, url.pathExtension.lowercased() == "pdf", !runner.busy {
@@ -354,6 +371,7 @@ struct ResultsPane: View {
     /// document opened by an arrow key.
     private func previewSelection(_ key: String?) {
         guard let key, showsPage else { return }
+        guard websites[key] == nil else { return }
         // A collection preview changes with every row. Its contents rail is something
         // the reader asked for, not another panel that follows every PDF selection.
         if !readerFocused { prefs.contentsShown = false }
@@ -758,6 +776,8 @@ struct ResultsPane: View {
             // clicked next is still seen as a change and written.
             .onChange(of: Self.tabsToStore(deck.deck)) { _, text in
                 if let text { prefs.openTabs = text }
+                let keys = Set(deck.deck.panes.flatMap { $0.tabs.map(\.key) })
+                websites = websites.filter { keys.contains($0.key) }
             }
     }
 
@@ -786,7 +806,16 @@ struct ResultsPane: View {
                 prefs.inspectorPanel = .notes
                 prefs.inspectorCollapsed = false
             }
-            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .openWebsiteTab)) { note in
+                openWebsite(note.object as? URL)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { note in
+                if let url = note.object as? URL, url.isFileURL {
+                    runner.includeReadingFile(url)
+                    if let item = runner.results.first(where: { $0.currentURL.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() }) {
+                        openReader(item.key)
+                    }
+                }
                 showingPalette = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
@@ -825,7 +854,7 @@ struct ResultsPane: View {
         Group {
             if runner.busy {
                 busyState
-            } else if runner.results.isEmpty {
+            } else if runner.results.isEmpty && activeWebsite == nil {
                 emptyState
             } else {
                 split
@@ -985,7 +1014,7 @@ struct ResultsPane: View {
                 commandPaletteButton
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { openWindow(id: "web") } label: {
+                Button { openWebsite() } label: {
                     Label("Open Website", systemImage: "globe")
                 }
                 .help("Open a website to save, highlight and cite")
@@ -1704,6 +1733,7 @@ struct ResultsPane: View {
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates, .readingMode,
         .zenMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
         .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
+        .removeFromLibrary, .trashNow,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
         .nextMark, .previousMark,
@@ -1724,7 +1754,7 @@ struct ResultsPane: View {
     @discardableResult
     func perform(_ command: Command) -> Bool {
         switch command {
-        case .openWebsite: openWindow(id: "web")
+        case .openWebsite: openWebsite()
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
@@ -1734,6 +1764,8 @@ struct ResultsPane: View {
         case .back: goBack()
         case .forward: goForward()
         case .revealInFinder: revealInFinder()
+        case .removeFromLibrary: removeCurrentFile(trashing: false)
+        case .trashNow: removeCurrentFile(trashing: true)
         case .refresh: refresh()
         case .findDuplicates: runner.findDuplicates(passwords: passwords)
         case .indexText:
@@ -2083,13 +2115,50 @@ struct ResultsPane: View {
     }
 
     private func revealInFinder() {
-        guard let item = selectedItem else { return }
+        guard let item = readerItem ?? selectedItem else { return }
         NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
     }
 
     private func openInViewer() {
-        guard let item = selectedItem else { return }
+        guard let item = readerItem ?? selectedItem else { return }
         NSWorkspace.shared.open(item.currentURL)
+    }
+
+    private func removeCurrentFile(trashing: Bool) {
+        guard !runner.busy, let item = readerItem ?? selectedItem else { return }
+        let target = item.currentURL
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = trashing ? "Move \(target.lastPathComponent) to Trash?" : "Remove \(target.lastPathComponent) from the library?"
+        alert.informativeText = trashing
+            ? "Only this PDF moves to Finder's Trash, where it can be recovered. Companion files are kept. Its library entry is removed; metadata for other copies is kept."
+            : "The PDF and companion files stay on disk. Library-only notes, tags and project membership are removed if this is the last copy. Scanning its source folder again can add it back."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: trashing ? "Move to Trash" : "Remove from Library")
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        Task {
+            do {
+                try await Annotator.prepareToRemove(target)
+                if trashing { try FileManager.default.trashItem(at: target, resultingItemURL: nil) }
+                try await Library.shared?.forgetLocation(target.resolvingSymlinksInPath().path)
+                Annotator.didRemove(target)
+                for pane in deck.deck.panes {
+                    for tab in pane.tabs where tab.key == item.key {
+                        closeTab(tab.id, in: pane.id)
+                    }
+                }
+                runner.removeReadingFile(item.key)
+                if selected == item.key { selected = runner.results.first?.key }
+                selection.remove(item.key)
+                await shelves.refresh()
+                await runner.refreshLibraryFacts()
+                runner.note(.edited, subject: target.lastPathComponent,
+                            detail: trashing ? "Moved to Trash; recoverable in Finder" : "Removed from library; file kept")
+            } catch {
+                let failure = NSAlert(error: error)
+                failure.runModal()
+            }
+        }
     }
 
     /// Copies this file's BibTeX entry. When the entry is short of what its type wants and
@@ -2791,6 +2860,12 @@ struct ResultsPane: View {
             )
         } else if readerOpen && deck.deck.isSplit {
             splitReader(paneWidth: paneWidth)
+        } else if let website = activeWebsite {
+            WebReader(model: website) { url in
+                runner.includeReadingFile(url)
+                openReader(url.path)
+            }
+            .id(deck.deck.activeTab?.id)
         } else if let item = readerItem ?? selectedItem {
             inspector(item, annotator: readerAnnotator, showsPage: showsPage, paneWidth: paneWidth)
                 .dropDestination(for: URL.self) { urls, _ in
@@ -2872,7 +2947,14 @@ struct ResultsPane: View {
     private func splitPage(_ pane: Deck.Pane) -> some View {
         VStack(spacing: 0) {
             tabBar(pane)
-            if let tab = deck.deck.activeTab(in: pane.id), let item = runner.item(tab.key) {
+            if let tab = deck.deck.activeTab(in: pane.id), let website = websites[tab.key] {
+                WebReader(model: website) { url in
+                    focusPane(pane.id)
+                    runner.includeReadingFile(url)
+                    openReader(url.path)
+                }
+                .id(tab.id)
+            } else if let tab = deck.deck.activeTab(in: pane.id), let item = runner.item(tab.key) {
                 DocumentPane(
                     url: item.currentURL,
                     passwords: passwords,
@@ -2964,7 +3046,12 @@ struct ResultsPane: View {
         if Self.showsTabBar(showsPage: showsPage, presentation: presentation,
                             hasTabs: !pane.tabs.isEmpty) {
             TabBar(tabs: pane.tabs, active: pane.active,
-                   title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
+                   title: { tab in
+                       if let website = websites[tab.key] {
+                           return URL(string: website.address)?.host ?? "New website"
+                       }
+                       return Self.tabTitle(tab.key, named: runner.item(tab.key)?.sourceName)
+                   },
                    activate: { activateTab($0, in: pane.id) },
                    close: { closeTab($0, in: pane.id) },
                    // The palette is already this window's answer to "which paper", with

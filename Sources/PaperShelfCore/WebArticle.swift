@@ -7,6 +7,7 @@ public struct WebArticle: Codable, Equatable, Sendable {
     public var title: String
     public var authors: [String]
     public var published: String?
+    public var modified: String?
     public var site: String?
     public var doi: String?
     public var capturedAt: Date
@@ -14,12 +15,13 @@ public struct WebArticle: Codable, Equatable, Sendable {
     public var previousVersion: UUID?
 
     public init(url: URL, title: String, authors: [String] = [], published: String? = nil,
-                site: String? = nil, doi: String? = nil, capturedAt: Date = Date(),
+                site: String? = nil, doi: String? = nil, modified: String? = nil, capturedAt: Date = Date(),
                 version: UUID = UUID(), previousVersion: UUID? = nil) {
         self.url = url
         self.title = title
         self.authors = authors
         self.published = published
+        self.modified = modified
         self.site = site
         self.doi = doi
         self.capturedAt = capturedAt
@@ -47,7 +49,9 @@ public struct WebArticle: Codable, Equatable, Sendable {
         }
         if let site, !site.isEmpty { fields.append(("howpublished", site)) }
         if let doi, !doi.isEmpty { fields.append(("doi", doi)) }
-        fields.append(("note", "Local snapshot captured " + ISO8601DateFormatter().string(from: capturedAt)))
+        var note = "Local snapshot captured " + ISO8601DateFormatter().string(from: capturedAt)
+        if let modified, !modified.isEmpty { note += "; page last updated " + modified }
+        fields.append(("note", note))
         return "@misc{web\(version.uuidString.replacingOccurrences(of: "-", with: "").lowercased()),\n"
             + fields.map { "  \($0.0) = {\(Self.escape($0.1))}" }.joined(separator: ",\n") + "\n}"
     }

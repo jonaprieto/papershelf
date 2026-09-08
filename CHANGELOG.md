@@ -17,6 +17,10 @@ numbers rather than dates.
 
 ### Fixed
 
+- Simplify notes export and file actions, align saved-website details, and keep the web
+  highlighter compact. Wait for equations and fonts before capture, and retain refreshed
+  citation metadata and revision dates without altering older versions.
+- Reflow long websites onto A4 PDF pages with margins instead of saving one tall strip.
 - Show the note editor from the reader toolbar and command palette.
 - Keep the split inspector attached to the clicked page instead of changing on hover.
 - Accept file drops in the single reader, drag tabs between panes, and enlarge tab close

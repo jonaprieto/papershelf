@@ -105,4 +105,23 @@ final class ForgetSourceTests: XCTestCase {
         let none = try await library.documentsOnly(under: "/nowhere")
         XCTAssertTrue(none.isEmpty)
     }
+
+    func testRemovingOneLocationKeepsOtherCopiesAndTheirMetadata() async throws {
+        let id = try await add("/papers/a.pdf", text: "replicated evidence")
+        try await library.recordLocation("/archive/a.pdf", forDocument: id)
+        try await library.addTag("Keep", toDocument: id)
+        try await library.forgetLocation("/papers/a.pdf")
+        let removed = try await library.document(atPath: "/papers/a.pdf")
+        let kept = try await library.document(atPath: "/archive/a.pdf")
+        let tags = try await library.tags(forDocument: id)
+        XCTAssertNil(removed)
+        XCTAssertEqual(kept?.id, id)
+        XCTAssertEqual(tags.map(\.name), ["Keep"])
+        try await library.forgetLocation("/archive/a.pdf")
+        let gone = try await library.document(id: id)
+        let hits = try await library.fullTextSearch("replicated", limit: 10)
+        XCTAssertNil(gone)
+        XCTAssertTrue(hits.isEmpty)
+        try await library.forgetLocation("/missing.pdf")
+    }
 }

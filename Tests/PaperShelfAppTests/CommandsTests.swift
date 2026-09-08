@@ -23,6 +23,15 @@ final class CommandsTests: XCTestCase {
         }
     }
 
+    func testDocumentManagementIsAvailableInThePaletteWhileReading() {
+        for command in [Command.removeFromLibrary, .trashNow, .revealInFinder, .openExternally] {
+            XCTAssertTrue(ResultsPane.performable.contains(command))
+            XCTAssertTrue(command.scope.reachable(from: .reader))
+        }
+        XCTAssertNil(Command.trashNow.defaultShortcut)
+        XCTAssertNil(Command.removeFromLibrary.defaultShortcut)
+    }
+
     /// The point of the scope column. Two commands may share a key only when they cannot
     /// both be listening, which is the rule the settings pane enforces when rebinding.
     func testShippedBindingsDoNotCollide() {

@@ -156,10 +156,11 @@ struct PaperShelfApp: App {
     /// The library monitor owns its window only. The menu is the app-wide route, so this
     /// also works from Settings and from a reader opened directly from Finder.
     private func openCommandPalette() {
+        let document = NSApp.keyWindow?.representedURL
         AppDelegate.current?.wantsLibrary = true
         openWindow(id: "main")
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: nil)
+            NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: document)
         }
     }
 
@@ -184,7 +185,13 @@ struct PaperShelfApp: App {
                 Button("About PaperShelf") { openAbout() }
             }
             CommandGroup(replacing: .newItem) {
-                Button("Open Website…") { openWindow(id: "web") }
+                Button("Open Website…") {
+                    AppDelegate.current?.wantsLibrary = true
+                    openWindow(id: "main")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: .openWebsiteTab, object: nil)
+                    }
+                }
                     .keyboardShortcut("l", modifiers: .command)
             }
             CommandGroup(after: .textEditing) {
@@ -497,6 +504,7 @@ extension Notification.Name {
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")
     static let scriptShowBookmarks = Notification.Name("PaperShelf.scriptShowBookmarks")
     static let openPDFSearch = Notification.Name("PaperShelf.openPDFSearch")
+    static let openWebsiteTab = Notification.Name("PaperShelf.openWebsiteTab")
 }
 
 // MARK: - Content

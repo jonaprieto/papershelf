@@ -49,23 +49,40 @@ struct DocumentPane<Overlay: View>: View {
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the memberwise initialiser is how a host builds a pane.
     private var prefs: Prefs { Prefs.shared }
-    private var webArticle: WebArticle? { annotator.url == url ? annotator.webArticle : nil }
+    private var webArticle: WebArticle? {
+        annotator.url == url ? annotator.webArticle : (articleURL == url ? savedArticle : nil)
+    }
+    @State private var savedArticle: WebArticle?
+    @State private var articleURL: URL?
     @State private var showingLive = false
 
     var body: some View {
         VStack(spacing: 0) {
             if let webArticle {
-                FlowRow(spacing: Space.step) {
-                    Label(showingLive ? "Live website" : "Saved website", systemImage: "globe")
-                    Text(webArticle.capturedAt, format: .dateTime.year().month().day().hour().minute())
-                        .foregroundStyle(.secondary)
-                    Button(showingLive ? "Return to saved copy" : "Open live / resync") { showingLive.toggle() }
-                    Button("Copy BibTeX") { ChatGPTHandoff.copy(webArticle.bibtex) }
+                HStack(spacing: Space.step) {
+                    Image(systemName: showingLive ? "globe" : "doc.text")
+                        .foregroundStyle(.secondary).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(webArticle.url.host ?? webArticle.title).font(.callout.weight(.medium))
+                        Text("\(showingLive ? "Live website" : "Saved copy") · \(webArticle.capturedAt.formatted(date: .abbreviated, time: .omitted))")
+                            .font(Face.caption).foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(showingLive ? "Saved copy" : "Open live") { showingLive.toggle() }
+                        .fixedSize()
+                        .help("Switch between this saved version and the live website. Save a new version to refresh its citation.")
+                    Menu("Citation") {
+                        Button("Copy BibTeX") { ChatGPTHandoff.copy(webArticle.bibtex) }
+                        Button("Copy source URL") { ChatGPTHandoff.copy(webArticle.url.absoluteString) }
+                    }
+                    .fixedSize()
+                    .help("Citation for this saved version, using the website's metadata")
                 }
-                .font(Face.caption)
-                .padding(Space.snug)
+                .controlSize(.small)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.snug)
                 .background(.bar)
-                .help(webArticle.url.absoluteString)
                 Divider()
             }
             if showingLive, let webArticle {
@@ -75,6 +92,12 @@ struct DocumentPane<Overlay: View>: View {
             }
         }
         .onChange(of: url) { _, _ in showingLive = false }
+        .onChange(of: annotator.webArticle?.version, initial: true) { _, _ in
+            if annotator.url == url, let article = annotator.webArticle {
+                savedArticle = article
+                articleURL = url
+            }
+        }
         .onChange(of: showingLive) { _, live in annotator.readingLiveWebsite = live }
         .onDisappear { annotator.readingLiveWebsite = false }
     }

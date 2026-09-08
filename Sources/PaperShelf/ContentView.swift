@@ -326,7 +326,9 @@ struct ContentView: View {
         let files = urls.filter(\.isFileURL)
         if !files.isEmpty { add(files) }
         let websites = urls.filter { !$0.isFileURL }.compactMap { WebArticle.navigationURL($0.absoluteString) }
-        for website in websites { openWindow(id: "web", value: website) }
+        for website in websites {
+            NotificationCenter.default.post(name: .openWebsiteTab, object: website)
+        }
         return !files.isEmpty || !websites.isEmpty
     }
 

@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 import PaperShelfCore
 
+extension Notification.Name {
+    static let readingFileRemoved = Notification.Name("PaperShelf.readingFileRemoved")
+}
+
 /// A window that is a page.
 ///
 /// The library window has to know about sources, scans, watchers and a shelf before it can
@@ -119,6 +123,11 @@ struct ReaderWindow: View {
             return mark(with: press)
         }
         .onDisappear { annotator.flush() }
+        .onReceive(NotificationCenter.default.publisher(for: .readingFileRemoved)) { note in
+            guard let removed = note.object as? URL,
+                  removed.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() else { return }
+            readerWindow.window?.close()
+        }
     }
 
     /// Opening a file records it and asks where you were.

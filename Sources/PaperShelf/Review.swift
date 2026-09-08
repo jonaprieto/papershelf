@@ -1303,11 +1303,14 @@ struct PDFPreview: NSViewRepresentable {
     }
 
     func updateNSView(_ view: FitWidthPDFView, context: Context) {
+        update(view, coordinator: context.coordinator)
+    }
+
+    func update(_ view: FitWidthPDFView, coordinator: Coordinator) {
         // What the view is showing is not the whole answer any more: a load can be in
         // flight, and SwiftUI calls this again for reasons that have nothing to do with
         // the file. The coordinator remembers what was asked for, so the same file is
         // never read twice over and A -> B -> A does not end up showing B.
-        let coordinator = context.coordinator
         view.onDocumentSwipe = onDocumentSwipe
         view.onMarkClick = onMarkClick
         view.onPageStep = onPageStep
@@ -1320,6 +1323,15 @@ struct PDFPreview: NSViewRepresentable {
             coordinator.shown = page
             go(view, to: page)
         }
+        let previousAnnotator = coordinator.annotator
+        let changedAnnotator = coordinator.annotator !== annotator
+        if changedAnnotator {
+            coordinator.annotator?.detach()
+            coordinator.annotator = annotator
+            if coordinator.wanted == url, view.document != nil {
+                annotator?.attach(view, url: url)
+            }
+        }
         guard coordinator.wanted != url else { return }
 
         // Parsing a document is not free: a two-hundred-page thesis takes the better part
@@ -1328,17 +1340,24 @@ struct PDFPreview: NSViewRepresentable {
         // a load that lands after the selection has moved on is dropped rather than drawn
         // over the file now selected.
         let wanted = url
+        coordinator.annotator?.detach()
+        view.document = nil
+        coordinator.generation &+= 1
+        let generation = coordinator.generation
         coordinator.wanted = wanted
+        coordinator.shown = nil
         let passwords = passwords
-        let annotator = annotator
 
         Task { @MainActor in
+            await previousAnnotator?.finishSaving()
+            guard coordinator.generation == generation else { return }
             let loaded = await PDFPreview.load(url: wanted, passwords: passwords)
-            guard coordinator.wanted == wanted else { return }
+            guard coordinator.generation == generation, coordinator.wanted == wanted else { return }
             guard let document = loaded.document else {
                 // Nothing to show and nothing to remember: a later pass should be free to
                 // try this file again rather than treat it as already handled.
                 coordinator.wanted = nil
+                coordinator.annotator?.reportOpenFailure(wanted)
                 return
             }
             view.document = document
@@ -1351,12 +1370,18 @@ struct PDFPreview: NSViewRepresentable {
             } else {
                 view.showFromTop()
             }
-            annotator?.attach(view, url: wanted)
+            coordinator.annotator?.attach(view, url: wanted)
             // The reader's local key monitor deliberately lets arrows continue down the
             // responder chain. Make the PDF canvas that responder so scrolling and text
             // selection work from the keyboard without first clicking the page.
             view.window?.makeFirstResponder(view)
         }
+    }
+
+    static func dismantleNSView(_ view: FitWidthPDFView, coordinator: Coordinator) {
+        coordinator.generation &+= 1
+        if coordinator.annotator?.view === view { coordinator.annotator?.detach() }
+        NotificationCenter.default.removeObserver(coordinator)
     }
 
     /// White-on-black inverts the hosted PDF view, including its canvas. Start that canvas
@@ -1401,7 +1426,8 @@ struct PDFPreview: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject {
-        let annotator: Annotator?
+        var annotator: Annotator?
+        @MainActor var generation = 0
         /// The file the view should end up showing, so a slower load of the file before it
         /// can tell that it is no longer wanted.
         @MainActor var wanted: URL?

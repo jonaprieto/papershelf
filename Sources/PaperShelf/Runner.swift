@@ -597,6 +597,17 @@ final class Runner {
         finish(results + [added], keepingDecisions: true)
     }
 
+    func removeReadingFile(_ key: String) {
+        set(nil, for: key)
+        ai.forget(key)
+        duplicateIndex?.remove(key)
+        jobs.removeAll { $0.key == key }
+        duplicates = []
+        duplicateKind = [:]
+        duplicatesChecked = false
+        finish(results.filter { $0.key != key }, keepingDecisions: true, syncLibrary: false)
+    }
+
     func findDuplicates(passwords: [String] = []) {
         guard !results.isEmpty, !findingDuplicates else { return }
         let startedAt = ProcessInfo.processInfo.systemUptime

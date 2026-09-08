@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered, defer: false
         )
         window.title = url.lastPathComponent
+        window.representedURL = url
         window.titlebarAppearsTransparent = false
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: ReaderWindow(url: url))

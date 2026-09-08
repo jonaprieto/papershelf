@@ -1683,6 +1683,17 @@ extension Library {
         return ids.count
     }
 
+    /// Forget this location only. Metadata still belongs to any other copy of the paper.
+    public func forgetLocation(_ path: String) throws {
+        try transaction {
+            guard let id = try documentID(atPath: path) else { return }
+            try run("DELETE FROM locations WHERE path = ?;") { bindText($0, 1, path) }
+            if try locations(forDocument: id).isEmpty {
+                try run("DELETE FROM documents WHERE id = ?;") { bindText($0, 1, id) }
+            }
+        }
+    }
+
     /// Every document with a location at `prefix` itself or anywhere under it.
     ///
     /// Compared as a range rather than matched with `LIKE`: a path is free to contain `%`

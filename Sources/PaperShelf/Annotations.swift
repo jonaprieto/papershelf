@@ -13,6 +13,7 @@ import PaperShelfCore
 @MainActor
 @Observable
 final class Annotator {
+    private static let readers = NSHashTable<Annotator>.weakObjects()
     private(set) var marks: [Mark] = []
     private(set) var hasSelection = false
     private(set) var webArticle: WebArticle?
@@ -155,12 +156,14 @@ final class Annotator {
     private var automaticHighlightTask: Task<Void, Never>?
 
     func attach(_ view: PDFView, url: URL) {
+        Self.readers.add(self)
         // Whatever the previous document still owed the disk, it owes now: the debounce
         // must never outlive the file it was waiting for.
         flush()
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         self.view = view
         self.url = url
+        lastError = nil
         automaticHighlightColour = nil
         automaticHighlightTask?.cancel()
         automaticHighlightTask = nil
@@ -192,6 +195,52 @@ final class Annotator {
             self.readContents()
             self.startScanningForMarks()
         }
+    }
+
+    /// Stop observing the old page before its canvas is reused for another document.
+    func detach() {
+        flush()
+        NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
+        generation &+= 1
+        automaticHighlightTask?.cancel()
+        positionTask?.cancel()
+        bookmarksTask?.cancel()
+        automaticHighlightColour = nil
+        closeFind()
+        view = nil
+        url = nil
+        documentID = nil
+        marks = []
+        contents = []
+        bookmarks = []
+        webArticle = nil
+        pageCount = 0
+        page = 1
+    }
+
+    func finishSaving() async {
+        flush()
+        await writeTask?.value
+    }
+
+    func reportOpenFailure(_ url: URL) {
+        lastError = "Could not open \(url.lastPathComponent)"
+    }
+
+    static func prepareToRemove(_ url: URL) async throws {
+        let readers = readers.allObjects
+        let target = url.resolvingSymlinksInPath()
+        for reader in readers where reader.url?.resolvingSymlinksInPath() == target { reader.flush() }
+        // A tab left moments ago may still be writing its final annotation.
+        for reader in readers { await reader.writeTask?.value }
+        if let failure = readers.first(where: { $0.url?.resolvingSymlinksInPath() == target && $0.lastError != nil })?.lastError {
+            throw NSError(domain: "PaperShelf", code: 1, userInfo: [NSLocalizedDescriptionKey: failure])
+        }
+    }
+
+    static func didRemove(_ url: URL) {
+        for reader in readers.allObjects where reader.url?.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() { reader.detach() }
+        NotificationCenter.default.post(name: .readingFileRemoved, object: url)
     }
 
     func setDocumentID(_ id: String?) {

@@ -61,21 +61,25 @@ PaperShelf has no third-party Swift package dependencies. It runs on macOS 14 or
 ## Web articles and reading questions
 
 In a source build, use File > Open Website (Command-L), the globe toolbar button, or the
-command palette. Navigate to an article, then choose **Freeze and annotate**. This saves
-the full loaded page as a selectable PDF, the web archive, and a BibTeX companion under
+command palette. Navigate to an article, then choose **Save copy**. This saves
+the full loaded page as a paginated A4 PDF, the web archive, and a BibTeX companion under
 PaperShelf's Application Support folder. The reading copy joins the catalogue and uses
 the same notes, highlights, search, contrast and split controls as other documents.
 Selecting text on the live page and choosing a highlight colour saves and marks that
 passage in the reading copy. Ambiguous text matches ask you to select in the saved copy.
 
-An article's **Open live / resync** button opens its website in the same pane, including
-beside a PDF. Freeze again to keep a new version. Existing copies and their annotations
+An article's **Open live** button opens its website in the same pane, including
+beside a PDF. Choose **Save new version** to keep a new version. Existing copies and their annotations
 are retained. A snapshot includes content loaded at capture time; it does not crawl linked
 pages or fetch material hidden behind a site's login or an unopened section.
 
 Citation facts come from Highwire, Dublin Core, Open Graph and schema.org metadata supplied
 by the page. Missing authors and publication dates stay missing. The citation includes
 the source URL and capture date; review it in the Cite inspector before publication.
+Saving a new version reads fresh metadata and writes a new citation without changing the
+older copy's citation. A supplied revision date is retained separately from publication.
+Capture waits for MathJax and web fonts to finish rendering. Equations retain their visual
+appearance; equations drawn as images or SVG may not have selectable text.
 
 **Ask AI** on selections, marks and the notes export bar uses the API endpoint and model in
 Settings. It shows the text and destination before Send question. The ChatGPT handoff is

@@ -199,6 +199,7 @@ struct CommandPalette: View {
         guard !needle.isEmpty || mode == .commands else { return [] }
         return commands.filter {
             matches($0.title)
+                || (!$0.searchAliases.isEmpty && matches($0.searchAliases))
                 || (Keymap.shared.shortcut(for: $0)?.display.lowercased().contains(needle) ?? false)
         }.prefix(8).map { $0 }
     }

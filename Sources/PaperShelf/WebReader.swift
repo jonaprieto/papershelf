@@ -18,6 +18,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
     var canGoForward = false
     var loaded = false
     let previous: WebArticle?
+    private var printCompletion: CheckedContinuation<Bool, Never>?
 
     init(previous: WebArticle? = nil, initialURL: URL? = nil) {
         self.previous = previous
@@ -85,6 +86,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
         error = nil
         defer { saving = false }
         do {
+            try await prepareCapture()
             let quoted = try await webView.evaluateJavaScript("String(window.getSelection())") as? String ?? ""
             if highlightColour != nil, quoted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 error = "Select a passage on the website, then choose its highlight colour."
@@ -98,6 +100,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
                 url: url, title: facts["title"] as? String ?? webView.title ?? url.absoluteString,
                 authors: facts["authors"] as? [String] ?? [], published: facts["published"] as? String,
                 site: facts["site"] as? String, doi: facts["doi"] as? String,
+                modified: facts["modified"] as? String,
                 previousVersion: previous?.version)
             let width = (facts["width"] as? Double) ?? Double(webView.bounds.width)
             let height = (facts["height"] as? Double) ?? Double(webView.bounds.height)
@@ -105,9 +108,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
                 error = "This page is too large to save. Open the article's own page and try again."
                 return nil
             }
-            let configuration = WKPDFConfiguration()
-            configuration.rect = CGRect(x: 0, y: 0, width: width, height: height)
-            let pdf = try await webView.pdf(configuration: configuration)
+            let pdf = try await paginatedPDF()
             let archive: Data = try await withCheckedThrowingContinuation { continuation in
                 webView.createWebArchiveData { continuation.resume(with: $0) }
             }
@@ -117,7 +118,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
             if let highlightColour {
                 let hits = document.findString(quoted, withOptions: [])
                 guard hits.count == 1, let selection = hits.first else {
-                    error = "This selection cannot be located uniquely in the saved page. Use Freeze and annotate, then select it in the reading copy."
+                    error = "This selection cannot be located uniquely in the saved page. Use Save copy, then select it in the reading copy."
                     return nil
                 }
                 _ = addPDFHighlights(for: selection, colour: highlightColour)
@@ -149,6 +150,104 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// WebKit's print layout reflows paragraphs onto pages instead of shrinking a long strip.
+    func paginatedPDF() async throws -> Data {
+        _ = try await webView.evaluateJavaScript(Self.printStyleScript)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("papershelf-print-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("article.pdf")
+        let info = NSPrintInfo.shared.copy() as! NSPrintInfo
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = file
+        info.dictionary()[NSPrintInfo.AttributeKey.allPages] = true
+        info.paperSize = NSSize(width: 595.28, height: 841.89)
+        info.topMargin = 36
+        info.bottomMargin = 36
+        info.leftMargin = 36
+        info.rightMargin = 36
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isVerticallyCentered = false
+        let operation = webView.printOperation(with: info)
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        operation.canSpawnSeparateThread = true
+        // WebKit calculates page ranges on its worker while the main run loop stays free.
+        let window = webView.window ?? NSWindow(contentRect: webView.bounds,
+                                               styleMask: .borderless, backing: .buffered, defer: false)
+        let completed = await withCheckedContinuation { continuation in
+            printCompletion = continuation
+            operation.runModal(for: window, delegate: self,
+                               didRun: #selector(printFinished(_:success:context:)), contextInfo: nil)
+        }
+        guard completed else { throw CocoaError(.fileWriteUnknown) }
+        return try Data(contentsOf: file)
+    }
+
+    static let printStyleScript = #"""
+    (() => {
+      if (document.getElementById('papershelf-print-style')) return true;
+      const style = document.createElement('style');
+      style.id = 'papershelf-print-style';
+      style.textContent = `@media print {
+        nav, [role="navigation"], .navigation, [role="search"] { display: none !important; }
+        h1 { font-size: 24pt !important; }
+        h2, h3, h4 { break-after: avoid; }
+        p { orphans: 3; widows: 3; }
+        figure, math, mjx-container[display="true"], .katex-display { break-inside: avoid; }
+        img { max-width: 100%; height: auto; }
+      }`;
+      if (location.hostname === 'ncatlab.org') {
+        style.textContent += '@media print { #pageName > span { display: none !important; } }';
+      }
+      document.head.appendChild(style);
+      return true;
+    })()
+    """#
+
+    @objc private func printFinished(_ operation: NSPrintOperation, success: Bool, context: UnsafeMutableRawPointer?) {
+        printCompletion?.resume(returning: success)
+        printCompletion = nil
+    }
+
+    /// Loading the HTML is not enough: math engines and their fonts can still be working.
+    func prepareCapture(timeoutMilliseconds: Int = 15_000) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            webView.callAsyncJavaScript(Self.captureReadyScript,
+                arguments: ["timeoutMilliseconds": timeoutMilliseconds], in: nil, in: .page) { result in
+                    continuation.resume(with: result.map { _ in () }.mapError { error in
+                        let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String
+                        return NSError(domain: "PaperShelf.WebCapture", code: 1,
+                                       userInfo: [NSLocalizedDescriptionKey: message ?? error.localizedDescription])
+                    })
+                }
+        }
+    }
+
+    static let captureReadyScript = #"""
+    let timer;
+    try {
+      await Promise.race([
+        (async () => {
+          const math = window.MathJax;
+          if (math?.startup?.promise) await math.startup.promise;
+          if (typeof math?.whenReady === 'function') await math.whenReady(() => {});
+          else if (math?.Hub?.Queue) await new Promise(resolve => math.Hub.Queue(resolve));
+          if (document.fonts) await document.fonts.ready;
+          await new Promise(resolve => {
+            requestAnimationFrame(resolve);
+            setTimeout(resolve, 50);
+          });
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Equations or fonts are still loading. Wait for the page to finish rendering, then save again.')), timeoutMilliseconds);
+        })
+      ]);
+      return true;
+    } finally { clearTimeout(timer); }
+    """#
+
     // Highwire, Dublin Core and schema.org describe facts. Missing authors/dates stay missing.
     static let metadataScript = #"""
     (() => {
@@ -174,6 +273,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
         title: first(['citation_title', 'dc.title', 'og:title']) || article.headline || article.name || document.title,
         authors: [...new Set(authors.length ? authors : author.length ? author : plainAuthors)],
         published: first(['citation_publication_date', 'citation_date', 'dcterms.issued', 'dc.date', 'article:published_time']) || article.datePublished || null,
+        modified: first(['dcterms.modified', 'dc.modified', 'article:modified_time']) || article.dateModified || null,
         site: first(['og:site_name', 'citation_journal_title']) || null,
         doi: first(['citation_doi', 'dc.identifier.doi']),
         width: document.documentElement.clientWidth,
@@ -194,11 +294,17 @@ struct WebReader: View {
     @State private var showsFind = false
     @State private var query = ""
     @State private var noMatch = false
+    @State private var showingCaptureHelp = false
     @FocusState private var findFocused: Bool
     let saved: (URL) -> Void
 
     init(previous: WebArticle? = nil, initialURL: URL? = nil, saved: @escaping (URL) -> Void) {
         _model = State(initialValue: WebReaderModel(previous: previous, initialURL: initialURL))
+        self.saved = saved
+    }
+
+    init(model: WebReaderModel, saved: @escaping (URL) -> Void) {
+        _model = State(initialValue: model)
         self.saved = saved
     }
 
@@ -214,33 +320,52 @@ struct WebReader: View {
                     .onSubmit { model.navigate() }
                     .accessibilityIdentifier("webReader.address")
                 Button("Go") { model.navigate() }.disabled(model.saving)
-                Button(model.saving ? "Saving…" : "Freeze and annotate") {
+                Button(model.saving ? "Saving…" : model.previous == nil ? "Save copy" : "Save new version") {
                     Task { if let url = await model.freeze() { saved(url) } }
                 }
                 .disabled(!model.loaded || model.loading || model.saving)
-                .help("Save a local reading copy, web archive and citation. Existing versions keep their notes.")
+                .fixedSize()
+                .help("Save the rendered page, web archive and fresh BibTeX citation. Older versions and their notes stay unchanged.")
                 .accessibilityIdentifier("webReader.freeze")
             }
             .padding(Space.snug)
             if model.loaded {
-                FlowRow(spacing: Space.step) {
-                    Text("Highlight selection:").font(Face.caption)
-                    ForEach(Palette.shared.styles(for: [.library])) { style in
-                        Button {
-                            Task { if let url = await model.freeze(highlightColour: style.nsColor) { saved(url) } }
-                        } label: {
-                            Circle().fill(style.swatch).frame(width: 18, height: 18)
-                                .frame(width: 28, height: 28).contentShape(Rectangle())
+                HStack(spacing: Space.snug) {
+                    Label("Highlight", systemImage: "highlighter")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize()
+                    HStack(spacing: 2) {
+                        ForEach(Palette.shared.styles(for: [.library])) { style in
+                            Button {
+                                Task { if let url = await model.freeze(highlightColour: style.nsColor) { saved(url) } }
+                            } label: {
+                                Circle().fill(style.swatch).frame(width: 18, height: 18)
+                                    .overlay { Circle().strokeBorder(.primary.opacity(0.15)) }
+                                    .frame(width: 28, height: 28).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("Save this version and highlight the selection: \(style.meaning)")
+                            .accessibilityLabel("Highlight selection: \(style.meaning)")
+                            .disabled(model.saving || model.loading)
                         }
-                        .buttonStyle(.plain)
-                        .help("Save this version and highlight the selection: \(style.meaning)")
-                        .accessibilityLabel("Highlight selection: \(style.meaning)")
-                        .disabled(model.saving || model.loading)
                     }
-                    Text("Saves a reading copy with the same notes and highlights as a PDF.")
-                        .font(Face.caption).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("About saved websites", systemImage: "info.circle") { showingCaptureHelp = true }
+                        .labelStyle(.iconOnly).buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .help("How highlighting, equations and saved versions work")
+                        .popover(isPresented: $showingCaptureHelp) {
+                            VStack(alignment: .leading, spacing: Space.step) {
+                                Text("Highlight a saved version").font(.headline)
+                                Text("Select text, then choose a colour. A local copy opens with your highlight, ready for notes and PDF tools.")
+                                Text("Equations keep their rendered appearance. Saving waits for MathJax and fonts; image-based equations may not have selectable text.")
+                                Text("Save new version captures the loaded website and refreshes its citation. Older copies keep their highlights and citations.")
+                            }
+                            .font(.callout).padding(Space.roomy).frame(width: 320)
+                        }
                 }
-                .padding(.horizontal, Space.snug)
+                .padding(.horizontal, Space.step)
+                .padding(.vertical, Space.tight)
+                .background(.bar)
             }
             if model.loading { ProgressView().progressViewStyle(.linear) }
             if let error = model.error {
@@ -269,7 +394,7 @@ struct WebReader: View {
             guard let window = note.object as? NSWindow, window === model.webView.window else { return }
             openFind()
         }
-        .task { if !model.address.isEmpty { model.navigate() } }
+        .task { if !model.loaded, !model.loading, !model.address.isEmpty { model.navigate() } }
     }
 
     private func openFind() { showsFind = true; findFocused = true }

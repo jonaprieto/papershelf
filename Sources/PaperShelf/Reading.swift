@@ -616,74 +616,64 @@ struct NotesRail: View {
     /// rather than chosen: there is one, and a menu of one is a menu that lies.
     private var exportBar: some View {
         VStack(alignment: .leading, spacing: Space.step) {
-            FlowRow(spacing: Space.step) {
-            // A save panel rather than `fileExporter`. The shelf already carries one of
-            // those for the bibliography, and a second in the same hierarchy presented
-            // nothing at all: the button set its flag and no panel ever appeared.
-            Button {
-                exportNotes()
-            } label: {
-                Label("Export as Markdown", systemImage: "square.and.arrow.up")
-            }
-            .tip("Write these notes to a file")
-
-            Button("Copy all") { copyNotes() }
-                .tip("Every mark on this document, as text")
-
-            AskReadingAssistant { chatGPTNotesPrompt }
-                .disabled(marks.isEmpty)
-
-            if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy {
+            HStack(spacing: Space.step) {
+                AskReadingAssistant { chatGPTNotesPrompt }
+                    .disabled(marks.isEmpty)
+                    .fixedSize()
                 Menu {
-                    if prefs.offerChatGPT {
-                        Button("Open all notes in ChatGPT") {
-                            ChatGPTHandoff.open(chatGPTNotesPrompt)
+                    Button("Export as Markdown", systemImage: "square.and.arrow.up", action: exportNotes)
+                    Button("Copy all notes", systemImage: "doc.on.doc", action: copyNotes)
+                    if ChatGPTHandoff.isInstalled, prefs.offerChatGPT || prefs.offerChatGPTCopy {
+                        Divider()
+                        if prefs.offerChatGPT {
+                            Button("Open all notes in ChatGPT") { ChatGPTHandoff.open(chatGPTNotesPrompt) }
                         }
-                    }
-                    if prefs.offerChatGPTCopy {
-                        Button("Copy all notes for ChatGPT") {
-                            ChatGPTHandoff.copy(chatGPTNotesPrompt)
+                        if prefs.offerChatGPTCopy {
+                            Button("Copy all notes for ChatGPT") { ChatGPTHandoff.copy(chatGPTNotesPrompt) }
                         }
                     }
                 } label: {
-                    Label("ChatGPT", systemImage: "bubble.left.and.text.bubble.right")
+                    Label("Export", systemImage: "square.and.arrow.up")
                 }
-                .menuStyle(.borderlessButton)
-                .tip("Share every highlight and note with ChatGPT")
-            }
-
-                // Only for the document in front of you. Removing every mark means rewriting
-                // the file, and the file is not open.
-                if documentIsOpen {
-                    Button(role: .destructive) { clearing = true } label: {
-                        Image(systemName: "trash")
+                .fixedSize()
+                .help("Export or share this document's highlights and notes")
+                Spacer(minLength: 0)
+                Menu {
+                    Button("Open notes file") {
+                        if let notesSidecar { NSWorkspace.shared.open(notesSidecar) }
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help("Remove every mark from this document")
+                    .disabled(notesSidecar.map { FileManager.default.fileExists(atPath: $0.path) } != true)
+                    if prefs.syncNotesSidecar {
+                        Button("Sync notes file") { live.syncNotesSidecar() }
+                    }
+                    if documentIsOpen {
+                        Divider()
+                        Button("Remove all marks…", role: .destructive) { clearing = true }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").frame(width: 24, height: 24)
                 }
+                .menuStyle(.borderlessButton).fixedSize()
+                .accessibilityLabel("More notes actions")
+                .help("Notes file and mark management")
             }
 
             HStack(spacing: Space.step) {
                 Label(prefs.syncNotesSidecar
-                      ? (live.notesSidecarIsCurrent ? "Notes file is up to date"
-                         : "Notes file needs updating")
-                      : "Notes file sync is off",
+                      ? (live.notesSidecarIsCurrent ? "Notes file synced"
+                         : "Notes file out of date")
+                      : "Notes file sync off",
                       systemImage: prefs.syncNotesSidecar && live.notesSidecarIsCurrent
                       ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
                     .foregroundStyle(prefs.syncNotesSidecar && live.notesSidecarIsCurrent
                                      ? Color.green : .secondary)
-                Spacer(minLength: Space.snug)
+                    .font(Face.caption).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if prefs.syncNotesSidecar, !live.notesSidecarIsCurrent {
-                    Button("Sync notes file") { live.syncNotesSidecar() }
-                        .buttonStyle(.borderedProminent)
+                    Button("Sync") { live.syncNotesSidecar() }
+                        .fixedSize()
                         .tip("Write the current highlights and notes beside this PDF")
                 }
-                Button("Open notes file") {
-                    if let notesSidecar { NSWorkspace.shared.open(notesSidecar) }
-                }
-                .disabled(notesSidecar.map { FileManager.default.fileExists(atPath: $0.path) } != true)
-                .tip("Open the Markdown notes file beside this PDF")
             }
         }
         .controlSize(.small)
