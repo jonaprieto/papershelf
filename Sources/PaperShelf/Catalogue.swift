@@ -152,6 +152,10 @@ struct ResultsPane: View {
     @FocusState private var paneFocused: Bool
     @FocusState private var listFocused: Bool
     @State private var keyMonitor: Any?
+    /// Which window this pane is drawn in, for the key monitor to measure a press against.
+    /// A box rather than the window itself: that window owns the view hierarchy this state
+    /// hangs in, and a strong reference the other way would keep a closed one alive.
+    @State private var paneWindow = PaneWindow()
     @State private var showingPalette = false
     @State private var paletteTags: [TagCount] = []
     @State private var paletteProjects: [ProjectSummary] = []
@@ -782,6 +786,7 @@ struct ResultsPane: View {
             loadDraft()
             previewSelection(new)
         }
+            .background { windowReader }
             .onAppear {
             ensureSelection()
             installKeyMonitor()
@@ -1327,6 +1332,32 @@ struct ResultsPane: View {
         }
     }
 
+    /// Whether a key press is this pane's to answer.
+    ///
+    /// A local monitor is an app-wide hook, and it runs ahead of the responder chain in
+    /// every window the process owns. ⌘W pressed in a reader window opened from Finder
+    /// closed a tab in the library window and left the reader standing, which is the
+    /// window somebody is most likely to press it in; ⌘W in Settings did one thing or the
+    /// other depending on whether the library window happened to have a document open
+    /// behind it; and ⌘T fired from anywhere at all, a text field included, because the
+    /// guard on typing only covers keys with no modifier. Two library windows heard each
+    /// other the same way.
+    ///
+    /// A window the pane has not been put into yet answers nothing rather than everything.
+    /// So does a sheet, a popover or the Quick Look panel: each is a window of its own,
+    /// and each already answers ⎋ for itself.
+    static func handlesKeys(from eventWindow: NSWindow?, in paneWindow: NSWindow?) -> Bool {
+        guard let eventWindow, let paneWindow else { return false }
+        return eventWindow === paneWindow
+    }
+
+    /// Finds the window this pane is drawn in, so the monitor above has something to
+    /// compare a key press against. Zero-sized and behind everything: it is here to answer
+    /// one question, not to be seen or clicked.
+    private var windowReader: some View {
+        WindowReader { paneWindow.window = $0 }.frame(width: 0, height: 0)
+    }
+
     /// Whether this key event is somebody typing into something.
     ///
     /// A table view is the exception: its own type-select is exactly what this monitor
@@ -1378,6 +1409,7 @@ struct ResultsPane: View {
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
+        guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
         guard !runner.busy else { return false }
         if event.keyCode == 53 {                     // ⎋
             if QuickLook.closeIfVisible() { return true }
@@ -4278,5 +4310,52 @@ final class ShownFilter {
         signature = new
         cached = value
         return value
+    }
+}
+
+/// Where a pane keeps the window it is drawn in.
+///
+/// Weakly, because that window owns the view hierarchy this box hangs in, and a strong
+/// reference back would keep a closed window alive for as long as the app runs.
+final class PaneWindow {
+    weak var window: NSWindow?
+}
+
+/// Says which window it was put into, and draws nothing.
+///
+/// SwiftUI has no answer to "which window am I in", and the key monitor needs one: an
+/// `NSEvent` names the window it came from, and that only means something beside a window
+/// the pane can call its own. The same shape `SettingsWindowChrome` uses to reach the
+/// window it is asked to fix up.
+struct WindowReader: NSViewRepresentable {
+    let found: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView { Hook(found: found) }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class Hook: NSView {
+        private let found: (NSWindow?) -> Void
+
+        init(found: @escaping (NSWindow?) -> Void) {
+            self.found = found
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        /// Answered after the pass that moved it rather than during: writing view state
+        /// from inside a layout is what makes SwiftUI complain about a change made while
+        /// it is drawing.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let found = self.found
+            let window = self.window
+            DispatchQueue.main.async { found(window) }
+        }
+
+        /// Behind the pane and out of the way of it: a hit of its own would take a click
+        /// meant for whatever is drawn over it.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

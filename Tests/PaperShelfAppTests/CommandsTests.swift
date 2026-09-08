@@ -239,6 +239,32 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(Keymap.shared.shortcut(for: .zenMode),
                        Shortcut("f", [.command, .control]))
     }
+
+    /// The library window's keys stay in the library window.
+    ///
+    /// The monitor that hears them is an app-wide hook running ahead of the responder
+    /// chain in every window the process owns. ⌘W pressed in a reader window opened from
+    /// Finder closed a tab in the library window and left the reader standing; ⌘W in
+    /// Settings did one thing or the other depending on what the library window had open
+    /// behind it; ⌘T fired from any window at all. A reader window is exactly where
+    /// somebody presses ⌘W.
+    func testAKeyPressedInAnotherWindowIsNotThisPanesToAnswer() {
+        let library = window()
+        let reader = window()
+        XCTAssertTrue(ResultsPane.handlesKeys(from: library, in: library))
+        XCTAssertFalse(ResultsPane.handlesKeys(from: reader, in: library),
+                       "⌘W in a reader window belongs to the reader window")
+        XCTAssertFalse(ResultsPane.handlesKeys(from: nil, in: library))
+        XCTAssertFalse(ResultsPane.handlesKeys(from: library, in: nil),
+                       "a pane not yet in a window answers nothing rather than everything")
+    }
+
+    /// A window of its own, never shown: what is being asked is which one a key came from,
+    /// and two windows is the whole of what that needs.
+    private func window() -> NSWindow {
+        NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                 styleMask: [.titled], backing: .buffered, defer: true)
+    }
 }
 
 /// The settings window's own search. A pane list of eight is short enough to read and
