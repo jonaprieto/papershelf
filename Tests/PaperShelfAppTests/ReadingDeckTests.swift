@@ -47,6 +47,18 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertTrue(deck.activeTab?.annotator === first)
     }
 
+    /// Whichever route `opening` takes, kept or preview, new or already open, it ends with
+    /// the document it was asked for on screen. An open that shows something else is an
+    /// open that did not happen as far as the reader is concerned.
+    func testOpeningAlwaysShowsTheDocumentItOpened() {
+        var deck = empty()
+        for (key, kept) in [("a.pdf", true), ("b.pdf", false), ("c.pdf", false),
+                            ("a.pdf", false), ("d.pdf", true), ("a.pdf", true)] {
+            deck = deck.opening(key, kept: kept, makeAnnotator: annotator)
+            XCTAssertEqual(deck.activeTab?.key, key, "after opening \(key), kept: \(kept)")
+        }
+    }
+
     // MARK: the preview tab
 
     /// The reviewer moves its selection down a folder of two hundred files. Each one shows,
@@ -96,6 +108,32 @@ final class ReadingDeckTests: XCTestCase {
         deck = deck.opening("a.pdf", kept: true, makeAnnotator: annotator)
         XCTAssertEqual(deck.active?.tabs.count, 1)
         XCTAssertEqual(deck.activeTab?.isPreview, false)
+    }
+
+    /// The same invariant with two panes, which is where it used to break. The selection
+    /// replaces the deck's preview wherever it sits, so what is showing has to follow it
+    /// into that pane. Left behind, the deck shows the other pane's paper instead.
+    func testOpeningShowsWhatItOpenedWhenThePreviewIsInAnotherPane() {
+        let second = UUID()
+        var deck = empty()
+        deck.panes.append(Deck.Pane(id: second))
+        deck = deck.opening("first.pdf", kept: false, makeAnnotator: annotator)
+        deck.activePane = second
+        deck = deck.opening("kept-in-b.pdf", kept: true, makeAnnotator: annotator)
+        deck = deck.opening("second.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(deck.activeTab?.key, "second.pdf")
+    }
+
+    /// And when the pane that was active holds nothing, being left behind shows nothing at
+    /// all, which reads as the open having been ignored.
+    func testOpeningShowsWhatItOpenedWhenTheActivePaneIsEmpty() {
+        let second = UUID()
+        var deck = empty()
+        deck.panes.append(Deck.Pane(id: second))
+        deck = deck.opening("first.pdf", kept: false, makeAnnotator: annotator)
+        deck.activePane = second
+        deck = deck.opening("second.pdf", kept: false, makeAnnotator: annotator)
+        XCTAssertEqual(deck.activeTab?.key, "second.pdf")
     }
 
     // MARK: closing

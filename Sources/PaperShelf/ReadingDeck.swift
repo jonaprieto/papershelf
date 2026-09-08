@@ -78,6 +78,9 @@ struct Deck: Equatable {
             // second preview stand beside the first the day a window has two.
             deck.panes[preview.pane].tabs[preview.tab] = tab
             deck.panes[preview.pane].active = tab.id
+            // And the focus follows it there, so an open shows what it opened. Left behind,
+            // the deck would show whatever the pane that was active held, or nothing.
+            deck.activePane = deck.panes[preview.pane].id
             return deck
         }
         if kept {
