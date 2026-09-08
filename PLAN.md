@@ -161,6 +161,14 @@ extraction helpers.
 - Avoid repeating a filename below its thumbnail when it is already the card title; keep
   the actual filename visible when metadata gives the paper a distinct title.
 
+### 12. Notify users about available builds
+
+- Follow [the update-notification plan](docs/design/update-notifications.md).
+- Show a compact notice beside the running version and provide a manual palette command.
+- Compare published stable versions separately from completed local development builds.
+- Cover both replacement of the running app bundle and a new build in `dist/`.
+- Start with notifications and links; keep automatic installation separate.
+
 ## Verification
 
 Add focused coverage for:
