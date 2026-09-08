@@ -109,21 +109,26 @@ end waitForWindow
 -- the app has to be killed.
 --
 -- The library window is the one carrying a toolbar, which no sheet and no reader window does.
-on libraryWindow(targetPID)
+--
+-- Its INDEX, not a reference to it. A window reference resolves by name at the moment it is
+-- used, and this script toggles reading mode, which renames the window after the reference
+-- was taken. An index survives that; a reference goes stale and the lookup fails naming a
+-- title that was true a moment ago.
+on libraryWindowIndex(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
-            repeat with candidate in windows
-                if (exists toolbar 1 of candidate) then return contents of candidate
+            repeat with position from 1 to (count of windows)
+                if (exists toolbar 1 of window position) then return position
             end repeat
         end tell
     end tell
     error "PaperShelf has no window with a toolbar"
-end libraryWindow
+end libraryWindowIndex
 
 on waitForLibraryWindow(targetPID)
     repeat 120 times
         try
-            return my libraryWindow(targetPID)
+            return my libraryWindowIndex(targetPID)
         on error
             delay 0.1
         end try
@@ -135,7 +140,7 @@ on assertCatalogueLaunchState(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             repeat 50 times
-                if exists static text "Ready to run" of (my libraryWindow(targetPID)) then
+                if exists static text "Ready to run" of (window (my libraryWindowIndex(targetPID))) then
                     error "Launch opened the rename prompt instead of the catalogue"
                 end if
                 delay 0.1
@@ -148,7 +153,7 @@ on auditToolbar(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             set labels to description of every button of toolbar 1 of ¬
-                (my libraryWindow(targetPID))
+                (window (my libraryWindowIndex(targetPID)))
             repeat with label in labels
                 set labelText to contents of label as text
                 if labelText is "button" or labelText is "" or labelText is "missing value" then
@@ -163,13 +168,13 @@ on clickSidebarTwice(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             set sidebarDescription to description of ¬
-                (first button of toolbar 1 of (my libraryWindow(targetPID))) as text
+                (first button of toolbar 1 of (window (my libraryWindowIndex(targetPID)))) as text
             if sidebarDescription is not "Show Sidebar" and sidebarDescription is not "Hide Sidebar" then
                 error "The first toolbar button is not the sidebar toggle"
             end if
-            click first button of toolbar 1 of (my libraryWindow(targetPID))
+            click first button of toolbar 1 of (window (my libraryWindowIndex(targetPID)))
             delay 0.25
-            click first button of toolbar 1 of (my libraryWindow(targetPID))
+            click first button of toolbar 1 of (window (my libraryWindowIndex(targetPID)))
         end tell
     end tell
 end clickSidebarTwice
