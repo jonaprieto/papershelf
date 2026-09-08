@@ -1751,7 +1751,7 @@ struct ResultsPane: View {
     /// Kept beside the switch below and used to build the palette, so a line can never be
     /// offered that would do nothing. Anything absent here is still reachable — it simply
     /// belongs to a different surface, and its key event falls through to whoever owns it.
-    static let performable: [Command] = [
+    static let performable: [Command] = Command.pageActions + [
         .openWebsite,
         .confirm, .editName, .askAI, .copyCitation, .applyOne,
         .skip, .skipFolder, .moveTo, .trash, .reopen,
@@ -1779,6 +1779,9 @@ struct ResultsPane: View {
     /// want it, which is how ⌘↩ still reaches the Apply button in the toolbar.
     @discardableResult
     func perform(_ command: Command) -> Bool {
+        if Command.pageActions.contains(command) {
+            return command.performPageAction(on: readerAnnotator, fit: $prefs.pageFit)
+        }
         switch command {
         case .openWebsite: openWebsite()
         case .viewList: choose(.list)

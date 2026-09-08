@@ -116,6 +116,11 @@ struct ReaderWindow: View {
         // table: this window has no scopes to resolve, so it reads the keys directly.
         .onKeyPress(phases: .down) { press in
             if writingNote { return .ignored }
+            if let command = Command.pageActions.first(where: {
+                Keymap.shared.shortcut(for: $0)?.matches(press) == true
+            }), command.performPageAction(on: annotator, fit: $fit) {
+                return .handled
+            }
             if Keymap.shared.shortcut(for: .findInDocument)?.matches(press) == true {
                 openFind()
                 return .handled

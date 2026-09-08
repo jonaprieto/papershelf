@@ -197,11 +197,18 @@ struct CommandPalette: View {
             }
         }
         guard !needle.isEmpty || mode == .commands else { return [] }
-        return commands.filter {
-            matches($0.title)
-                || (!$0.searchAliases.isEmpty && matches($0.searchAliases))
+        return Self.matchingCommands(in: commands, query: needle, commandsOnly: mode == .commands)
+    }
+
+    static func matchingCommands(in commands: [Command], query: String,
+                                 commandsOnly: Bool) -> [Command] {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let matches = commands.filter {
+            needle.isEmpty || $0.title.lowercased().contains(needle)
+                || $0.searchAliases.lowercased().contains(needle)
                 || (Keymap.shared.shortcut(for: $0)?.display.lowercased().contains(needle) ?? false)
-        }.prefix(8).map { $0 }
+        }
+        return commandsOnly ? matches : Array(matches.prefix(8))
     }
 
     private var matchingPlaces: [PalettePlace] {
@@ -347,23 +354,29 @@ struct CommandPalette: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.gutter)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.hair) {
-                    ForEach(Array(sections.enumerated()), id: \.element.title) { _, section in
-                        Text(section.title)
-                            .font(Face.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, Space.roomy)
-                            .padding(.top, Space.step)
-                        ForEach(section.entries) { entry in
-                            let position = entries.firstIndex { $0.id == entry.id } ?? 0
-                            row(entry, selected: position == index)
-                                .contentShape(Rectangle())
-                                .onTapGesture { index = position; runSelected() }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Space.hair) {
+                        ForEach(Array(sections.enumerated()), id: \.element.title) { _, section in
+                            Text(section.title)
+                                .font(Face.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, Space.roomy)
+                                .padding(.top, Space.step)
+                            ForEach(section.entries) { entry in
+                                let position = entries.firstIndex { $0.id == entry.id } ?? 0
+                                row(entry, selected: position == index)
+                                    .id(entry.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { index = position; runSelected() }
+                            }
                         }
                     }
+                    .padding(Space.snug)
                 }
-                .padding(Space.snug)
+                .onChange(of: index) {
+                    if entries.indices.contains(index) { proxy.scrollTo(entries[index].id) }
+                }
             }
             .frame(maxHeight: 380)
         }

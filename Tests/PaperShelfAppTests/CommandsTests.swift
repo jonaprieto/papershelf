@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 import SwiftUI
+import PDFKit
 import PaperShelfCore
 @testable import PaperShelf
 
@@ -285,6 +286,53 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(Command.zenMode.title.localizedCaseInsensitiveContains("full screen"))
         XCTAssertEqual(Set(ResultsPane.performable).count, ResultsPane.performable.count,
                        "a command is listed twice")
+    }
+
+    func testThePaletteFindsEveryPageControlAndDoesNotTruncateCommands() {
+        for fit in PageFit.allCases {
+            XCTAssertEqual(CommandPalette.matchingCommands(in: ResultsPane.performable,
+                                                          query: fit.label, commandsOnly: false),
+                           [fit.command])
+        }
+        XCTAssertEqual(CommandPalette.matchingCommands(in: ResultsPane.performable,
+                                                       query: "", commandsOnly: true),
+                       ResultsPane.performable)
+        for command in Command.pageActions {
+            XCTAssertTrue(ResultsPane.performable.contains(command))
+            XCTAssertEqual(command.scope, .reader)
+        }
+    }
+
+    func testPageCommandsResizeAndNavigateTheAttachedPDF() {
+        let document = PDFDocument()
+        for _ in 0..<3 {
+            let page = PDFPage()
+            page.setBounds(CGRect(x: 0, y: 0, width: 600, height: 800), for: .mediaBox)
+            document.insert(page, at: document.pageCount)
+        }
+        let view = FitWidthPDFView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".pdf"))
+        defer { annotator.detach() }
+        let fit = Binding<PageFit>(get: { view.fit }, set: { view.fit = $0; view.layout() })
+
+        XCTAssertTrue(Command.fitPage.performPageAction(on: annotator, fit: fit))
+        let pageScale = view.scaleFactor
+        XCTAssertTrue(Command.fitWidth.performPageAction(on: annotator, fit: fit))
+        XCTAssertGreaterThan(view.scaleFactor, pageScale)
+        XCTAssertTrue(Command.actualSize.performPageAction(on: annotator, fit: fit))
+        XCTAssertEqual(view.scaleFactor, 1, accuracy: 0.002)
+        XCTAssertTrue(Command.lastPage.performPageAction(on: annotator, fit: fit))
+        XCTAssertTrue(view.currentPage === document.page(at: 2))
+        XCTAssertTrue(Command.previousPage.performPageAction(on: annotator, fit: fit))
+        XCTAssertTrue(view.currentPage === document.page(at: 1))
+        XCTAssertTrue(Command.firstPage.performPageAction(on: annotator, fit: fit))
+        XCTAssertTrue(view.currentPage === document.page(at: 0))
+        XCTAssertTrue(Command.nextPage.performPageAction(on: annotator, fit: fit))
+        XCTAssertTrue(view.currentPage === document.page(at: 1))
+        XCTAssertFalse(Command.fitPage.performPageAction(on: Annotator(), fit: fit))
     }
 
     func testInspectorToggleIsHandledBeforeASelectionIsRequired() {

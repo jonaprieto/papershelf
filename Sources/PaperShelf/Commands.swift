@@ -63,6 +63,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally
+    case fitPage, fitWidth, actualSize, nextPage, previousPage, firstPage, lastPage
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
     // Library
@@ -80,6 +81,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .trashNow: return "delete send move pdf file trash bin"
         case .revealInFinder: return "open pdf file finder location folder reveal"
         case .suggestTags: return "ai suggest generate subject tags labels current pdf paper"
+        case .actualSize: return "zoom 100% original size"
+        case .firstPage: return "start beginning of document"
+        case .lastPage: return "end of document"
         default: return ""
         }
     }
@@ -139,6 +143,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally,
+             .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
@@ -153,6 +158,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark,
+             .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
              .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
@@ -223,6 +229,13 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .findInDocument: return "Find in this PDF"
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
+        case .fitPage: return "Fit page"
+        case .fitWidth: return "Fit width"
+        case .actualSize: return "Actual size"
+        case .nextPage: return "Next page"
+        case .previousPage: return "Previous page"
+        case .firstPage: return "First page"
+        case .lastPage: return "Last page"
         case .openExternally: return "Open in the default PDF viewer"
         case .openInNewTab: return "Keep this document open in a tab"
         case .openWebsite: return "Open a website to read and annotate"
@@ -291,6 +304,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight5: return Shortcut("5", [])
         case .addNote: return Shortcut("n", [])
         case .addBookmark, .showBookmarks, .removeBookmark: return nil
+        case .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage:
+            return nil
         case .findInDocument: return Shortcut("f", .command)
         case .nextMark: return Shortcut("\u{F701}", .option)
         case .previousMark: return Shortcut("\u{F700}", .option)
@@ -336,6 +351,29 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .previousFile: return [Shortcut("p", []), Shortcut("\u{F700}", [])]
         default: return []
         }
+    }
+}
+
+extension Command {
+    static let pageActions: [Command] = [
+        .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
+    ]
+
+    /// Both reader surfaces use the page bar's sizing state and PDF navigation.
+    @MainActor
+    func performPageAction(on annotator: Annotator, fit: Binding<PageFit>) -> Bool {
+        guard annotator.hasPages, !annotator.readingLiveWebsite else { return false }
+        switch self {
+        case .fitPage: fit.wrappedValue = .page
+        case .fitWidth: fit.wrappedValue = .width
+        case .actualSize: fit.wrappedValue = .actual
+        case .nextPage: annotator.go(toPage: annotator.page + 1)
+        case .previousPage: annotator.go(toPage: annotator.page - 1)
+        case .firstPage: annotator.go(toPage: 1)
+        case .lastPage: annotator.go(toPage: annotator.pageCount)
+        default: return false
+        }
+        return true
     }
 }
 

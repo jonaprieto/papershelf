@@ -22,6 +22,8 @@ numbers rather than dates.
 
 ### Fixed
 
+- Run Fit page, Fit width, Actual size and page navigation from the command palette,
+  and assign them custom shortcuts. Show every matching command in the `>` list.
 - Keep Review renamings compact in the toolbar. Rename the current file from the
   command palette or its context menu, with an explicit Apply this name action.
   Save annotations before renaming, keep repeated renames on the current file, and

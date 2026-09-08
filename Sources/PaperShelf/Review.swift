@@ -1048,13 +1048,15 @@ enum PageFit: String, CaseIterable, Identifiable {
     case width, page, actual
     var id: String { rawValue }
 
-    var label: String {
+    var command: Command {
         switch self {
-        case .width: return "Fit width"
-        case .page: return "Fit page"
-        case .actual: return "Actual size"
+        case .width: return .fitWidth
+        case .page: return .fitPage
+        case .actual: return .actualSize
         }
     }
+
+    var label: String { command.title }
 }
 
 final class FitWidthPDFView: PDFView {

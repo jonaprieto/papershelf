@@ -756,11 +756,13 @@ struct PageBar: View {
                 Divider().frame(height: 14)
 
                 Menu {
-                    Picker("", selection: $fit) {
-                        ForEach(PageFit.allCases) { Text($0.label).tag($0) }
+                    ForEach(PageFit.allCases) { mode in
+                        Toggle(mode.label, isOn: Binding(
+                            get: { fit == mode },
+                            set: { if $0 { fit = mode } }
+                        ))
+                        .commandShortcut(mode.command)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.inline)
                 } label: {
                     Text(fit.label).font(Face.control)
                 }
