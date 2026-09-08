@@ -38,8 +38,9 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertEqual(deck.activeTab?.key, "a.pdf")
     }
 
-    /// And it keeps the annotator it already had, so the marks, the outline and the find
-    /// session survive being reopened.
+    /// And it keeps the annotator it already had rather than building a second one. Nothing
+    /// in the window reads it yet, so reopening still re-reads the paper; this is what will
+    /// stop it doing that the day the window does.
     func testReopeningKeepsTheAnnotatorItAlreadyHad() {
         var deck = open(empty(), ["a.pdf"])
         let first = deck.activeTab?.annotator

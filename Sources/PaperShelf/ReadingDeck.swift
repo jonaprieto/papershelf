@@ -19,8 +19,13 @@ struct Deck: Equatable {
         var active: Tab.ID?
     }
 
-    /// One open document. It owns its `Annotator`, so switching away and back keeps the
-    /// marks, the outline, the bookmarks and the find session that were already there.
+    /// One open document. It carries an `Annotator` that nothing reads yet. The window
+    /// holds one of its own, and `PDFPreview` attaches that to whichever document is on
+    /// screen; attaching drops the marks, the outline and the bookmarks and closes the find
+    /// session, so switching away and back loses the search you were in the middle of and
+    /// re-reads everything else. The day the window reads the tab's own annotator instead,
+    /// coming back to a paper costs the page and nothing more: no second walk over a long
+    /// book's notes, and the find still open where you left it.
     ///
     /// It holds no `PDFDocument`. `PDFPreview` owns that through its `NSView`, which goes
     /// away with the tab's pane when the tab is not on screen, so a tab in the background
