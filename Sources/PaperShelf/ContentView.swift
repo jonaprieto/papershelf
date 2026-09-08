@@ -405,7 +405,7 @@ struct ContentView: View {
                 refresh: forceRefresh,
                 apply: confirmApply,
                 applyOne: { item, name in
-                    Task { await runner.applyNow(item, as: name, options: options(dryRun: false)) }
+                    await runner.applyNow(item, as: name, options: options(dryRun: false))
                 }
             )
                 // Derived from the same arithmetic `split` clamps the inspector with, so

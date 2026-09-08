@@ -689,6 +689,11 @@ public struct Job: Identifiable, Sendable {
     /// Matches `Item.key`, so an override survives the round trip through a preview.
     public var key: String { file.resolvingSymlinksInPath().path }
     public var id: String { key }
+
+    /// A renamed PDF still belongs to the selected root, including its backup tree.
+    public func replacingFile(with file: URL) -> Job {
+        Job(root: root, file: file)
+    }
 }
 
 /// Makes the library shelf useful before PDF metadata has been inspected. Names, folders,

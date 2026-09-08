@@ -5,6 +5,13 @@ import PDFKit
 
 @MainActor
 final class AppliedTrashTests: XCTestCase {
+    override class func setUp() {
+        if getenv("PAPERSHELF_LIBRARY_PATH") == nil {
+            let path = FileManager.default.temporaryDirectory.appendingPathComponent("trash-tests-\(UUID().uuidString).sqlite")
+            setenv("PAPERSHELF_LIBRARY_PATH", path.path, 1)
+        }
+    }
+
     private func report(_ name: String, root: URL, status: Status, carriedOut: Bool) -> Item {
         Item(root: root, source: root.appendingPathComponent(name),
              destination: root.appendingPathComponent("Trash/" + name),

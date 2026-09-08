@@ -11,6 +11,16 @@ extension View {
         help(key.map { "\(what)  (\($0))" } ?? what)
     }
 
+    @MainActor
+    func tip(_ what: String, command: Command) -> some View {
+        tip(what, key: Keymap.shared.shortcut(for: command)?.display)
+    }
+
+    @MainActor
+    func commandShortcut(_ command: Command) -> some View {
+        keyboardShortcut(Keymap.shared.shortcut(for: command)?.keyboardShortcut)
+    }
+
     /// A background shape sized to what this view actually draws, not to whatever space
     /// a parent hands it.
     ///

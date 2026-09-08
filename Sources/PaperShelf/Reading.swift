@@ -374,7 +374,7 @@ struct NotesRail: View {
                     Button(action: close) { Image(systemName: "xmark") }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
-                        .tip("Hide the notes", key: "⌘⇧N")
+                        .tip("Hide the notes", command: .toggleNotes)
                 }
                 .padding(.horizontal, Space.roomy)
                 .padding(.vertical, Space.step)
@@ -778,7 +778,7 @@ struct PageBar: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Find in PDF")
                     .accessibilityIdentifier("reader.find")
-                    .tip("Find in this PDF", key: "⌘F")
+                    .tip("Find in this PDF", command: .findInDocument)
 
                     Divider().frame(height: 14)
                 }

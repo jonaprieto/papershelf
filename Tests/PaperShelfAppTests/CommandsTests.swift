@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 import PaperShelfCore
 @testable import PaperShelf
 
@@ -21,6 +22,51 @@ final class CommandsTests: XCTestCase {
         for command in Command.allCases {
             XCTAssertFalse(command.title.isEmpty, "\(command.rawValue) has no title")
         }
+    }
+
+    func testRenamingIsDiscoverableAndKeepsItsExistingBinding() {
+        XCTAssertTrue(ResultsPane.performable.contains(.editName))
+        XCTAssertTrue(Command.editName.title.contains("Rename the current file"))
+        XCTAssertTrue(Command.editName.searchAliases.contains("filename"))
+        XCTAssertTrue(Command.applyOne.searchAliases.contains("rename"))
+        XCTAssertEqual(Command.editName.defaultShortcut, Shortcut("e", []))
+    }
+
+    func testMenuShortcutsFollowRebindingAndUnbinding() {
+        let keymap = Keymap(store: scratchStore())
+        keymap.bind(.palette, to: Shortcut("u", [.command, .option]))
+        let shortcut = keymap.shortcut(for: .palette)?.keyboardShortcut
+        XCTAssertEqual(shortcut?.key, KeyEquivalent("u"))
+        XCTAssertEqual(shortcut?.modifiers, [.command, .option])
+        XCTAssertEqual(keymap.shortcut(for: .palette)?.display, "⌥⌘U")
+        keymap.bind(.palette, to: nil)
+        XCTAssertNil(keymap.shortcut(for: .palette)?.keyboardShortcut)
+        XCTAssertNil(Shortcut("invalid", []).keyboardShortcut)
+    }
+
+    func testConflictsIncludeAlternatesAndDecisionsHeardInTheReader() {
+        let keymap = Keymap(store: scratchStore())
+        XCTAssertEqual(keymap.conflict(for: Shortcut("c", []), assigning: .editName), .confirm)
+        XCTAssertEqual(keymap.conflict(for: Shortcut("1", []), assigning: .trash), .highlight1)
+        keymap.bind(.confirm, to: nil)
+        XCTAssertNil(keymap.conflict(for: Shortcut("c", []), assigning: .editName))
+    }
+
+    func testReaderNoteWinsOverTheNextFileAlternate() {
+        let keymap = Keymap(store: scratchStore())
+        func command(_ key: String) -> Command? {
+            let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                        timestamp: 0, windowNumber: 0, context: nil,
+                                        characters: key, charactersIgnoringModifiers: key,
+                                        isARepeat: false, keyCode: 0)!
+            return ResultsPane.readerCommand(for: event, keymap: keymap)
+        }
+        XCTAssertEqual(command("n"), .addNote)
+        XCTAssertEqual(command("e"), .editName)
+        XCTAssertEqual(command("j"), .nextFile)
+        XCTAssertEqual(command("d"), .trash)
+        keymap.bind(.trash, to: nil)
+        XCTAssertNil(command("d"))
     }
 
     func testDocumentManagementIsAvailableInThePaletteWhileReading() {

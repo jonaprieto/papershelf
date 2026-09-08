@@ -15,6 +15,7 @@ struct FileContextMenu: View {
     /// How many files this menu is about when it was opened inside a selection. Zero for
     /// the ordinary case of one file, so the labels stay short where they always were.
     var others: Int = 0
+    let rename: () -> Void
     let confirm: () -> Void
     let identify: () -> Void
     let moveTo: () -> Void
@@ -72,6 +73,7 @@ struct FileContextMenu: View {
 
         Divider()
 
+        Button("Rename...", action: rename)
         Button("Confirm", action: confirm)
         Button("Ask AI for a Name", action: identify)
         Button(others > 1 ? "Move \(others) to…" : "Move to…", action: moveTo)

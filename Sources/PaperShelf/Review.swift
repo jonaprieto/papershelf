@@ -739,10 +739,10 @@ struct ReviewInspector: View {
             // Copy button carries the same B; a second one here made the rename panel
             // answer a question it was not being asked. The shortcut still works.
             HStack(spacing: Space.step) {
-                Button(action: identify) { KeyLabel("G", "Ask AI") }
+                Button(action: identify) { KeyLabel(.askAI, "Ask AI") }
                     .disabled(!aiReady || runner.ai.isThinking(item))
                     .tip(aiReady ? "Read the opening pages and suggest a title"
-                                 : "Add an API key in Settings first", key: "G")
+                                 : "Add an API key in Settings first", command: .askAI)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,6 +771,9 @@ struct ReviewInspector: View {
                     return .handled
                 }
                 .strikethrough(decision == .deleted)
+                .tip(prefs.returnAppliesRename
+                     ? "Edit the filename, then press Return to apply it"
+                     : "Edit the filename, then press Return to confirm it for the batch")
 
             HStack(spacing: Space.snug) {
                 if isEdited {
@@ -778,9 +781,9 @@ struct ReviewInspector: View {
                     Button("Reset", action: reset).buttonStyle(.link)
                     Spacer(minLength: 0)
                 } else {
-                    KeyLabel("E", "to edit")
+                    KeyLabel(.editName, "to edit")
                     Text("\u{00B7}")
-                    KeyLabel("\u{2318}Z", "to undo the last decision")
+                    KeyLabel(.undo, "to undo the last decision")
                     Spacer(minLength: 0)
                 }
             }
@@ -926,7 +929,7 @@ struct ReviewInspector: View {
                     NSWorkspace.shared.activateFileViewerSelecting([item.currentURL])
                 }
                 .frame(maxWidth: .infinity)
-                .tip("Show this file in the Finder", key: "⌘R")
+                .tip("Show this file in the Finder", command: .revealInFinder)
                 Button("Quick Look") { QuickLook.show(item.currentURL) }
                     .frame(maxWidth: .infinity)
             }
@@ -942,45 +945,49 @@ struct ReviewInspector: View {
     /// already is instead of below however much the document had to say about itself.
     private var renameActions: some View {
         VStack(spacing: Space.step) {
+            Button("Apply this name", action: applyNow)
+                .disabled(runner.busy || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || (decision != nil && !isConfirmed))
+                .tip("Apply the edited name to this file now", command: .applyOne)
             if decision == nil {
                 Button(action: confirm) {
-                    HStack(spacing: Space.snug) {
-                        Text("Confirm and continue")
-                        Text("\u{21A9}")
-                            .font(Face.mono.weight(.bold))
-                            .padding(.horizontal, Space.tight)
-                            .background(.white.opacity(0.22),
-                                        in: RoundedRectangle(cornerRadius: 3))
-                    }
+                    KeyLabel(.confirm, "Confirm and continue")
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .tip("Confirm this name for the next batch and go to the next file", command: .confirm)
             } else {
                 Button(action: reopen) {
-                    KeyLabel("R", decidedLabel).frame(maxWidth: .infinity)
+                    KeyLabel(.reopen, decidedLabel).frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
-                .tip("Undo this decision and look at the file again", key: "R")
+                .tip("Undo this decision and look at the file again", command: .reopen)
             }
 
             HStack(spacing: Space.step) {
-                Button(action: skip) { KeyLabel("S", "Skip") }
-                    .tip("Leave this file exactly as it is", key: "S")
-                Button(action: skipFolder) { KeyLabel("F", "Folder") }
+                Button(action: skip) { KeyLabel(.skip, "Skip") }
+                    .tip("Leave this file exactly as it is", command: .skip)
+                Button(action: skipFolder) { KeyLabel(.skipFolder, "Folder") }
                     .disabled(pendingInFolder == 0)
-                    .tip("Skip the rest of \(folderName)", key: "F")
-                Button(action: moveTo) { KeyLabel("M", "Move") }
+                    .tip("Skip the rest of \(folderName)", command: .skipFolder)
+                Button(action: moveTo) { KeyLabel(.moveTo, "Move") }
                     .tint(Ink.purple)
-                Button(action: markDeleted) { KeyLabel("D", "Trash") }
+                    .tip("Choose the folder this file will move to on Apply", command: .moveTo)
+                Button(action: markDeleted) { KeyLabel(.trash, "Trash") }
                     .tint(Ink.red)
-                    .tip("To the Trash on apply, recoverable", key: "D")
+                    .tip("To the Trash on apply, recoverable", command: .trash)
             }
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, Space.roomy)
         .padding(.vertical, Space.step)
         .background(.bar)
+    }
+
+    private var isConfirmed: Bool {
+        if case .confirmed = decision { return true }
+        return false
     }
 
     /// What the row was decided, for the button that takes it back.
@@ -1012,20 +1019,22 @@ struct ReviewInspector: View {
 /// A button label that carries its own shortcut, so the keys are discoverable without a
 /// legend somewhere else in the window.
 struct KeyLabel: View {
-    let key: String
+    let key: String?
     let title: String
 
-    init(_ key: String, _ title: String) {
-        self.key = key
+    init(_ command: Command, _ title: String) {
+        self.key = Keymap.shared.shortcut(for: command)?.display
         self.title = title
     }
 
     var body: some View {
         HStack(spacing: Space.tight) {
-            Text(key)
-                .font(Face.mono.weight(.bold))
-                .frame(minWidth: 14, minHeight: 14)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
+            if let key {
+                Text(key)
+                    .font(Face.mono.weight(.bold))
+                    .frame(minWidth: 14, minHeight: 14)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
+            }
             Text(title)
         }
     }

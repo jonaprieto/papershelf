@@ -192,38 +192,38 @@ struct PaperShelfApp: App {
                         NotificationCenter.default.post(name: .openWebsiteTab, object: nil)
                     }
                 }
-                    .keyboardShortcut("l", modifiers: .command)
+                    .commandShortcut(.openWebsite)
             }
             CommandGroup(after: .textEditing) {
                 Button("Find in PDF", action: openPDFSearch)
-                    .keyboardShortcut("f", modifiers: .command)
+                    .commandShortcut(.findInDocument)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo", action: chrome.undo)
-                    .keyboardShortcut("z", modifiers: .command)
+                    .commandShortcut(.undo)
                     .disabled(!chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
                 Button("Command Palette", action: openCommandPalette)
-                    .keyboardShortcut("k", modifiers: .command)
+                    .commandShortcut(.palette)
                 Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode",
                        action: chrome.toggleReading)
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .commandShortcut(.readingMode)
                 Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
                     if chrome.notesShown { chrome.inspectorCollapsed = true } else { chrome.showNotes() }
                 }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .commandShortcut(.toggleNotes)
                 Button(chrome.inspectorCollapsed ? "Show Inspector" : "Hide Inspector") {
                     if let togglePane { togglePane.perform() }
                     else { chrome.inspectorCollapsed.toggle() }
                 }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .commandShortcut(.toggleInspector)
                 Button(chrome.contentsShown ? "Hide Contents" : "Show Contents") {
                     chrome.contentsShown.toggle()
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .commandShortcut(.toggleContents)
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
-                    .keyboardShortcut("b", modifiers: .command)
+                    .commandShortcut(.toggleSidebar)
                 Divider()
                 // Reading a file opened from Finder no longer builds a library window, so
                 // there has to be a way to ask for one.

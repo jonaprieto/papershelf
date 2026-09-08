@@ -325,28 +325,38 @@ final class Runner {
 
     /// Carries out one file right now instead of queueing it. Runs on the main actor:
     /// it is a single document, and doing it inline keeps the result and the row in step.
-    func applyNow(_ item: Item, as name: String, options: Options) async {
-        guard !busy, let job = jobs.first(where: { $0.key == item.key }) else { return }
+    @discardableResult
+    func applyNow(_ item: Item, as name: String, options: Options) async -> Bool {
+        guard !busy, let original = jobs.first(where: { $0.key == item.key }) else { return false }
+        let job = original.replacingFile(with: item.currentURL)
         let trashing = decisions[item.key] == .deleted
-        guard await prepareToTrash(trashing ? [job] : []) else { return }
+        guard await prepareToMove(trashing || !options.dryRun ? [job] : []) else { return false }
         let done = trashing
             ? moveToTrash(job, dryRun: false)
             : process(job: job, options: options, overrideName: name)
         if done.wasTrashed {
             removeReadingFile(item.key)
-            Annotator.didRemove(item.source)
+            Annotator.didRemove(item.currentURL)
         } else {
-            replace(item.key, with: done)
+            // Keep the shelf's key across repeated renames, while operations and library
+            // sync use the file's current location.
+            var shown = item
+            shown.destination = done.destination
+            shown.carriedOut = item.carriedOut || done.carriedOut
+            shown.status = done.status
+            shown.message = done.message
+            replace(item.key, with: shown)
             if done.carriedOut { set(.applied, for: item.key) }
         }
         note(kind(for: done.status), for: item, detail: "-> \(done.destinationName)")
         moveNotesSidecar(for: done)
         // The library needs the operation report, including the destination of a file
         // that has already disappeared from the shelf.
-        Task { await self.syncLibrary(with: [done]) }
+        await syncLibrary(with: [done])
+        return done.carriedOut
     }
 
-    private func prepareToTrash(_ jobs: [Job]) async -> Bool {
+    private func prepareToMove(_ jobs: [Job]) async -> Bool {
         guard !jobs.isEmpty else { return true }
         let generation = workGeneration
         phase = .processing
@@ -354,7 +364,7 @@ final class Runner {
         for job in jobs {
             do {
                 // Detaching a reader flushes its notes. Finish that write before moving
-                // the PDF so its last edits reach the copy recoverable from Trash.
+                // the PDF so its last edits reach the file at its new location.
                 try await Annotator.prepareToRemove(job.file)
             } catch {
                 note(.failed, subject: job.file.lastPathComponent, detail: error.localizedDescription)
@@ -998,7 +1008,7 @@ final class Runner {
             }
         }
 
-        guard await prepareToTrash(options.dryRun ? [] : queue.filter { trashed.contains($0.key) }) else { return }
+        guard await prepareToMove(options.dryRun ? [] : queue) else { return }
         begin(fingerprint: fingerprint, dry: false)
         let generation = workGeneration
         total = queue.count

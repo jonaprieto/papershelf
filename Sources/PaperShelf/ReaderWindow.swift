@@ -116,7 +116,7 @@ struct ReaderWindow: View {
         // table: this window has no scopes to resolve, so it reads the keys directly.
         .onKeyPress(phases: .down) { press in
             if writingNote { return .ignored }
-            if press.key == KeyEquivalent("f"), press.modifiers == .command {
+            if Keymap.shared.shortcut(for: .findInDocument)?.matches(press) == true {
                 openFind()
                 return .handled
             }
@@ -274,7 +274,7 @@ struct ReaderWindow: View {
                     Label("Note", systemImage: "square.and.pencil")
                 }
                 .buttonStyle(.plain)
-                .help("Note on the selection")
+                .tip("Add a note to the selection", command: .addNote)
                 Button {
                     _ = annotator.toggleBookmark()
                 } label: {
@@ -299,16 +299,17 @@ struct ReaderWindow: View {
     /// no selection under them are left alone, so typing in a field the inspector owns
     /// still types.
     private func mark(with press: KeyPress) -> KeyPress.Result {
-        guard annotator.hasSelection, press.modifiers.isEmpty else { return .ignored }
-        if press.key == KeyEquivalent("n") {
+        guard annotator.hasSelection else { return .ignored }
+        if Keymap.shared.shortcut(for: .addNote)?.matches(press) == true {
             showsNotes = true
             addingNote = true
             writingNote = true
             return .handled
         }
-        guard let digit = Int(press.characters), (1...5).contains(digit),
-              currentStyles.indices.contains(digit - 1) else { return .ignored }
-        let style = currentStyles[digit - 1]
+        let highlights: [Command] = [.highlight1, .highlight2, .highlight3, .highlight4, .highlight5]
+        guard let slot = highlights.firstIndex(where: { Keymap.shared.shortcut(for: $0)?.matches(press) == true }),
+              currentStyles.indices.contains(slot) else { return .ignored }
+        let style = currentStyles[slot]
         _ = annotator.highlightSelection(colour: style.nsColor)
         prefs.lastHighlightColour = style.id.uuidString
         return .handled

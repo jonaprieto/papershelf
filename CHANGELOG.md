@@ -22,6 +22,13 @@ numbers rather than dates.
 
 ### Fixed
 
+- Keep Review renamings compact in the toolbar. Rename the current file from the
+  command palette or its context menu, with an explicit Apply this name action.
+  Save annotations before renaming, keep repeated renames on the current file, and
+  leave failed operations selected for correction.
+- Keep menu shortcuts, hover tooltips and rename key labels aligned with custom
+  bindings. Detect alternate-key conflicts, and let N add a reader note instead of
+  advancing to the next file. Standalone readers use the configured mark and find keys.
 - Remove successfully trashed PDFs from the shelf and open readers as soon as Apply
   finishes. Save pending annotations before moving them, and forget their library
   locations instead of indexing the copies in Trash.

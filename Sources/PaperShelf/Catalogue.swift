@@ -38,7 +38,7 @@ struct ResultsPane: View {
     /// screen, not where it came from.
     let refresh: () -> Void
     let apply: () -> Void
-    let applyOne: (Item, String) -> Void
+    let applyOne: (Item, String) async -> Bool
 
     private var hasSources: Bool { sourceCount > 0 }
 
@@ -1035,7 +1035,7 @@ struct ResultsPane: View {
                     commandPaletteButton
                     Button { openWebsite() } label: {
                         Label("Open Website", systemImage: "globe")
-                            .tip("Open a website to save, highlight and cite", key: "⌘L")
+                            .tip("Open a website to save, highlight and cite", command: .openWebsite)
                     }
                     .accessibilityIdentifier("toolbar.openWebsite")
                     // A document on screen wants a highlighter, a note and a way to send it
@@ -1052,7 +1052,7 @@ struct ResultsPane: View {
                             .frame(width: 28, height: 20)
                             .contentShape(Rectangle())
                             .tip(reading ? "Show the shelf again" : "Hide everything but the page",
-                                 key: "⌘⇧R")
+                                 command: .readingMode)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(reading ? Color.primary : .secondary)
@@ -1066,7 +1066,7 @@ struct ResultsPane: View {
                               ? "sidebar.right" : "sidebar.trailing")
                             .tip(prefs.inspectorCollapsed
                                  ? "Show info, rename, notes and the citation"
-                                 : "Hide the inspector", key: "⌘⇧B")
+                                 : "Hide the inspector", command: .toggleInspector)
                     }
                     .accessibilityLabel("Inspector")
                     .accessibilityIdentifier("toolbar.inspector")
@@ -1163,7 +1163,7 @@ struct ResultsPane: View {
         if showsPage && readerAnnotator.hasPages {
             Button { prefs.contentsShown.toggle() } label: {
                 Label("Contents", systemImage: "sidebar.squares.left")
-                    .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", key: "⌘⇧T")
+                    .tip(prefs.contentsShown ? "Hide the contents" : "Contents and pages", command: .toggleContents)
             }
             .foregroundStyle(prefs.contentsShown ? Color.accentColor : .secondary)
             .accessibilityIdentifier("toolbar.contents")
@@ -1285,7 +1285,7 @@ struct ResultsPane: View {
                       systemImage: "doc.on.doc")
             }
             .disabled(runner.findingDuplicates)
-            .tip("Compare every file by size, then by bytes", key: "⌘D")
+            .tip("Compare every file by size, then by bytes", command: .findDuplicates)
 
             Button("Trash \(runner.identicalExtras) spare\(runner.identicalExtras == 1 ? "" : "s")") {
                 runner.markIdenticalExtras()
@@ -1299,13 +1299,13 @@ struct ResultsPane: View {
             // hidden recovery action.
             if hasSources {
                 Button(action: preview) {
-                    Label(runner.results.isEmpty ? "Review renamings" : "Review renamings again",
-                          systemImage: "textformat.abc")
+                    Label("Review renamings", systemImage: "textformat.abc")
                 }
-                .labelStyle(.titleAndIcon)
+                .labelStyle(.iconOnly)
+                .accessibilityIdentifier("toolbar.reviewRenamings")
                 .disabled(runner.busy)
-                .keyboardShortcut("p", modifiers: .command)
-                .tip("Read-only: works out the new names, touches nothing", key: "⌘P")
+                .commandShortcut(.plan)
+                .tip("Review renamings for the collection without changing files", command: .plan)
             }
 
             // Naming files is one of the things this app does, not the thing it is, and
@@ -1325,21 +1325,21 @@ struct ResultsPane: View {
                 .labelStyle(.titleAndIcon)
                 .buttonStyle(.borderedProminent)
                 .disabled(!canApply)
-                .keyboardShortcut(.return, modifiers: .command)
+                .commandShortcut(.apply)
                 .tip(canApply
                      ? "Carry out what you have decided, on disk"
                      : "The plan no longer matches the settings. Review names again.",
-                     key: "⌘Return")
+                     command: .apply)
             }
         }
 
         Menu {
             Button("Review names again", action: preview)
                 .disabled(!hasSources || runner.busy)
-                .keyboardShortcut("p", modifiers: .command)
+                .commandShortcut(.plan)
 
             Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
-                .keyboardShortcut("d", modifiers: .command)
+                .commandShortcut(.findDuplicates)
             Divider()
             Button("Copy the catalogue as Markdown") {
                 copyText(markdownCatalogue(runner.results, known: runner.ai.guesses))
@@ -1538,11 +1538,11 @@ struct ResultsPane: View {
     /// The commands that do not need a file in front of them, and so must still work on
     /// an empty shelf — which is exactly when someone reaches for the palette.
     /// What can still be decided while a document is open. Deliberately not every
-    /// reviewing command: `n`, `e` and the number keys mean something else to a reader,
+    /// reviewing command: `n` and the number keys mean something else to a reader,
     /// and a key that means two things depending on where you last clicked is worse than
     /// a key that means one thing in one place.
     static let decisionsInTheReader: Set<Command> = [
-        .trash, .skip, .confirm, .moveTo, .applyOne, .reopen,
+        .trash, .skip, .confirm, .editName, .moveTo, .applyOne, .reopen,
         .nextFile, .previousFile,
     ]
 
@@ -1560,21 +1560,13 @@ struct ResultsPane: View {
 
     private func handle(_ event: NSEvent) -> Bool {
         guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
+        guard !showingPalette else { return false }
         if readerAnnotator.readingLiveWebsite {
-            if Self.requestsPDFSearch(event) {
-                NotificationCenter.default.post(name: .openPDFSearch, object: event.window)
-                return true
-            }
-            if !event.modifierFlags.contains(.command) { return false }
-        }
-        if Self.requestsPDFSearch(event), readerAnnotator.hasPages, !readerAnnotator.readingLiveWebsite {
-            openFind()
-            return true
+            if !event.modifierFlags.contains(.command), !Self.requestsPDFSearch(event) { return false }
         }
         guard !runner.busy else { return false }
         // A palette field owns its arrows and Return. The local monitor otherwise sees
         // them first and turns the PDF page before the palette can move its selection.
-        guard !showingPalette else { return false }
         if event.keyCode == 53 {                     // ⎋
             if QuickLook.closeIfVisible() { return true }
             return escape()
@@ -1593,6 +1585,14 @@ struct ResultsPane: View {
         // same, which is most of the alphabet a note is written with.
         if bare, isTyping(event) { return false }
 
+        if Self.requestsPDFSearch(event) {
+            if readerAnnotator.readingLiveWebsite {
+                NotificationCenter.default.post(name: .openPDFSearch, object: event.window)
+                return true
+            }
+            if readerAnnotator.hasPages { openFind(); return true }
+        }
+
         if Self.shouldOpenQuickLook(keyCode: event.keyCode, viewMode: prefs.viewMode,
                                     reading: reading, readerOpen: readerOpen,
                                     hasSelection: selectedItem != nil),
@@ -1604,13 +1604,9 @@ struct ResultsPane: View {
         if let match, Self.alwaysAvailable.contains(match) { return perform(match) }
         if reading || readerOpen {
             if handleReaderNavigation(event) { return true }
-            // A book open on screen is still a file with a decision pending, and none of
-            // these keys is a page key. Without this, reaching for D over an open document
-            // did nothing at all: the reader's scope cannot see a reviewing command, and
-            // every bare key below is handed to the page.
-            if let decision = Keymap.shared.command(for: event, in: .reviewing),
-               Self.decisionsInTheReader.contains(decision), selectedItem != nil {
-                return perform(decision)
+            if let command = Self.readerCommand(for: event, keymap: .shared),
+               command.scope == .reader || selectedItem != nil {
+                return perform(command)
             }
         }
 
@@ -1657,8 +1653,16 @@ struct ResultsPane: View {
     }
 
     static func requestsPDFSearch(_ event: NSEvent) -> Bool {
-        event.charactersIgnoringModifiers?.lowercased() == "f"
-            && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+        Keymap.shared.shortcut(for: .findInDocument)?.matches(event) == true
+    }
+
+    static func readerCommand(for event: NSEvent, keymap: Keymap) -> Command? {
+        // N adds a note in the reader, even though it also advances a review. Reader
+        // commands get their own keys before the review's alternate keys are considered.
+        if let command = keymap.command(for: event, in: .reader) { return command }
+        guard let command = keymap.command(for: event, in: .reviewing),
+              decisionsInTheReader.contains(command) else { return nil }
+        return command
     }
 
     private func handleReaderNavigation(_ event: NSEvent) -> Bool {
@@ -1806,7 +1810,7 @@ struct ResultsPane: View {
             } else {
                 confirm()
             }
-        case .editName: editingName = true
+        case .editName: editCurrentName()
         case .skip: skip()
         case .skipFolder: skipFolder()
         case .applyOne: applyNow()
@@ -1989,6 +1993,21 @@ struct ResultsPane: View {
         askOnArrival()
     }
 
+    private func editCurrentName(_ target: Item? = nil) {
+        guard !runner.busy, let item = target ?? readerItem ?? selectedItem else { return }
+        selected = item.key
+        if runner.decision(for: item) == .applied { runner.reopen(item) }
+        prefs.inspectorPanel = .rename
+        prefs.inspectorCollapsed = false
+        Task { @MainActor in
+            await Task.yield()
+            guard selected == item.key else { return }
+            draft = currentName(item)
+            suggestion = item.destinationName
+            editingName = true
+        }
+    }
+
     /// With the toggle on, landing on a file that is still undecided and has never been
     /// looked at asks the model for a name. Guarded on all three, so browsing back over
     /// files already dealt with costs nothing.
@@ -2054,8 +2073,10 @@ struct ResultsPane: View {
     private func applyNow() {
         guard let item = selectedItem, runner.decision(for: item) != .applied else { return }
         let order = onScreenOrder
-        applyOne(item, draft)
-        advance(through: order)
+        let name = draft
+        Task {
+            if await applyOne(item, name), selected == item.key { advance(through: order) }
+        }
     }
 
     /// One menu, built for whichever file was right-clicked rather than the selected one,
@@ -2067,6 +2088,10 @@ struct ResultsPane: View {
         return FileContextMenu(
             item: item,
             others: many.count > 1 ? many.count : 0,
+            rename: {
+                pick(item.key)
+                editCurrentName(item)
+            },
             confirm: {
                 let order = onScreenOrder
                 selected = item.key
@@ -2386,7 +2411,7 @@ struct ResultsPane: View {
                 } actions: {
                     if !runner.duplicatesChecked {
                         Button("Find duplicates") { runner.findDuplicates(passwords: passwords) }
-                .tip("Compare by bytes, by opening pages, and by name", key: "⌘D")
+                .tip("Compare by bytes, by opening pages, and by name", command: .findDuplicates)
                             .buttonStyle(.borderedProminent)
                     }
                 }
@@ -2423,7 +2448,7 @@ struct ResultsPane: View {
             Spacer()
             Button("Recheck") { runner.findDuplicates(passwords: passwords) }
                 .controlSize(.small)
-                .tip("Compare again, after changes", key: "⌘D")
+                .tip("Compare again, after changes", command: .findDuplicates)
             Button("Trash \(runner.identicalExtras) identical spares") {
                 runner.markIdenticalExtras()
                 ensureSelection()
@@ -3406,19 +3431,19 @@ struct ResultsPane: View {
                 }
             }
         } label: {
-            Text(prefs.viewMode.label).help("Which view of the same files  (⌘1 to ⌘4)")
+            Text(prefs.viewMode.label).help("Choose list, shelf, bibliography or duplicates")
         }
         .menuStyle(.borderlessButton)
         .accessibilityLabel("View: \(prefs.viewMode.label)")
         .accessibilityIdentifier("toolbar.viewMenu")
         .fixedSize()
-        .tip("Which view of the same files", key: "⌘1 to ⌘4")
+        .tip("Choose list, shelf, bibliography or duplicates")
     }
 
     private var commandPaletteButton: some View {
         Button { showingPalette = true } label: {
             Label("Open command palette", systemImage: "magnifyingglass")
-                .tip("Search the library or run a command", key: "⌘K")
+                .tip("Search the library or run a command", command: .palette)
         }
         .accessibilityLabel("Open command palette")
         .accessibilityIdentifier("toolbar.commandPalette")
@@ -3981,8 +4006,8 @@ struct FilterBarControls<Warning: View, Sort: View>: View {
             Button("Confirm all", action: confirmAll)
                 .controlSize(.small)
                 .fixedSize()
-                .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .tip("Take every name still pending as it stands", key: "⌘⇧Return")
+                .commandShortcut(.confirmAllPending)
+                .tip("Take every name still pending as it stands", command: .confirmAllPending)
         }
     }
 

@@ -74,6 +74,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var searchAliases: String {
         switch self {
+        case .editName: return "rename edit change current file pdf filename name"
+        case .applyOne: return "rename save apply current file filename now"
         case .removeFromLibrary: return "delete forget remove pdf library catalogue"
         case .trashNow: return "delete send move pdf file trash bin"
         case .revealInFinder: return "open pdf file finder location folder reveal"
@@ -196,7 +198,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .toggleNotes: return "Show or hide the notes"
         case .toggleContents: return "Show or hide the contents"
         case .confirm: return "Confirm the name and go to the next file"
-        case .editName: return "Edit the name"
+        case .editName: return "Rename the current file..."
         case .askAI: return "Ask the model for a name"
         case .copyCitation: return "Copy the current file's BibTeX citation"
         case .applyOne: return "Apply this one file now"
@@ -380,6 +382,21 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
         }
     }
 
+    var keyboardShortcut: KeyboardShortcut? {
+        guard key.count == 1, let character = key.first else { return nil }
+        var flags: EventModifiers = []
+        if modifiers.contains(.command) { flags.insert(.command) }
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.control) { flags.insert(.control) }
+        return KeyboardShortcut(KeyEquivalent(character), modifiers: flags)
+    }
+
+    func matches(_ press: KeyPress) -> Bool {
+        guard let shortcut = keyboardShortcut else { return false }
+        return shortcut.key == press.key && shortcut.modifiers == press.modifiers
+    }
+
     /// How the key reads on a cap: ⏎ rather than a carriage return nobody can see.
     var display: String {
         let name: String
@@ -468,8 +485,13 @@ final class Keymap {
     func conflict(for shortcut: Shortcut, assigning command: Command) -> Command? {
         Command.allCases.first { other in
             guard other != command else { return false }
-            guard shortcut == self.shortcut(for: other) else { return false }
-            return other.scope.overlaps(command.scope)
+            let primaryMatches = shortcut == self.shortcut(for: other)
+            if other.scope.overlaps(command.scope) {
+                return primaryMatches || (overrides[other] == nil && other.alternates.contains(shortcut))
+            }
+            return primaryMatches && (
+                (other.scope == .reader && ResultsPane.decisionsInTheReader.contains(command))
+                || (command.scope == .reader && ResultsPane.decisionsInTheReader.contains(other)))
         }
     }
 
