@@ -2596,12 +2596,17 @@ struct ResultsPane: View {
         }
     }
 
-    /// What this pane has open, above whatever it is showing. Nothing while presenting: a
-    /// mode whose whole point is the page on its own has no room for a strip naming the
-    /// others.
+    /// What this pane has open, above the page it is about.
+    ///
+    /// Only where the region draws a document. The same region also holds the
+    /// bibliography's panel of metadata and the two copies the duplicates view puts side by
+    /// side, and a strip of open papers over either of those names documents that view is
+    /// not showing: ⌘3 with anything restored used to put one there. Nothing while
+    /// presenting either, since a mode whose whole point is the page on its own has no room
+    /// for a strip naming the others.
     @ViewBuilder
     private var tabBar: some View {
-        if !presentation, let pane = deck.deck.active, !pane.tabs.isEmpty {
+        if showsPage, !presentation, let pane = deck.deck.active, !pane.tabs.isEmpty {
             TabBar(tabs: pane.tabs, active: pane.active,
                    title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
                    activate: activateTab,
