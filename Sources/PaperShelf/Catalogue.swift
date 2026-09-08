@@ -175,6 +175,11 @@ struct ResultsPane: View {
     /// nothing about where you are standing.
     @State private var readerFocused = false
 
+    /// Whether what was open last time has been put back yet. Once per window: `onAppear`
+    /// fires again whenever the pane comes back, and a second pass would throw away every
+    /// tab opened since.
+    @State private var restoredTabs = false
+
     /// Whether a document has the middle of the window to itself. The deck has the last
     /// word: closing what was showing leaves nothing to look at, so the collection comes
     /// back whether or not anything cleared the flag.
@@ -248,6 +253,62 @@ struct ResultsPane: View {
     private func closeTab(_ tab: Deck.Tab.ID) {
         deck.deck = deck.deck.closing(tab)
         if deck.deck.activeTab == nil { readerFocused = false }
+    }
+
+    /// Looking at a tab means reading it. The bar is inside the document region, so a click
+    /// on it is a click on the document it names, and the selection follows: a decision key
+    /// pressed straight afterwards has to be about the paper on screen.
+    private func activateTab(_ tab: Deck.Tab.ID) {
+        deck.deck = deck.deck.activating(tab)
+        readerFocused = true
+        if let key = deck.deck.activeTab?.key { selected = key }
+    }
+
+    /// The reviewer's selection, as a tab of its own.
+    ///
+    /// One preview tab, replaced as the selection moves rather than added to, which is what
+    /// keeps a walk down a folder of two hundred files from opening two hundred documents.
+    /// Only where the document region follows the selection at all: the bibliography and
+    /// the duplicates view answer with a panel of their own, and a tab there would be a
+    /// document opened by an arrow key.
+    private func previewSelection(_ key: String?) {
+        guard let key, showsPage else { return }
+        deck.deck = deck.deck.opening(key, kept: false, makeAnnotator: { Annotator() })
+    }
+
+    /// What to call a tab. The library's name for the file where it knows it: a key is a
+    /// path, and a path is unreadable in the 180 points a tab gets.
+    static func tabTitle(_ key: String, named name: String?) -> String {
+        name ?? (key as NSString).lastPathComponent
+    }
+
+    /// What was open the last time, minus whatever has been renamed, moved or trashed
+    /// since. A file that is no longer there goes without comment, the same bargain the
+    /// rest of the deck makes with an unreachable source.
+    private func restoreTabs() {
+        guard !restoredTabs else { return }
+        restoredTabs = true
+        guard let stored = Self.storedDeck(prefs.openTabs) else { return }
+        deck.deck = Deck.restoring(stored,
+                                   reachable: { FileManager.default.fileExists(atPath: $0) },
+                                   makeAnnotator: { _ in Annotator() })
+        // Whatever was already selected is still selected, and restoring threw its preview
+        // tab away with everything else. Nothing else puts it back until the selection moves.
+        previewSelection(selected)
+    }
+
+    /// The deck as it is written down, and back. One string rather than a list of keys: the
+    /// order and which one was showing are part of the answer. Anything that does not
+    /// decode is nothing rather than an empty deck, so a truncated or hand-edited
+    /// preference leaves the window as it is instead of quietly emptying it.
+    static func storedDeck(_ text: String) -> StoredDeck? {
+        guard !text.isEmpty else { return nil }
+        return try? JSONDecoder().decode(StoredDeck.self, from: Data(text.utf8))
+    }
+
+    static func storedText(_ stored: StoredDeck) -> String {
+        guard let data = try? JSONEncoder().encode(stored) else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Back to the collection, with what is open left open.
@@ -580,7 +641,21 @@ struct ResultsPane: View {
     }
 
     var body: some View {
-        withShelfNavigation(withSidebarRequests(withDialogs(withKeys(core))))
+        withTabs(withShelfNavigation(withSidebarRequests(withDialogs(withKeys(core)))))
+    }
+
+    /// What is open, put back and written down. Its own wrapper for the reason `withKeys`
+    /// is one: this view's modifier chains are already at what the type checker will work
+    /// through in one piece.
+    private func withTabs<V: View>(_ view: V) -> some View {
+        view
+            .onAppear(perform: restoreTabs)
+            // Keyed on what would be written rather than on the deck itself. The preview
+            // tab is never stored, so walking a folder moves the selection through a
+            // hundred documents and rewrites nothing.
+            .onChange(of: StoredDeck(deck.deck)) { _, stored in
+                prefs.openTabs = Self.storedText(stored)
+            }
     }
 
     private func withShelfNavigation<V: View>(_ view: V) -> some View {
@@ -667,6 +742,7 @@ struct ResultsPane: View {
             // means one file again. Only a modifier click grows a selection.
             if let new, !selection.contains(new) { selection = [new] }
             loadDraft()
+            previewSelection(new)
         }
             .onAppear {
             ensureSelection()
@@ -1647,16 +1723,9 @@ struct ResultsPane: View {
         guard next != current else { return }
         // A key moved this, whatever the last click left behind: scroll to it.
         pickedByPointer = false
-        let key = runner.results[next].key
-        selected = key
-        // In the reader the page follows the selection: changing only `selected` leaves
-        // the page on the old file even though the selection moved. What was showing is
-        // replaced rather than added to, so J and K down a folder open one document, not
-        // two hundred.
-        if readerOpen, let showing = deck.deck.activeTab?.id {
-            deck.deck = deck.deck.closing(showing)
-                .opening(key, kept: true, makeAnnotator: { Annotator() })
-        }
+        // The page follows from here, the reader included: `previewSelection` moves the one
+        // preview tab rather than opening every file the keys pass over.
+        selected = runner.results[next].key
     }
 
     private func confirm() {
@@ -2461,6 +2530,8 @@ struct ResultsPane: View {
     /// What the trailing region holds: two copies to choose between, one document with
     /// its page and panel, or the panel alone.
     private func documentRegion(paneWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+        tabBar
         Group {
         // Choosing between two copies means seeing them beside each other. In the view
         // whose whole job is that decision, this is what the pane should hold.
@@ -2521,6 +2592,21 @@ struct ResultsPane: View {
                 description: Text("Pick a file to see it.")
             )
         }
+        }
+        }
+    }
+
+    /// What this pane has open, above whatever it is showing. Nothing while presenting: a
+    /// mode whose whole point is the page on its own has no room for a strip naming the
+    /// others.
+    @ViewBuilder
+    private var tabBar: some View {
+        if !presentation, let pane = deck.deck.active, !pane.tabs.isEmpty {
+            TabBar(tabs: pane.tabs, active: pane.active,
+                   title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
+                   activate: activateTab,
+                   close: closeTab)
+            Divider()
         }
     }
 

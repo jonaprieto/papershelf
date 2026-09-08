@@ -33,6 +33,35 @@ final class ReaderNavigationTests: XCTestCase {
         XCTAssertEqual(Command.findInDocument.defaultShortcut, Shortcut("f", .command))
     }
 
+    /// A tab is 180 points wide and a key is a whole path, so the bar asks the library what
+    /// the file is called. It has to say something for a document the library does not know:
+    /// a restored tab can name a file outside everything the window has scanned, and a bar
+    /// of blank tabs is worse than a bar of filenames.
+    func testATabIsNamedAfterTheFileEvenWhenTheLibraryDoesNotKnowIt() {
+        XCTAssertEqual(ResultsPane.tabTitle("/papers/2017-gomes.pdf", named: "gomes-2017.pdf"),
+                       "gomes-2017.pdf")
+        XCTAssertEqual(ResultsPane.tabTitle("/papers/2017-gomes.pdf", named: nil),
+                       "2017-gomes.pdf")
+    }
+
+    /// What is open survives a launch, and a preference that does not decode leaves the
+    /// window alone rather than emptying it. Nothing this app writes is malformed; a
+    /// truncated write, an older build's format or a hand-edited preference all are.
+    @MainActor
+    func testTheOpenDocumentsAreWrittenDownAndReadBack() throws {
+        let deck = Deck.one(pane: UUID())
+            .opening("/papers/a.pdf", kept: true, makeAnnotator: { Annotator() })
+            .opening("/papers/b.pdf", kept: true, makeAnnotator: { Annotator() })
+        let written = ResultsPane.storedText(StoredDeck(deck))
+        let read = try XCTUnwrap(ResultsPane.storedDeck(written))
+        XCTAssertEqual(read.panes, [["/papers/a.pdf", "/papers/b.pdf"]])
+        XCTAssertEqual(read.active, [1])
+
+        XCTAssertNil(ResultsPane.storedDeck(""))
+        XCTAssertNil(ResultsPane.storedDeck("{\"panes\":[[\"/papers/a.pdf\"]]"))
+        XCTAssertNil(ResultsPane.storedDeck("/papers/a.pdf"))
+    }
+
     /// A document open takes the middle of the window whichever view it was opened from,
     /// and the two views that are about a collection rather than about files keep their own
     /// second pane when nothing is open. Getting this wrong is invisible until somebody
