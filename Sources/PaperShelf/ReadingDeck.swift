@@ -167,6 +167,11 @@ struct StoredDeck: Codable, Equatable {
     /// The index of the active tab in each pane, or -1 where the pane holds nothing. It
     /// counts the tabs that were stored, so a preview tab standing ahead of them does not
     /// shift it onto the wrong paper.
+    ///
+    /// It has no way to point at the preview tab itself, and falls back to the first tab
+    /// when the preview was the one showing. That fallback names a paper nobody was
+    /// reading, which is why `ResultsPane.tabsToStore` writes nothing at all in that state
+    /// rather than writing this.
     var active: [Int]
     var activePane: Int
 

@@ -62,6 +62,33 @@ final class ReaderNavigationTests: XCTestCase {
         XCTAssertNil(ResultsPane.storedDeck("/papers/a.pdf"))
     }
 
+    /// The paper you come back to is the paper you were reading, not the first one on the
+    /// bar.
+    ///
+    /// The reviewer's selection is a tab too, and it is never written down, so a write made
+    /// while it is the one showing cannot say which paper is being read: the stored index
+    /// falls back to the first tab. Reading the third of three papers and then letting the
+    /// selection move stored an index of 0, and the next launch opened the first paper. The
+    /// deck here changes exactly the way it does in a window, and only what the write site
+    /// hands back is kept.
+    @MainActor
+    func testARelaunchOpensThePaperThatWasBeingRead() throws {
+        var deck = Deck.one(pane: UUID())
+        for key in ["/lib/a.pdf", "/lib/b.pdf", "/lib/c.pdf"] {
+            deck = deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        }
+        var written = try XCTUnwrap(ResultsPane.tabsToStore(deck), "reading c.pdf")
+
+        deck = deck.opening("/lib/d.pdf", kept: false, makeAnnotator: { Annotator() })
+        if let moved = ResultsPane.tabsToStore(deck) { written = moved }
+
+        let stored = try XCTUnwrap(ResultsPane.storedDeck(written))
+        XCTAssertEqual(stored.active, [2])
+        let back = Deck.restoring(stored, reachable: { _ in true },
+                                  makeAnnotator: { _ in Annotator() })
+        XCTAssertEqual(back.activeTab?.key, "/lib/c.pdf")
+    }
+
     /// A document open takes the middle of the window whichever view it was opened from,
     /// and the two views that are about a collection rather than about files keep their own
     /// second pane when nothing is open. Getting this wrong is invisible until somebody

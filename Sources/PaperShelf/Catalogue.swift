@@ -313,6 +313,20 @@ struct ResultsPane: View {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// What to write down for a deck, and nothing at all while the reviewer's selection is
+    /// the tab on screen.
+    ///
+    /// The preview tab is never stored, so a write made while it is the one showing cannot
+    /// record which paper is being read. All such a write can change is the stored index,
+    /// and it changes it to the first tab, which is then the paper the next launch opens:
+    /// read the third of three papers, move the selection, and you came back to the first.
+    /// The last write made while a kept tab was showing is the last real answer, so it is
+    /// left standing.
+    static func tabsToStore(_ deck: Deck) -> String? {
+        guard deck.activeTab?.isPreview != true else { return nil }
+        return storedText(StoredDeck(deck))
+    }
+
     /// Back to the collection, with what is open left open.
     ///
     /// A shelf, a folder, a tag and the four views are places in the collection, and going
@@ -652,11 +666,12 @@ struct ResultsPane: View {
     private func withTabs<V: View>(_ view: V) -> some View {
         view
             .onAppear(perform: restoreTabs)
-            // Keyed on what would be written rather than on the deck itself. The preview
-            // tab is never stored, so walking a folder moves the selection through a
-            // hundred documents and rewrites nothing.
-            .onChange(of: StoredDeck(deck.deck)) { _, stored in
-                prefs.openTabs = Self.storedText(stored)
+            // Keyed on what would be written rather than on the deck itself, so walking a
+            // folder moves the selection through a hundred documents and rewrites nothing.
+            // The key goes to nothing while the selection is what is showing, so the tab
+            // clicked next is still seen as a change and written.
+            .onChange(of: Self.tabsToStore(deck.deck)) { _, text in
+                if let text { prefs.openTabs = text }
             }
     }
 
