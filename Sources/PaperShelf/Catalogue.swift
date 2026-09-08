@@ -239,11 +239,13 @@ struct ResultsPane: View {
         openReader(key)
     }
 
-    /// One rung of the ⎋ ladder: out of the reader, back into the collection.
+    /// Closes the document that is showing, and lets what is left of the deck say what the
+    /// window looks at next. Another tab kept open is one to carry on reading; a deck with
+    /// nothing left in it has nothing to show, so the collection comes back.
     ///
-    /// What is left of the deck decides what the window shows next. Another document kept
-    /// open is one to carry on reading; anything else means the collection, since a deck
-    /// with nothing in it has nothing to show.
+    /// Not a rung of the ⎋ ladder any more. Escape leaves the reader with everything still
+    /// open, so getting back to the collection past three papers no longer costs the three
+    /// papers.
     private func closeReader() {
         guard let tab = deck.deck.activeTab else { readerFocused = false; return }
         closeTab(tab.id)
@@ -1469,7 +1471,12 @@ struct ResultsPane: View {
             shelves.current = .all
             runner.search("", passwords: passwords)
         case .leavePlace:
-            closeReader()
+            // Leaves the reader, which is what this rung means everywhere else: the
+            // project, the palette and the popover are all still there afterwards. Closing
+            // the tab instead destroyed a paper per press, and since the deck hands the
+            // reader a neighbour each time, three open papers took three presses and cost
+            // all three.
+            showCollection()
         case .nothing:
             return false
         }
@@ -2567,7 +2574,9 @@ struct ResultsPane: View {
                 read: { openReader(item.key) },
                 stepDocument: { step(by: $0) },
                 togglePresentation: toggleZenMode,
-                leaveReader: readerOpen ? closeReader : nil,
+                // The chevron says "Back to the shelf" and names ⎋, so it does what ⎋
+                // does. Wired to the close, it threw the paper away on the way out.
+                leaveReader: readerOpen ? showCollection : nil,
                 reset: { draft = item.destinationName },
                 leaveField: { editingName = false; listFocused = true },
                 excerpt: runner.excerpt(for: item),
