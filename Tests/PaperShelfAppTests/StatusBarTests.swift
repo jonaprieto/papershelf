@@ -24,4 +24,11 @@ final class StatusBarTests: XCTestCase {
     func testAFutureDateReadsAsJustNow() {
         XCTAssertEqual(openedLabel(now.addingTimeInterval(120), now: now), "opened just now")
     }
+
+    func testBuildStampNamesTheReleaseBuildAndCommit() {
+        XCTAssertEqual(StatusBar.buildLabel(version: "1.14.1", build: "23", revision: "8204741cbdf2"),
+                       "v1.14.1 b23 8204741cbdf2")
+        XCTAssertEqual(StatusBar.buildLabel(version: "1.14.1", build: "23", revision: nil),
+                       "v1.14.1 b23 unrecorded")
+    }
 }

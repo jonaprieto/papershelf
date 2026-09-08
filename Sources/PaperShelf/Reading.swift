@@ -829,7 +829,10 @@ struct PageBar: View {
 struct PDFSearchBar: View {
     @Bindable var annotator: Annotator
     var inContentsRail = false
-    @FocusState private var queryFocused: Bool
+    private enum Focus: Hashable { case query, navigation }
+
+    @FocusState private var focus: Focus?
+    @State private var submittedQuery = ""
 
     private var count: String {
         guard let selected = annotator.selectedFindHit else {
@@ -868,25 +871,34 @@ struct PDFSearchBar: View {
                 .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
             }
         }
-        .onAppear { queryFocused = true }
-        .onChange(of: annotator.findFocusToken) { _, _ in queryFocused = true }
+        .focusable()
+        .focused($focus, equals: .navigation)
+        .focusEffectDisabled()
+        .onAppear { focus = .query }
+        .onChange(of: annotator.findFocusToken) { _, _ in focus = .query }
+        .onChange(of: annotator.findQuery) { _, _ in submittedQuery = "" }
         .task(id: annotator.findQuery) {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
             annotator.updateFindHits()
         }
+        .onKeyPress(.return) { advanceFind(by: 1) }
+        .onKeyPress("j") { advanceFind(by: 1) }
+        .onKeyPress("k") { advanceFind(by: -1) }
+        .onKeyPress(.escape) {
+            annotator.closeFind()
+            return .handled
+        }
     }
 
     private var queryField: some View {
         TextField("Find in PDF", text: $annotator.findQuery)
-            .focused($queryFocused)
+            .focused($focus, equals: .query)
             .accessibilityLabel("Find in PDF")
             .accessibilityIdentifier("reader.findField")
             .onSubmit {
-                if annotator.findHits.isEmpty, !annotator.findQuery.isEmpty {
-                    annotator.updateFindHits()
-                }
-                annotator.jumpToSelectedFindHit()
+                _ = advanceFind(by: 1)
+                focus = .navigation
             }
             // The field remains the keyboard focus while searching. Make its arrows move
             // through the result list, then let Return make the selected occurrence the page.
@@ -901,10 +913,25 @@ struct PDFSearchBar: View {
                 annotator.stepFind(by: -1)
                 return .handled
             }
-            .onKeyPress(.escape) {
-                annotator.closeFind()
-                return .handled
+    }
+
+    /// Return first turns to the first match. Once the phrase is committed, Return and
+    /// J/K move through its occurrences from the search bar itself.
+    private func advanceFind(by delta: Int) -> KeyPress.Result {
+        let query = annotator.findQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return .handled }
+        if submittedQuery != query {
+            annotator.updateFindHits()
+            submittedQuery = query
+            if delta > 0 {
+                annotator.jumpToSelectedFindHit()
+            } else {
+                annotator.stepFind(by: -1)
             }
+        } else {
+            annotator.stepFind(by: delta)
+        }
+        return .handled
     }
 
     private func moveFindSelection(by delta: Int) -> KeyPress.Result {

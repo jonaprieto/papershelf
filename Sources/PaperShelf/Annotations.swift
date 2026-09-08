@@ -15,6 +15,9 @@ import PaperShelfCore
 final class Annotator {
     private(set) var marks: [Mark] = []
     private(set) var hasSelection = false
+    /// The active highlighter follows each completed text selection until it is toggled off.
+    private var automaticHighlightColour: NSColor?
+    var automaticHighlighting: Bool { automaticHighlightColour != nil }
     /// Where the selection sits, in the preview's own coordinates, so the bar can be put
     /// next to it rather than parked at the bottom of the page.
     private(set) var selectionRect: CGRect?
@@ -146,6 +149,7 @@ final class Annotator {
     private var positionTask: Task<Void, Never>?
     private var writtenPage: Int?
     private var bookmarksTask: Task<Void, Never>?
+    private var automaticHighlightTask: Task<Void, Never>?
 
     func attach(_ view: PDFView, url: URL) {
         // Whatever the previous document still owed the disk, it owes now: the debounce
@@ -154,6 +158,9 @@ final class Annotator {
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         self.view = view
         self.url = url
+        automaticHighlightColour = nil
+        automaticHighlightTask?.cancel()
+        automaticHighlightTask = nil
         documentID = nil
         generation &+= 1
         marks = []
@@ -511,6 +518,11 @@ final class Annotator {
         }
         hasSelection = true
 
+        if automaticHighlightColour != nil {
+            scheduleAutomaticHighlight()
+            return
+        }
+
         // Union of the lines on the first page the selection touches.
         let lines = selection.selectionsByLine()
             .filter { $0.pages.contains(page) }
@@ -523,6 +535,36 @@ final class Annotator {
         // AppKit measures from the bottom, SwiftUI from the top.
         selectionRect = CGRect(x: box.minX, y: view.bounds.height - box.maxY,
                                width: box.width, height: box.height)
+    }
+
+    /// Arms the current colour for text selections, or returns the reader to ordinary
+    /// selection when it is already armed.
+    func toggleAutomaticHighlight(colour: NSColor) {
+        if automaticHighlightColour == nil {
+            automaticHighlightColour = colour
+        } else {
+            automaticHighlightColour = nil
+            automaticHighlightTask?.cancel()
+            automaticHighlightTask = nil
+        }
+    }
+
+    /// Changing colour while the highlighter is armed changes the active tool too.
+    func setAutomaticHighlightColour(_ colour: NSColor) {
+        guard automaticHighlightColour != nil else { return }
+        automaticHighlightColour = colour
+    }
+
+    /// PDFKit announces each drag update. Waiting briefly leaves one mark for the final
+    /// selection instead of a mark for every word passed while dragging.
+    private func scheduleAutomaticHighlight() {
+        automaticHighlightTask?.cancel()
+        automaticHighlightTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, !Task.isCancelled, self.hasSelection,
+                  let colour = self.automaticHighlightColour else { return }
+            _ = self.highlightSelection(colour: colour)
+        }
     }
 
     /// What a live selection would hand to ChatGPT: the passage, the page it sits on, and

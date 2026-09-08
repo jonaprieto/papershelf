@@ -196,6 +196,8 @@ struct StatusBar: View {
             Text(plan.built)
             separator
             Text("? for every shortcut")
+            separator
+            buildStamp
         }
         .modifier(StatusBarChrome())
         .onChange(of: regions.focused) { _, region in
@@ -231,6 +233,8 @@ struct StatusBar: View {
             }
 
             watchingDot
+            separator
+            buildStamp
         }
         .modifier(StatusBarChrome())
         .onChange(of: regions.focused) { _, region in
@@ -280,6 +284,8 @@ struct StatusBar: View {
             separator
 
             watchingDot
+            separator
+            buildStamp
         }
         .modifier(StatusBarChrome())
         // Focusing the status bar opens what it is a summary of, which is the only useful
@@ -296,6 +302,21 @@ struct StatusBar: View {
                 .frame(width: 6, height: 6)
             Text(watchingLabel)
         }
+    }
+
+    /// The release label identifies the public version while the revision distinguishes
+    /// two locally built copies of it.
+    private var buildStamp: some View {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        let revision = Bundle.main.object(forInfoDictionaryKey: "PaperShelfGitCommit") as? String
+        return Text(Self.buildLabel(version: version, build: build, revision: revision))
+            .font(Face.mono)
+            .tip("PaperShelf version \(version), build \(build), commit \(revision ?? "unrecorded")")
+    }
+
+    static func buildLabel(version: String, build: String, revision: String?) -> String {
+        "v\(version) b\(build) \(revision ?? "unrecorded")"
     }
 
     /// A path said the way a person keeps it: under the home folder, from the home folder.

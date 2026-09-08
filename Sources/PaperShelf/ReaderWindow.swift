@@ -251,7 +251,7 @@ struct ReaderWindow: View {
                     addingNote = true
                     writingNote = true
                 } label: {
-                    Image(systemName: "square.and.pencil")
+                    Label("Note", systemImage: "square.and.pencil")
                 }
                 .buttonStyle(.plain)
                 .help("Note on the selection")

@@ -20,6 +20,11 @@ cp "$BIN" "$APP/Contents/MacOS/PaperShelf"
 # path that survives every rebuild.
 cp "$BINDIR/PaperShelfMCP" "$APP/Contents/MacOS/papershelf-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# The status bar identifies the exact source revision that made this bundle. A local
+# rebuild says so rather than borrowing the commit of the release it started from.
+REVISION="$(git rev-parse --short=12 HEAD)"
+if [[ -n "$(git status --porcelain)" ]]; then REVISION="${REVISION}+dirty"; fi
+/usr/libexec/PlistBuddy -c "Add :PaperShelfGitCommit string $REVISION" "$APP/Contents/Info.plist"
 # Ad-hoc signed, so the Keychain would treat every rebuild as a different application and
 # ask again. The app reads this and keeps the API key in memory for the session instead.
 /usr/libexec/PlistBuddy -c "Add :PaperShelfAdHocBuild bool true" "$APP/Contents/Info.plist"

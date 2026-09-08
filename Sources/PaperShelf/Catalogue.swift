@@ -347,6 +347,9 @@ struct ResultsPane: View {
     /// document opened by an arrow key.
     private func previewSelection(_ key: String?) {
         guard let key, showsPage else { return }
+        // A collection preview changes with every row. Its contents rail is something
+        // the reader asked for, not another panel that follows every PDF selection.
+        if !readerFocused { prefs.contentsShown = false }
         deck.deck = deck.deck.opening(key, kept: false, makeAnnotator: { Annotator() })
     }
 
@@ -1098,11 +1101,28 @@ struct ResultsPane: View {
     @ViewBuilder
     private var readerActions: some View {
         let styles = palette.styles(for: currentMeaningScopes)
+        Button {
+            guard let currentStyle else { return }
+            prefs.lastHighlightColour = currentStyle.id.uuidString
+            readerAnnotator.toggleAutomaticHighlight(colour: currentStyle.nsColor)
+        } label: {
+            Label("Highlight", systemImage: "highlighter")
+        }
+        .foregroundStyle(readerAnnotator.automaticHighlighting ? Color.accentColor : .secondary)
+        .accessibilityIdentifier("toolbar.highlight")
+        .accessibilityAddTraits(readerAnnotator.automaticHighlighting ? .isSelected : [])
+        .tip(readerAnnotator.automaticHighlighting
+             ? "Highlight selections automatically. Click to stop."
+             : "Highlight text selections automatically")
+
         Menu {
             ForEach(styles) { style in
                 Button {
                     prefs.lastHighlightColour = style.id.uuidString
-                    if readerAnnotator.hasSelection { readerAnnotator.highlightSelection(colour: style.nsColor) }
+                    readerAnnotator.setAutomaticHighlightColour(style.nsColor)
+                    if !readerAnnotator.automaticHighlighting, readerAnnotator.hasSelection {
+                        readerAnnotator.highlightSelection(colour: style.nsColor)
+                    }
                 } label: {
                     // A drawn swatch, not a symbol: a symbol in a menu item is treated as
                     // a template and repainted, so five highlighters came out the same
@@ -1117,14 +1137,12 @@ struct ResultsPane: View {
         } label: {
             // A drawn swatch: see `swatchImage`. A shape used as a menu's label is not
             // drawn on macOS and a symbol is repainted in the control colour, which left
-            // the highlighter button as a bare chevron and then as a black dot.
+            // this colour picker as a bare chevron and then as a black dot.
             swatchImage(currentStyle?.nsColor ?? .systemYellow, size: 14)
-                .accessibilityLabel("Highlighter")
         }
+        .accessibilityLabel("Choose highlighter colour")
         .accessibilityIdentifier("toolbar.highlighter")
-        .tip(readerAnnotator.hasSelection
-             ? "Highlight the selection, in this colour"
-             : "Which highlighter the next mark uses")
+        .tip("Choose the highlighter colour")
 
         Menu {
             Button("Find in PDF", action: openFind)
@@ -1462,6 +1480,9 @@ struct ResultsPane: View {
     private func handle(_ event: NSEvent) -> Bool {
         guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
         guard !runner.busy else { return false }
+        // A palette field owns its arrows and Return. The local monitor otherwise sees
+        // them first and turns the PDF page before the palette can move its selection.
+        guard !showingPalette else { return false }
         if event.keyCode == 53 {                     // ⎋
             if QuickLook.closeIfVisible() { return true }
             return escape()
@@ -2813,7 +2834,7 @@ struct ResultsPane: View {
                     },
                     openFind: { tab.annotator.openFind() }
                 ) {
-                    EmptyView()
+                    splitSelectionBar(item: item, annotator: tab.annotator)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { focusPane(pane.id) }
@@ -2826,6 +2847,40 @@ struct ResultsPane: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { focusPane(pane.id) }
+    }
+
+    /// A split page is hosted directly rather than through `ReviewInspector`, so it needs
+    /// its own selection palette. Without it, selecting text in either half had no visible
+    /// way to make a highlight even though the same selection showed a bar before splitting.
+    @ViewBuilder
+    private func splitSelectionBar(item: Item, annotator: Annotator) -> some View {
+        if prefs.selectionPalette, annotator.hasSelection {
+            let scopes: [HighlightMeaningScope] = [
+                .forDocument(item.currentURL),
+                .forFolder(item.currentURL.deletingLastPathComponent()),
+                .library,
+            ]
+            HStack(spacing: Space.step) {
+                ForEach(palette.styles(for: scopes)) { style in
+                    Button {
+                        _ = annotator.highlightSelection(colour: style.nsColor)
+                        prefs.lastHighlightColour = style.id.uuidString
+                    } label: {
+                        Circle().fill(style.swatch).frame(width: 19, height: 19)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(palette.meaning(for: style, scopes: scopes))
+                }
+            }
+            .padding(.horizontal, Space.step)
+            .padding(.vertical, Space.snug)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator.opacity(0.6)))
+            .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
+            .padding(.top, Space.roomy)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .transition(.opacity)
+        }
     }
 
     /// Whether the strip of open papers is drawn.

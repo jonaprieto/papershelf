@@ -440,7 +440,7 @@ struct ReviewInspector: View {
                 // Measured from the palette, for the same reason the mark bar's is: these
                 // were 250 and 284, written when the palette had five colours in it, and
                 // the palette is a list the reader edits.
-                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 134 : 100),
+                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 158 : 124),
                                  height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
@@ -621,7 +621,7 @@ struct ReviewInspector: View {
                 prefs.inspectorCollapsed = false
                 addingNote = true
             } label: {
-                Image(systemName: "text.bubble")
+                Label("Note", systemImage: "text.bubble")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Add note")

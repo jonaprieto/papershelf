@@ -106,6 +106,27 @@ final class SelectionHandoffTests: XCTestCase {
         annotator.flush()
     }
 
+    func testArmedHighlighterMarksTheNextTextSelection() async throws {
+        let document = try makeDocument(["alpha"])
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("armed-highlighter-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(document.write(to: url))
+        let view = PDFView()
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: url)
+
+        annotator.toggleAutomaticHighlight(colour: .yellow)
+        view.currentSelection = try XCTUnwrap(document.findString("alpha", withOptions: []).first)
+        annotator.selectionChanged()
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertTrue(annotator.automaticHighlighting)
+        XCTAssertEqual(annotator.marks.count, 1)
+        annotator.flush()
+    }
+
     func testHighlightQuoteMatchesTheSelectedTextAcrossWrappedLines() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("annotator-wrap-\(UUID().uuidString).pdf")
