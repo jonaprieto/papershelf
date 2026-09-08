@@ -225,6 +225,13 @@ struct ResultsPane: View {
             .flatMap { runner.item($0) }
     }
 
+    /// A single reader keeps the window-owned annotator for its status bar. Split readers
+    /// use the focused tab's own state, so the inspector and reader commands follow the
+    /// paper the pointer last touched.
+    private var readerAnnotator: Annotator {
+        deck.deck.isSplit ? (deck.deck.activeTab?.annotator ?? annotator) : annotator
+    }
+
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
                                     reading: Bool, readerOpen: Bool,
                                     hasSelection: Bool) -> Bool {
@@ -268,6 +275,16 @@ struct ResultsPane: View {
         if deck.deck.activeTab == nil { readerFocused = false }
     }
 
+    private func closeTab(_ tab: Deck.Tab.ID, in pane: Deck.Pane.ID) {
+        deck.deck = deck.deck.closing(tab, in: pane)
+        if deck.deck.activeTab == nil { readerFocused = false }
+    }
+
+    private func closeAllTabs() {
+        deck.deck = deck.deck.closingAll()
+        readerFocused = false
+    }
+
     /// Looking at a tab means reading it. The bar is inside the document region, so a click
     /// on it is a click on the document it names, and the selection follows: a decision key
     /// pressed straight afterwards has to be about the paper on screen.
@@ -275,6 +292,39 @@ struct ResultsPane: View {
         deck.deck = deck.deck.activating(tab)
         readerFocused = true
         if let key = deck.deck.activeTab?.key { selected = key }
+    }
+
+    private func activateTab(_ tab: Deck.Tab.ID, in pane: Deck.Pane.ID) {
+        deck.deck = deck.deck.activating(tab, in: pane)
+        readerFocused = true
+        if let key = deck.deck.activeTab?.key { selected = key }
+    }
+
+    private func focusPane(_ pane: Deck.Pane.ID) {
+        guard deck.deck.activePane != pane else { return }
+        deck.deck = deck.deck.focusing(pane)
+        readerFocused = true
+        if let key = deck.deck.activeTab?.key { selected = key }
+    }
+
+    private func splitReader() {
+        deck.deck = deck.deck.splitting()
+        if deck.deck.isSplit { readerFocused = true }
+    }
+
+    /// A sidebar drag onto a reader is a request to read that paper here. The first one
+    /// beside an open paper makes the two panes the drag is asking for.
+    private func openDropped(_ urls: [URL], in pane: Deck.Pane.ID) -> Bool {
+        guard let url = urls.first,
+              let item = runner.results.first(where: {
+                  $0.currentURL.resolvingSymlinksInPath() == url.resolvingSymlinksInPath()
+              })
+        else { return false }
+        deck.deck = deck.deck.focusing(pane).opening(item.key, kept: true, makeAnnotator: Annotator.init)
+        readerFocused = true
+        selected = item.key
+        if deck.deck.canSplit { splitReader() }
+        return true
     }
 
     /// Along the bar, and onto the paper it lands on. There is nowhere to step with one
@@ -721,15 +771,15 @@ struct ResultsPane: View {
                 copyCitation()
             }
             .onReceive(NotificationCenter.default.publisher(for: .scriptAddBookmark)) { _ in
-                guard annotator.bookmarkOnCurrentPage == nil else { return }
-                _ = annotator.toggleBookmark()
+                guard readerAnnotator.bookmarkOnCurrentPage == nil else { return }
+                _ = readerAnnotator.toggleBookmark()
             }
             .onReceive(NotificationCenter.default.publisher(for: .scriptRemoveBookmark)) { _ in
-                guard let bookmark = annotator.bookmarkOnCurrentPage else { return }
-                _ = annotator.removeBookmark(bookmark)
+                guard let bookmark = readerAnnotator.bookmarkOnCurrentPage else { return }
+                _ = readerAnnotator.removeBookmark(bookmark)
             }
             .onReceive(NotificationCenter.default.publisher(for: .scriptShowBookmarks)) { _ in
-                guard annotator.hasPages else { return }
+                guard readerAnnotator.hasPages else { return }
                 prefs.contentsShown = true
                 prefs.contentsRailMode = .bookmarks
             }
@@ -813,7 +863,7 @@ struct ResultsPane: View {
             var drawn: Set<Region> = [.document, .status]
             if !reading { drawn.insert(.sidebar) }
             if !prefs.inspectorCollapsed { drawn.insert(.inspector) }
-            if showsPage && prefs.contentsShown && annotator.hasPages { drawn.insert(.contents) }
+            if showsPage && prefs.contentsShown && readerAnnotator.hasPages { drawn.insert(.contents) }
             regions.available = drawn
         }
             .onChange(of: regions.focused) { _, region in
@@ -1025,7 +1075,7 @@ struct ResultsPane: View {
     /// the only place left that can host one now the inspector's header is four tabs.
     @ViewBuilder
     private var contentsToggle: some View {
-        if showsPage && annotator.hasPages {
+        if showsPage && readerAnnotator.hasPages {
             Button { prefs.contentsShown.toggle() } label: {
                 Label("Contents", systemImage: "sidebar.squares.left")
             }
@@ -1036,7 +1086,7 @@ struct ResultsPane: View {
                 get: { prefs.contentsShown && SplitLayout.contentsIsPopover(paneWidth: viewPaneWidth) },
                 set: { prefs.contentsShown = $0 }
             ), arrowEdge: .bottom) {
-                ContentsRail(annotator: annotator, findActive: annotator.showsFind)
+                ContentsRail(annotator: readerAnnotator, findActive: readerAnnotator.showsFind)
                     .frame(width: 300, height: 420)
             }
         }
@@ -1051,7 +1101,7 @@ struct ResultsPane: View {
             ForEach(styles) { style in
                 Button {
                     prefs.lastHighlightColour = style.id.uuidString
-                    if annotator.hasSelection { annotator.highlightSelection(colour: style.nsColor) }
+                    if readerAnnotator.hasSelection { readerAnnotator.highlightSelection(colour: style.nsColor) }
                 } label: {
                     // A drawn swatch, not a symbol: a symbol in a menu item is treated as
                     // a template and repainted, so five highlighters came out the same
@@ -1071,7 +1121,7 @@ struct ResultsPane: View {
                 .accessibilityLabel("Highlighter")
         }
         .accessibilityIdentifier("toolbar.highlighter")
-        .tip(annotator.hasSelection
+        .tip(readerAnnotator.hasSelection
              ? "Highlight the selection, in this colour"
              : "Which highlighter the next mark uses")
 
@@ -1082,8 +1132,8 @@ struct ResultsPane: View {
                 prefs.inspectorPanel = .notes
                 prefs.inspectorCollapsed = false
             }
-            Button(annotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark") {
-                _ = annotator.toggleBookmark()
+            Button(readerAnnotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark") {
+                _ = readerAnnotator.toggleBookmark()
             }
             if let item = readerItem ?? selectedItem {
                 ShareLink(item: item.currentURL, subject: Text(item.currentFilename)) {
@@ -1278,12 +1328,12 @@ struct ResultsPane: View {
                 return found
             },
             inThisDocument: { text in
-                annotator.find(text).map { hit in
+                readerAnnotator.find(text).map { hit in
                     PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
                             line: hit.line, go: hit.jump)
                 }
             },
-            goToPage: annotator.view == nil ? nil : { annotator.go(toPage: $0) },
+            goToPage: readerAnnotator.view == nil ? nil : { readerAnnotator.go(toPage: $0) },
             help: { showingShortcuts = true }
         )
     }
@@ -1405,7 +1455,7 @@ struct ResultsPane: View {
         // it, is not a row the gate below can find, and these four want a tab rather than
         // a row. Left under the gate, ⌘W would fall through to File > Close and take the
         // whole window down with papers still open in it.
-        .openInNewTab, .closeTab, .nextTab, .previousTab,
+        .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit,
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
@@ -1500,7 +1550,7 @@ struct ResultsPane: View {
         }
         if let delta = FitWidthPDFView.pageStep(for: event.keyCode,
                                                  arrowsEnabled: prefs.leftRightTurnsPages) {
-            annotator.go(toPage: annotator.page + delta)
+            readerAnnotator.go(toPage: readerAnnotator.page + delta)
             return true
         }
         let delta: Int?
@@ -1508,20 +1558,20 @@ struct ResultsPane: View {
         case 126, 116: delta = -1            // ↑ Page Up
         case 49, 125, 121: delta = 1         // Space, ↓ Page Down
         case 115:
-            annotator.go(toPage: 1)
+            readerAnnotator.go(toPage: 1)
             return true
         case 119:
-            annotator.go(toPage: annotator.pageCount)
+            readerAnnotator.go(toPage: readerAnnotator.pageCount)
             return true
         default: return false
         }
-        annotator.go(toPage: annotator.page + (delta ?? 0))
+        readerAnnotator.go(toPage: readerAnnotator.page + (delta ?? 0))
         return true
     }
 
     /// Everything that decides which regions exist right now.
     private var regionSignature: String {
-        "\(reading)\(prefs.inspectorCollapsed)\(prefs.contentsShown)\(annotator.hasPages)\(showsPage)"
+        "\(reading)\(prefs.inspectorCollapsed)\(prefs.contentsShown)\(readerAnnotator.hasPages)\(showsPage)"
     }
 
     /// What is still open once ⎋ has left the reader: all of it.
@@ -1588,7 +1638,7 @@ struct ResultsPane: View {
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
         .nextMark, .previousMark,
-        .openInNewTab, .closeTab, .nextTab, .previousTab,
+        .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply,
@@ -1667,19 +1717,19 @@ struct ResultsPane: View {
         case .highlight4: highlight(colourAt: 3)
         case .highlight5: highlight(colourAt: 4)
         case .addNote:
-            guard annotator.selectedMark != nil || annotator.hasSelection else { return false }
+            guard readerAnnotator.selectedMark != nil || readerAnnotator.hasSelection else { return false }
             prefs.inspectorPanel = .notes
             prefs.inspectorCollapsed = false
             addingNote = true
         case .addBookmark:
-            return annotator.toggleBookmark()
+            return readerAnnotator.toggleBookmark()
         case .showBookmarks:
-            guard annotator.hasPages else { return false }
+            guard readerAnnotator.hasPages else { return false }
             prefs.contentsShown = true
             prefs.contentsRailMode = .bookmarks
         case .removeBookmark:
-            guard let bookmark = annotator.bookmarkOnCurrentPage else { return false }
-            return annotator.removeBookmark(bookmark)
+            guard let bookmark = readerAnnotator.bookmarkOnCurrentPage else { return false }
+            return readerAnnotator.removeBookmark(bookmark)
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)
 
@@ -1699,14 +1749,21 @@ struct ResultsPane: View {
             // so the window can still be closed from the keyboard.
             guard deck.deck.activeTab != nil else { return false }
             closeReader()
+        case .closeAllTabs:
+            guard deck.deck.activeTab != nil else { return false }
+            closeAllTabs()
         case .nextTab: return stepTab(by: 1)
         case .previousTab: return stepTab(by: -1)
+        case .toggleSplit:
+            guard !deck.deck.isSplit else { return false }
+            splitReader()
+            return deck.deck.isSplit
 
         case .focusSidebar:
             focusSidebar()
             regions.focus(.sidebar)
         case .focusContents:
-            guard annotator.hasPages else { return false }
+            guard readerAnnotator.hasPages else { return false }
             prefs.contentsShown = true
             regions.focus(.contents)
         case .focusDocument:
@@ -1729,8 +1786,8 @@ struct ResultsPane: View {
     }
 
     private func openFind() {
-        guard annotator.hasPages else { return }
-        annotator.openFind()
+        guard readerAnnotator.hasPages else { return }
+        readerAnnotator.openFind()
         prefs.contentsShown = true
         prefs.contentsRailMode = .find
     }
@@ -1777,22 +1834,22 @@ struct ResultsPane: View {
         let styles = palette.styles(for: currentMeaningScopes)
         guard styles.indices.contains(index) else { return }
         let colour = styles[index].nsColor
-        if annotator.hasSelection {
-            _ = annotator.highlightSelection(colour: colour)
-        } else if let selected = annotator.selectedMark,
-                  let mark = annotator.marks.first(where: { $0.id == selected }) {
-            annotator.setColour(colour, on: mark)
+        if readerAnnotator.hasSelection {
+            _ = readerAnnotator.highlightSelection(colour: colour)
+        } else if let selected = readerAnnotator.selectedMark,
+                  let mark = readerAnnotator.marks.first(where: { $0.id == selected }) {
+            readerAnnotator.setColour(colour, on: mark)
         }
     }
 
     /// Moves to the next mark in the document and scrolls the page to it, since a
     /// highlight on a page you are not looking at is invisible by definition.
     private func stepMark(by delta: Int) {
-        guard !annotator.marks.isEmpty else { return }
-        let current = annotator.marks.firstIndex { $0.id == annotator.selectedMark }
-        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + annotator.marks.count)
-            % annotator.marks.count
-        annotator.jump(to: annotator.marks[next])
+        guard !readerAnnotator.marks.isEmpty else { return }
+        let current = readerAnnotator.marks.firstIndex { $0.id == readerAnnotator.selectedMark }
+        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + readerAnnotator.marks.count)
+            % readerAnnotator.marks.count
+        readerAnnotator.jump(to: readerAnnotator.marks[next])
     }
 
     /// Leaving the name field has to hand focus somewhere, or Return drops it on the
@@ -2429,7 +2486,7 @@ struct ResultsPane: View {
         // The contents rail is nested inside the document region, not a sibling here, so
         // it only needs to widen that region's own floor, not the outer reservation
         // `inspectorMaximum` makes for the browser.
-        let contentsOpen = prefs.contentsShown && annotator.hasPages
+        let contentsOpen = prefs.contentsShown && readerAnnotator.hasPages
         let minimum = SplitLayout.inspectorMinimum(contentsShown: contentsOpen)
         let maximum = SplitLayout.inspectorMaximum(
             available: available, contentsShown: contentsOpen)
@@ -2648,7 +2705,7 @@ struct ResultsPane: View {
     /// its page and panel, or the panel alone.
     private func documentRegion(paneWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-        tabBar
+        if let pane = deck.deck.active { tabBar(pane) }
         Group {
         // Choosing between two copies means seeing them beside each other. In the view
         // whose whole job is that decision, this is what the pane should hold.
@@ -2658,46 +2715,10 @@ struct ResultsPane: View {
                 keep: { runner.keep($0, inGroup: group.id) },
                 trashExtras: { runner.trashExtras(of: group.id) }
             )
+        } else if readerOpen && deck.deck.isSplit {
+            splitReader(paneWidth: paneWidth)
         } else if let item = readerItem ?? selectedItem {
-            ReviewInspector(
-                showsPage: showsPage,
-                presentation: presentation,
-                paneWidth: paneWidth,
-                item: item,
-                runner: runner,
-                passwords: passwords,
-                draft: $draft,
-                editing: $editingName,
-                confirm: confirm,
-                skip: skip,
-                skipFolder: skipFolder,
-                applyNow: applyNow,
-                identify: identifySelected,
-                copyCitation: copyCitation,
-                improveCitation: { system, user in
-                    try await aiClient.ask(system: system, user: user, feature: .bibtex)
-                },
-                moveTo: { choosingMoveTarget = true },
-                aiReady: aiReady,
-                markDeleted: markDeleted,
-                reopen: reopenSelected,
-                read: { openReader(item.key) },
-                stepDocument: { step(by: $0) },
-                togglePresentation: toggleZenMode,
-                // The chevron says "Back to the shelf" and names ⎋, so it does what ⎋
-                // does. Wired to the close, it threw the paper away on the way out.
-                leaveReader: readerOpen ? showCollection : nil,
-                reset: { draft = item.destinationName },
-                leaveField: { editingName = false; listFocused = true },
-                excerpt: runner.excerpt(for: item),
-                tags: tagActions(for: item),
-                annotator: annotator,
-                palette: palette,
-                projectScopes: projects.map {
-                    .project(id: $0.id, name: $0.name)
-                },
-                documentID: tagIndex.documentID[item.key]
-            )
+            inspector(item, annotator: readerAnnotator, showsPage: showsPage, paneWidth: paneWidth)
         } else if runner.lastRunWasDry && !runner.results.isEmpty && runner.pendingCount == 0 {
             ContentUnavailableView(
                 "Every file reviewed",
@@ -2715,6 +2736,93 @@ struct ResultsPane: View {
         }
     }
 
+    private func inspector(_ item: Item, annotator: Annotator, showsPage: Bool,
+                           paneWidth: CGFloat) -> some View {
+        ReviewInspector(
+            showsPage: showsPage,
+            presentation: presentation,
+            paneWidth: paneWidth,
+            item: item,
+            runner: runner,
+            passwords: passwords,
+            draft: $draft,
+            editing: $editingName,
+            confirm: confirm,
+            skip: skip,
+            skipFolder: skipFolder,
+            applyNow: applyNow,
+            identify: identifySelected,
+            copyCitation: copyCitation,
+            improveCitation: { system, user in
+                try await aiClient.ask(system: system, user: user, feature: .bibtex)
+            },
+            moveTo: { choosingMoveTarget = true },
+            aiReady: aiReady,
+            markDeleted: markDeleted,
+            reopen: reopenSelected,
+            read: { openReader(item.key) },
+            stepDocument: { step(by: $0) },
+            togglePresentation: toggleZenMode,
+            leaveReader: readerOpen ? showCollection : nil,
+            reset: { draft = item.destinationName },
+            leaveField: { editingName = false; listFocused = true },
+            excerpt: runner.excerpt(for: item),
+            tags: tagActions(for: item),
+            annotator: annotator,
+            palette: palette,
+            projectScopes: projects.map { .project(id: $0.id, name: $0.name) },
+            documentID: tagIndex.documentID[item.key]
+        )
+    }
+
+    private func splitReader(paneWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            ForEach(deck.deck.panes) { pane in
+                splitPage(pane)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if pane.id != deck.deck.panes.last?.id { Divider() }
+            }
+            if let item = readerItem {
+                Divider()
+                inspector(item, annotator: readerAnnotator, showsPage: false,
+                          paneWidth: SplitLayout.panelWidth(paneWidth: paneWidth))
+                    .frame(width: SplitLayout.panelWidth(paneWidth: paneWidth))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func splitPage(_ pane: Deck.Pane) -> some View {
+        VStack(spacing: 0) {
+            tabBar(pane)
+            if let tab = deck.deck.activeTab(in: pane.id), let item = runner.item(tab.key) {
+                DocumentPane(
+                    url: item.currentURL,
+                    passwords: passwords,
+                    annotator: tab.annotator,
+                    fit: $prefs.pageFit,
+                    appearance: prefs.readingAppearance,
+                    showsContentsRail: false,
+                    onPointer: { point in
+                        if point != nil { focusPane(pane.id) }
+                    },
+                    openFind: { tab.annotator.openFind() }
+                ) {
+                    EmptyView()
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { focusPane(pane.id) }
+                .dropDestination(for: URL.self) { urls, _ in
+                    openDropped(urls, in: pane.id)
+                }
+            } else {
+                ContentUnavailableView("No paper open", systemImage: "doc")
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { focusPane(pane.id) }
+    }
+
     /// Whether the strip of open papers is drawn.
     ///
     /// Only where the region draws a document. The same region also holds the
@@ -2729,18 +2837,19 @@ struct ResultsPane: View {
 
     /// What this pane has open, above the page it is about.
     @ViewBuilder
-    private var tabBar: some View {
-        if let pane = deck.deck.active,
-           Self.showsTabBar(showsPage: showsPage, presentation: presentation,
+    private func tabBar(_ pane: Deck.Pane) -> some View {
+        if Self.showsTabBar(showsPage: showsPage, presentation: presentation,
                             hasTabs: !pane.tabs.isEmpty) {
             TabBar(tabs: pane.tabs, active: pane.active,
                    title: { Self.tabTitle($0.key, named: runner.item($0.key)?.sourceName) },
-                   activate: activateTab,
-                   close: closeTab,
+                   activate: { activateTab($0, in: pane.id) },
+                   close: { closeTab($0, in: pane.id) },
                    // The palette is already this window's answer to "which paper", with
                    // every document in it and a field to narrow them. The + is the pointer's
                    // way to the same place ⌘K goes, not a picker of its own.
-                   open: { showingPalette = true })
+                   open: { focusPane(pane.id); showingPalette = true },
+                   split: deck.deck.canSplit ? splitReader : nil,
+                   closeAll: closeAllTabs)
             Divider()
         }
     }
@@ -2876,7 +2985,7 @@ struct ResultsPane: View {
     /// one. The annotator is attached to whatever the page is showing, and a title read
     /// off the last file is worse than no title at all.
     private func statedByDocument(_ item: Item, _ stated: String?) -> String? {
-        guard let stated, annotator.url == item.currentURL else { return nil }
+        guard let stated, readerAnnotator.url == item.currentURL else { return nil }
         return stated
     }
 
@@ -2889,7 +2998,7 @@ struct ResultsPane: View {
             // The open document is asked before the plan is. Both know the title, but the
             // plan only learns it once a run has read the file, so a window opened
             // straight onto a document was named after its filename until then.
-            if let stated = statedByDocument(item, annotator.statedTitle) { return stated }
+            if let stated = statedByDocument(item, readerAnnotator.statedTitle) { return stated }
             let planned = item.documentInfo["Title"]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let planned, !planned.isEmpty { return planned }
@@ -2920,14 +3029,14 @@ struct ResultsPane: View {
             let guess = runner.ai.guesses[item.key]
             let planned = item.documentInfo["Author"]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let author = shortAuthor(statedByDocument(item, annotator.statedAuthor)
+            let author = shortAuthor(statedByDocument(item, readerAnnotator.statedAuthor)
                                      ?? (planned?.isEmpty == false ? planned : nil)
                                      ?? guess?.author)
             // Where you are, not how long it is. "248 pages" is a fact about the file and
             // belongs in the Info tab; the subtitle of a window with a page in it should
             // say which page.
-            let total = annotator.pageCount > 0 ? annotator.pageCount : item.pageCount
-            let where_ = total.map { "page \(annotator.page) of \($0)" }
+            let total = readerAnnotator.pageCount > 0 ? readerAnnotator.pageCount : item.pageCount
+            let where_ = total.map { "page \(readerAnnotator.page) of \($0)" }
             return [author, guess?.year, where_]
                 .compactMap { $0 }.joined(separator: " · ")
         }

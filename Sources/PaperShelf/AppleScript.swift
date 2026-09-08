@@ -73,13 +73,19 @@ final class PaperShelfScriptCommand: NSScriptCommand {
 
     @MainActor
     private func chooseContrast(_ argument: String?) -> Any? {
-        let value = argument?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        switch value {
-        case "normal": Prefs.shared.readingAppearance = .normal
-        case "dark tint", "tint": Prefs.shared.readingAppearance = .tint
-        case "white on black", "white-on-black": Prefs.shared.readingAppearance = .whiteOnBlack
-        default: return fail("PDF contrast must be normal, dark tint, or white on black.")
+        let value = argument?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        // Read off the labels the menu shows rather than a list kept beside them: a
+        // contrast that can be chosen in the app can always be named here. The two hyphen
+        // and short spellings stay because scripts already use them.
+        let named = PDFReadingAppearance.allCases.first { $0.label.lowercased() == value }
+        let older: [String: PDFReadingAppearance] = [
+            "tint": .tint, "white-on-black": .whiteOnBlack,
+        ]
+        guard let mode = named ?? older[value] else {
+            let names = PDFReadingAppearance.allCases.map { $0.label.lowercased() }
+            return fail("PDF contrast must be one of: \(names.joined(separator: ", ")).")
         }
+        Prefs.shared.readingAppearance = mode
         return Prefs.shared.readingAppearance.label
     }
 

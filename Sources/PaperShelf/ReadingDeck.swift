@@ -53,11 +53,43 @@ struct Deck: Equatable {
         Deck(panes: [Pane(id: pane)], activePane: pane)
     }
 
+    var isSplit: Bool { panes.count > 1 }
+    var canSplit: Bool { panes.count == 1 && panes[0].tabs.count > 1 }
+
     var active: Pane? { panes.first { $0.id == activePane } }
 
     var activeTab: Tab? {
         guard let pane = active, let id = pane.active else { return nil }
         return pane.tabs.first { $0.id == id }
+    }
+
+    func activeTab(in pane: Pane.ID) -> Tab? {
+        guard let pane = panes.first(where: { $0.id == pane }), let id = pane.active else { return nil }
+        return pane.tabs.first { $0.id == id }
+    }
+
+    func focusing(_ pane: Pane.ID) -> Deck {
+        guard panes.contains(where: { $0.id == pane }) else { return self }
+        var deck = self
+        deck.activePane = pane
+        deck.showingSelection = false
+        return deck
+    }
+
+    /// Shows two already-open papers side by side. The current paper remains in the pane
+    /// being read, and the nearest other tab becomes the second pane.
+    func splitting() -> Deck {
+        guard canSplit, let active = panes[0].active,
+              let index = panes[0].tabs.firstIndex(where: { $0.id != active }) else { return self }
+        var deck = self
+        let tab = deck.panes[0].tabs.remove(at: index)
+        deck.panes.append(Pane(id: UUID(), tabs: [tab], active: tab.id))
+        return deck
+    }
+
+    /// Closing all tabs is a return to the library, not an empty two-pane reader.
+    func closingAll() -> Deck {
+        Deck.one(pane: UUID())
     }
 
     /// Where the one preview tab is. There is at most one in the whole deck, which is why
@@ -139,6 +171,10 @@ struct Deck: Equatable {
         return deck
     }
 
+    func activating(_ tab: Tab.ID, in pane: Pane.ID) -> Deck {
+        focusing(pane).activating(tab)
+    }
+
     /// Close a tab, and say what is showing afterwards: the one to its right, or the one to
     /// its left when it was last. A pane that runs out of tabs stays, empty.
     func closing(_ tab: Tab.ID) -> Deck {
@@ -155,6 +191,10 @@ struct Deck: Equatable {
         let next = min(at, deck.panes[index].tabs.count - 1)
         deck.panes[index].active = next >= 0 ? deck.panes[index].tabs[next].id : nil
         return deck
+    }
+
+    func closing(_ tab: Tab.ID, in pane: Pane.ID) -> Deck {
+        focusing(pane).closing(tab)
     }
 
     /// Turn the preview tab into one that stays.

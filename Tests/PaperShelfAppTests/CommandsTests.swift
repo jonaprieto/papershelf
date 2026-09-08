@@ -219,6 +219,10 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(ResultsPane.performable.contains(.toggleInspector))
         XCTAssertTrue(ResultsPane.performable.contains(.toggleNotes))
         XCTAssertTrue(ResultsPane.performable.contains(.toggleContents))
+        XCTAssertTrue(ResultsPane.performable.contains(.closeAllTabs))
+        XCTAssertTrue(ResultsPane.performable.contains(.toggleSplit))
+        XCTAssertEqual(Command.closeAllTabs.title, "Close all open tabs and return to the library")
+        XCTAssertEqual(Command.toggleSplit.defaultShortcut, Shortcut("\\", .command))
         XCTAssertEqual(Command.showBookmarks.title, "Show bookmarks")
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("current file"))
         XCTAssertTrue(Command.copyCitation.title.localizedCaseInsensitiveContains("citation"))
@@ -232,6 +236,25 @@ final class CommandsTests: XCTestCase {
         XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.toggleInspector))
         XCTAssertEqual(Keymap.shared.shortcut(for: .toggleInspector),
                        Shortcut("b", [.command, .shift]))
+    }
+
+    func testGlobalShortcutsReachEveryCommandScope() {
+        let keymap = Keymap(store: scratchStore())
+        let palette = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                       modifierFlags: .command,
+                                       timestamp: 0, windowNumber: 0, context: nil,
+                                       characters: "k", charactersIgnoringModifiers: "k",
+                                       isARepeat: false, keyCode: 40)!
+        let pane = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                    modifierFlags: [.command, .shift],
+                                    timestamp: 0, windowNumber: 0, context: nil,
+                                    characters: "B", charactersIgnoringModifiers: "b",
+                                    isARepeat: false, keyCode: 11)!
+
+        for scope in Command.Scope.allCases {
+            XCTAssertEqual(keymap.command(for: palette, in: scope), .palette)
+            XCTAssertEqual(keymap.command(for: pane, in: scope), .toggleInspector)
+        }
     }
 
     func testPresentationModeUsesTheNativeFullScreenShortcut() {

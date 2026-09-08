@@ -18,6 +18,23 @@ extension FocusedValues {
     }
 }
 
+/// A pane-scoped menu action. A reader's side pane is not the library inspector, but the
+/// same key should still show or hide the pane beside the document.
+struct TogglePaneAction {
+    let perform: () -> Void
+}
+
+private struct TogglePaneActionKey: FocusedValueKey {
+    typealias Value = TogglePaneAction
+}
+
+extension FocusedValues {
+    var togglePane: TogglePaneAction? {
+        get { self[TogglePaneActionKey.self] }
+        set { self[TogglePaneActionKey.self] = newValue }
+    }
+}
+
 /// Every command the app can perform, named once.
 ///
 /// The keys were spread across three places that had no idea about each other: a hand-written
@@ -46,7 +63,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally
-    case openInNewTab, closeTab, nextTab, previousTab
+    case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit
 
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
@@ -108,7 +125,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally,
-             .openInNewTab, .closeTab, .nextTab, .previousTab:
+             .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .shortcuts:
@@ -122,7 +139,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark,
-             .closeTab, .nextTab, .previousTab:
+             .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
@@ -195,8 +212,10 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .openExternally: return "Open in the default PDF viewer"
         case .openInNewTab: return "Keep this document open in a tab"
         case .closeTab: return "Close this tab"
+        case .closeAllTabs: return "Close all open tabs and return to the library"
         case .nextTab: return "Next tab"
         case .previousTab: return "Previous tab"
+        case .toggleSplit: return "Split the reader"
         case .plan: return "Plan renames"
         case .apply: return "Apply the reviewed plan"
         case .refresh: return "Read the sources again"
@@ -263,6 +282,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // read this key. `perform` hands ⌘W back once the deck is empty, so File > Close
         // still gets it and the window still closes.
         case .closeTab: return Shortcut("w", .command)
+        case .closeAllTabs: return nil
         // ⌘[ and ⌘] are already back and forward here, so the tabs take the keys macOS
         // gives them everywhere else. Written as the character Shift produces rather than
         // as the bracket: `charactersIgnoringModifiers` accounts for Shift, and so does
@@ -270,6 +290,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // can make and would not be seen to clash with the same keys recorded by hand.
         case .nextTab: return Shortcut("}", [.command, .shift])
         case .previousTab: return Shortcut("{", [.command, .shift])
+        case .toggleSplit: return Shortcut("\\", .command)
         case .plan: return Shortcut("p", .command)
         case .apply: return Shortcut("\r", .command)
         case .findDuplicates: return Shortcut("d", .command)

@@ -18,6 +18,9 @@ struct TabBar: View {
     /// nothing to show until a paper is chosen; this hands the pointer the list ⌘K already
     /// gives rather than standing up a second document picker beside it.
     let open: () -> Void
+    /// Offered only while another open paper can fill the second pane.
+    var split: (() -> Void)? = nil
+    var closeAll: (() -> Void)? = nil
 
     static let height: CGFloat = 28
     /// Wide enough for a recognisable stem, narrow enough that four tabs fit a narrow pane.
@@ -34,6 +37,18 @@ struct TabBar: View {
                 }
             }
             .scrollIndicators(.hidden)
+            if let split {
+                Button(action: split) {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(Face.control)
+                        .frame(width: TabBar.height, height: TabBar.height)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Split reader")
+                .accessibilityIdentifier("tabBar.split")
+                .tip("Read two papers side by side", key: "⌘\\")
+            }
             openButton
         }
         .frame(height: TabBar.height)
@@ -82,6 +97,16 @@ struct TabBar: View {
         .background(isActive ? Color.primary.opacity(0.10) : .clear)
         .contentShape(Rectangle())
         .onTapGesture { activate(tab.id) }
+        .contextMenu {
+            if let split {
+                Button("Read side by side", action: split)
+            }
+            Button("Close tab") { close(tab.id) }
+            if let closeAll {
+                Divider()
+                Button("Close all tabs", action: closeAll)
+            }
+        }
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }

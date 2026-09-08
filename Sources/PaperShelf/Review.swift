@@ -8,16 +8,23 @@ struct PDFReadingAppearanceModifier: ViewModifier {
     let appearance: PDFReadingAppearance
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Dark tint dims the page, which is only ever wanted against a dark window; under a
+    /// light theme it would put a grey sheet in a bright room, so it applies to neither.
+    /// Sepia warms the page without dimming it and belongs under both.
+    private var wash: Color? {
+        guard let wash = appearance.wash,
+              appearance != .tint || colorScheme == .dark else { return nil }
+        return Color(red: wash.red, green: wash.green, blue: wash.blue)
+    }
+
     func body(content: Content) -> some View {
         switch appearance {
         case .whiteOnBlack:
             content.compositingGroup().colorInvert()
-        case .tint:
+        case .sepia, .tint:
             content.overlay {
-                if colorScheme == .dark {
-                    Color(red: 0.42, green: 0.40, blue: 0.36)
-                        .blendMode(.multiply)
-                        .allowsHitTesting(false)
+                if let wash {
+                    wash.blendMode(.multiply).allowsHitTesting(false)
                 }
             }
         case .normal:
@@ -1347,6 +1354,10 @@ struct PDFPreview: NSViewRepresentable {
 
     /// White-on-black inverts the hosted PDF view, including its canvas. Start that canvas
     /// light so inversion leaves the page black on a dark grey surround.
+    ///
+    /// A wash covers the canvas too, and for once that is the wanted answer: sepia carries
+    /// the desk along with the paper, so the page keeps an edge and a shadow to fall on
+    /// without a warm surround having to be named here and kept in step by hand.
     static func canvasColor(for appearance: PDFReadingAppearance) -> NSColor {
         if appearance == .whiteOnBlack { return srgb(232, 232, 235) }
         return NSColor(name: nil) { appearance in

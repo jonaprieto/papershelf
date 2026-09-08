@@ -2,14 +2,17 @@ import SwiftUI
 import Observation
 import PaperShelfCore
 
+/// Ordered lightest page first, since the menu, the settings row and the palette's cycle
+/// all read `allCases` and a person reaches for these by how much they change the paper.
 enum PDFReadingAppearance: String, CaseIterable, Identifiable {
-    case normal, tint, whiteOnBlack
+    case normal, sepia, tint, whiteOnBlack
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .normal: return "Normal"
+        case .sepia: return "Sepia"
         case .tint: return "Dark tint"
         case .whiteOnBlack: return "White on black"
         }
@@ -18,8 +21,26 @@ enum PDFReadingAppearance: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .normal: return "doc"
+        case .sepia: return "camera.filters"
         case .tint: return "circle.lefthalf.filled"
         case .whiteOnBlack: return "circle.righthalf.filled"
+        }
+    }
+
+    /// The colour the page is multiplied by, or nil for the modes that leave the page alone
+    /// or invert it whole.
+    ///
+    /// Multiplying never lightens, so black text stays black however warm or dim the paper
+    /// becomes: the page is recoloured rather than greyed out, which is the whole trick.
+    /// The shelf's covers read these same numbers, so a cover cannot drift away from the
+    /// page it stands for.
+    var wash: (red: Double, green: Double, blue: Double)? {
+        switch self {
+        case .normal, .whiteOnBlack: return nil
+        // Warm paper rather than dim paper. Nothing here is darker than the ink it sits
+        // behind, so sepia is worth having under a light theme as well as a dark one.
+        case .sepia: return (0.98, 0.93, 0.82)
+        case .tint: return (0.42, 0.40, 0.36)
         }
     }
 }

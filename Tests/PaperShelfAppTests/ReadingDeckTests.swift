@@ -205,6 +205,34 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertEqual(deck.closing(UUID()), deck)
     }
 
+    func testSplitShowsAnotherOpenPaperBesideTheActiveOne() {
+        var deck = open(empty(), ["a.pdf", "b.pdf"])
+        deck = deck.activating(deck.active!.tabs[0].id).splitting()
+
+        XCTAssertEqual(deck.panes.map { $0.tabs.map(\.key) }, [["a.pdf"], ["b.pdf"]])
+        XCTAssertEqual(deck.activeTab?.key, "a.pdf")
+        XCTAssertTrue(deck.isSplit)
+    }
+
+    func testOnePaperCannotSplit() {
+        let deck = open(empty(), ["a.pdf"])
+        XCTAssertFalse(deck.canSplit)
+        XCTAssertEqual(deck.splitting(), deck)
+    }
+
+    func testClosingAllTabsReturnsToOneEmptyPane() {
+        let deck = open(empty(), ["a.pdf", "b.pdf"]).splitting().closingAll()
+        XCTAssertEqual(deck.panes.count, 1)
+        XCTAssertNil(deck.activeTab)
+    }
+
+    func testFocusingTheOtherPaneMakesItsPaperActive() {
+        var deck = open(empty(), ["a.pdf", "b.pdf"])
+        deck = deck.activating(deck.active!.tabs[0].id).splitting()
+        deck = deck.focusing(deck.panes[1].id)
+        XCTAssertEqual(deck.activeTab?.key, "b.pdf")
+    }
+
     // MARK: stepping
 
     func testSteppingWrapsAtBothEnds() {

@@ -138,6 +138,7 @@ struct PaperShelfApp: App {
     @State private var chrome = Chrome()
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.findInPDF) private var findInPDF
+    @FocusedValue(\.togglePane) private var togglePane
     // Finder's files arrive here, and the reader windows they open are the delegate's.
     // See `AppDelegate` for why they are not a scene.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -151,6 +152,16 @@ struct PaperShelfApp: App {
     }
 
     private func openAbout() { openWindow(id: AboutWindow.windowID) }
+
+    /// The library monitor owns its window only. The menu is the app-wide route, so this
+    /// also works from Settings and from a reader opened directly from Finder.
+    private func openCommandPalette() {
+        AppDelegate.current?.wantsLibrary = true
+        openWindow(id: "main")
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: nil)
+        }
+    }
 
     var body: some Scene {
         Window("PaperShelf", id: "main") {
@@ -174,6 +185,8 @@ struct PaperShelfApp: App {
                     .disabled(!chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
+                Button("Command Palette", action: openCommandPalette)
+                    .keyboardShortcut("k", modifiers: .command)
                 Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode",
                        action: chrome.toggleReading)
                 .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -182,7 +195,8 @@ struct PaperShelfApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button(chrome.inspectorCollapsed ? "Show Inspector" : "Hide Inspector") {
-                    chrome.inspectorCollapsed.toggle()
+                    if let togglePane { togglePane.perform() }
+                    else { chrome.inspectorCollapsed.toggle() }
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 Button(chrome.contentsShown ? "Hide Contents" : "Show Contents") {
@@ -336,7 +350,10 @@ func firstPageImage(of url: URL, passwords: [String], height: CGFloat,
 
 private func styledThumbnail(_ image: NSImage, appearance: PDFReadingAppearance,
                              isDark: Bool) -> NSImage {
-    guard appearance == .whiteOnBlack || (appearance == .tint && isDark),
+    // The same rule the reader applies, so a cover shows the contrast the page will have:
+    // dark tint only against a dark window, sepia under either theme.
+    let wash = appearance == .tint && !isDark ? nil : appearance.wash
+    guard appearance == .whiteOnBlack || wash != nil,
           let tiff = image.tiffRepresentation,
           let source = CIImage(data: tiff) else { return image }
 
@@ -346,15 +363,14 @@ private func styledThumbnail(_ image: NSImage, appearance: PDFReadingAppearance,
         let filter = CIFilter(name: "CIColorInvert")
         filter?.setValue(source, forKey: kCIInputImageKey)
         output = filter?.outputImage
-    case .tint:
-        let tint = CIImage(color: CIColor(red: 0.42, green: 0.40, blue: 0.36))
+    case .normal, .sepia, .tint:
+        guard let wash else { return image }
+        let tint = CIImage(color: CIColor(red: wash.red, green: wash.green, blue: wash.blue))
             .cropped(to: source.extent)
         let filter = CIFilter(name: "CIMultiplyBlendMode")
         filter?.setValue(source, forKey: kCIInputImageKey)
         filter?.setValue(tint, forKey: kCIInputBackgroundImageKey)
         output = filter?.outputImage
-    case .normal:
-        output = nil
     }
 
     guard let output,

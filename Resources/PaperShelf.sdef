@@ -9,7 +9,7 @@
         </command>
         <command name="choose PDF contrast" code="PSchPdf1" description="Set the PDF contrast.">
             <cocoa class="PaperShelfScriptCommand"/>
-            <direct-parameter type="text" description="normal, dark tint, or white on black"/>
+            <direct-parameter type="text" description="normal, sepia, dark tint, or white on black"/>
             <result type="text"/>
         </command>
         <command name="current theme" code="PScuThm1" description="Return the current app theme.">

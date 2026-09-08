@@ -91,6 +91,7 @@ struct ReaderWindow: View {
         .navigationTitle(title)
         .preferredColorScheme(prefs.appearance.colorScheme)
         .focusedValue(\.findInPDF, FindInPDFAction(perform: openFind))
+        .focusedValue(\.togglePane, TogglePaneAction { showsNotes.toggle() })
         .frame(minWidth: SplitLayout.readerFloorWidth,
                minHeight: SplitLayout.readerFloorHeight)
         .task { await recordAndRestore() }

@@ -16,6 +16,7 @@ on run
             choose theme savedTheme
             choose PDF contrast "white on black"
             choose PDF contrast "dark tint"
+            choose PDF contrast "sepia"
             choose PDF contrast savedContrast
             show catalogue
             show notes
@@ -184,7 +185,7 @@ on auditSettings(targetPID)
         tell first application process whose unix id is targetPID
             set controls to buttons of (group 1 of scroll area 1 of group 2 of ¬
                 splitter group 1 of group 1 of (first window whose name is "General"))
-            if (count of controls) < 6 then
+            if (count of controls) < 7 then
                 error "Settings theme and contrast controls are not all exposed"
             end if
             repeat with index from 1 to 3
@@ -199,14 +200,16 @@ on auditSettings(targetPID)
                     error "Theme button did not apply its value"
                 end if
             end repeat
-            repeat with index from 1 to 3
+            repeat with index from 1 to 4
                 click first button of (group 1 of scroll area 1 of group 2 of ¬
                     splitter group 1 of group 1 of (first window whose name is "General")) ¬
                     whose value of attribute "AXIdentifier" is ¬
-                    "settings.pdfContrast." & (item index of {"normal", "tint", "whiteOnBlack"})
+                    "settings.pdfContrast." & ¬
+                    (item index of {"normal", "sepia", "tint", "whiteOnBlack"})
                 delay 0.15
                 tell application "__PAPERSHELF_APP_PATH__" to set actualContrast to current PDF contrast
-                set expectedContrast to item index of {"Normal", "Dark tint", "White on black"}
+                set expectedContrast to ¬
+                    item index of {"Normal", "Sepia", "Dark tint", "White on black"}
                 if actualContrast is not expectedContrast then
                     error "PDF contrast button did not apply its value"
                 end if

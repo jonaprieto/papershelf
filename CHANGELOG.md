@@ -4,7 +4,7 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
-## [Unreleased]
+## [1.14.0] - 2026-09-07
 
 ### Added
 
@@ -13,8 +13,14 @@ numbers rather than dates.
   walking a folder of two hundred files still opens nothing; Return or the new command keeps
   one. Four commands come with it, in the palette and rebindable: keep this document open in
   a tab, close this tab, next tab, previous tab. What was open comes back at the next launch.
+- Read two open papers side by side. The tab menu, split control, palette, and dragging a
+  library PDF into a reader all place a paper in either pane; the inspector follows whichever
+  page has focus. Close all open tabs from the palette to return to the library.
 - Right-clicking a file in the Sources tree opens a menu. Only folders had one, so a file
   reached an empty menu, which macOS draws as nothing at all.
+- Read on sepia paper. A fourth PDF contrast beside Normal, Dark tint and White on black,
+  warming the page without touching the ink, so it is worth having under a light theme as
+  well as a dark one. The shelf's covers and the scripting command know it too.
 
 ### Fixed
 
@@ -27,6 +33,8 @@ numbers rather than dates.
 - Find the selected file by key instead of walking the shelf. Every walk resolved symlinks
   per file, which measured 48ms over five thousand documents on each pass.
 - Hold the file list's rows instead of flattening the whole tree on every redraw.
+- Make the command palette available from every window, and make the pane shortcut work from
+  the focused reader as well as the catalogue.
 
 ## [1.13.0] - 2026-09-05
 
