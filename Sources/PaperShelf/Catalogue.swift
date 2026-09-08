@@ -266,6 +266,16 @@ struct ResultsPane: View {
         if let key = deck.deck.activeTab?.key { selected = key }
     }
 
+    /// Along the bar, and onto the paper it lands on. There is nowhere to step with one
+    /// tab or none, and saying so hands the key back rather than swallowing a press that
+    /// would change nothing.
+    private func stepTab(by delta: Int) -> Bool {
+        guard let pane = deck.deck.active, pane.tabs.count > 1,
+              let tab = deck.deck.stepping(by: delta).activeTab?.id else { return false }
+        activateTab(tab)
+        return true
+    }
+
     /// The reviewer's selection, as a tab of its own.
     ///
     /// One preview tab, replaced as the selection moves rather than added to, which is what
@@ -1339,6 +1349,12 @@ struct ResultsPane: View {
         .palette, .focusSearch, .shortcuts, .zenMode,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
+        // What is open and what is on the shelf are different questions. A paper put back
+        // into a tab at launch, or read while a search narrows the results out from under
+        // it, is not a row the gate below can find, and these four want a tab rather than
+        // a row. Left under the gate, ⌘W would fall through to File > Close and take the
+        // whole window down with papers still open in it.
+        .openInNewTab, .closeTab, .nextTab, .previousTab,
     ]
 
     private func handle(_ event: NSEvent) -> Bool {
@@ -1513,6 +1529,7 @@ struct ResultsPane: View {
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
         .nextMark, .previousMark,
+        .openInNewTab, .closeTab, .nextTab, .previousTab,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply,
@@ -1606,6 +1623,25 @@ struct ResultsPane: View {
             return annotator.removeBookmark(bookmark)
         case .nextMark: stepMark(by: 1)
         case .previousMark: stepMark(by: -1)
+
+        case .openInNewTab:
+            // The preview tab is the reviewer's selection passing through, so keeping it
+            // is all this has to do. With nothing passing through, "this document" can
+            // only mean the row in front of you.
+            if deck.deck.activeTab?.isPreview == true {
+                deck.deck = deck.deck.promotingPreview()
+            } else {
+                guard let selected else { return false }
+                openReader(selected)
+            }
+        case .closeTab:
+            // A deck with nothing in it leaves ⌘W meaning what it meant before this
+            // command existed. Returning false is what hands the key on to File > Close,
+            // so the window can still be closed from the keyboard.
+            guard deck.deck.activeTab != nil else { return false }
+            closeReader()
+        case .nextTab: return stepTab(by: 1)
+        case .previousTab: return stepTab(by: -1)
 
         case .focusSidebar:
             focusSidebar()

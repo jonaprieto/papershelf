@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import PaperShelfCore
 @testable import PaperShelf
 
@@ -88,6 +89,27 @@ final class CommandsTests: XCTestCase {
         let contents = keymap.shortcut(for: .toggleContents)
         XCTAssertEqual(contents, Shortcut("t", [.command, .shift]))
         XCTAssertEqual(keymap.conflict(for: contents!, assigning: .newTag), .toggleContents)
+    }
+
+    /// The tab keys against what a keyboard actually sends. `charactersIgnoringModifiers`
+    /// accounts for Shift, so ⇧⌘] arrives as `}` and not as the bracket: written the
+    /// obvious way round, these two would have shipped as keys that answer to no press
+    /// anybody can make, and the settings recorder would have stored a different shortcut
+    /// for the same fingers.
+    func testTheTabKeysAnswerToWhatTheKeyboardSends() {
+        let keymap = Keymap(store: scratchStore())
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                     modifierFlags: [.command, .shift],
+                                     timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: "}", charactersIgnoringModifiers: "}",
+                                     isARepeat: false, keyCode: 30)!
+        XCTAssertEqual(keymap.command(for: event, in: .reader), .nextTab)
+        XCTAssertFalse(Shortcut("]", [.command, .shift]).matches(event),
+                       "the bracket is not what that key sends with Shift held")
+        // And it is still named after the key it is printed on, the way every other Mac
+        // application writes this pair.
+        XCTAssertEqual(keymap.shortcut(for: .nextTab)?.display, "⇧⌘]")
+        XCTAssertEqual(keymap.shortcut(for: .previousTab)?.display, "⇧⌘[")
     }
 
     func testResetAllClearsEverything() {

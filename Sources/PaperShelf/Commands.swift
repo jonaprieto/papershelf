@@ -46,6 +46,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally
+    case openInNewTab, closeTab, nextTab, previousTab
 
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
@@ -106,7 +107,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
             return .deciding
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
-             .findInDocument, .nextMark, .previousMark, .openExternally:
+             .findInDocument, .nextMark, .previousMark, .openExternally,
+             .openInNewTab, .closeTab, .nextTab, .previousTab:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .shortcuts:
@@ -119,7 +121,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .focusContents, .toggleContents, .toggleNotes,
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
-             .findInDocument, .nextMark, .previousMark:
+             .findInDocument, .nextMark, .previousMark,
+             .openInNewTab, .closeTab, .nextTab, .previousTab:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending:
@@ -185,6 +188,10 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .openExternally: return "Open in the default PDF viewer"
+        case .openInNewTab: return "Keep this document open"
+        case .closeTab: return "Close this tab"
+        case .nextTab: return "Next tab"
+        case .previousTab: return "Previous tab"
         case .plan: return "Plan renames"
         case .apply: return "Apply the reviewed plan"
         case .refresh: return "Read the sources again"
@@ -246,6 +253,18 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .nextMark: return Shortcut("\u{F701}", .option)
         case .previousMark: return Shortcut("\u{F700}", .option)
         case .openExternally: return Shortcut("o", [])
+        case .openInNewTab: return Shortcut("t", .command)
+        // Closing what is open before closing what it is open in, the way Safari and Xcode
+        // read this key. `perform` hands ⌘W back once the deck is empty, so File > Close
+        // still gets it and the window still closes.
+        case .closeTab: return Shortcut("w", .command)
+        // ⌘[ and ⌘] are already back and forward here, so the tabs take the keys macOS
+        // gives them everywhere else. Written as the character Shift produces rather than
+        // as the bracket: `charactersIgnoringModifiers` accounts for Shift, and so does
+        // the recorder in Settings, so a binding spelled "]" would match no press anybody
+        // can make and would not be seen to clash with the same keys recorded by hand.
+        case .nextTab: return Shortcut("}", [.command, .shift])
+        case .previousTab: return Shortcut("{", [.command, .shift])
         case .plan: return Shortcut("p", .command)
         case .apply: return Shortcut("\r", .command)
         case .findDuplicates: return Shortcut("d", .command)
@@ -330,6 +349,10 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
         case "\u{F701}": name = "↓"
         case "\u{F702}": name = "←"
         case "\u{F703}": name = "→"
+        // Named by the key it is printed on, since the ⇧ is already spelled out to its
+        // left: every Mac writes this pair ⇧⌘] and ⇧⌘[, not ⇧⌘} and ⇧⌘{.
+        case "}": name = "]"
+        case "{": name = "["
         default: name = key.uppercased()
         }
         return modifiers.display + name
