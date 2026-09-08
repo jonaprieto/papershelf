@@ -220,6 +220,16 @@ final class ReadingDeckTests: XCTestCase {
         XCTAssertEqual(deck.splitting(), deck)
     }
 
+    func testLeavingASplitRestoresOneReaderForTheNextCollectionSelection() {
+        var deck = open(empty(), ["a.pdf", "b.pdf", "c.pdf"])
+        deck = deck.activating(deck.active!.tabs[1].id).splitting()
+        deck = deck.focusing(deck.panes[1].id).unsplitting()
+
+        XCTAssertFalse(deck.isSplit)
+        XCTAssertEqual(deck.activeTab?.key, "a.pdf")
+        XCTAssertEqual(deck.active?.tabs.map(\.key), ["a.pdf", "b.pdf", "c.pdf"])
+    }
+
     func testClosingAllTabsReturnsToOneEmptyPane() {
         let deck = open(empty(), ["a.pdf", "b.pdf"]).splitting().closingAll()
         XCTAssertEqual(deck.panes.count, 1)

@@ -87,6 +87,24 @@ struct Deck: Equatable {
         return deck
     }
 
+    /// A collection selection opens one reader. Keep the focused pane's order and add the
+    /// other pane's distinct papers after it, so leaving a split never makes the next PDF
+    /// selection summon a second page on its own.
+    func unsplitting() -> Deck {
+        guard panes.count > 1, let focused = panes.first(where: { $0.id == activePane }) else {
+            return self
+        }
+        var tabs = focused.tabs
+        var keys = Set(tabs.map(\.key))
+        for pane in panes where pane.id != focused.id {
+            for tab in pane.tabs where keys.insert(tab.key).inserted {
+                tabs.append(tab)
+            }
+        }
+        return Deck(panes: [Pane(id: focused.id, tabs: tabs, active: focused.active)],
+                    activePane: focused.id, showingSelection: showingSelection)
+    }
+
     /// Closing all tabs is a return to the library, not an empty two-pane reader.
     func closingAll() -> Deck {
         Deck.one(pane: UUID())

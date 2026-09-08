@@ -150,6 +150,9 @@ final class ReaderNavigationTests: XCTestCase {
                        "presenting is the page on its own")
         XCTAssertFalse(ResultsPane.showsTabBar(showsPage: true, presentation: false,
                                                hasTabs: false))
+        XCTAssertFalse(ResultsPane.showsSharedTabBar(showsPage: true, presentation: false,
+                                                      hasTabs: true, split: true),
+                       "each split page owns its own tab bar")
     }
 
     /// ⎋ leaves the reader with everything still open. It is one rung of a ladder that

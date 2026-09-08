@@ -243,6 +243,7 @@ struct ResultsPane: View {
     /// the paper rather than the selection moving over it.
     private func openReader(_ key: String?) {
         guard let key else { return }
+        if !readerFocused { deck.deck = deck.deck.unsplitting() }
         deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator() })
         readerFocused = true
         selected = key
@@ -2705,7 +2706,11 @@ struct ResultsPane: View {
     /// its page and panel, or the panel alone.
     private func documentRegion(paneWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-        if let pane = deck.deck.active { tabBar(pane) }
+        if let pane = deck.deck.active,
+           Self.showsSharedTabBar(showsPage: showsPage, presentation: presentation,
+                                  hasTabs: !pane.tabs.isEmpty, split: deck.deck.isSplit) {
+            tabBar(pane)
+        }
         Group {
         // Choosing between two copies means seeing them beside each other. In the view
         // whose whole job is that decision, this is what the pane should hold.
@@ -2833,6 +2838,12 @@ struct ResultsPane: View {
     /// for a strip naming the others.
     static func showsTabBar(showsPage: Bool, presentation: Bool, hasTabs: Bool) -> Bool {
         showsPage && !presentation && hasTabs
+    }
+
+    /// A split owns one bar per page, never a third bar across both of them.
+    static func showsSharedTabBar(showsPage: Bool, presentation: Bool, hasTabs: Bool,
+                                  split: Bool) -> Bool {
+        !split && showsTabBar(showsPage: showsPage, presentation: presentation, hasTabs: hasTabs)
     }
 
     /// What this pane has open, above the page it is about.

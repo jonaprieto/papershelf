@@ -4,6 +4,14 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.14.1] - 2026-09-07
+
+### Fixed
+
+- Draw one tab strip for each split page, rather than a second strip across both pages.
+- Return to one reader when opening a paper from the catalogue or list. Split reading stays
+  an explicit action from its command, tab menu, split button, or a drop onto the reader.
+
 ## [1.14.0] - 2026-09-07
 
 ### Added
