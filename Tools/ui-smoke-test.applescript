@@ -228,16 +228,20 @@ end auditSettings
 on clickSettingsControl(identifier, targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
-            set controls to entire contents of (first window whose name is "General")
-            repeat with candidateControl in controls
-                set controlIdentifier to ""
-                try
-                    set controlIdentifier to value of attribute "AXIdentifier" of candidateControl
-                end try
-                if controlIdentifier is identifier then
-                    click candidateControl
-                    return
-                end if
+            -- Changing the theme rebuilds the settings hierarchy before the next control appears.
+            repeat 20 times
+                set controls to entire contents of (first window whose name is "General")
+                repeat with candidateControl in controls
+                    set controlIdentifier to ""
+                    try
+                        set controlIdentifier to value of attribute "AXIdentifier" of candidateControl
+                    end try
+                    if controlIdentifier is identifier then
+                        click candidateControl
+                        return
+                    end if
+                end repeat
+                delay 0.1
             end repeat
         end tell
     end tell

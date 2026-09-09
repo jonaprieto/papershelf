@@ -1,7 +1,8 @@
 # Update notifications
 
 Status: implementation in progress, 8 September 2026. Build identity and safe bundle
-replacement and the release checker are implemented. Local detection and notices are next.
+replacement, release checks and local detection are implemented. The notices and manual
+command are next.
 
 ## What the user sees
 
