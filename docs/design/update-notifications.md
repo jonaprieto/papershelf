@@ -1,6 +1,7 @@
 # Update notifications
 
-Status: proposed, 8 September 2026. This is a plan, not an implemented updater.
+Status: implementation in progress, 8 September 2026. Build identity and safe bundle
+replacement are implemented. Release checks, local detection and notices are next.
 
 ## What the user sees
 
@@ -123,4 +124,3 @@ alone is not sufficient evidence for that guarantee.
 
 The first implementation only notifies and points to a completed artifact. Automatic
 download, installation, prerelease channels and an updater framework remain separate work.
-

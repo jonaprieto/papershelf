@@ -25,20 +25,23 @@ APP="dist/${APP_NAME}.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 DMG="dist/PaperShelf-${VERSION}.dmg"
 
-./build.sh
+./build.sh "$@"
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp -R "$APP" "$STAGE/"
+APP="$STAGE/${APP_NAME}.app"
 
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
   echo "Signing with ${DEVELOPER_ID}"
   # A hardened runtime and a secure timestamp are both required for notarization.
+  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP/Contents/MacOS/papershelf-mcp"
   codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
   codesign --verify --strict --verbose=2 "$APP"
 else
   echo "No DEVELOPER_ID set, leaving the ad-hoc signature in place (local use only)."
 fi
 
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-cp -R "$APP" "$STAGE/"
 # The drag-to-install target everyone expects inside a Mac disk image.
 ln -s /Applications "$STAGE/Applications"
 

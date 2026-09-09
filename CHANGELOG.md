@@ -8,6 +8,8 @@ numbers rather than dates.
 
 ### Added
 
+- Identify each completed app bundle by its channel, build ID and build time. Preserve
+  the running identity across local rebuilds, and verify staged apps before replacement.
 - Suggest subject tags for the current PDF with the configured model, review and edit
   them before saving, and browse a library-wide tag cloud with document counts.
 - Turn off AI features in General settings to hide model tools, cancel pending requests,

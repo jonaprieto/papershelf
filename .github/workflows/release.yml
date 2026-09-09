@@ -44,7 +44,7 @@ jobs:
           rm certificate.p12
 
       - name: Build the disk image
-        run: ./Tools/make-dmg.sh
+        run: ./Tools/make-dmg.sh --release
 
       - name: Notarize
         if: env.NOTARY_APPLE_ID != ''

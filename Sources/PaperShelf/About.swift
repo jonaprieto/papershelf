@@ -164,11 +164,11 @@ struct AboutWindow: View {
     }
 
     static var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        AppBuild.current.version
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        AppBuild.current.build
     }
 
     static var copyright: String {

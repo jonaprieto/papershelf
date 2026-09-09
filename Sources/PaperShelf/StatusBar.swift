@@ -310,12 +310,10 @@ struct StatusBar: View {
     /// The release label identifies the public version while the revision distinguishes
     /// two locally built copies of it.
     private var buildStamp: some View {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
-        let revision = Bundle.main.object(forInfoDictionaryKey: "PaperShelfGitCommit") as? String
-        return Text(Self.buildLabel(version: version, build: build, revision: revision))
+        let running = AppBuild.current
+        return Text(Self.buildLabel(version: running.version, build: running.build, revision: running.revision))
             .font(Face.mono)
-            .tip("PaperShelf version \(version), build \(build), commit \(revision ?? "unrecorded")")
+            .tip(running.description)
     }
 
     @ViewBuilder

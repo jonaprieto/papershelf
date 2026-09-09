@@ -14,6 +14,7 @@ Run these from the repository root:
 swift build
 swift test
 Tools/mcp-check.sh
+python3 Tools/build-check.py
 ./build.sh
 ```
 
@@ -21,6 +22,14 @@ Tools/mcp-check.sh
 when a filter is supplied. The MCP check must report zero failures. The app build creates
 an ad-hoc signed `dist/PaperShelf.app`; inspect its version and bundled changelog before
 installing it with `./build.sh --install`.
+
+Builds stage and verify a complete bundle before replacing the existing app, including
+installation. A failed build leaves the previous bundle available. Each bundle carries
+its channel, unique build ID, UTC build time and source revision. Local builds use the
+development channel and publish the latest completed bundle path in
+`~/Library/Caches/PaperShelf/development-build.json`. A cache-write failure is reported
+without rejecting the usable app bundle. The app captures its own identity at startup.
+The bundle replacement check uses only scratch applications and a scratch record.
 
 ## Releases
 
@@ -41,6 +50,11 @@ The tag starts the GitHub workflow that tests the package, builds the disk image
 publishes the DMG and checksum. Signing and notarization use repository secrets when they
 are configured; otherwise the release is ad-hoc signed and requires right-click, Open on
 first launch.
+
+The workflow invokes `Tools/make-dmg.sh --release`, which passes `--release` to `build.sh`.
+Release builds require a clean checkout at the exact `v<version>` tag and matching Core,
+Info.plist and plugin versions. Local `Tools/make-dmg.sh` builds remain development builds.
+DMG signing uses a staged copy, leaving the completed app in `dist/` intact.
 
 ## Safety invariants
 

@@ -23,6 +23,7 @@ README states it, and adding a package would make it false.
 swift build                  # must be clean, zero warnings
 swift test                   # XCTest, covers Core and the app
 Tools/mcp-check.sh           # drives the MCP server over stdio, must report zero FAIL
+python3 Tools/build-check.py # verifies replacement on scratch app bundles
 ./build.sh                   # builds dist/PaperShelf.app, ad-hoc signed
 ./build.sh --install         # also copies it to /Applications
 Tools/ui-smoke-test.sh       # AppleScript accessibility smoke test for the built app
@@ -37,6 +38,12 @@ including Core's.
 - Release directly from `main`, using the next semantic version. Keep
   `paperShelfVersion`, `Resources/Info.plist`'s short version and build number, and
   `Plugin/papershelf/.codex-plugin/plugin.json` aligned with the new `CHANGELOG.md` entry.
+- Release packaging uses `Tools/make-dmg.sh --release`, requiring a clean checkout at
+  the exact version tag and matching Core, app and plugin versions. Ordinary builds use
+  the development channel. Build and install operations verify staged bundles before
+  replacement; do not restore the old delete-then-copy flow. Preserve build IDs when
+  copying an existing artifact. Local builds publish a completed-build record in the
+  user's PaperShelf cache; tests must direct that record to a scratch path.
 - Run `swift build`, `swift test`, `Tools/mcp-check.sh`, `./build.sh`, and
   `Tools/ui-smoke-test.sh dist/PaperShelf.app` in an interactive macOS session before
   committing. The UI smoke test changes theme and contrast only temporarily, toggles

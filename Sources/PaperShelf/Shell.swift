@@ -144,6 +144,7 @@ struct PaperShelfApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
+        _ = AppBuild.current
         AppDiagnostics.shared.start()
         Prefs.shared.prepareForLaunch()
         NSSetUncaughtExceptionHandler { exception in
