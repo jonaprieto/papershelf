@@ -1061,6 +1061,32 @@ enum PageFit: String, CaseIterable, Identifiable {
 
 final class FitWidthPDFView: PDFView {
     private var wantsTopScroll = false
+    private var wantsFit = true
+    private var fittedScale: CGFloat?
+    private var fittedViewport: CGSize?
+    private var fittedPageSize: CGSize?
+
+    var usesCustomZoom: Bool {
+        guard !wantsFit, let fittedScale else { return false }
+        return abs(scaleFactor - fittedScale) > 0.002
+    }
+
+    override var document: PDFDocument? {
+        didSet {
+            if document !== oldValue {
+                wantsFit = true
+                fittedScale = nil
+                wantsTopScroll = false
+            }
+        }
+    }
+
+    /// Explicit fit actions also work when the menu already names that mode.
+    func requestFit(_ mode: PageFit) {
+        fit = mode
+        wantsFit = true
+        needsLayout = true
+    }
     var onDocumentSwipe: ((Int) -> Void)?
     var onMarkClick: ((CGPoint) -> Void)?
     var onPageStep: ((Int) -> Void)?
@@ -1192,12 +1218,18 @@ final class FitWidthPDFView: PDFView {
     /// How the page is sized in the room it has. Fitting the width is what a page of text
     /// wants; the other two are here because a figure and a scan do not.
     var fit: PageFit = .width {
-        didSet { if fit != oldValue { needsLayout = true } }
+        didSet {
+            if fit != oldValue {
+                wantsFit = true
+                needsLayout = true
+            }
+        }
     }
 
     var presentation = false {
         didSet {
             guard presentation != oldValue else { return }
+            wantsFit = true
             displayMode = presentation ? .singlePage : .singlePageContinuous
             displaysPageBreaks = !presentation
             let margin = pageMargin
@@ -1239,6 +1271,12 @@ final class FitWidthPDFView: PDFView {
         let width = availableWidth
         guard box.width > 0, width > 0 else { return }
 
+        // PDFKit lays out while scrolling and zooming. A fit belongs to a sizing
+        // request, not to those passes, and a manually chosen scale must survive them.
+        guard !usesCustomZoom else { return }
+        let viewport = CGSize(width: width, height: bounds.height)
+        guard wantsFit || wantsTopScroll || fittedViewport != viewport || fittedPageSize != box.size else { return }
+
         let room = max(1, width - 2 * pageMargin)
         let wanted: CGFloat
         switch fit {
@@ -1249,6 +1287,10 @@ final class FitWidthPDFView: PDFView {
         case .actual: wanted = 1
         }
         let target = min(max(wanted, minScaleFactor), maxScaleFactor)
+        fittedScale = target
+        fittedViewport = viewport
+        fittedPageSize = box.size
+        wantsFit = false
         if abs(scaleFactor - target) > 0.002 { scaleFactor = target }
 
         if wantsTopScroll {

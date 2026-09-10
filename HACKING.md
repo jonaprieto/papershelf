@@ -74,3 +74,9 @@ DMG signing uses a staged copy, leaving the completed app in `dist/` intact.
 
 Keep comments focused on consequences, preserve the no-dependency boundary, and never add
 secrets, personal machine paths, or generated build output to the repository.
+
+## Reader checks
+
+Do not run the UI smoke test against an active reading session. It deliberately changes
+appearance and reading mode. Use a separate instance with a scratch library and separate
+preferences, and use the PDFKit regression tests to verify zoom and scroll preservation.

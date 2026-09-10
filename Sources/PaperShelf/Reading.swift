@@ -758,13 +758,13 @@ struct PageBar: View {
                 Menu {
                     ForEach(PageFit.allCases) { mode in
                         Toggle(mode.label, isOn: Binding(
-                            get: { fit == mode },
-                            set: { if $0 { fit = mode } }
+                            get: { fit == mode && annotator.customZoomPercent == nil },
+                            set: { _ in _ = mode.command.performPageAction(on: annotator, fit: $fit) }
                         ))
                         .commandShortcut(mode.command)
                     }
                 } label: {
-                    Text(fit.label).font(Face.control)
+                    Text(annotator.customZoomPercent.map { "\($0)%" } ?? fit.label).font(Face.control)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()

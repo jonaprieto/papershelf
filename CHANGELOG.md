@@ -28,6 +28,9 @@ numbers rather than dates.
 
 ### Fixed
 
+- Keep manual PDF zoom and reading position through scrolling, page changes and routine
+  interface updates. Show the custom zoom percentage, and let an explicit fit action
+  restore automatic sizing even when that same fit mode was selected before zooming.
 - Simplify the command palette footer with clear keycaps and an action label for the
   selected result. Add Normal mode to leave presentation or native full screen.
 - Run Fit page, Fit width, Actual size and page navigation from the command palette,

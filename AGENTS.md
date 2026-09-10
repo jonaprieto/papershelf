@@ -48,6 +48,8 @@ including Core's.
   `Tools/ui-smoke-test.sh dist/PaperShelf.app` in an interactive macOS session before
   committing. The UI smoke test changes theme and contrast only temporarily, toggles
   reversible panels twice, and does not activate Trash, Apply, Move, or AI actions.
+  Do not run it against an active reading session: use a separate instance with a scratch
+  library and separate preferences. PDFKit regression tests cover zoom and scroll state.
   Inspect the built app's version and bundled changelog before installing it.
 - Update `docs/index.html`'s reported release version and release link, then run the website
   tests. After publishing, verify the website and its release link report the new version.

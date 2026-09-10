@@ -369,9 +369,10 @@ extension Command {
     func performPageAction(on annotator: Annotator, fit: Binding<PageFit>) -> Bool {
         guard annotator.hasPages, !annotator.readingLiveWebsite else { return false }
         switch self {
-        case .fitPage: fit.wrappedValue = .page
-        case .fitWidth: fit.wrappedValue = .width
-        case .actualSize: fit.wrappedValue = .actual
+        case .fitPage, .fitWidth, .actualSize:
+            let mode: PageFit = self == .fitPage ? .page : self == .fitWidth ? .width : .actual
+            fit.wrappedValue = mode
+            annotator.setPageFit(mode)
         case .nextPage: annotator.go(toPage: annotator.page + 1)
         case .previousPage: annotator.go(toPage: annotator.page - 1)
         case .firstPage: annotator.go(toPage: 1)

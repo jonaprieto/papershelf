@@ -133,6 +133,18 @@ final class Annotator {
     }
 
     weak var view: PDFView?
+    private(set) var customZoomPercent: Int?
+
+    func setPageFit(_ mode: PageFit) {
+        customZoomPercent = nil
+        (view as? FitWidthPDFView)?.requestFit(mode)
+    }
+
+    @objc private func scaleChanged() {
+        guard let view else { customZoomPercent = nil; return }
+        customZoomPercent = (view as? FitWidthPDFView)?.usesCustomZoom == true
+            ? Int((view.scaleFactor * 100).rounded()) : nil
+    }
     private(set) var url: URL?
     private(set) var documentID: String?
 
@@ -161,6 +173,7 @@ final class Annotator {
         // must never outlive the file it was waiting for.
         flush()
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .PDFViewScaleChanged, object: nil)
         self.view = view
         self.url = url
         lastError = nil
@@ -185,6 +198,9 @@ final class Annotator {
         statedAuthor = stated(attributes?[PDFDocumentAttribute.authorAttribute])
         NotificationCenter.default.addObserver(
             self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(scaleChanged), name: .PDFViewScaleChanged, object: view)
+        scaleChanged()
         restorePosition()
         // Outline and annotation walks are deferred one run-loop turn. The PDF page can
         // paint and accept keyboard input before a long book's notes have been indexed.
@@ -201,6 +217,7 @@ final class Annotator {
     func detach() {
         flush()
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .PDFViewScaleChanged, object: nil)
         generation &+= 1
         automaticHighlightTask?.cancel()
         positionTask?.cancel()
@@ -208,6 +225,7 @@ final class Annotator {
         automaticHighlightColour = nil
         closeFind()
         view = nil
+        customZoomPercent = nil
         url = nil
         documentID = nil
         marks = []
