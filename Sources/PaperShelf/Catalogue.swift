@@ -1547,7 +1547,7 @@ struct ResultsPane: View {
     ]
 
     static let alwaysAvailable: Set<Command> = [
-        .palette, .focusSearch, .shortcuts, .zenMode, .normalMode,
+        .palette, .focusSearch, .shortcuts, .zenMode, .normalMode, .checkForUpdates,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
         // What is open and what is on the shelf are different questions. A paper put back
@@ -1766,7 +1766,7 @@ struct ResultsPane: View {
         .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
-        .focusSearch, .shortcuts, .palette, .plan, .apply,
+        .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates,
     ]
 
     /// Carries out one command, whatever asked for it.
@@ -1826,6 +1826,9 @@ struct ResultsPane: View {
         case .moveTo: choosingMoveTarget = true
         case .openExternally: openInViewer()
         case .copyCitation: copyCitation()
+        case .checkForUpdates:
+            openWindow(id: UpdateDetails.windowID)
+            checkForUpdates(manual: true)
         case .shortcuts: showingShortcuts = true
         case .palette: showingPalette = true
         case .focusSearch: showingPalette = true

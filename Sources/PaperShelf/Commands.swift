@@ -69,12 +69,13 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Library
     case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
     case removeFromLibrary, trashNow
-    case suggestTags
+    case suggestTags, checkForUpdates
 
     var id: String { rawValue }
 
     var searchAliases: String {
         switch self {
+        case .checkForUpdates: return "update upgrade new latest version release build"
         case .editName: return "rename edit change current file pdf filename name"
         case .applyOne: return "rename save apply current file filename now"
         case .removeFromLibrary: return "delete forget remove pdf library catalogue"
@@ -148,7 +149,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .shortcuts, .removeFromLibrary, .trashNow, .suggestTags:
+             .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates:
             return .library
         }
     }
@@ -256,6 +257,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .trashNow: return "Move this PDF to Trash…"
         case .suggestTags: return "Suggest tags for this PDF…"
         case .newTag: return "New tag…"
+        case .checkForUpdates: return "Check for updates"
         case .shortcuts: return "Every shortcut"
         }
     }
@@ -339,7 +341,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .refresh: return Shortcut("r", .command)
         case .revealInFinder: return Shortcut("r", [.command, .option])
         case .newTag: return nil
-        case .removeFromLibrary, .trashNow, .suggestTags: return nil
+        case .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates: return nil
         case .shortcuts: return Shortcut("?", [])
         }
     }

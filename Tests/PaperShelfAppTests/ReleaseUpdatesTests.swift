@@ -63,6 +63,15 @@ final class ReleaseUpdatesTests: XCTestCase {
         let restored = ReleaseUpdates(running: build(), defaults: defaults, fetch: { try await network.fetch($0) })
         XCTAssertFalse(restored.showsBadge)
         XCTAssertEqual(restored.release?.version, StableVersion("1.10.0"))
+        XCTAssertFalse(restored.statusText.contains("up to date"))
+        var releaseInfo: [String: Any] = ["CFBundleShortVersionString": "1.10.0", "PaperShelfBuildChannel": "release"]
+        let released = ReleaseUpdates(running: AppBuild(info: releaseInfo, at: build().bundleURL), defaults: defaults,
+                                      fetch: { try await network.fetch($0) })
+        XCTAssertEqual(released.statusText, "Your release is up to date.")
+        releaseInfo["CFBundleShortVersionString"] = "1.11.0"
+        XCTAssertEqual(ReleaseUpdates(running: AppBuild(info: releaseInfo, at: build().bundleURL), defaults: defaults,
+                                      fetch: { try await network.fetch($0) }).statusText,
+                       "Your version is newer than the latest published release.")
         for current in ["1.10.0", "1.11.0"] {
             XCTAssertNil(ReleaseUpdates(running: build(current), defaults: defaults, fetch: { try await network.fetch($0) }).newerRelease)
         }
@@ -78,6 +87,7 @@ final class ReleaseUpdatesTests: XCTestCase {
             await network.set(error: error)
             await checker.check(manual: true, automaticChecks: false)
             XCTAssertNotNil(checker.failure)
+            XCTAssertTrue(checker.statusText.hasPrefix("Could not verify"))
             XCTAssertEqual(checker.lastSuccess, success)
             XCTAssertEqual(checker.release?.version, StableVersion("1.11.0"))
         }

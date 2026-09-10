@@ -1,8 +1,7 @@
 # Update notifications
 
-Status: implementation in progress, 8 September 2026. Build identity and safe bundle
-replacement, release checks and local detection are implemented. The notices and manual
-command are next.
+Status: implemented, 9 September 2026. Build, test, MCP and packaging checks pass.
+The notice and manual actions have been checked in both themes.
 
 ## What the user sees
 

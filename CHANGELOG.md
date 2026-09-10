@@ -8,6 +8,10 @@ numbers rather than dates.
 
 ### Added
 
+- Show available releases and completed local builds beside the running version. Check
+  manually from the app menu, About, Settings or command palette. Release builds check
+  daily by default; development builds use manual remote checks. Keep cached results and
+  distinguish failed checks from a verified current release.
 - Identify each completed app bundle by its channel, build ID and build time. Preserve
   the running identity across local rebuilds, and verify staged apps before replacement.
 - Suggest subject tags for the current PDF with the configured model, review and edit

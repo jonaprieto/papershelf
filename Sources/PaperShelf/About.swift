@@ -75,6 +75,7 @@ struct AboutWindow: View {
             Text("Version \(AboutWindow.version) (\(AboutWindow.build))")
                 .font(Face.body)
                 .foregroundStyle(.secondary)
+            CheckForUpdatesButton()
             // The copyright line already names the licence; saying it twice under the
             // version is two lines where the panel has room for one.
             Text(AboutWindow.copyright)

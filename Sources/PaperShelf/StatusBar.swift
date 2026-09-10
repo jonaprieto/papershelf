@@ -311,9 +311,13 @@ struct StatusBar: View {
     /// two locally built copies of it.
     private var buildStamp: some View {
         let running = AppBuild.current
-        return Text(Self.buildLabel(version: running.version, build: running.build, revision: running.revision))
-            .font(Face.mono)
-            .tip(running.description)
+        return HStack(spacing: Space.step) {
+            Text(Self.buildLabel(version: running.version, build: running.build, revision: running.revision))
+                .font(Face.mono)
+                .tip(running.description)
+            UpdateNotice()
+        }
+        .layoutPriority(1)
     }
 
     @ViewBuilder

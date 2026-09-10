@@ -47,6 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        checkForUpdates(manual: false)
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        checkForUpdates(manual: false)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         AppDiagnostics.shared.record("terminate")
     }

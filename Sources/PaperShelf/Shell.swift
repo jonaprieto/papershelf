@@ -184,6 +184,7 @@ struct PaperShelfApp: App {
             // app is, what you may do with it and what else is involved take a window.
             CommandGroup(replacing: .appInfo) {
                 Button("About PaperShelf") { openAbout() }
+                CheckForUpdatesButton().commandShortcut(.checkForUpdates)
             }
             CommandGroup(replacing: .newItem) {
                 Button("Open Website…") {
@@ -241,6 +242,11 @@ struct PaperShelfApp: App {
                 .frame(minWidth: 700, minHeight: 500)
         }
         .defaultSize(width: 1000, height: 750)
+
+        Window("PaperShelf updates", id: UpdateDetails.windowID) {
+            UpdateDetails()
+        }
+        .windowResizability(.contentSize)
 
         Window("About PaperShelf", id: AboutWindow.windowID) {
             AboutWindow()

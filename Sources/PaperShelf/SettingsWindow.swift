@@ -47,7 +47,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
                     "folders", "watch", "scan", "open in", "view", "sort", "ordering",
                     "modified date", "default PDF viewer", "PDF app", "presentation", "slides",
-                    "left", "right", "arrows", "pages"]
+                    "left", "right", "arrows", "pages", "updates", "releases", "version"]
         case .files:
             return ["password", "encrypted", "locked", "originals", "backup", "trash",
                     "cache", "covers"]
@@ -291,6 +291,25 @@ struct GeneralSettings: View {
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Toggle("Automatically check for releases", isOn: $prefs.automaticallyCheckForReleases)
+                    .accessibilityIdentifier("settings.automaticallyCheckForReleases")
+                    .tip("Check GitHub at most once a day when PaperShelf becomes active")
+                    .onChange(of: prefs.automaticallyCheckForReleases) { _, enabled in
+                        if enabled { checkForUpdates(manual: false) }
+                    }
+                CheckForUpdatesButton()
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Checks the public GitHub release without sending document or library data. "
+                     + "On by default for releases; manual by default for development builds. "
+                     + "Completed local builds are checked when the app becomes active.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

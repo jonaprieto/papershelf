@@ -72,6 +72,10 @@ final class Prefs {
     /// does not reach the other until the next launch.
     static let shared = Prefs()
 
+    var automaticallyCheckForReleases: Bool = Store.flag("automaticallyCheckForReleases", AppBuild.current.channel == .release) {
+        didSet { Store.put("automaticallyCheckForReleases", automaticallyCheckForReleases) }
+    }
+
     // MARK: - The window
 
     var viewMode: ViewMode = Store.choice("viewMode", .catalogue) {

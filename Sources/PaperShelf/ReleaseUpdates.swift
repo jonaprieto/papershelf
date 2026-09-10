@@ -90,6 +90,16 @@ final class ReleaseUpdates {
         }
     }
 
+    var statusText: String {
+        if checking { return "Checking for updates..." }
+        if let failure { return failure }
+        guard let release, let latest = release.version, lastSuccess != nil else { return "Releases have not been checked." }
+        guard let current = StableVersion(running.version) else { return "The running version could not be compared." }
+        if latest > current { return "A newer release is available." }
+        if running.channel == .development { return "Latest published release checked." }
+        return latest == current ? "Your release is up to date." : "Your version is newer than the latest published release."
+    }
+
     var newerRelease: PublishedRelease? {
         guard let current = StableVersion(running.version), let release,
               let available = release.version, available > current else { return nil }

@@ -30,6 +30,12 @@ brew update
 brew upgrade --cask papershelf
 ```
 
+PaperShelf shows an update notice beside its version when a newer release is available.
+Use **Check for updates** from the app menu, About or command palette. Automatic release
+checks are configurable in General settings. Local development builds default to manual
+remote checks and also notice completed builds on your Mac. Notices link to a release or
+reveal a local build; installation and relaunch stay under your control.
+
 ### Build from source
 
 Build the app bundle:

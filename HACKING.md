@@ -31,6 +31,12 @@ development channel and publish the latest completed bundle path in
 without rejecting the usable app bundle. The app captures its own identity at startup.
 The bundle replacement check uses only scratch applications and a scratch record.
 
+Release builds check GitHub at most once per day on activation; development builds default
+to manual remote checks. General settings exposes the preference. The app menu, About,
+Settings and command palette share **Check for updates**. Local checks run on activation
+and compare completed bundle IDs. Notices offer release links or Reveal in Finder, with
+no automatic download, installation or relaunch.
+
 ## Releases
 
 Release directly from `main`. Keep `paperShelfVersion`, `Resources/Info.plist`, the plugin

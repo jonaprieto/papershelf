@@ -256,6 +256,10 @@ final class CommandsTests: XCTestCase {
     /// The palette is built from `performable` minus itself, so every line it offers is a
     /// line that acts. Guards against the list growing an entry the switch does not have.
     func testThePaletteOffersOnlyWhatItCanRun() {
+        XCTAssertTrue(ResultsPane.performable.contains(.checkForUpdates))
+        XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.checkForUpdates))
+        XCTAssertEqual(Command.checkForUpdates.scope, .anywhere)
+        XCTAssertNil(Command.checkForUpdates.defaultShortcut)
         XCTAssertTrue(ResultsPane.performable.contains(.palette),
                       "the palette has to be reachable by key even though it hides itself")
         XCTAssertTrue(ResultsPane.performable.contains(.plan),
