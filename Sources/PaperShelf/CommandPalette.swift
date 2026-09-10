@@ -23,6 +23,23 @@ struct PalettePlace: Identifiable {
     let detail: String
     let kind: Kind
     let go: () -> Void
+
+    static func folderURLs(in items: [Item]) -> [URL] {
+        var folders = Set<URL>()
+        for item in items {
+            let root = item.root
+            var folder = item.currentURL.deletingLastPathComponent()
+            while true {
+                folders.insert(folder)
+                guard folder.path != root.path, folder.path.hasPrefix(root.path == "/" ? "/" : root.path + "/")
+                else { break }
+                let parent = folder.deletingLastPathComponent()
+                guard parent != folder else { break }
+                folder = parent
+            }
+        }
+        return folders.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
 }
 
 /// A match inside the document on screen: the passage, and the page to turn to.
@@ -220,7 +237,9 @@ struct CommandPalette: View {
         default: return []
         }
         guard !needle.isEmpty || mode != nil else { return [] }
-        return sources.places.filter { kinds.contains($0.kind) && matches($0.title) }
+        return sources.places.filter {
+            kinds.contains($0.kind) && (matches($0.title) || ($0.kind == .folder && matches($0.detail)))
+        }
             .prefix(6).map { $0 }
     }
 

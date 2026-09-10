@@ -1387,10 +1387,12 @@ struct ResultsPane: View {
                                    query: query))
             }
         }
-        places += runner.tree.filter { $0.children != nil }.prefix(40).map { node in
-            PalettePlace(id: "folder:" + node.id, title: node.name,
-                         detail: "\(node.children?.count ?? 0) documents", kind: .folder) {
-                openFolder(URL(fileURLWithPath: node.id))
+        places += PalettePlace.folderURLs(in: runner.results).map { url in
+            PalettePlace(id: "folder:" + url.path, title: url.lastPathComponent,
+                         detail: url.path, kind: .folder) {
+                showCollection()
+                navigate(to: Place(mode: prefs.viewMode == .list ? .list : .catalogue,
+                                   shelf: .all, folderPath: url.path, query: ""))
             }
         }
         places += paletteProjects.map { project in
@@ -3791,9 +3793,12 @@ struct FolderRow: View {
             // A heading over the files under it, rather than a row that looks like one:
             // a folder icon in a column of documents is one more thing to read past.
             Text(node.name)
-                .font(Face.caption.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .font(Face.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .help(node.name)
             Text("\u{00B7} \(count)")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)

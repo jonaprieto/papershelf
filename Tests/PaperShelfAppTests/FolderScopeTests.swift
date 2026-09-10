@@ -13,6 +13,32 @@ final class FolderScopeTests: XCTestCase {
                     status: .renamed)
     }
 
+    func testPaletteFoldersIncludeNestedAndFlatRootsWithoutATopLevelLimit() {
+        let root = URL(fileURLWithPath: "/tmp/shelf")
+        let items = (0..<45).map { index in
+            let url = root.appendingPathComponent("Folder \(index)/Nested/paper.pdf")
+            return Item(root: root, source: url, destination: url, status: .renamed)
+        }
+        let folders = PalettePlace.folderURLs(in: items + [items[0]]).map(\.path)
+        XCTAssertEqual(folders.count, 91)
+        XCTAssertTrue(folders.contains(root.path))
+        XCTAssertTrue(folders.contains(root.appendingPathComponent("Folder 44/Nested").path))
+        XCTAssertFalse(folders.contains(root.deletingLastPathComponent().path))
+        let flat = item("/tmp/paper.pdf")
+        XCTAssertEqual(PalettePlace.folderURLs(in: [flat]).map(\.path), [flat.root.path])
+        XCTAssertTrue(PalettePlace.folderURLs(in: []).isEmpty)
+        let privatePath = item("/private/tmp/shelf/paper.pdf")
+        for folder in PalettePlace.folderURLs(in: [privatePath]) {
+            XCTAssertTrue(ResultsPane.FolderScope(folder).contains(privatePath))
+        }
+        let shared = root.appendingPathComponent("Nested/paper.pdf")
+        let nestedRoot = Item(root: shared.deletingLastPathComponent(), source: shared,
+                              destination: shared, status: .renamed)
+        let outerRoot = Item(root: root, source: shared, destination: shared, status: .renamed)
+        XCTAssertEqual(Set(PalettePlace.folderURLs(in: [nestedRoot, outerRoot]).map(\.path)),
+                       Set([root.path, shared.deletingLastPathComponent().path]))
+    }
+
     /// Clicking a source in the sidebar filters to that source, which means everything
     /// under it, however deep. The same rule a folder row uses; a source is just the
     /// folder at the top.
