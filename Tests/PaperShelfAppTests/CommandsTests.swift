@@ -19,6 +19,39 @@ final class CommandsTests: XCTestCase {
         return store
     }
 
+    func testPrintingUsesTheNativeShortcutAndRequiresAPrintablePDF() {
+        XCTAssertTrue(ResultsPane.performable.contains(.printPDF))
+        XCTAssertEqual(Command.printPDF.defaultShortcut, Shortcut("p", .command))
+        XCTAssertEqual(Command.plan.defaultShortcut, Shortcut("p", [.command, .shift]))
+        XCTAssertEqual(CommandPalette.matchingCommands(in: ResultsPane.performable,
+                                                       query: "printer", commandsOnly: false), [.printPDF])
+        let annotator = Annotator()
+        XCTAssertFalse(annotator.printPDF())
+        final class PrintView: PDFView {
+            var requestedPrint = false
+            override func print(with printInfo: NSPrintInfo, autoRotate: Bool,
+                                pageScaling: PDFPrintScalingMode) {
+                requestedPrint = true
+                XCTAssertTrue(autoRotate)
+                XCTAssertEqual(pageScaling, .pageScaleDownToFit)
+                XCTAssertFalse(printInfo === NSPrintInfo.shared)
+            }
+        }
+        let view = PrintView()
+        annotator.view = view
+        view.document = PDFDocument()
+        XCTAssertFalse(annotator.canPrint)
+        let page = PDFPage()
+        view.document?.insert(page, at: 0)
+        XCTAssertTrue(annotator.canPrint)
+        XCTAssertTrue(annotator.printPDF())
+        XCTAssertTrue(view.requestedPrint)
+        annotator.readingLiveWebsite = true
+        view.requestedPrint = false
+        XCTAssertFalse(annotator.printPDF())
+        XCTAssertFalse(view.requestedPrint)
+    }
+
     func testEveryCommandIsNamed() {
         for command in Command.allCases {
             XCTAssertFalse(command.title.isEmpty, "\(command.rawValue) has no title")

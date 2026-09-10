@@ -62,7 +62,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Reading
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
-    case nextMark, previousMark, openExternally
+    case nextMark, previousMark, openExternally, printPDF
     case fitPage, fitWidth, actualSize, nextPage, previousPage, firstPage, lastPage
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
@@ -82,6 +82,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .trashNow: return "delete send move pdf file trash bin"
         case .revealInFinder: return "open pdf file finder location folder reveal"
         case .suggestTags: return "ai suggest generate subject tags labels current pdf paper"
+        case .printPDF: return "print printer paper copies pages pdf"
         case .actualSize: return "zoom 100% original size"
         case .firstPage: return "start beginning of document"
         case .lastPage: return "end of document"
@@ -144,7 +145,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
             return .deciding
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
-             .findInDocument, .nextMark, .previousMark, .openExternally,
+             .findInDocument, .nextMark, .previousMark, .openExternally, .printPDF,
              .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
@@ -173,7 +174,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // wanted, and answering only while browsing would just move the hole.
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .openExternally, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags:
+             .openExternally, .printPDF, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags:
             return .library
         default:
             return .anywhere
@@ -230,6 +231,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .showBookmarks: return "Show bookmarks"
         case .removeBookmark: return "Remove the bookmark at the current page"
         case .findInDocument: return "Find in this PDF"
+        case .printPDF: return "Print PDF..."
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .fitPage: return "Fit page"
@@ -330,7 +332,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .nextTab: return Shortcut("}", [.command, .shift])
         case .previousTab: return Shortcut("{", [.command, .shift])
         case .toggleSplit: return Shortcut("\\", .command)
-        case .plan: return Shortcut("p", .command)
+        case .printPDF: return Shortcut("p", .command)
+        case .plan: return Shortcut("p", [.command, .shift])
         case .apply: return Shortcut("\r", .command)
         case .findDuplicates: return Shortcut("d", .command)
         // No default shortcut: this one reads every file on the shelf, so it is asked for

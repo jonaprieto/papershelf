@@ -100,6 +100,10 @@ struct ReaderWindow: View {
         .frame(minWidth: SplitLayout.readerFloorWidth,
                minHeight: SplitLayout.readerFloorHeight)
         .background { WindowReader { readerWindow.window = $0 }.frame(width: 0, height: 0) }
+        .onReceive(NotificationCenter.default.publisher(for: .printPDF)) { note in
+            guard let window = note.object as? NSWindow, window === readerWindow.window else { return }
+            annotator.printPDF()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
             guard let window = note.object as? NSWindow, window === readerWindow.window else { return }
             openFind()

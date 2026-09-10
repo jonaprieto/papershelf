@@ -135,6 +135,19 @@ final class Annotator {
     weak var view: PDFView?
     private(set) var customZoomPercent: Int?
 
+    var canPrint: Bool {
+        guard !readingLiveWebsite, let document = view?.document else { return false }
+        return !document.isLocked && document.allowsPrinting && document.pageCount > 0
+    }
+
+    @discardableResult
+    func printPDF() -> Bool {
+        guard canPrint, let view else { return false }
+        view.print(with: NSPrintInfo.shared.copy() as! NSPrintInfo,
+                   autoRotate: true, pageScaling: .pageScaleDownToFit)
+        return true
+    }
+
     func setPageFit(_ mode: PageFit) {
         customZoomPercent = nil
         (view as? FitWidthPDFView)?.requestFit(mode)

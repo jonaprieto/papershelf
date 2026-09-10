@@ -828,6 +828,10 @@ struct ResultsPane: View {
                 }
                 showingPalette = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .printPDF)) { note in
+                guard let window = note.object as? NSWindow, window === paneWindow.window else { return }
+                readerAnnotator.printPDF()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
                 guard let window = note.object as? NSWindow, window === paneWindow.window else { return }
                 openFind()
@@ -1758,7 +1762,7 @@ struct ResultsPane: View {
         .nextFile, .previousFile, .confirmAllPending,
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates, .readingMode,
         .zenMode, .normalMode, .toggleSidebar, .toggleInspector, .toggleNotes, .toggleContents,
-        .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally,
+        .findDuplicates, .indexText, .refresh, .revealInFinder, .openExternally, .printPDF,
         .removeFromLibrary, .trashNow, .suggestTags,
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .showBookmarks, .removeBookmark, .findInDocument,
@@ -1833,6 +1837,7 @@ struct ResultsPane: View {
         case .palette: showingPalette = true
         case .focusSearch: showingPalette = true
         case .toggleSidebar: toggleSidebar()
+        case .printPDF: return readerAnnotator.printPDF()
         case .findInDocument: openFind()
         case .toggleInspector: prefs.inspectorCollapsed.toggle()
         case .toggleNotes:

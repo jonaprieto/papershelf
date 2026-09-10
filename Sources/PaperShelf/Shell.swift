@@ -196,6 +196,13 @@ struct PaperShelfApp: App {
                 }
                     .commandShortcut(.openWebsite)
             }
+            CommandGroup(replacing: .printItem) {
+                Button("Print...") {
+                    guard let window = NSApp.keyWindow else { return }
+                    NotificationCenter.default.post(name: .printPDF, object: window)
+                }
+                .commandShortcut(.printPDF)
+            }
             CommandGroup(after: .textEditing) {
                 Button("Find in PDF", action: openPDFSearch)
                     .commandShortcut(.findInDocument)
@@ -510,6 +517,7 @@ extension Notification.Name {
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")
     static let scriptShowBookmarks = Notification.Name("PaperShelf.scriptShowBookmarks")
+    static let printPDF = Notification.Name("PaperShelf.printPDF")
     static let openPDFSearch = Notification.Name("PaperShelf.openPDFSearch")
     static let openWebsiteTab = Notification.Name("PaperShelf.openWebsiteTab")
 }
