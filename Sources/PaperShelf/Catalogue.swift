@@ -3886,22 +3886,6 @@ enum PlanState: String {
         }
     }
 
-    var icon: String {
-        switch self {
-        case .reviewing: return "play.fill"
-        case .confirmed: return "checkmark"
-        case .applied: return "checkmark.seal.fill"
-        case .renamed: return "circle.dotted"
-        case .unchanged: return "clock"
-        case .locked: return "lock.fill"
-        case .duplicate: return "doc.on.doc"
-        case .skipped: return "minus"
-        case .trash: return "trash"
-        case .moving: return "arrow.right"
-        case .failed: return "exclamationmark.triangle.fill"
-        }
-    }
-
     /// Darkened for light and lifted for dark: the system greens and oranges sit around
     /// 2:1 on a light background, which is unreadable at caption size.
     var colour: Color {
@@ -3932,13 +3916,6 @@ enum PlanState: String {
         }
     }
 
-    /// The mark down the left of the plan, which is the column a reviewer scans.
-    var glyph: some View {
-        Image(systemName: icon)
-            .font(Face.caption)
-            .foregroundStyle(colour)
-            .help(explanation)
-    }
 }
 
 /// How many of the plan are in one state, for the bar over it.
@@ -4095,29 +4072,35 @@ struct FilterBarControls<Warning: View, Sort: View>: View {
     }
 }
 
-/// The state of one row, on the right of it.
-struct PlanPill: View {
+/// The state of one row, as one mark on the right of it.
+///
+/// It was a word in a filled capsule, and the same state was drawn again as a coloured
+/// glyph down the left of every row: the plan said what each file was twice, in the two
+/// places the eye goes first and at the two heaviest weights on the row, while the
+/// filename -- which is what a plan is actually read down -- was the dimmest thing on it.
+/// One quiet mark carries the state now. The word it used to spell is still on the
+/// tooltip, still the accessibility label, and still counted in words in the bar above
+/// the list, which is where a count belongs.
+struct PlanDot: View {
     let state: PlanState
-    /// Whether the list is painting its own selection colour behind this.
-    ///
-    /// A pill drawn in its own ink at a sixth opacity vanishes into that: "Reviewing" is
-    /// blue, the selected row is blue, and the one word saying what the row is doing was
-    /// the least readable thing on screen. On the selected row the pill borrows the row's
-    /// own foreground, the way the tag chips beside it already do, and the word carries
-    /// the meaning the colour was carrying everywhere else.
+    /// Whether the list is painting its own selection colour behind this. A blue mark on
+    /// a blue row is not a mark, so on the selected row it borrows the row's own
+    /// foreground, the way the tag chips beside it already do.
     var onSelection = false
 
     var body: some View {
-        Text(state.label)
-            .font(Face.caption.weight(.semibold))
-            .foregroundStyle(onSelection ? AnyShapeStyle(.primary) : AnyShapeStyle(state.colour))
-            .padding(.horizontal, Space.step)
-            .padding(.vertical, Space.hair)
-            .fittedBackground(onSelection
-                              ? AnyShapeStyle(.secondary.opacity(0.28))
-                              : AnyShapeStyle(state.colour.opacity(Ink.fill)),
-                              in: RoundedRectangle(cornerRadius: Metric.control))
+        Circle()
+            .fill(onSelection ? AnyShapeStyle(.primary) : AnyShapeStyle(state.colour))
+            .frame(width: Metric.planDot, height: Metric.planDot)
+            // Seven points is a hard thing to point at, and the tooltip is now the only
+            // place the state is spelled out, so what you hover is larger than what you
+            // see. The padding is also what centres the mark on the filename: four points
+            // above a seven-point dot puts its middle level with a line of eleven-point
+            // mono, rather than level with the tops of the letters.
+            .padding(Space.tight)
+            .contentShape(Rectangle())
             .tip(state.explanation)
+            .accessibilityLabel(state.label)
     }
 }
 
@@ -4135,12 +4118,13 @@ struct ResultRow: View {
     /// with the proposed destination. Size, pages and dates are in the inspector.
     var body: some View {
         HStack(alignment: .top, spacing: Space.step) {
-            state.glyph.frame(width: 15).padding(.top, Space.hair)
-
             VStack(alignment: .leading, spacing: Space.hair) {
+                // The brightest thing on the row, which it was not: a plan is read down
+                // its filenames, and this was set in the same grey as the line explaining
+                // it while a filled capsule shouted the state from the other end.
                 Text(item.currentFilename)
                     .font(Face.mono)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .strikethrough(decision == .deleted)
@@ -4158,7 +4142,7 @@ struct ResultRow: View {
 
             Spacer(minLength: Space.step)
 
-            PlanPill(state: state, onSelection: isCurrent)
+            PlanDot(state: state, onSelection: isCurrent)
         }
         .padding(.vertical, Space.tight)
         .opacity(decision == .skipped ? 0.55 : 1)
@@ -4190,14 +4174,19 @@ struct ResultRow: View {
         decision != .deleted && shownName != item.sourceName
     }
 
-    /// What happens to a file that is not being renamed, in the words the plan uses.
+    /// What happens to this file, in the words the plan uses.
+    ///
+    /// This is where a pending rename is stated. The row deliberately goes on showing the
+    /// file's real name above rather than swapping in the proposed one, so if this line
+    /// does not say what the file will become, nothing on the row does: it said "already
+    /// named correctly" under every name the plan was about to change.
     private var outcome: String {
         if decision == .deleted { return "moving to the Trash" }
         if !item.message.isEmpty { return item.message }
         switch decision {
         case .skipped: return "left alone"
         case .applied: return "applied"
-        default: return "already named correctly"
+        default: return isRenamed ? "renaming to \(shownName)" : "already named correctly"
         }
     }
 

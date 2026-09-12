@@ -53,6 +53,10 @@ enum Metric {
     /// each row indenting by however wide its own glyph happens to be.
     static let keyWidth: CGFloat = 14
     static let planRow: CGFloat = 44
+    /// The mark on a plan row saying what state it is in. Small on purpose: it is the
+    /// quietest thing that can carry a state, and the filename beside it is what the plan
+    /// is read down.
+    static let planDot: CGFloat = 7
 
     // Corners. Three values, not six.
     //
