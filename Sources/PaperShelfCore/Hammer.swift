@@ -725,10 +725,12 @@ private func relative(_ url: URL, under root: URL) -> String {
 private struct PendingDirectory {
     let root: URL
     let url: URL
+    let ignore: GitIgnore
 }
 
 /// Expands the selection into concrete PDFs. Anything already inside a backup
 /// directory is left alone so re-running never reprocesses its own output.
+/// Git ignore rules exclude generated files and prune directories before entering them.
 ///
 /// The walk is breadth-first with each level read in parallel, which matters on network
 /// and cloud-sync volumes where a directory read is latency-bound rather than CPU-bound.
@@ -762,8 +764,10 @@ public func collectJobs(
     var frontier: [PendingDirectory] = []
     for selection in roots {
         guard !cancelled() else { return [] }
+        guard let ignore = GitIgnore.inherited(by: selection.standardizedFileURL) else { continue }
+        guard !ignore.excludes(selection, directory: isDirectory(selection)) else { continue }
         if isDirectory(selection) {
-            frontier.append(PendingDirectory(root: selection, url: selection))
+            frontier.append(PendingDirectory(root: selection, url: selection, ignore: ignore))
         } else {
             // A file named directly still has to be checked, since no walk filtered it.
             guard !selection.pathComponents.contains(skipName) else { continue }
@@ -782,6 +786,8 @@ public func collectJobs(
         DispatchQueue.concurrentPerform(iterations: level.count) { index in
             guard !cancelled() else { return }
             let pending = level[index]
+            var ignore = pending.ignore
+            ignore.read(in: pending.url)
             let entries = (try? fm.contentsOfDirectory(
                 at: pending.url,
                 includingPropertiesForKeys: keys,
@@ -793,10 +799,11 @@ public func collectJobs(
             for url in entries {
                 if cancelled() { return }
                 let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                guard !ignore.excludes(url, directory: isDir) else { continue }
                 if isDir {
                     guard recursive, url.lastPathComponent != skipName else { continue }
                     if let skipPath, url.resolvingSymlinksInPath().path == skipPath { continue }
-                    directories.append(PendingDirectory(root: pending.root, url: url))
+                    directories.append(PendingDirectory(root: pending.root, url: url, ignore: ignore))
                 } else {
                     files.append(url)
                 }
