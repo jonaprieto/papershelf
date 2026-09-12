@@ -257,8 +257,21 @@ struct ContentView: View {
         shelves.current == .opened ? shelves.openedElsewhere : selection
     }
 
+    /// The same, without the ones known to be unreachable. Everything that actually reads
+    /// the disk goes through this; `scanRoots` is what was chosen, and stays in the
+    /// fingerprint, so an unplugged drive does not invalidate the cached shelf.
+    ///
+    /// Walking a source that has gone is not slow, it is unbounded: `contentsOfDirectory`
+    /// against a mount whose server stopped answering waits the way `stat` does, and the
+    /// scan behind the shelf has no deadline of its own to end that wait. The sidebar
+    /// still lists the folder and says it cannot be seen, and the availability pass puts
+    /// it back in the scan when it answers again.
+    private var reachableRoots: [URL] {
+        scanRoots.filter(isReachable)
+    }
+
     private func preview() {
-        runner.preview(roots: scanRoots, options: options(dryRun: true), fingerprint: fingerprint)
+        runner.preview(roots: reachableRoots, options: options(dryRun: true), fingerprint: fingerprint)
     }
 
     /// Reads the sources again from scratch, whatever is on screen: the shelf if that is
@@ -272,11 +285,12 @@ struct ContentView: View {
     }
 
     private func libraryPreview() {
-        runner.libraryPreview(roots: scanRoots, options: options(dryRun: true), fingerprint: fingerprint)
+        runner.libraryPreview(roots: reachableRoots, options: options(dryRun: true),
+                              fingerprint: fingerprint)
     }
 
     private func libraryPreview(preservingVisibleResults: Bool) {
-        runner.libraryPreview(roots: scanRoots, options: options(dryRun: true),
+        runner.libraryPreview(roots: reachableRoots, options: options(dryRun: true),
                               fingerprint: fingerprint,
                               preservingVisibleResults: preservingVisibleResults)
     }
@@ -523,24 +537,7 @@ struct ContentView: View {
             guard old == .opened || new == .opened, !scanRoots.isEmpty else { return }
             if prefs.viewMode == .catalogue { libraryPreview() } else { preview() }
         }
-        .task {
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            restoreSources()
-            startWatching()
-            if !selection.isEmpty {
-                // The shelf is cheap to rebuild and is the launch surface. Keep the
-                // expensive rename plan behind Review renamings, even when its setting
-                // is off.
-                let hadCache = runner.showCached(fingerprint: fingerprint)
-                if prefs.viewMode == .catalogue {
-                    libraryPreview(preservingVisibleResults: hadCache)
-                } else if prefs.autoPreview || hadCache {
-                    preview()
-                }
-            }
-            if aiReady && availableModels.isEmpty { loadModels() }
-        }
+        .task { await openTheShelf() }
         .task { await watchSourceAvailability() }
         .task(id: reviewing) { await readSelectionPosition() }
         // Restyling is cheap but not free, so let a run of toggles settle first.
@@ -1469,14 +1466,21 @@ struct ContentView: View {
 
     /// Watches whatever is selected, so files copied in while the app is open are picked
     /// up without being asked for.
+    ///
+    /// Only the sources that answered: `FSEventStreamCreate` on a path that is not there
+    /// builds a stream that reports nothing, and the availability pass is what notices the
+    /// volume coming back and starts this again.
     private func startWatching() {
         watcher?.stop()
-        guard prefs.watchSources, !selection.isEmpty else {
+        // The sources, not the shelf: the watcher is about folders files arrive in, and
+        // the Opened shelf is a list of files that are under none of them.
+        let roots = selection.filter(isReachable)
+        guard prefs.watchSources, !roots.isEmpty else {
             watcher = nil
             return
         }
         let created = FolderWatcher { Task { @MainActor in await absorbChanges() } }
-        created.watch(selection)
+        created.watch(roots)
         watcher = created
     }
 
@@ -1485,31 +1489,87 @@ struct ContentView: View {
     /// library without polling fourteen thousand files.
     private func watchSourceAvailability() async {
         while !Task.isCancelled {
-            let current = Dictionary(uniqueKeysWithValues: selection.map { ($0.path, isReachable($0)) })
-            let remounted = !sourceAvailability.isEmpty && current.contains { path, reachable in
-                reachable && sourceAvailability[path] == false
-            }
-            sourceAvailability = current
-            if remounted, prefs.watchSources {
-                // Covers that failed against a disconnected volume are not failures of the
-                // files; the ones on the drive that just came back deserve another try.
-                covers.forget()
-                startWatching()
-                if prefs.autoPreview { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
-            }
+            // The first pass belongs to the launch task, which waits for it before
+            // deciding what to scan. Sleeping first also means the sources have been
+            // restored by the time this asks about them.
             try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            guard await refreshSourceAvailability(), prefs.watchSources else { continue }
+            // Covers that failed against a disconnected volume are not failures of the
+            // files; the ones on the drive that just came back deserve another try.
+            covers.forget()
+            startWatching()
+            if prefs.autoPreview { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
         }
     }
 
+    /// Asks every source whether it is there, and answers whether any of them has come
+    /// back since the last pass.
+    ///
+    /// Each question carries its own deadline (`reachable`), and they are asked together,
+    /// so a shelf built on four folders with one dead network mount among them waits once
+    /// for that deadline rather than four times for a mount timeout. Nothing here touches
+    /// the filesystem on the main actor: this used to be a `stat` per source per redraw,
+    /// which is free until the day one of the sources stops answering.
+    @discardableResult
+    private func refreshSourceAvailability() async -> Bool {
+        let roots = selection
+        var current: [String: Bool] = [:]
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for url in roots {
+                group.addTask { (url.path, await reachable(url)) }
+            }
+            for await (path, answer) in group { current[path] = answer }
+        }
+        guard !Task.isCancelled else { return false }
+        let remounted = !sourceAvailability.isEmpty && current.contains { path, reachable in
+            reachable && sourceAvailability[path] == false
+        }
+        sourceAvailability = current
+        return remounted
+    }
+
     private func absorbChanges() async {
-        guard prefs.watchSources, !selection.isEmpty else { return }
-        await runner.absorbChanges(roots: selection, options: options(dryRun: true),
+        let roots = selection.filter(isReachable)
+        guard prefs.watchSources, !roots.isEmpty else { return }
+        await runner.absorbChanges(roots: roots, options: options(dryRun: true),
                                    fingerprint: fingerprint)
     }
 
     private func persistSources() {
         prefs.sources = selection.map(\.path).joined(separator: "\n")
     }
+
+    /// The shelf's own work, held back a beat. Its own method rather than a closure on the
+    /// window's body: that chain is already at what the type checker will work through in
+    /// one piece.
+    private func openTheShelf() async {
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+        restoreSources()
+        // Which sources are actually there, before anything is asked of them. One bounded
+        // pass costs the launch a fraction of a second at worst and keeps a folder that
+        // has gone away out of the scan, the watcher and the shelf.
+        await refreshSourceAvailability()
+        guard !Task.isCancelled else { return }
+        startWatching()
+        if !reachableRoots.isEmpty {
+            // The shelf is cheap to rebuild and is the launch surface. Keep the expensive
+            // rename plan behind Review renamings, even when its setting is off.
+            let hadCache = runner.showCached(fingerprint: fingerprint)
+            if prefs.viewMode == .catalogue {
+                libraryPreview(preservingVisibleResults: hadCache)
+            } else if prefs.autoPreview || hadCache {
+                preview()
+            }
+        }
+        if aiReady && availableModels.isEmpty { loadModels() }
+    }
+
+
+
+
+
 
     /// Restores what was picked last time. Anything since moved or deleted is dropped
     /// rather than kept as a broken row.
@@ -1527,10 +1587,18 @@ struct ContentView: View {
             .map { URL(fileURLWithPath: String($0)) }
     }
 
-    /// Whether a source can be read at all right now. Nil-safe and cheap enough for a
-    /// sidebar row: `fileExists` is one stat call.
+    /// Whether a source can be read at all right now, as of the last availability pass.
+    ///
+    /// Read rather than asked. This is called from `body`, several times per redraw, and
+    /// it used to be a `stat`: one syscall, which is nothing until a source is a network
+    /// volume that has stopped answering, and then it is the main thread waiting on that
+    /// mount's timeout on every layout pass. `refreshSourceAvailability` asks, off the
+    /// main actor and with a deadline; this only reports what it found.
+    ///
+    /// A source nothing has asked about yet counts as reachable, so the sidebar does not
+    /// open by declaring every folder missing.
     func isReachable(_ url: URL) -> Bool {
-        FileManager.default.fileExists(atPath: url.path)
+        sourceAvailability[url.path] ?? true
     }
 
     /// Everything the app remembers between launches.

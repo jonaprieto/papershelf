@@ -59,7 +59,7 @@ final class AppleScriptTests: XCTestCase {
 
         let contentView = try String(contentsOf: repositoryRoot
             .appendingPathComponent("Sources/PaperShelf/ContentView.swift"), encoding: .utf8)
-        XCTAssertTrue(contentView.contains("if prefs.viewMode == .catalogue {\n                    libraryPreview(preservingVisibleResults: hadCache)"))
+        XCTAssertTrue(contentView.contains("if prefs.viewMode == .catalogue {\n                libraryPreview(preservingVisibleResults: hadCache)"))
 
         let shell = try String(contentsOf: repositoryRoot
             .appendingPathComponent("Tools/ui-smoke-test.sh"), encoding: .utf8)
