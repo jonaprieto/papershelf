@@ -32,13 +32,15 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.14.1</string>
+	<string>1.15.0</string>
 	<key>CFBundleVersion</key>
-	<string>23</string>
+	<string>24</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>PaperShelf reads and rewrites the PDFs you select on your Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
@@ -47,19 +49,17 @@
 	<string>PaperShelf reads and rewrites the PDFs you select in your Downloads folder.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSAppleScriptEnabled</key>
-	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Jonathan Prieto-Cubides. Licensed under the MIT Licence.</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-	<key>OSAScriptingDefinition</key>
-	<string>PaperShelf.sdef</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PaperShelf uses the microphone to dictate notes for your PDF annotations.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>PaperShelf transcribes dictated notes on your Mac.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>PaperShelf reads and rewrites the PDFs you select on removable volumes.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>PaperShelf transcribes dictated notes on your Mac.</string>
+	<key>OSAScriptingDefinition</key>
+	<string>PaperShelf.sdef</string>
 </dict>
 </plist>

@@ -4,10 +4,20 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
-## [Unreleased]
+## [1.15.0] - 2026-09-12
 
 ### Added
 
+- Open a paper from Finder and press the command palette key to stand the window in that
+  paper's folder for the session. The folder is borrowed rather than chosen: it is never
+  saved as a source, the sidebar says so and gives your own back in one click, and any
+  edit to the sources ends it.
+- Take back the last change to a document's marks with Undo. Highlighting, deleting a
+  mark, recolouring one and editing its note are all covered; clearing every mark keeps
+  its confirmation and stays outside it. Undo follows focus, so it still takes back a
+  decision in the plan when the page is not what you are looking at.
+- Leave out what Git ignores when scanning a source, so build output and vendored copies
+  no longer arrive as papers.
 - Show available releases and completed local builds beside the running version. Check
   manually from the app menu, About, Settings or command palette. Release builds check
   daily by default; development builds use manual remote checks. Keep cached results and
@@ -28,6 +38,19 @@ numbers rather than dates.
 
 ### Fixed
 
+- Ask whether a source is reachable off the main thread and with a deadline. A network
+  volume that has stopped answering no longer freezes the window for the length of its
+  mount timeout, and a folder that cannot be reached is kept out of the scan, the watcher
+  and the shelf until it answers again.
+- Open a folder asked for from the sidebar, instead of narrowing to it and leaving its
+  rows folded.
+- Say a plan row's state once rather than twice, and make the line under a filename state
+  a pending rename instead of claiming the file is already named correctly.
+- Keep a document's identity steady while a run renames it. It was derived in a way that
+  answered differently once the file had moved, which is what the library holds a paper's
+  tags, notes, reading position and project membership against.
+- Point the diagnostics log and run cache elsewhere with PAPERSHELF_SUPPORT_PATH, so a run
+  against a scratch collection stops writing beside the real one.
 - Keep manual PDF zoom and reading position through scrolling, page changes and routine
   interface updates. Show the custom zoom percentage, and let an explicit fit action
   restore automatic sizing even when that same fit mode was selected before zooming.
@@ -55,6 +78,17 @@ numbers rather than dates.
 - Keep the split inspector attached to the clicked page instead of changing on hover.
 - Accept file drops in the single reader, drag tabs between panes, and enlarge tab close
   targets. Add selection highlighting, copying and notes to the reader context menu.
+
+### Performance
+
+- Work out a document's identity once instead of on every read. It resolved symlinks, so
+  every read was a filesystem call, and a card on the shelf asks for it five times to draw
+  itself once.
+- Hold the sidebar's narrowed and flattened tree, and the duplicates view's groups, rather
+  than rebuilding them on every pass of a view body.
+- Leave the watcher alone for changes no scan could find. A source that is also a working
+  tree used to cost a full rescan for every burst of build output.
+- Answer an unanchored ignore rule without splitting the path it was given.
 
 ## [1.14.1] - 2026-09-07
 
