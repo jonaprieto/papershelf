@@ -18,6 +18,31 @@ extension FocusedValues {
     }
 }
 
+/// A reader-scoped Undo, for the marks on the document under the pointer.
+///
+/// The library window's Undo is about the rename plan, which is a different thing in a
+/// different pane, so the two share ⌘Z the way every other app shares it: whichever has
+/// focus answers. A reader opened straight from Finder has no plan at all, so there this
+/// is the only Undo there is.
+///
+/// `canPerform` rather than a plain closure so the menu item can grey out: an Undo that
+/// is always enabled and sometimes does nothing is worse than one that says so.
+struct UndoMarkAction {
+    let canPerform: Bool
+    let perform: () -> Void
+}
+
+private struct UndoMarkActionKey: FocusedValueKey {
+    typealias Value = UndoMarkAction
+}
+
+extension FocusedValues {
+    var undoMark: UndoMarkAction? {
+        get { self[UndoMarkActionKey.self] }
+        set { self[UndoMarkActionKey.self] = newValue }
+    }
+}
+
 /// A pane-scoped menu action. A reader's side pane is not the library inspector, but the
 /// same key should still show or hide the pane beside the document.
 struct TogglePaneAction {

@@ -240,6 +240,14 @@ struct ReviewInspector: View {
         }
         .onAppear { if draft.isEmpty { draft = item.destinationName } }
         .focusedValue(\.findInPDF, showsPage ? FindInPDFAction(perform: openFind) : nil)
+        // Only while the page is one of the panes. Undo belongs to whatever is in front of
+        // you, and with the page shut that is the plan, not the marks on a document you
+        // cannot see.
+        .focusedValue(\.undoMark, showsPage
+                      ? UndoMarkAction(canPerform: annotator.canUndoMarkChange) {
+                          annotator.undoLastMarkChange()
+                      }
+                      : nil)
         .task(id: item.key + ":" + (documentID ?? "")) { await loadDocumentProjects() }
         .onChange(of: item.key) { _, _ in
             editing = false

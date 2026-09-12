@@ -111,15 +111,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Whether this window is one opened for a file handed over by the machine, rather
+    /// than a paper being read inside the library.
+    func isReader(_ window: NSWindow) -> Bool {
+        readers.values.contains { $0.window === window }
+    }
+
+    /// Whether a library window is on screen.
+    ///
+    /// Not `wantsLibrary`: that says whether anybody has asked for one this session, and
+    /// it is still false on an ordinary launch where SwiftUI made the window itself.
+    var showsLibrary: Bool {
+        libraryWindows.contains(where: \.isVisible)
+    }
+
     /// The library window, identified by the scene id SwiftUI puts on it. Matched loosely
     /// because that string is SwiftUI's to shape ("main", "SwiftUI.Window-main"), and the
     /// title is matched as a second chance for the same window.
-    private func closeLibraryWindow() {
-        for window in NSApp.windows where !readers.values.contains(where: { $0.window === window }) {
+    private var libraryWindows: [NSWindow] {
+        NSApp.windows.filter { window in
+            guard !isReader(window) else { return false }
             let identifier = window.identifier?.rawValue ?? ""
-            if identifier.contains("main") || window.title == "PaperShelf" {
-                window.close()
-            }
+            return identifier.contains("main") || window.title == "PaperShelf"
         }
+    }
+
+    private func closeLibraryWindow() {
+        for window in libraryWindows { window.close() }
     }
 }

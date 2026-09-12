@@ -133,12 +133,32 @@ final class Chrome {
     }
 }
 
+/// The folder the window should borrow for this session, or nil to leave the sources
+/// alone.
+///
+/// A paper opened from Finder brings no library with it: the app was started by a double
+/// click and closed the library window it had made on its own (see `AppDelegate`). ⌘K
+/// there opens a palette over a window with nothing in it, because nobody picked any
+/// sources for this paper. The folder the paper is in is the collection somebody is
+/// actually standing in, so the window borrows it.
+///
+/// Both conditions matter, and for different reasons. The key window has to be one the
+/// delegate opened, or an ordinary launch -- where nothing has set `wantsLibrary` either
+/// -- would scope the library to whatever is being read. And no library window may be on
+/// screen, because the sources behind one are sources somebody chose, and ⌘K is not a
+/// request to replace them.
+func folderToStandIn(document: URL?, isReader: Bool, showsLibrary: Bool) -> URL? {
+    guard let document, document.isFileURL, isReader, !showsLibrary else { return nil }
+    return document.deletingLastPathComponent()
+}
+
 @main
 struct PaperShelfApp: App {
     @State private var chrome = Chrome()
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.findInPDF) private var findInPDF
     @FocusedValue(\.togglePane) private var togglePane
+    @FocusedValue(\.undoMark) private var undoMark
     // Finder's files arrive here, and the reader windows they open are the delegate's.
     // See `AppDelegate` for why they are not a scene.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -157,12 +177,26 @@ struct PaperShelfApp: App {
     /// The library monitor owns its window only. The menu is the app-wide route, so this
     /// also works from Settings and from a reader opened directly from Finder.
     private func openCommandPalette() {
-        let document = NSApp.keyWindow?.representedURL
+        let key = NSApp.keyWindow
+        let document = key?.representedURL
+        let standIn = folderToStandIn(document, of: key)
         AppDelegate.current?.wantsLibrary = true
         openWindow(id: "main")
         DispatchQueue.main.async {
+            // Before the palette, so the window is pointed at the folder by the time the
+            // palette has anything to jump around in.
+            if let standIn {
+                NotificationCenter.default.post(name: .standInForFolder, object: standIn)
+            }
             NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: document)
         }
+    }
+
+    private func folderToStandIn(_ document: URL?, of window: NSWindow?) -> URL? {
+        guard let window, let delegate = AppDelegate.current else { return nil }
+        return PaperShelf.folderToStandIn(document: document,
+                                          isReader: delegate.isReader(window),
+                                          showsLibrary: delegate.showsLibrary)
     }
 
     /// A PDFKit view owns the first responder while a paper is open, which can leave
@@ -208,9 +242,15 @@ struct PaperShelfApp: App {
                     .commandShortcut(.findInDocument)
             }
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo", action: chrome.undo)
-                    .commandShortcut(.undo)
-                    .disabled(!chrome.canUndo)
+                // Whichever pane has focus answers. Reading a paper, ⌘Z takes back the
+                // last thing done to its marks; in the list or on the shelf it takes back
+                // a decision in the plan. A reader opened from Finder has no plan, so
+                // there the marks are the only Undo there is.
+                Button(undoMark == nil ? "Undo" : "Undo Mark") {
+                    if let undoMark, undoMark.canPerform { undoMark.perform() } else { chrome.undo() }
+                }
+                .commandShortcut(.undo)
+                .disabled(undoMark.map { !$0.canPerform } ?? !chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
                 Button("Command Palette", action: openCommandPalette)
@@ -513,6 +553,8 @@ extension Notification.Name {
     static let scriptToggleReading = Notification.Name("PaperShelf.scriptToggleReading")
     static let scriptToggleZen = Notification.Name("PaperShelf.scriptToggleZen")
     static let scriptOpenCommandPalette = Notification.Name("PaperShelf.scriptOpenCommandPalette")
+    /// One folder the window should borrow for this session, carried as the object.
+    static let standInForFolder = Notification.Name("PaperShelf.standInForFolder")
     static let scriptCopyCitation = Notification.Name("PaperShelf.scriptCopyCitation")
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")

@@ -8,13 +8,39 @@ import PaperShelfCore
 ///
 /// Annotating writes to the file straight away, the way a reader does. That is outside the
 /// preview-then-apply flow on purpose: a note is not a rename waiting to be approved, it
-/// is a change to the document you are reading. It is recorded in the log, and it is the
-/// one thing here that Undo does not cover.
+/// is a change to the document you are reading. It is recorded in the log, and ⌘Z takes
+/// it back: see `undoLastMarkChange`.
 @MainActor
 @Observable
 final class Annotator {
     private static let readers = NSHashTable<Annotator>.weakObjects()
     private(set) var marks: [Mark] = []
+    /// What ⌘Z would take back, most recent last.
+    ///
+    /// Per document and per reader: the stack is dropped when another file is attached,
+    /// because the marks are already in the file by then and a step pointing at a page of
+    /// a document nobody is looking at is not an undo, it is a way to edit a file behind
+    /// your back.
+    private var markUndo: [MarkChange] = []
+    /// How far back it goes. A reader marks a passage, sees the wrong colour and presses
+    /// ⌘Z, and does that three times in a row; nobody walks back a hundred.
+    private static let undoDepth = 32
+    var canUndoMarkChange: Bool { !markUndo.isEmpty }
+
+    /// One step back. Each case carries what it needs to put things as they were, and
+    /// nothing else: the annotation objects themselves survive being taken off a page, so
+    /// putting one back is the same object on the same page rather than a copy that would
+    /// have a new identity in the file.
+    private enum MarkChange {
+        /// A highlight, or several: one selection crossing a page break makes one mark per
+        /// page and they go back together, because one ⌘Z should take back one action.
+        case added([Mark])
+        /// The page as well as the mark: `PDFAnnotation.page` goes nil the moment a page
+        /// lets go of it, so the annotation on its own no longer knows where it belongs.
+        case removed(Mark, PDFPage)
+        case recoloured(Mark, NSColor)
+        case renoted(Mark, String)
+    }
     private(set) var hasSelection = false
     private(set) var webArticle: WebArticle?
     var readingLiveWebsite = false
@@ -196,6 +222,9 @@ final class Annotator {
         documentID = nil
         generation &+= 1
         marks = []
+        // A step pointing into the document being replaced is not an undo any more, it is
+        // a way to edit a file nobody is looking at.
+        markUndo.removeAll()
         contents = []
         bookmarksTask?.cancel()
         bookmarksTask = nil
@@ -721,6 +750,7 @@ final class Annotator {
         }
 
         guard !madeMarks.isEmpty else { return 0 }
+        record(.added(madeMarks))
         let wasScanning = scan != nil
         scan?.cancel()
         marks.append(contentsOf: madeMarks)
@@ -737,6 +767,7 @@ final class Annotator {
 
     /// Repaints an existing mark.
     func setColour(_ colour: NSColor, on mark: Mark) {
+        record(.recoloured(mark, mark.annotation.color))
         mark.annotation.color = colour
         mark.annotation.modificationDate = Date()
         save()
@@ -746,6 +777,7 @@ final class Annotator {
     }
 
     func remove(_ mark: Mark) {
+        if let page = mark.annotation.page { record(.removed(mark, page)) }
         mark.annotation.page?.removeAnnotation(mark.annotation)
         if selectedMark == mark.id { selectedMark = nil }
         marks.removeAll { $0.id == mark.id }
@@ -769,17 +801,64 @@ final class Annotator {
         scan?.cancel()
         scan = nil
         marks.removeAll()
+        // The steps in the stack point at annotations that are no longer on any page, so
+        // there is nothing left for them to put back. This action asks first instead.
+        markUndo.removeAll()
         save()
         if let view { view.setNeedsDisplay(view.bounds) }
     }
 
     /// Rewrites the note on an existing mark.
     func setNote(_ text: String, on mark: Mark) {
+        record(.renoted(mark, mark.annotation.contents ?? ""))
         mark.annotation.contents = text
         mark.annotation.modificationDate = Date()
         save()
         replace(mark, note: text, timestamp: mark.annotation.modificationDate)
         rescanIfNeeded()
+    }
+
+    private func record(_ change: MarkChange) {
+        markUndo.append(change)
+        if markUndo.count > Annotator.undoDepth { markUndo.removeFirst() }
+    }
+
+    /// Takes back the last thing done to this document's marks.
+    ///
+    /// ⌘Z, which is what every reader expects of it. Marking a passage writes into the
+    /// file immediately, so this writes into it again rather than cancelling something
+    /// pending; the file is the document, and putting a highlight back the way it was is
+    /// as much an edit as making it.
+    ///
+    /// The annotation objects are reused rather than rebuilt. PDFKit keeps an annotation
+    /// alive after its page lets go of it, so an undone deletion puts the same annotation
+    /// back on the same page: same bounds, same colour, same contents, and the same thing
+    /// in the file as before it was removed.
+    @discardableResult
+    func undoLastMarkChange() -> Bool {
+        guard let change = markUndo.popLast() else { return false }
+        switch change {
+        case .added(let made):
+            let ids = Set(made.map(\.id))
+            for mark in made { mark.annotation.page?.removeAnnotation(mark.annotation) }
+            if let selected = selectedMark, ids.contains(selected) { selectedMark = nil }
+            marks.removeAll { ids.contains($0.id) }
+        case .removed(let mark, let page):
+            page.addAnnotation(mark.annotation)
+            marks.append(mark)
+            marks.sort(by: Annotator.precedes)
+            selectedMark = mark.id
+        case .recoloured(let mark, let colour):
+            mark.annotation.color = colour
+            replace(mark, colour: colour)
+        case .renoted(let mark, let note):
+            mark.annotation.contents = note
+            replace(mark, note: note)
+        }
+        save()
+        rescanIfNeeded()
+        if let view { view.setNeedsDisplay(view.bounds) }
+        return true
     }
 
     /// The mark under a point in the preview, if there is one.
