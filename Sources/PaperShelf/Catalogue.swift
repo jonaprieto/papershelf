@@ -4,6 +4,22 @@ import PDFKit
 import UniformTypeIdentifiers
 import PaperShelfCore
 
+/// Which of the list's folder rows have to be open for everything under `folder` to be on
+/// screen, given what each file's ancestors are (`Runner.ancestors(of:)`).
+///
+/// A folder's own row is not enough: the list groups by the whole hierarchy, so the chain
+/// from the top of the tree down to each file has to be open or the file has no row to be
+/// drawn in.
+func foldersOpening(_ folder: URL, in results: [Item],
+                    ancestors: (String) -> [String]) -> Set<String> {
+    let scope = ResultsPane.FolderScope(folder)
+    var open: Set<String> = []
+    for item in results where scope.contains(item) {
+        open.formUnion(ancestors(item.key))
+    }
+    return open
+}
+
 struct ResultsPane: View {
     @Environment(\.openWindow) private var openWindow
     var runner: Runner
@@ -700,6 +716,23 @@ struct ResultsPane: View {
         showCollection()
         navigate(to: Place(mode: showing, shelf: shelves.current, folderPath: url.path,
                            query: query))
+        unfold(url)
+    }
+
+    /// Opens the list's folder rows down to everything the scope just narrowed to.
+    ///
+    /// The list groups by folder and remembers which of those are folded. Narrowing to a
+    /// folder does not change that, so asking for one from the sidebar used to answer with
+    /// a single closed row naming its top folder and the number of files it was hiding:
+    /// you clicked a folder to see inside it and got the outside of it.
+    ///
+    /// Only what the scope reaches is opened, which is why this is bounded by what is
+    /// about to be on screen rather than by the collection. The grid has no folded rows,
+    /// but it shares `expanded` with the list, so this is worth doing there too: switching
+    /// to the list afterwards lands on the folder still open.
+    private func unfold(_ folder: URL) {
+        expanded.formUnion(foldersOpening(folder, in: runner.results,
+                                          ancestors: runner.ancestors(of:)))
     }
 
     /// Shows a document the file explorer's own row was clicked on.
