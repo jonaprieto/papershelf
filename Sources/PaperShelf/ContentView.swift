@@ -85,6 +85,14 @@ struct ContentView: View {
     /// project holds, so the workspace reads its members again.
     @State private var projectContentsRevision = 0
     @State private var explorerTree: [ExplorerNode] = []
+    /// `explorerTree` narrowed by the filter, held rather than computed in `body`.
+    ///
+    /// The narrowing walks and rebuilds the whole tree, and it ran on every pass of the
+    /// sidebar's body: at eleven hundred papers that is about four milliseconds a pass,
+    /// several passes a keystroke, which is what made typing in the filter feel like it
+    /// was catching up with you. It changes when the results change and when the query
+    /// changes, and at no other time.
+    @State private var shownExplorerTree: [ExplorerNode] = []
     /// Narrows the source tree to folders whose name matches. `filterExplorerTree` was
     /// written and tested and then reached by nothing; the sidebar's own footer is where
     /// a filter for the sidebar belongs.
@@ -1249,18 +1257,33 @@ struct ContentView: View {
             }
             .task(id: runner.resultsToken) {
                 explorerTree = buildExplorerTree(runner.results)
+                narrowExplorerTree()
                 // The roots open on their own: a tree that arrives entirely folded says
                 // nothing about what was just scanned. Anything folded by hand below
                 // them stays folded.
                 explorerExpanded.formUnion(explorerTree.map(\.id))
             }
+            .onChange(of: sourceFilter) { _, _ in narrowExplorerTree() }
+    }
+
+    /// Applies the sidebar's filter to each source's folders.
+    ///
+    /// Each root's children rather than the whole tree: a source is shown because it is a
+    /// source, not because its name happens to match what was typed, and matching a root
+    /// would then keep everything under it.
+    private func narrowExplorerTree() {
+        shownExplorerTree = explorerTree.map { root in
+            var copy = root
+            copy.children = filterExplorerTree(root.children ?? [], matching: sourceFilter)
+            return copy
+        }
     }
 
     /// One source: its name, how many files it holds, and its folders underneath.
     @ViewBuilder
     private func sourceRow(_ url: URL) -> some View {
-        let root = explorerTree.first { $0.url == url }
-        let children = filterExplorerTree(root?.children ?? [], matching: sourceFilter)
+        let root = shownExplorerTree.first { $0.url == url }
+        let children = root?.children ?? []
         if let root, !children.isEmpty {
             DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
                 ExplorerOutline(nodes: children, expanded: $explorerExpanded,
@@ -1278,7 +1301,8 @@ struct ContentView: View {
                                 focusPath: { sidebarTarget = .folder($0) },
                                 openFolder: showFolder,
                                 keepOpen: keepDocumentOpen,
-                                focusedPath: focusedSidebarPath)
+                                focusedPath: focusedSidebarPath,
+                                treeToken: "\(runner.resultsToken)#\(sourceFilter)#\(url.path)")
             } label: {
                 sourceLabel(url, count: countOfFiles(in: root))
             }
@@ -1932,6 +1956,31 @@ func flattenExplorer(_ nodes: [ExplorerNode], expanded: Set<String>,
     return rows
 }
 
+/// The Explorer's rows, held rather than rebuilt on every pass of the sidebar's body.
+///
+/// The same arrangement as `TreeRows` and for the same reason: a body pass is what
+/// toggling any panel causes, and flattening eleven hundred papers' worth of folders
+/// measures about two milliseconds, which is a dropped frame.
+///
+/// Keyed on `expanded` as well as the token. Folding a folder changes the rows and nothing
+/// else -- no file arrived, no query moved -- so a cache keyed on the token alone would go
+/// on drawing the folder open.
+final class ExplorerRows {
+    private var token: String?
+    private var expanded: Set<String>?
+    private var cached: [FlatExplorerRow] = []
+
+    func rows(for newToken: String, expanded folders: Set<String>,
+              compute: () -> [FlatExplorerRow]) -> [FlatExplorerRow] {
+        if token == newToken, expanded == folders { return cached }
+        let value = compute()
+        token = newToken
+        expanded = folders
+        cached = value
+        return value
+    }
+}
+
 /// The Explorer's tree, folded and unfolded from the outside.
 ///
 /// `OutlineGroup` keeps its own expansion state where nothing can reach it, which is fine
@@ -1954,9 +2003,17 @@ struct ExplorerOutline: View {
     /// it still builds.
     var keepOpen: (String) -> Void = { _ in }
     var focusedPath: String? = nil
+    /// What `nodes` is, cheaply: the results these were built from and the query that
+    /// narrowed them. Flattening walks the whole tree, so it is done when one of those
+    /// moves rather than on every body pass.
+    var treeToken: String = ""
+    @State private var rowCache = ExplorerRows()
 
     var body: some View {
-        ForEach(flattenExplorer(nodes, expanded: expanded)) { row in
+        let rows = rowCache.rows(for: treeToken, expanded: expanded) {
+            flattenExplorer(nodes, expanded: expanded)
+        }
+        return ForEach(rows) { row in
             self.row(row.node, depth: row.depth)
         }
     }

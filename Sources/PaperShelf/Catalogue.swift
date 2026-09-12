@@ -95,6 +95,7 @@ struct ResultsPane: View {
     /// And the rows that shelf's list draws, which were the one derived thing still
     /// recomputed on every body pass. See `TreeRows`.
     @State private var rowCache = TreeRows()
+    @State private var duplicatesFilter = DuplicatesFilter()
     /// The file a "New Tag…" prompt was opened for. Non-nil drives the sheet.
     @State private var taggingItem: Item?
     @State private var newTagName = ""
@@ -547,20 +548,22 @@ struct ResultsPane: View {
     }
 
     /// What an action acts on: everything picked, or the one file the inspector is on.
+    ///
+    /// Asked of the index rather than by walking every result, for the reason
+    /// `selectedItem` is. Every card that draws a context menu asks this, so on the shelf
+    /// it ran once per selected card per body pass, each time over the whole collection.
+    /// Sorted so the order does not depend on how a `Set` happens to be laid out; what
+    /// reads this then trashes, skips or moves the files in it, and a run that reports a
+    /// different order each time is a run nobody can check.
     private var actingItems: [Item] {
         let keys = selection.isEmpty ? Set([selected].compactMap { $0 }) : selection
-        return runner.results.filter { keys.contains($0.key) }
+        return keys.compactMap(runner.item).sorted { $0.key < $1.key }
     }
 
     /// Through `Runner.item`, which answers from `indexByKey`, rather than by walking
-    /// `results` and comparing keys.
-    ///
-    /// `Item.key` is `source.resolvingSymlinksInPath().path`: computed, and a filesystem
-    /// call on every read. A walk therefore stats every file it passes, which measured at
-    /// 48ms over five thousand real files and scales linearly. This is read several times
-    /// in a single body pass -- the inspector, the window title and both highlighter
-    /// scopes all ask for it -- and a body pass is what toggling any panel causes, so the
-    /// walk was most of what a toggle cost.
+    /// `results` and comparing keys. This is read several times in a single body pass --
+    /// the inspector, the window title and both highlighter scopes all ask for it -- and a
+    /// body pass is what toggling any panel causes.
     ///
     /// Safe to read from the index because every path that changes `results` ends in
     /// `Runner.finish`, which rebuilds it, and an item's key never moves: it comes from
@@ -595,8 +598,14 @@ struct ResultsPane: View {
 
     private var visibleBib: [BibEntry] { entriesVisible(runner.bib, in: visibleKeys) }
 
+    /// Held for the same reason `shownFilter` is: the duplicates view asks this three
+    /// times in one body pass -- the list, the bar above it and the status line -- and each
+    /// call walks every group and every file in it.
     private var visibleDuplicates: [DuplicateGroup] {
-        groupsVisible(runner.duplicates, in: visibleKeys)
+        duplicatesFilter.groups(matching: visibilitySignature,
+                                token: runner.duplicatesToken) {
+            groupsVisible(runner.duplicates, in: visibleKeys)
+        }
     }
 
     /// The filter itself, unchanged. It is called at most once per body pass now, and not
@@ -4681,6 +4690,29 @@ final class TreeRows {
 /// carries `results` (`runner.resultsToken`), so anything that could move which items are
 /// shown -- a new scan, a rename, a decision, the search box, a tag -- invalidates this
 /// too.
+/// The duplicates view's groups, narrowed to what the search and the shelf allow.
+///
+/// Keyed on `VisibleFilter`'s signature and on `runner.duplicatesToken`, because those are
+/// two different things: the signature says what may be shown, and the token says which
+/// groups there are to show. A check finishing never touches `results`, so the signature
+/// alone would go on answering with the groups from before it ran, which for the first
+/// check is none at all.
+final class DuplicatesFilter {
+    private var signature: VisibleFilter.Signature?
+    private var token: Int?
+    private var cached: [DuplicateGroup] = []
+
+    func groups(matching new: VisibleFilter.Signature, token newToken: Int,
+                compute: () -> [DuplicateGroup]) -> [DuplicateGroup] {
+        if signature == new, token == newToken { return cached }
+        let value = compute()
+        signature = new
+        token = newToken
+        cached = value
+        return value
+    }
+}
+
 final class ShownFilter {
     private var signature: VisibleFilter.Signature?
     private var cached: [Item] = []

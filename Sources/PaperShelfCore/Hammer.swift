@@ -545,7 +545,57 @@ public struct Item: Identifiable, Sendable, Codable {
     /// Stable identity for the file on disk. Symlinks are resolved because a URL built
     /// by the caller (`/var/...`) and one handed back by the filesystem
     /// (`/private/var/...`) name the same file with different strings.
-    public var key: String { source.resolvingSymlinksInPath().path }
+    ///
+    /// Stored, and worked out once. It used to be computed, which made every read of it a
+    /// filesystem call, and it is read constantly: a card on the shelf asks for it five
+    /// times to draw itself once, `actingItems` asks it of every file in the collection,
+    /// and a view body runs whenever any panel is touched. Over a thousand papers that
+    /// was ten milliseconds for one walk of the results and 1.7 for a single pass of the
+    /// shelf, spent re-deriving a value that cannot change: `source` is a `let`.
+    public let key: String
+
+    /// `source` resolved in a way that does not depend on the file still being there.
+    ///
+    /// `resolvingSymlinksInPath()` over the whole path answers differently depending on
+    /// what is on disk at the instant it is asked. Given
+    /// `/private/var/folders/.../paper.pdf` it answers `/var/folders/.../paper.pdf` while
+    /// the file exists, and hands back the `/private` spelling unchanged once the file has
+    /// been renamed away. Identity therefore changed under a file at exactly the moment a
+    /// run moved it, which is the one moment it must not: `key` is what the library holds
+    /// a document's tags, notes, reading position and project membership against.
+    ///
+    /// The directory is what carries the link. `/var` is a symbolic link and the paper is
+    /// not, and the directory is still there after the file leaves it, so resolving the
+    /// directory and putting the filename back gives the same answer before and after.
+    /// Resolving once more on top of that is what still follows a paper that is itself a
+    /// link, so two links to one file stay one document; with the file gone, or not a
+    /// link, there is nothing left to resolve and it changes nothing.
+    ///
+    /// For a file that exists this is the same string the old expression produced, so
+    /// nothing already recorded in the library is orphaned by the change.
+    public static func identity(of source: URL) -> String {
+        source.deletingLastPathComponent().resolvingSymlinksInPath()
+            .appendingPathComponent(source.lastPathComponent)
+            .resolvingSymlinksInPath().path
+    }
+
+    public init(root: URL, source: URL, destination: URL, status: Status,
+                message: String = "", metadataDate: Date? = nil, modifiedDate: Date? = nil,
+                byteCount: Int? = nil, pageCount: Int? = nil, carriedOut: Bool = false,
+                documentInfo: [String: String] = [:]) {
+        self.root = root
+        self.source = source
+        self.destination = destination
+        self.status = status
+        self.message = message
+        self.metadataDate = metadataDate
+        self.modifiedDate = modifiedDate
+        self.byteCount = byteCount
+        self.pageCount = pageCount
+        self.carriedOut = carriedOut
+        self.documentInfo = documentInfo
+        self.key = Item.identity(of: source)
+    }
 
     public var sourceName: String { source.lastPathComponent }
     public var destinationName: String { destination.lastPathComponent }
@@ -575,9 +625,30 @@ public struct Item: Identifiable, Sendable, Codable {
 
     /// `id` is deliberately absent: it is fresh per process and means nothing once
     /// written down. `key` is the identity that survives, and it is derived from `source`.
+    ///
+    /// `key` is absent for the same reason it always was. It is not a second fact about
+    /// the file, it is `source` resolved, so it is worked out again on the way in rather
+    /// than written down twice and allowed to disagree. A run cache written before this
+    /// property was stored therefore still reads.
     private enum CodingKeys: String, CodingKey {
         case root, source, destination, status, message
         case metadataDate, modifiedDate, byteCount, pageCount, documentInfo, carriedOut
+    }
+
+    public init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        root = try box.decode(URL.self, forKey: .root)
+        source = try box.decode(URL.self, forKey: .source)
+        destination = try box.decode(URL.self, forKey: .destination)
+        status = try box.decode(Status.self, forKey: .status)
+        message = try box.decodeIfPresent(String.self, forKey: .message) ?? ""
+        metadataDate = try box.decodeIfPresent(Date.self, forKey: .metadataDate)
+        modifiedDate = try box.decodeIfPresent(Date.self, forKey: .modifiedDate)
+        byteCount = try box.decodeIfPresent(Int.self, forKey: .byteCount)
+        pageCount = try box.decodeIfPresent(Int.self, forKey: .pageCount)
+        carriedOut = try box.decodeIfPresent(Bool.self, forKey: .carriedOut) ?? false
+        documentInfo = try box.decodeIfPresent([String: String].self, forKey: .documentInfo) ?? [:]
+        key = Item.identity(of: source)
     }
 }
 

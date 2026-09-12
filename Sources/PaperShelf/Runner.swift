@@ -96,7 +96,11 @@ final class Runner {
     /// quadratic. Reopening a file earlier in the list pulls it back.
     private var cursor = 0
 
-    private(set) var duplicates: [DuplicateGroup] = []
+    private(set) var duplicates: [DuplicateGroup] = [] { didSet { duplicatesToken &+= 1 } }
+    /// As `resultsToken`, for the duplicate groups. A check finishing does not touch
+    /// `results`, so nothing derived from the results would otherwise know the groups had
+    /// arrived (see `DuplicatesFilter`).
+    private(set) var duplicatesToken = 0
     /// `Item.key` to the kind of duplicate it is, for the badge on a row or card.
     private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
     private(set) var findingDuplicates = false
