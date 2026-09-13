@@ -29,6 +29,13 @@ public func reachable(_ url: URL, timeout: TimeInterval = 0.75) async -> Bool {
 /// blocked `stat` back, and nothing waits on it.
 public func answered(within timeout: TimeInterval,
                      asking question: @escaping @Sendable () -> Bool) async -> Bool {
+    await answered(within: timeout, otherwise: false, asking: question)
+}
+
+/// The same, for a question with something other than yes or no for an answer: resolving a
+/// path, say, where `otherwise` is what to believe when the filesystem does not say in time.
+public func answered<Answer: Sendable>(within timeout: TimeInterval, otherwise fallback: Answer,
+                                       asking question: @escaping @Sendable () -> Answer) async -> Answer {
     let answered = FirstAnswer()
     return await withCheckedContinuation { continuation in
         DispatchQueue.global(qos: .utility).async {
@@ -36,7 +43,7 @@ public func answered(within timeout: TimeInterval,
             if answered.claim() { continuation.resume(returning: answer) }
         }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-            if answered.claim() { continuation.resume(returning: false) }
+            if answered.claim() { continuation.resume(returning: fallback) }
         }
     }
 }

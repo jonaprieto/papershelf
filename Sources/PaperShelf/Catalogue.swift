@@ -405,16 +405,46 @@ struct ResultsPane: View {
     /// What was open the last time, minus whatever has been renamed, moved or trashed
     /// since. A file that is no longer there goes without comment, the same bargain the
     /// rest of the deck makes with an unreachable source.
+    ///
+    /// Whether each file is still there is asked off the main actor and with a deadline
+    /// (`presentKeys`). It was a `fileExists` per tab inside `onAppear`, so a paper last read
+    /// off a network volume that has stopped answering held the whole window at launch for
+    /// that mount's timeout.
     private func restoreTabs() {
         guard !restoredTabs else { return }
         restoredTabs = true
         guard let stored = Self.storedDeck(prefs.openTabs) else { return }
-        deck.deck = Deck.restoring(stored,
-                                   reachable: { FileManager.default.fileExists(atPath: $0) },
-                                   makeAnnotator: { _ in Annotator() })
-        // Whatever was already selected is still selected, and restoring threw its preview
-        // tab away with everything else. Nothing else puts it back until the selection moves.
-        previewSelection(selected)
+        Task {
+            let present = await Self.presentKeys(in: stored)
+            // Somebody may have opened a paper while the question was out. What they opened
+            // is newer than what was open last time, so it wins.
+            guard deck.deck.panes.allSatisfy({ $0.tabs.isEmpty }) else { return }
+            deck.deck = Deck.restoring(stored, reachable: present.contains,
+                                       makeAnnotator: { _ in Annotator() })
+            // Whatever was already selected is still selected, and restoring threw its
+            // preview tab away with everything else. Nothing else puts it back until the
+            // selection moves.
+            previewSelection(selected)
+        }
+    }
+
+    /// The files a stored deck names that are there, each asked with a deadline and all at
+    /// once. One that does not answer in time is treated as gone for this launch, which is
+    /// what already happens to a tab whose disk is unplugged.
+    nonisolated static func presentKeys(in stored: StoredDeck,
+                                        timeout: TimeInterval = 0.75) async -> Set<String> {
+        let keys = Set(stored.panes.flatMap { $0 })
+        return await withTaskGroup(of: String?.self) { group in
+            for key in keys {
+                group.addTask {
+                    await answered(within: timeout) { FileManager.default.fileExists(atPath: key) }
+                        ? key : nil
+                }
+            }
+            var present = Set<String>()
+            for await key in group { if let key { present.insert(key) } }
+            return present
+        }
     }
 
     /// The deck as it is written down, and back. One string rather than a list of keys: the

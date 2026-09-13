@@ -82,13 +82,46 @@ final class Shelves {
         reading = a ?? []
         recent = b ?? []
         unfiled = c ?? []
-        openedElsewhere = (d ?? []).map { URL(fileURLWithPath: $0.path) }
-            .filter { url in
-                let path = url.resolvingSymlinksInPath().path
-                return FileManager.default.fileExists(atPath: url.path)
-                    && !sources.contains { path.hasPrefix($0.resolvingSymlinksInPath().path + "/") }
-            }
+        openedElsewhere = await Shelves.outsideSources((d ?? []).map(\.path), sources: sources)
         revision &+= 1
+    }
+
+    /// The opened documents that still exist and sit under none of the sources, in the
+    /// order they were given.
+    ///
+    /// Every step of this is a filesystem call -- resolving a link, asking whether a file is
+    /// there -- and it ran on the main actor, where a document last read off a network
+    /// volume that has since stopped answering held the window for that mount's timeout.
+    /// Each question is asked off the main actor with a deadline now, and all of them at
+    /// once. A file that does not answer in time is left off the list until the next
+    /// refresh, which is the same thing that happens to a file on a disk that is unplugged.
+    nonisolated static func outsideSources(_ paths: [String], sources: [URL],
+                                           timeout: TimeInterval = 0.75) async -> [URL] {
+        var roots: [String] = []
+        for source in sources {
+            // A source that does not resolve in time is compared as written, which can only
+            // ever keep a document on the list rather than wrongly take it off.
+            roots.append(await answered(within: timeout, otherwise: source.path) {
+                source.resolvingSymlinksInPath().path
+            } + "/")
+        }
+        let under = roots
+        return await withTaskGroup(of: (Int, URL?).self) { group in
+            for (index, path) in paths.enumerated() {
+                group.addTask {
+                    let url = URL(fileURLWithPath: path)
+                    let keep = await answered(within: timeout) {
+                        let resolved = url.resolvingSymlinksInPath().path
+                        return FileManager.default.fileExists(atPath: url.path)
+                            && !under.contains { resolved.hasPrefix($0) }
+                    }
+                    return (index, keep ? url : nil)
+                }
+            }
+            var kept: [(Int, URL)] = []
+            for await (index, url) in group { if let url { kept.append((index, url)) } }
+            return kept.sorted { $0.0 < $1.0 }.map(\.1)
+        }
     }
 
     /// The folders the shelf is built from, so `refresh` can tell which opened documents

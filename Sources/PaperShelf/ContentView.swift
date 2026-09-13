@@ -486,15 +486,19 @@ struct ContentView: View {
         // same preference. Following it means the two lists cannot disagree about what is
         // being scanned.
         .onChange(of: prefs.sources) { _, stored in
-            let wanted = stored.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+            let wanted = storedSources(stored)
             guard wanted.map(\.path) != selection.map(\.path) else { return }
             // Somebody edited the sources in Settings, which is a decision about the
             // library rather than about this window. It ends the borrowing.
             temporarySource = nil
-            selection = wanted.filter { FileManager.default.fileExists(atPath: $0.path) }
-            startWatching()
+            // Kept whether or not each one can be reached right now, the same bargain the
+            // launch makes (`restoreSources`). This used to filter on `fileExists`, which
+            // asked the filesystem on the main thread -- the one call the availability pass
+            // exists to keep off it, since a dead network mount answers it with its own
+            // timeout -- and then dropped every folder that was not there that second.
+            selection = wanted
             ensureSelectionAfterSourceChange()
-            if !selection.isEmpty { prefs.viewMode == .catalogue ? libraryPreview() : preview() }
+            rescanSources()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openProject), perform: revealProject)
         .onReceive(NotificationCenter.default.publisher(for: .scriptToggleSidebar)) { _ in
@@ -1676,9 +1680,7 @@ struct ContentView: View {
         // access is granted again. Dropping them here, and writing the shortened list back,
         // deleted a person's configuration for a condition that clears on its own. The
         // sidebar says which ones it cannot see; nothing is forgotten without being asked.
-        selection = prefs.sources
-            .split(separator: "\n")
-            .map { URL(fileURLWithPath: String($0)) }
+        selection = storedSources(prefs.sources)
     }
 
     /// Whether a source can be read at all right now, as of the last availability pass.
@@ -1752,6 +1754,16 @@ struct ContentView: View {
         window.setContentSize(NSSize(width: 980, height: 680))
         window.center()
     }
+}
+
+/// The sources as written in the preference, one path per line, every one of them.
+///
+/// Not filtered by whether it exists. A source that cannot be reached right now is not a
+/// source that has been removed: an external volume may not be mounted, and a rebuilt app
+/// has to be granted access to ~/Documents again. Both places that read the preference go
+/// through this so neither can quietly start dropping folders again.
+func storedSources(_ text: String) -> [URL] {
+    text.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
 }
 
 // MARK: - Sidebar pieces
@@ -1840,41 +1852,6 @@ private struct SidebarSourceLabel: View {
         .onTapGesture(perform: focus)
         .onHover(perform: setHovered)
         .help(explanation)
-    }
-}
-
-struct SourceRow: View {
-    let url: URL
-    let remove: () -> Void
-
-    private var isFolder: Bool {
-        (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-    }
-
-    var body: some View {
-        HStack(spacing: Space.step) {
-            Image(systemName: isFolder ? "folder.fill" : "doc.fill")
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: Space.hair) {
-                Text(url.lastPathComponent)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(url.deletingLastPathComponent().path)
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
-            Spacer(minLength: Space.tight)
-            Button(action: remove) {
-                Image(systemName: "minus.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .tip("Stop working on this source")
-            .help("Remove this source")
-            .accessibilityLabel("Remove \(url.lastPathComponent)")
-        }
     }
 }
 
