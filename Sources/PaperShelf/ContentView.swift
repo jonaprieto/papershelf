@@ -1795,12 +1795,12 @@ private struct SidebarSourceLabel: View {
     /// conditional inside a modifier chain the type checker already struggles with.
     private var explanation: String {
         if temporary {
-            return url.path + " — borrowed for this session because a paper here was "
+            return url.path + ": borrowed for this session because a paper here was "
                 + "opened from Finder. It is not saved as a source; your own are one "
                 + "click away."
         }
         guard !reachable else { return url.path }
-        return url.path + " — not reachable right now. The volume may be unmounted, or "
+        return url.path + ": not reachable right now. The volume may be unmounted, or "
             + "this build may not have been granted access to the folder yet. It is "
             + "kept, and comes back on its own."
     }
