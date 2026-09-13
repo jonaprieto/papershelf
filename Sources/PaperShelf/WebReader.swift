@@ -124,8 +124,12 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
                 _ = addPDFHighlights(for: selection, colour: highlightColour)
             }
             try article.embed(in: document)
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            let folder = destination ?? supportDirectory(in: base).appendingPathComponent("Web Articles", isDirectory: true)
+            // Through `supportDirectory()` like everything else beside the library, so a run
+            // pointed at a scratch folder, and every test, saves its articles there. Building
+            // the path from the user's Application Support directory here went around both.
+            guard let folder = destination
+                    ?? supportDirectory()?.appendingPathComponent("Web Articles", isDirectory: true)
+            else { throw CocoaError(.fileNoSuchFile) }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let stem = article.title.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : "-" }
                 .joined().prefix(90)
