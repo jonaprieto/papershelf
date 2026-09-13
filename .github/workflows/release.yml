@@ -35,12 +35,18 @@ jobs:
         run: |
           KEYCHAIN=build.keychain
           security create-keychain -p actions "$KEYCHAIN"
+          # Held unlocked for six hours, as GitHub's own guide does: notarization waits on
+          # Apple, and a keychain that locks itself mid-release fails the signing after it.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security default-keychain -s "$KEYCHAIN"
           security unlock-keychain -p actions "$KEYCHAIN"
           echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
           security import certificate.p12 -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
+          # codesign looks for the identity in the keychain search list, which a keychain made
+          # here is not on until it is added. This is the step GitHub's guide ends with.
+          security list-keychains -d user -s "$KEYCHAIN"
           rm certificate.p12
 
       - name: Build the disk image
@@ -53,6 +59,7 @@ jobs:
           xcrun notarytool submit "$DMG" --apple-id "$NOTARY_APPLE_ID" \
             --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --wait
           xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
 
       - name: Publish
         env:
@@ -70,6 +77,15 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           SHA=$(cut -d' ' -f1 "dist/PaperShelf-${VERSION}.dmg.sha256")
+          # A notarized release opens with no warning, so telling people how to get past one
+          # would only be wrong. The advice stays while releases are ad-hoc signed.
+          CAVEATS=""
+          if [[ -z "${NOTARY_APPLE_ID}" ]]; then
+            CAVEATS='  caveats <<~EOS
+              PaperShelf is ad-hoc signed while notarization is on the roadmap.
+              If macOS blocks the first launch, right-click PaperShelf.app in Finder and choose Open.
+            EOS'
+          fi
           TAP="$RUNNER_TEMP/homebrew-papershelf"
           gh repo clone jonaprieto/homebrew-papershelf "$TAP"
           mkdir -p "$TAP/Casks"
@@ -87,10 +103,7 @@ jobs:
 
           app "PaperShelf.app"
 
-            caveats <<~EOS
-              PaperShelf is ad-hoc signed while notarization is on the roadmap.
-              If macOS blocks the first launch, right-click PaperShelf.app in Finder and choose Open.
-            EOS
+          ${CAVEATS}
 
             zap trash: [
               "~/Library/Application Support/PaperShelf",

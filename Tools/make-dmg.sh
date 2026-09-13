@@ -32,12 +32,24 @@ trap 'rm -rf "$STAGE"' EXIT
 cp -R "$APP" "$STAGE/"
 APP="$STAGE/${APP_NAME}.app"
 
+ENTITLEMENTS="Resources/PaperShelf.entitlements"
+
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
   echo "Signing with ${DEVELOPER_ID}"
-  # A hardened runtime and a secure timestamp are both required for notarization.
+  # A hardened runtime and a secure timestamp are both required for notarization. The
+  # hardened runtime also refuses protected resources the app has not declared, so the app
+  # itself is signed with its entitlements; the MCP server records nothing and needs none.
   codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP/Contents/MacOS/papershelf-mcp"
-  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
+  codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" \
+    --sign "$DEVELOPER_ID" "$APP"
   codesign --verify --strict --verbose=2 "$APP"
+  # Checked rather than trusted: a signature made without them still verifies, and the only
+  # symptom is dictation failing silently for everyone who installs the release.
+  if ! codesign --display --entitlements - --xml "$APP" 2>/dev/null \
+       | grep -q "com.apple.security.device.audio-input"; then
+    echo "The signed app is missing its entitlements; refusing to build a release" >&2
+    exit 1
+  fi
 else
   echo "No DEVELOPER_ID set, leaving the ad-hoc signature in place (local use only)."
 fi

@@ -55,7 +55,29 @@ report the new version.
 The tag starts the GitHub workflow that tests the package, builds the disk image, and
 publishes the DMG and checksum. Signing and notarization use repository secrets when they
 are configured; otherwise the release is ad-hoc signed and requires right-click, Open on
-first launch.
+first launch, and the Homebrew cask says so. Once notarized, the cask drops that advice.
+
+Notarizing needs an Apple Developer Program membership and six repository secrets, which
+only the account holder can create. From a Mac holding the "Developer ID Application"
+certificate, export it with its private key from Keychain Access as a `.p12`, create an
+app-specific password at account.apple.com, then set them yourself:
+
+```
+base64 -i DeveloperID.p12 | gh secret set MACOS_CERTIFICATE --repo jonaprieto/papershelf
+gh secret set MACOS_CERTIFICATE_PASSWORD --repo jonaprieto/papershelf   # the .p12 password
+gh secret set MACOS_DEVELOPER_ID --repo jonaprieto/papershelf          # "Developer ID Application: Name (TEAMID)"
+gh secret set NOTARY_APPLE_ID --repo jonaprieto/papershelf             # the Apple ID email
+gh secret set NOTARY_TEAM_ID --repo jonaprieto/papershelf              # the ten-character team ID
+gh secret set NOTARY_PASSWORD --repo jonaprieto/papershelf             # the app-specific password
+```
+
+`security find-identity -v -p codesigning` prints the exact `MACOS_DEVELOPER_ID` string.
+Signing uses a hardened runtime, which refuses any protected resource the app has not
+declared in `Resources/PaperShelf.entitlements`. Note dictation needs the microphone, so that
+file declares audio input; a new feature reaching for the camera, contacts or Apple Events
+to another app needs its entitlement added there, or it will fail silently in notarized
+builds while working in every local one. `make-dmg.sh` refuses to build a signed release
+whose entitlements did not make it into the signature.
 
 The workflow invokes `Tools/make-dmg.sh --release`, which passes `--release` to `build.sh`.
 Release builds require a clean checkout at the exact `v<version>` tag and matching Core,
