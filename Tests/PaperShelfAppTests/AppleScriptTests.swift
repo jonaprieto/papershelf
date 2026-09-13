@@ -51,8 +51,11 @@ final class AppleScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("auditSettings"))
         XCTAssertTrue(script.contains("key code 53"))
         XCTAssertTrue(script.contains("__PAPERSHELF_APP_PATH__"))
-        XCTAssertTrue(script.contains("__PAPERSHELF_EXECUTABLE__"))
+        XCTAssertTrue(script.contains("__PAPERSHELF_PID__"))
         XCTAssertTrue(script.contains("first application process whose unix id is targetPID"))
+        // A tiling window manager keeps the window narrow, which moves the palette button
+        // into the toolbar's overflow menu without taking it out of the toolbar.
+        XCTAssertTrue(script.contains("more toolbar items"))
         XCTAssertTrue(script.contains("assertCatalogueLaunchState"))
         XCTAssertTrue(script.contains("Launch opened the rename prompt instead of the catalogue"))
         XCTAssertTrue(script.contains("AXIdentifier"))
@@ -63,7 +66,16 @@ final class AppleScriptTests: XCTestCase {
 
         let shell = try String(contentsOf: repositoryRoot
             .appendingPathComponent("Tools/ui-smoke-test.sh"), encoding: .utf8)
-        XCTAssertTrue(shell.contains("pgrep -f -x \"$APP_EXECUTABLE\""))
+        // The test drives a copy with an identity and folders of its own. These are the
+        // lines that keep its theme changes and bookmarks out of whoever runs it.
+        XCTAssertTrue(shell.contains("SMOKE_ID=\"$BASE_ID.smoketest\""))
+        XCTAssertTrue(shell.contains("Add :LSEnvironment:PAPERSHELF_SUPPORT_PATH"))
+        XCTAssertTrue(shell.contains("Add :LSEnvironment:PAPERSHELF_LIBRARY_PATH"))
+        XCTAssertTrue(shell.contains("refusing to drive it"))
+        XCTAssertTrue(shell.contains("trap cleanup EXIT"))
+        // `pgrep -x` compares whole command lines, so a copy launched with any argument went
+        // unrecognised and the script opened a second one with no sandbox at all.
+        XCTAssertFalse(shell.contains("pgrep -f -x"))
         XCTAssertTrue(shell.contains("sed \"s|__PAPERSHELF_APP_PATH__|"))
 
         let shellURL = repositoryRoot.appendingPathComponent("Tools/ui-smoke-test.sh")

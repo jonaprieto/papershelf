@@ -1,8 +1,10 @@
 use scripting additions
 
 on run
+    -- The shell script launched this copy and found its process itself, by executable
+    -- rather than by whole command line, so there is nothing left to guess at here.
+    set targetPID to __PAPERSHELF_PID__
     tell application "__PAPERSHELF_APP_PATH__" to activate
-    set targetPID to my waitForProcess("__PAPERSHELF_EXECUTABLE__")
 
     tell application "__PAPERSHELF_APP_PATH__"
         set savedTheme to current theme
@@ -69,16 +71,6 @@ on run
     return "PaperShelf UI smoke test passed"
 end run
 
-on waitForProcess(executablePath)
-    repeat 50 times
-        try
-            set processID to do shell script "/usr/bin/pgrep -n -f -x " & quoted form of executablePath
-            if processID is not "" then return processID as integer
-        end try
-        delay 0.1
-    end repeat
-    error "Timed out waiting for PaperShelf at " & executablePath
-end waitForProcess
 
 on waitForWindow(prefix, targetPID)
     tell application "System Events"
@@ -176,6 +168,26 @@ on auditToolbar(targetPID)
                     if identifier is "toolbar.commandPalette" then set paletteFound to true
                 end if
             end repeat
+            -- A narrow window moves toolbar items into the overflow menu, and a tiling window
+            -- manager can keep the window narrow whatever size the app asks for. The button is
+            -- still in the toolbar then, one click away, so it is looked for there too rather
+            -- than failing a run on a machine that tiles its windows.
+            if not paletteFound then
+                repeat with candidateControl in controls
+                    try
+                        if (description of candidateControl) is "more toolbar items" then
+                            click candidateControl
+                            delay 0.3
+                            if exists (menu item "Open command palette" of menu 1 of candidateControl) then
+                                set paletteFound to true
+                            end if
+                            key code 53
+                            delay 0.2
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+            end if
             if not paletteFound then error "Command palette button is missing from the toolbar"
         end tell
     end tell

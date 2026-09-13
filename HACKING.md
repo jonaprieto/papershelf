@@ -77,6 +77,13 @@ secrets, personal machine paths, or generated build output to the repository.
 
 ## Reader checks
 
-Do not run the UI smoke test against an active reading session. It deliberately changes
-appearance and reading mode. Use a separate instance with a scratch library and separate
-preferences, and use the PDFKit regression tests to verify zoom and scroll preservation.
+The UI smoke test deliberately changes appearance and reading mode, so it never drives the
+app it is given. It copies the app under its own bundle identifier, points the copy's library
+and support folder at a scratch directory through LSEnvironment, and deletes the copy, its
+folders and its preferences domain afterwards. Use the PDFKit regression tests to verify zoom
+and scroll preservation.
+
+Tests and scratch runs keep off the real library through three variables:
+`PAPERSHELF_LIBRARY_PATH`, `PAPERSHELF_SUPPORT_PATH` (the diagnostics log, run cache and saved
+web articles) and `PAPERSHELF_HIGHLIGHT_PROFILE_PATH`. A test process needs none of them: when
+XCTest is loaded, the support folder is a temporary directory of that process's own.
