@@ -31,3 +31,16 @@ final class StandInFolderTests: XCTestCase {
                                      isReader: true, showsLibrary: false))
     }
 }
+
+/// `AppDelegate.current` is how the menu, the palette and Open Website say a library window
+/// was asked for, and how ⌘K reaches the reader windows. It was a cast of `NSApp.delegate`,
+/// which under `@NSApplicationDelegateAdaptor` is SwiftUI's own forwarding object, so the
+/// cast was nil in the running app and every one of those did nothing.
+@MainActor
+final class AppDelegateCurrentTests: XCTestCase {
+    func testTheDelegateTheAdaptorMakesIsTheCurrentOne() {
+        let delegate = AppDelegate()
+        XCTAssertTrue(AppDelegate.current === delegate,
+                      "the running delegate cannot be reached, so ⌘K never lends a folder")
+    }
+}

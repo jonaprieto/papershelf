@@ -12,7 +12,20 @@ import PaperShelfCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The running delegate, so the menu can say that a library window was asked for.
-    static var current: AppDelegate? { NSApp.delegate as? AppDelegate }
+    ///
+    /// Remembered when the adaptor makes it, not looked up. This was
+    /// `NSApp.delegate as? AppDelegate`, and under `@NSApplicationDelegateAdaptor` the
+    /// application's delegate is SwiftUI's own object, which forwards to this one, so the
+    /// cast was nil in the running app every time. Nothing that reached for it worked:
+    /// asking for the Library window from its menu item, the command palette or Open
+    /// Website never set `wantsLibrary`, and the folder a paper opened from Finder should
+    /// have lent the window was never lent.
+    private(set) static weak var current: AppDelegate?
+
+    override init() {
+        super.init()
+        AppDelegate.current = self
+    }
 
     /// Whether anybody has asked to see the library this session. Until they have, a
     /// library window is something SwiftUI made on its own: a `Window` scene is rebuilt
