@@ -465,8 +465,22 @@ struct Shortcut: Codable, Equatable, Hashable, Sendable {
     }
 
     func matches(_ press: KeyPress) -> Bool {
+        matches(key: press.key, modifiers: press.modifiers)
+    }
+
+    /// Whether a key with these modifiers is this shortcut, counting only the modifiers
+    /// somebody holds on purpose.
+    ///
+    /// A key press also carries the state of the key: Caps Lock, and the numeric-pad and
+    /// function flags the system sets on a keypad digit and on every arrow key. Compared
+    /// whole, those made a plain shortcut fail for reasons nobody pressed: with Caps Lock
+    /// on, 1 to 5 stopped highlighting in the reader and said nothing. The path that reads
+    /// `NSEvent` already kept only these four (`Modifiers.init(_:)`), so the two now agree.
+    func matches(key: KeyEquivalent, modifiers: EventModifiers) -> Bool {
         guard let shortcut = keyboardShortcut else { return false }
-        return shortcut.key == press.key && shortcut.modifiers == press.modifiers
+        let chord: EventModifiers = [.command, .option, .control, .shift]
+        return shortcut.key == key
+            && shortcut.modifiers.intersection(chord) == modifiers.intersection(chord)
     }
 
     /// How the key reads on a cap: ⏎ rather than a carriage return nobody can see.
