@@ -4,6 +4,37 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.15.1] - 2026-09-12
+
+### Fixed
+
+- Borrow the folder of a paper opened from Finder when the command palette key is pressed.
+  The app could never reach its own delegate, so v1.15.0 opened the palette without lending
+  the folder, and asking for the Library window from its menu item, the palette or Open
+  Website did not keep that window open when another paper arrived from Finder.
+- Undo a mark with Undo whenever a reader is in front. The menu item stayed disabled after
+  a highlight, so the key reached the page and nothing was taken back.
+- Keep shortcuts working with Caps Lock on. The highlighter keys 1 to 5 silently stopped
+  working, and a shortcut on an arrow key could never match.
+- Stop asking the filesystem on the main thread about sources edited in Settings, opened
+  documents outside every source, and the tabs restored at launch. A network volume that
+  has stopped answering no longer holds the window, and editing the sources keeps a folder
+  that cannot be reached right now instead of dropping it.
+- Keep the test suite out of the real support folder. A full run rewrote the highlight
+  profile and appended to the diagnostics log beside the library. Saved web articles
+  also follow `PAPERSHELF_SUPPORT_PATH` now.
+- Run the UI smoke test against a sandboxed copy of the app with its own identity, library
+  and support folder, and find the command palette button in the toolbar's overflow menu
+  when a narrow or tiled window hides it there.
+- Sign release builds with the entitlement note dictation needs, so a notarized build keeps
+  its microphone access, and set up the release keychain the way codesign expects.
+
+### Performance
+
+- Rescan only the files and folders the watcher saw change, instead of every folder of
+  every source. A source that is also a working tree no longer costs a full walk for every
+  burst of changes.
+
 ## [1.15.0] - 2026-09-12
 
 ### Added
