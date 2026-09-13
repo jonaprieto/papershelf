@@ -758,8 +758,19 @@ public struct Job: Identifiable, Sendable {
     public let root: URL
     public let file: URL
     /// Matches `Item.key`, so an override survives the round trip through a preview.
-    public var key: String { file.resolvingSymlinksInPath().path }
+    ///
+    /// Worked out the way `Item.key` is and for the same reasons. It resolved the whole
+    /// path on every read, which is a filesystem call, and an answer that changes once the
+    /// file has moved: for a job whose file is gone it disagreed with the item made from
+    /// it, which is exactly the comparison a rescan makes to tell what vanished.
+    public let key: String
     public var id: String { key }
+
+    public init(root: URL, file: URL) {
+        self.root = root
+        self.file = file
+        self.key = Item.identity(of: file)
+    }
 
     /// A renamed PDF still belongs to the selected root, including its backup tree.
     public func replacingFile(with file: URL) -> Job {

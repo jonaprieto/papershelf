@@ -101,6 +101,8 @@ final class Runner {
     /// `results`, so nothing derived from the results would otherwise know the groups had
     /// arrived (see `DuplicatesFilter`).
     private(set) var duplicatesToken = 0
+    /// A burst that arrived while another was being absorbed (see `absorbChanges`).
+    private var deferredAbsorb: AbsorbRequest?
     /// `Item.key` to the kind of duplicate it is, for the badge on a row or card.
     private(set) var duplicateKind: [String: DuplicateGroup.Kind] = [:]
     private(set) var findingDuplicates = false
@@ -761,16 +763,65 @@ final class Runner {
     /// any decision made about them. Files that have gone are dropped. A full rescan would
     /// be correct too, but it would reopen every PDF and discard the review in progress,
     /// which is the opposite of what a watcher is for.
-    func absorbChanges(roots: [URL], options: Options, fingerprint: String) async {
-        guard !busy, !absorbing, lastRunWasDry, !results.isEmpty else { return }
+    ///
+    /// `changed` is where the watcher saw things change, or nil to walk every source. Given
+    /// places, only those are walked and the rest of the plan is kept (`mergeRescan`): a
+    /// source that is also a working tree used to cost a walk of every folder in it for
+    /// every burst the watcher settled.
+    ///
+    /// A burst that lands while the last one is still being absorbed is kept and absorbed
+    /// straight after, rather than dropped. Dropping it was harmless while every absorb
+    /// walked everything, because the next one would find what this one missed; a scoped
+    /// absorb only ever looks where it was told, so a dropped burst would stay unseen.
+    func absorbChanges(roots: [URL], options: Options, fingerprint: String,
+                       changed: [ChangedPlace]? = nil) async {
+        guard !busy, lastRunWasDry, !results.isEmpty else { return }
+        let request = AbsorbRequest(roots: roots, options: options, fingerprint: fingerprint,
+                                    changed: changed)
+        guard !absorbing else {
+            deferredAbsorb = deferredAbsorb.map { $0.joined(with: request) } ?? request
+            return
+        }
         absorbing = true
         defer { absorbing = false }
+        var next: AbsorbRequest? = request
+        while let current = next {
+            await absorb(current)
+            next = deferredAbsorb
+            deferredAbsorb = nil
+            guard !busy, lastRunWasDry, !results.isEmpty else { return }
+        }
+    }
 
+    private func absorb(_ request: AbsorbRequest) async {
+        let roots = request.roots
+        let options = request.options
+        let fingerprint = request.fingerprint
         let known = Dictionary(uniqueKeysWithValues: results.map { ($0.key, $0) })
         let backup = options.backup
         let recursive = options.recursive
+        // The plan's own jobs are what a scoped walk is merged into, so they have to describe
+        // exactly what is on the shelf. Straight after launch they do not: a cached shelf is
+        // on screen before the walk behind it has finished. Then everything is walked, as
+        // before, rather than every file outside the changed places vanishing.
+        let previous = Set(jobs.map(\.key)) == Set(known.keys) ? jobs : nil
+        let changed = previous == nil ? nil : request.changed
         let found = await Task.detached(priority: .utility) {
-            collectJobs(roots: roots, recursive: recursive, backup: backup)
+            guard let changed, let previous, changed.count <= scopedRescanLimit else {
+                return collectJobs(roots: roots, recursive: recursive, backup: backup)
+            }
+            let sources = roots.map { Item.identity(of: $0) + "/" }
+            let skip = backup.safeFolderName
+            // Only places still under a source: a burst can outlive the roots it was
+            // gathered for, and a walk rooted outside every source has no owner to give.
+            let relevant = changed.filter { place in
+                let key = Item.identity(of: place.url) + "/"
+                return sources.contains { key.hasPrefix($0) }
+                    && !place.url.pathComponents.contains(skip)
+            }
+            let scopes = relevant.map(\.url).filter { FileManager.default.fileExists(atPath: $0.path) }
+            let walked = collectJobs(roots: scopes, recursive: recursive, backup: backup)
+            return mergeRescan(previous: previous, found: walked, changed: relevant, roots: roots)
         }.value
 
         let fresh = found.filter { known[$0.key] == nil }
@@ -810,6 +861,26 @@ final class Runner {
         saveRunCache(RunCache(fingerprint: fingerprint, items: merged))
 
         await announceDuplicates(among: arrived.values.map { $0 }, all: merged, options: options)
+    }
+
+    /// One absorb's worth of work, kept so a burst that lands mid-absorb is not lost.
+    struct AbsorbRequest {
+        let roots: [URL]
+        let options: Options
+        let fingerprint: String
+        let changed: [ChangedPlace]?
+
+        /// Two bursts as one: the later roots and options, and the places of both, or
+        /// everything when either asked for everything or together they name too many.
+        func joined(with later: AbsorbRequest) -> AbsorbRequest {
+            var places: [ChangedPlace]?
+            if let mine = changed, let theirs = later.changed {
+                let both = Set(mine).union(theirs)
+                places = both.count > scopedRescanLimit ? nil : Array(both)
+            }
+            return AbsorbRequest(roots: later.roots, options: later.options,
+                                 fingerprint: later.fingerprint, changed: places)
+        }
     }
 
     /// A copy of something already on the shelf, said as it arrives.

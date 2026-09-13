@@ -1524,7 +1524,7 @@ struct ContentView: View {
             watcher = nil
             return
         }
-        let created = FolderWatcher { Task { @MainActor in await absorbChanges() } }
+        let created = FolderWatcher { places in Task { @MainActor in await absorbChanges(places) } }
         created.watch(roots)
         watcher = created
     }
@@ -1574,11 +1574,11 @@ struct ContentView: View {
         return remounted
     }
 
-    private func absorbChanges() async {
+    private func absorbChanges(_ places: [ChangedPlace]?) async {
         let roots = selection.filter(isReachable)
         guard prefs.watchSources, !roots.isEmpty else { return }
         await runner.absorbChanges(roots: roots, options: options(dryRun: true),
-                                   fingerprint: fingerprint)
+                                   fingerprint: fingerprint, changed: places)
     }
 
     private func persistSources() {

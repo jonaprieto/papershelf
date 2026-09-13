@@ -1,4 +1,5 @@
 import XCTest
+@testable import PaperShelfCore
 @testable import PaperShelf
 
 /// A source folder that is also a working directory never stops changing, and every burst
@@ -66,7 +67,7 @@ final class WatcherTests: XCTestCase {
         defer { try? fm.removeItem(at: root) }
 
         let wakings = Wakings()
-        let watcher = FolderWatcher(settle: 0.2) { wakings.record() }
+        let watcher = FolderWatcher(settle: 0.2) { wakings.record($0) }
         defer { watcher.stop() }
         watcher.watch([root])
         // Making the folders is itself a change, and FSEvents' own latency means the
@@ -80,10 +81,34 @@ final class WatcherTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(wakings.count, 0, "a build's worth of hidden writes triggered a rescan")
 
-        try Data("%PDF-1.4".utf8).write(to: root.appendingPathComponent("paper.pdf"))
+        let paper = root.appendingPathComponent("paper.pdf")
+        try Data("%PDF-1.4".utf8).write(to: paper)
         let deadline = Date().addingTimeInterval(10)
         while wakings.count == 0, Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
         XCTAssertGreaterThan(wakings.count, 0, "a paper arriving did not reach the scan")
+
+        // And it says where. A burst reported as "something changed" would send the runner
+        // walking every folder of the source again, which is what this exists to avoid.
+        let places = try XCTUnwrap(wakings.lastPlaces, "the burst came through as walk everything")
+        XCTAssertTrue(places.contains { Item.identity(of: $0.url) == Item.identity(of: paper) },
+                      "the paper that arrived is not among the places reported: \(places)")
+    }
+
+    /// Two bursts absorbed as one keep the places of both, and give up on scoping when
+    /// either asked for everything or together they name more than a scoped walk is worth.
+    @MainActor
+    func testBurstsThatLandMidAbsorbAreJoinedNotDropped() {
+        let options = Options(passwords: [], recursive: true, dryRun: true)
+        func request(_ places: [ChangedPlace]?) -> Runner.AbsorbRequest {
+            Runner.AbsorbRequest(roots: [], options: options, fingerprint: "", changed: places)
+        }
+        let a = ChangedPlace.file(URL(fileURLWithPath: "/library/a.pdf"))
+        let b = ChangedPlace.folder(URL(fileURLWithPath: "/library/b"))
+        XCTAssertEqual(Set(request([a]).joined(with: request([b])).changed ?? []), [a, b])
+        XCTAssertNil(request([a]).joined(with: request(nil)).changed)
+        XCTAssertNil(request(nil).joined(with: request([b])).changed)
+        let many = (0...scopedRescanLimit).map { ChangedPlace.file(URL(fileURLWithPath: "/l/\($0).pdf")) }
+        XCTAssertNil(request(Array(many.prefix(200))).joined(with: request(Array(many.suffix(100)))).changed)
     }
 }
 
@@ -98,10 +123,20 @@ private final class Wakings: @unchecked Sendable {
         return wakings
     }
 
-    func record() {
+    private var places: [ChangedPlace]??
+
+    /// What the last burst said changed: nil inside when it said "everything".
+    var lastPlaces: [ChangedPlace]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return places ?? nil
+    }
+
+    func record(_ changed: [ChangedPlace]?) {
         lock.lock()
         defer { lock.unlock() }
         wakings += 1
+        places = .some(changed)
     }
 
     func reset() {

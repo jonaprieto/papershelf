@@ -1,5 +1,6 @@
 import Foundation
 import CoreServices
+import PaperShelfCore
 
 /// Watches the selected folders and reports when something under them changes.
 ///
@@ -16,14 +17,21 @@ final class FolderWatcher {
     private var pending: DispatchWorkItem?
     private let queue = DispatchQueue(label: "papershelf.watcher")
     private let settle: TimeInterval
-    private let onChange: @Sendable () -> Void
+    /// Handed the places that changed during the burst, or nil when the burst said too much
+    /// or too little to scope a rescan by: the stream fell behind, a root itself moved, or
+    /// more places changed than a scoped walk is worth (`scopedRescanLimit`).
+    private let onChange: @Sendable ([ChangedPlace]?) -> Void
+    /// What the current burst has touched so far. Only ever read and written on `queue`,
+    /// which is where the stream delivers and where the settle timer fires.
+    private var gathered = Set<ChangedPlace>()
+    private var everything = false
     /// The roots as plain paths, so an event can be read against them without building a
     /// URL per event. Both spellings of each: FSEvents answers with the real path, so a
     /// source picked through a link (`/var/...`, which is `/private/var/...`) is reported
     /// under a name the selection never had.
     private var roots: [String] = []
 
-    init(settle: TimeInterval = 1.2, onChange: @escaping @Sendable () -> Void) {
+    init(settle: TimeInterval = 1.2, onChange: @escaping @Sendable ([ChangedPlace]?) -> Void) {
         self.settle = settle
         self.onChange = onChange
     }
@@ -89,22 +97,24 @@ final class FolderWatcher {
                 // CFTypes, so the paths arrive as an array of strings rather than as a C
                 // array this would have to walk by hand.
                 let changed = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
+                let lookAgain = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs
+                                                        | kFSEventStreamEventFlagRootChanged)
                 for index in 0..<count {
                     let flag = flags[index]
-                    // More happened than the stream could keep up with. It names a
-                    // directory and means look again, so there is nothing to judge.
-                    if flag & FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs) != 0 {
-                        watcher.changed()
-                        return
+                    // More happened than the stream could keep up with, or a source itself
+                    // moved. Neither names the places that changed, so everything is looked
+                    // at again.
+                    if flag & lookAgain != 0 {
+                        watcher.note(nil)
+                        continue
                     }
                     guard index < changed.count else { continue }
                     let isDirectory =
                         flag & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
-                    if FolderWatcher.mayChangeScan(changed[index], isDirectory: isDirectory,
-                                                   under: watcher.roots) {
-                        watcher.changed()
-                        return
-                    }
+                    guard FolderWatcher.mayChangeScan(changed[index], isDirectory: isDirectory,
+                                                      under: watcher.roots) else { continue }
+                    let url = URL(fileURLWithPath: changed[index])
+                    watcher.note(isDirectory ? .folder(url) : .file(url))
                 }
             },
             &context,
@@ -132,11 +142,29 @@ final class FolderWatcher {
         self.stream = nil
     }
 
-    /// Restarts the settle timer on every event, so the work runs once the burst is over
-    /// rather than once per file copied.
-    private func changed() {
+    /// Adds one place to the burst, or nil for "look at everything", and restarts the settle
+    /// timer, so the work runs once the burst is over rather than once per file copied.
+    ///
+    /// The places are kept rather than thrown away. Knowing only that something changed
+    /// meant walking every folder of every source to find out what, and a source that is
+    /// also a working tree changes constantly; knowing where lets the runner walk the
+    /// folder somebody saved into.
+    private func note(_ place: ChangedPlace?) {
+        if let place, !everything {
+            gathered.insert(place)
+            if gathered.count > scopedRescanLimit { everything = true }
+        } else {
+            everything = true
+        }
+        if everything { gathered.removeAll() }
         pending?.cancel()
-        let work = DispatchWorkItem { [onChange] in onChange() }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let places = self.everything ? nil : Array(self.gathered)
+            self.gathered.removeAll()
+            self.everything = false
+            self.onChange(places)
+        }
         pending = work
         queue.asyncAfter(deadline: .now() + settle, execute: work)
     }
