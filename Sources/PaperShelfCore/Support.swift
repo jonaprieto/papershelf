@@ -55,6 +55,26 @@ private final class FirstAnswer: @unchecked Sendable {
     }
 }
 
+/// Set only inside a test process: a folder of its own for everything that would otherwise
+/// land beside the real library.
+///
+/// A full `swift test` rewrote `highlight-profile.json` and appended to `diagnostics.log`
+/// in the folder somebody keeps their library in, because any test that touched a
+/// preference, the diagnostics log or the highlight profile before another had set an
+/// override reached the real one. An override each test has to remember is one some test
+/// forgets, and a `static let` like `Library.shared` or `AppDiagnostics.shared` keeps
+/// whatever the first test to touch it happened to have set up. So the process decides,
+/// once, by whether XCTest is loaded into it. The app and the MCP server never load it.
+///
+/// Per process, so two test runs at once do not share a library. `PAPERSHELF_SUPPORT_PATH`
+/// still wins, for a test that wants a folder it controls.
+private let testProcessSupportRoot: URL? = {
+    guard NSClassFromString("XCTestCase") != nil else { return nil }
+    return FileManager.default.temporaryDirectory
+        .appendingPathComponent("PaperShelfTests-\(ProcessInfo.processInfo.processIdentifier)",
+                                isDirectory: true)
+}()
+
 /// Where the app keeps what it must not lose: the library, the last run, anything else
 /// that outlives a launch.
 ///
@@ -77,6 +97,9 @@ public func supportDirectory(named name: String = "PaperShelf",
         let folder = URL(fileURLWithPath: overridden)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+    if let root = testProcessSupportRoot {
+        return supportDirectory(in: root, named: name, legacy: legacy)
     }
     guard let base = FileManager.default.urls(for: .applicationSupportDirectory,
                                               in: .userDomainMask).first else { return nil }

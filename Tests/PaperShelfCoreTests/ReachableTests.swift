@@ -57,6 +57,19 @@ final class SupportDirectoryTests: XCTestCase {
         XCTAssertTrue(isFolder.boolValue)
     }
 
+    /// The guarantee the whole suite leans on: nothing a test does reaches the folder that
+    /// holds the real library, whatever order the tests run in and whether or not a test
+    /// remembered to set an override.
+    func testATestProcessNeverResolvesTheRealFolder() throws {
+        let real = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory,
+                                                          in: .userDomainMask).first)
+        let resolved = try XCTUnwrap(supportDirectory()).standardizedFileURL.path
+        XCTAssertFalse(resolved.hasPrefix(real.standardizedFileURL.path),
+                       "a test resolved the real support folder: \(resolved)")
+        XCTAssertFalse(try XCTUnwrap(runCacheURL()).path.hasPrefix(real.path))
+        XCTAssertFalse(try XCTUnwrap(libraryDatabaseURL()).path.hasPrefix(real.path))
+    }
+
     func testAnEmptyOverrideIsNoOverride() {
         setenv("PAPERSHELF_SUPPORT_PATH", "", 1)
         defer { unsetenv("PAPERSHELF_SUPPORT_PATH") }
