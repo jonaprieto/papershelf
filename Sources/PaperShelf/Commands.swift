@@ -25,10 +25,13 @@ extension FocusedValues {
 /// focus answers. A reader opened straight from Finder has no plan at all, so there this
 /// is the only Undo there is.
 ///
-/// `canPerform` rather than a plain closure so the menu item can grey out: an Undo that
-/// is always enabled and sometimes does nothing is worse than one that says so.
+/// Enabled whenever a reader is in front, and asked at the moment it is chosen whether there
+/// is anything to take back. It carried a `canPerform` snapshot so the item could grey out,
+/// but the snapshot was taken when the reader's body last ran, and PDFKit holding the first
+/// responder meant that was not after the highlight: the item stayed disabled, ⌘Z fell
+/// through to the page, and nothing was undone. An Undo that is sometimes a no-op is a far
+/// smaller fault than one that never works.
 struct UndoMarkAction {
-    let canPerform: Bool
     let perform: () -> Void
 }
 

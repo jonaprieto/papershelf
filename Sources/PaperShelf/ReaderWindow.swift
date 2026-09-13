@@ -97,9 +97,7 @@ struct ReaderWindow: View {
         .preferredColorScheme(prefs.appearance.colorScheme)
         .focusedValue(\.findInPDF, FindInPDFAction(perform: openFind))
         .focusedValue(\.togglePane, TogglePaneAction { showsNotes.toggle() })
-        .focusedValue(\.undoMark, UndoMarkAction(canPerform: annotator.canUndoMarkChange) {
-            annotator.undoLastMarkChange()
-        })
+        .focusedValue(\.undoMark, UndoMarkAction { annotator.undoLastMarkChange() })
         .frame(minWidth: SplitLayout.readerFloorWidth,
                minHeight: SplitLayout.readerFloorHeight)
         .background { WindowReader { readerWindow.window = $0 }.frame(width: 0, height: 0) }

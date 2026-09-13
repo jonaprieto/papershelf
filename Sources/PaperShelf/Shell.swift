@@ -247,10 +247,10 @@ struct PaperShelfApp: App {
                 // a decision in the plan. A reader opened from Finder has no plan, so
                 // there the marks are the only Undo there is.
                 Button(undoMark == nil ? "Undo" : "Undo Mark") {
-                    if let undoMark, undoMark.canPerform { undoMark.perform() } else { chrome.undo() }
+                    if let undoMark { undoMark.perform() } else { chrome.undo() }
                 }
                 .commandShortcut(.undo)
-                .disabled(undoMark.map { !$0.canPerform } ?? !chrome.canUndo)
+                .disabled(undoMark == nil && !chrome.canUndo)
             }
             CommandGroup(after: .sidebar) {
                 Button("Command Palette", action: openCommandPalette)

@@ -244,9 +244,7 @@ struct ReviewInspector: View {
         // you, and with the page shut that is the plan, not the marks on a document you
         // cannot see.
         .focusedValue(\.undoMark, showsPage
-                      ? UndoMarkAction(canPerform: annotator.canUndoMarkChange) {
-                          annotator.undoLastMarkChange()
-                      }
+                      ? UndoMarkAction { annotator.undoLastMarkChange() }
                       : nil)
         .task(id: item.key + ":" + (documentID ?? "")) { await loadDocumentProjects() }
         .onChange(of: item.key) { _, _ in
