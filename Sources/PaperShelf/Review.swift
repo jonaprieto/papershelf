@@ -1307,6 +1307,14 @@ final class FitWidthPDFView: PDFView {
     }
 }
 
+/// When a file was last written, read off the main thread: a PDF can sit on a network
+/// volume, where asking costs a round trip and the main thread is the one drawing the page.
+func fileModificationDate(_ url: URL) async -> Date? {
+    await Task.detached(priority: .utility) {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }.value
+}
+
 /// Renders the PDF as it is right now, unlocking it for display with the same passwords
 /// the run would use. Read-only: the file on disk is untouched.
 struct PDFPreview: NSViewRepresentable {
@@ -1385,7 +1393,7 @@ struct PDFPreview: NSViewRepresentable {
         view.fit = fit
         if coordinator.wanted == url, let page, coordinator.shown != page {
             coordinator.shown = page
-            go(view, to: page)
+            Self.go(view, to: page)
         }
         let previousAnnotator = coordinator.annotator
         let changedAnnotator = coordinator.annotator !== annotator
@@ -1425,12 +1433,15 @@ struct PDFPreview: NSViewRepresentable {
                 return
             }
             view.document = document
+            coordinator.loadedDate = loaded.date
+            coordinator.passwords = passwords
+            coordinator.watchForRewrites(of: view)
             // After the document, not before it: PDFView drops the setting when a
             // document is assigned, which is why the page had a margin and no shadow.
             view.pageShadowsEnabled = true
             if let page {
                 coordinator.shown = page
-                go(view, to: page)
+                Self.go(view, to: page)
             } else {
                 view.showFromTop()
             }
@@ -1444,6 +1455,8 @@ struct PDFPreview: NSViewRepresentable {
 
     static func dismantleNSView(_ view: FitWidthPDFView, coordinator: Coordinator) {
         coordinator.generation &+= 1
+        coordinator.watch?.invalidate()
+        coordinator.watch = nil
         if coordinator.annotator?.view === view { coordinator.annotator?.detach() }
         NotificationCenter.default.removeObserver(coordinator)
     }
@@ -1463,7 +1476,7 @@ struct PDFPreview: NSViewRepresentable {
     }
 
     /// Turns to a page, one-based and clamped, at the top of it.
-    private func go(_ view: PDFView, to number: Int) {
+    private static func go(_ view: PDFView, to number: Int) {
         guard let document = view.document, document.pageCount > 0,
               let page = document.page(at: min(max(number, 1), document.pageCount) - 1)
         else { return }
@@ -1471,22 +1484,73 @@ struct PDFPreview: NSViewRepresentable {
                                    at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
     }
 
-    /// Carries a document back from the thread that parsed it. `PDFDocument` is not
-    /// `Sendable`, and nothing else touches this one until the hop is done.
+    /// Carries a document back from the thread that parsed it, along with what the file
+    /// said at the moment it was read. `PDFDocument` is not `Sendable`, and nothing else
+    /// touches this one until the hop is done.
     private struct Loaded: @unchecked Sendable {
         let document: PDFDocument?
+        let date: Date?
     }
 
     private static func load(url: URL, passwords: [String]) async -> Loaded {
         await Task.detached(priority: .userInitiated) {
+            // Read before parsing: a file rewritten between the two is then remembered as
+            // older than it is, which costs one re-read rather than leaving the reader on
+            // a version nobody has any more.
+            let date = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate
             let document = PDFDocument(url: url)
             if document?.isLocked == true {
                 for password in passwords where document?.unlock(withPassword: password) == true {
                     break
                 }
             }
-            return Loaded(document: document)
+            return Loaded(document: document, date: date)
         }.value
+    }
+
+    /// Re-reads the open file when something else has written it, staying on the page the
+    /// reader is on.
+    ///
+    /// A paper recompiled from its source, a scan re-exported, a download finished over
+    /// the top of itself: the path does not change, so nothing about the view's own state
+    /// says the pages it holds are last week's.
+    @MainActor
+    static func refreshIfChanged(_ view: FitWidthPDFView, coordinator: Coordinator) {
+        guard !coordinator.refreshing, view.document != nil, let url = coordinator.wanted
+        else { return }
+        // Marks still waiting to be written would be lost by re-reading, and the write
+        // that follows them is this app's own doing rather than news from elsewhere.
+        guard coordinator.annotator?.hasUnwrittenMarks != true else { return }
+        coordinator.refreshing = true
+        let generation = coordinator.generation
+        let passwords = coordinator.passwords
+        Task { @MainActor in
+            defer { coordinator.refreshing = false }
+            let date = await fileModificationDate(url)
+            guard coordinator.generation == generation, coordinator.wanted == url,
+                  let date, date != coordinator.loadedDate
+            else { return }
+            coordinator.loadedDate = date
+            // A save of this reader's own lands on the file as surely as another app's
+            // write does, and re-reading after it would throw away the scroll position
+            // for a document already on screen.
+            guard date != coordinator.annotator?.writtenDate else { return }
+            let resume = view.currentPage.map { view.document?.index(for: $0) ?? 0 }.map { $0 + 1 }
+            let loaded = await load(url: url, passwords: passwords)
+            guard coordinator.generation == generation, coordinator.wanted == url,
+                  let document = loaded.document
+            else { return }
+            coordinator.loadedDate = loaded.date ?? date
+            coordinator.annotator?.detach()
+            view.document = document
+            view.pageShadowsEnabled = true
+            coordinator.annotator?.attach(view, url: url)
+            if let resume {
+                coordinator.shown = resume
+                go(view, to: resume)
+            }
+        }
     }
 
     final class Coordinator: NSObject {
@@ -1498,7 +1562,38 @@ struct PDFPreview: NSViewRepresentable {
         /// The page it was last turned to, so asking for the same one twice does not
         /// scroll it back there while somebody is reading around it.
         @MainActor var shown: Int?
+        /// What the file said when it was read, so a rewrite of it can be told from the
+        /// same bytes being asked about again.
+        @MainActor var loadedDate: Date?
+        /// The passwords the file was opened with, so re-reading it does not need the
+        /// view struct that supplied them.
+        @MainActor var passwords: [String] = []
+        @MainActor var watch: Timer?
+        /// The page the timer asks about. Weak: the timer is invalidated with the view,
+        /// and a poll must never be what keeps a closed reader alive.
+        @MainActor weak var watched: FitWidthPDFView?
+        @MainActor var refreshing = false
         init(annotator: Annotator?) { self.annotator = annotator }
+
+        /// Polls the open file for a rewrite.
+        ///
+        /// FSEvents would be the tighter answer, but the reader opens files from anywhere,
+        /// including outside every watched folder, and one stat off the main thread every
+        /// second and a half is cheaper than a stream per open document.
+        @MainActor func watchForRewrites(of view: FitWidthPDFView) {
+            watched = view
+            guard watch == nil else { return }
+            // A target and a selector rather than a closure: the timer's closure is
+            // `@Sendable`, and neither the coordinator nor the page it watches is.
+            watch = Timer.scheduledTimer(timeInterval: 1.5, target: self,
+                                         selector: #selector(checkForRewrite),
+                                         userInfo: nil, repeats: true)
+        }
+
+        @MainActor @objc private func checkForRewrite() {
+            guard let watched else { return }
+            PDFPreview.refreshIfChanged(watched, coordinator: self)
+        }
 
         @objc func selectionChanged() {
             Task { @MainActor in annotator?.selectionChanged() }

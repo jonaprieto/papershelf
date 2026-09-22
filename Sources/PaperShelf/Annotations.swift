@@ -69,6 +69,9 @@ final class Annotator {
     /// The sibling Markdown companion's last write, so the Notes rail can say whether
     /// the file on disk still matches this PDF.
     private(set) var notesSidecarDate: Date?
+    /// The date this reader's own write left on the PDF, so a refresh can tell a rewrite
+    /// by another program from the file this app has just saved.
+    private(set) var writtenDate: Date?
     /// The page on screen, one-based, and how many there are. Published so the Info panel
     /// can say where you are, and written to the library so the shelf can say which books
     /// are open.
@@ -199,6 +202,10 @@ final class Annotator {
     private var writeTask: Task<Void, Never>?
     private var unsaved = false
 
+    /// Whether the page carries marks the file does not have yet. Re-reading the file
+    /// while that is true would throw them away.
+    var hasUnwrittenMarks: Bool { unsaved || saveTask != nil }
+
     /// The last position written to the library, and the write waiting out a scroll. A
     /// page turn is cheap; a database write per scroll tick is not.
     private var positionTask: Task<Void, Never>?
@@ -231,6 +238,7 @@ final class Annotator {
         bookmarks = []
         closeFind()
         notesSidecarDate = sidecarDate(for: url)
+        writtenDate = nil
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
         page = 1
@@ -938,10 +946,13 @@ final class Annotator {
         let previous = writeTask
         writeTask = Task { [weak self] in
             _ = await previous?.value
-            let failure = await Annotator.persist(data, to: url, sidecar: sidecar)
+            let write = await Annotator.persist(data, to: url, sidecar: sidecar)
             guard let self else { return }
-            self.lastError = failure
-            if failure == nil { self.notesSidecarDate = self.sidecarDate(for: url) }
+            self.lastError = write.failure
+            if write.failure == nil {
+                self.notesSidecarDate = self.sidecarDate(for: url)
+                self.writtenDate = write.written
+            }
         }
     }
 
@@ -1006,9 +1017,14 @@ final class Annotator {
 
     /// Writing through a temporary file means an interrupted save cannot leave a
     /// half-written document where the original was.
-    private nonisolated static func persist(_ data: Data, to url: URL,
-                                            sidecar: String?) async -> String? {
-        await Task.detached(priority: .utility) { () -> String? in
+    ///
+    /// The date the finished file carries comes back with the result, read where the write
+    /// happened: a refresh compares it against the file to tell this reader's own save from
+    /// another program rewriting the paper underneath it.
+    private nonisolated static func persist(
+        _ data: Data, to url: URL, sidecar: String?
+    ) async -> (failure: String?, written: Date?) {
+        await Task.detached(priority: .utility) { () -> (String?, Date?) in
             let temporary = url.deletingLastPathComponent()
                 .appendingPathComponent(".papershelf-notes-\(UUID().uuidString).pdf")
             var temporarySidecar: URL?
@@ -1031,11 +1047,12 @@ final class Annotator {
                     try replaceOrMove(sidecarFile, at: destination)
                     temporarySidecar = nil
                 }
-                return nil
+                return (nil, try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate)
             } catch {
                 try? FileManager.default.removeItem(at: temporary)
                 if let temporarySidecar { try? FileManager.default.removeItem(at: temporarySidecar) }
-                return error.localizedDescription
+                return (error.localizedDescription, nil)
             }
         }.value
     }
