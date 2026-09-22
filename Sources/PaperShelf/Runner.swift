@@ -146,6 +146,11 @@ final class Runner {
     /// Node ids of the folders a file sits under, so the tree can open itself to it.
     func ancestors(of key: String) -> [String] { ancestorsByKey[key] ?? [] }
 
+    /// Every folder in the tree that has a paper somewhere under it, which is every folder
+    /// the list can open. Read off the ancestor index rather than walking the tree again:
+    /// a folder is in it exactly when some file named it as a parent.
+    var folderIDs: Set<String> { Set(ancestorsByKey.values.joined()) }
+
     /// Recomputes every suggested name under new rules, from dates already captured.
     /// Decisions are left alone: a confirmed name is the one the user chose, and it is
     /// still what Apply will use. Reopening a file picks up the new suggestion.

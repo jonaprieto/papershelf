@@ -959,9 +959,11 @@ struct ResultsPane: View {
             .focused($paneFocused)
             .animation(.easeOut(duration: 0.18), value: runner.results.count)
             .onChange(of: runner.results.count) { _, _ in
-            // Open the first level only, so a run lands looking like `ls` rather than
-            // one closed folder or the whole tree at once.
-            expanded.formUnion(runner.tree.filter { $0.children != nil }.map(\.id))
+            // Every folder, not the first level only. A shelf is a list of papers, and a
+            // run that lands with folders to click through is a list of folders: the
+            // papers are the thing being looked for, and they are what should be on
+            // screen. Folding a folder by hand still holds, since nothing here closes one.
+            expanded.formUnion(runner.folderIDs)
             ensureSelection()
         }
             .onChange(of: selected) { previous, new in
