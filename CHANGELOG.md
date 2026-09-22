@@ -4,6 +4,33 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.16.0] - 2026-09-22
+
+### Added
+
+- Open every folder that holds a paper when a run lands, instead of the first level only.
+  The papers are what the shelf is for, and they were two or three clicks away from being
+  seen at all.
+
+### Fixed
+
+- Show the current version of a PDF that another program has rewritten. A paper recompiled
+  from its source or re-exported over itself went on showing the pages the reader first
+  read, because the path never changed and the path was the only thing the view watched.
+  A save this reader made itself is not mistaken for that, and marks still waiting to be
+  written are never re-read away.
+
+### Performance
+
+- Come back from a hidden sidebar without freezing the window. Hiding or showing it
+  unmounts the contents and builds them again, and a `List` rebuilt that way cost about
+  four tenths of a second of frozen main thread on every click of the button. The sections
+  are drawn in a lazy stack instead.
+- Build only the rows of an open source that are on screen. Its rows sat inside a
+  `DisclosureGroup`, which builds every one of them whether or not anybody can see them:
+  on a shelf of three hundred papers in one folder that was 2.8 seconds of frozen main
+  thread across sixteen toggles of the sidebar, and is now none.
+
 ## [1.15.1] - 2026-09-12
 
 ### Fixed
