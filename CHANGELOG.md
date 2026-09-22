@@ -4,6 +4,16 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.16.1] - 2026-09-22
+
+### Performance
+
+- Count the shelves in one walk of the collection rather than four a pass, and remember
+  what each path resolves to. The sidebar's four rows each asked how many papers were on
+  their list, and each question asked the filesystem to resolve every file's path: one
+  pass of that column over two thousand papers measured 64 milliseconds, and a pass runs
+  whenever anything in it changes.
+
 ## [1.16.0] - 2026-09-22
 
 ### Added
