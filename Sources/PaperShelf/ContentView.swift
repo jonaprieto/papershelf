@@ -89,6 +89,14 @@ struct ContentView: View {
     /// project holds, so the workspace reads its members again.
     @State private var projectContentsRevision = 0
     @State private var explorerTree: [ExplorerNode] = []
+    /// The Sources section as one flat list of rows: each source, and under an open one
+    /// the folders and papers it holds.
+    ///
+    /// Flat because the stack that draws it is lazy, and a lazy stack only builds what is
+    /// on screen when the rows are its own children. Nested inside a `DisclosureGroup` they
+    /// were one element of it, so opening a source built every row under it whether or not
+    /// anybody could see them.
+    @State private var sourceRows: [SidebarSourceRow] = []
     /// `explorerTree` narrowed by the filter, held rather than computed in `body`.
     ///
     /// The narrowing walks and rebuilds the whole tree, and it ran on every pass of the
@@ -1285,8 +1293,13 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .padding(.vertical, Space.hair)
                 }
-                ForEach(selection, id: \.self) { url in
-                    sourceRow(url)
+                ForEach(sourceRows) { row in
+                    switch row {
+                    case let .source(url, count, unfoldable):
+                        sourceLabel(url, count: count, unfoldable: unfoldable)
+                    case let .node(entry):
+                        explorerRow(entry)
+                    }
                 }
                 Button { importing = true } label: {
                     Label("Add source", systemImage: "plus.circle")
@@ -1304,6 +1317,10 @@ struct ContentView: View {
                 explorerExpanded.formUnion(explorerTree.map(\.id))
             }
             .onChange(of: sourceFilter) { _, _ in narrowExplorerTree() }
+            // The rows are a flattening of these three, so they are flattened again when
+            // one of them moves rather than on every pass of the sidebar's body.
+            .onChange(of: explorerExpanded) { _, _ in rebuildSourceRows() }
+            .onChange(of: selection) { _, _ in rebuildSourceRows() }
     }
 
     /// Applies the sidebar's filter to each source's folders.
@@ -1317,43 +1334,44 @@ struct ContentView: View {
             copy.children = filterExplorerTree(root.children ?? [], matching: sourceFilter)
             return copy
         }
+        rebuildSourceRows()
     }
 
-    /// One source: its name, how many files it holds, and its folders underneath.
-    @ViewBuilder
-    private func sourceRow(_ url: URL) -> some View {
-        let root = shownExplorerTree.first { $0.url == url }
-        let children = root?.children ?? []
-        if let root, !children.isEmpty {
-            DisclosureGroup(isExpanded: sourceExpansion(root.id)) {
-                ExplorerOutline(nodes: children, expanded: $explorerExpanded,
-                                selected: reviewing,
-                                select: { key in
-                                    reviewing = key
-                                    sidebarTarget = .document(key)
-                                    // The shelf has to be told, or a filter that hides
-                                    // this file leaves the middle of the window saying
-                                    // nothing matches while the panel describes it.
-                                    NotificationCenter.default.post(
-                                        name: .showDocumentInCatalogue, object: nil,
-                                        userInfo: ["key": key])
-                                },
-                                focusPath: { sidebarTarget = .folder($0) },
-                                openFolder: showFolder,
-                                keepOpen: keepDocumentOpen,
-                                focusedPath: focusedSidebarPath,
-                                treeToken: "\(runner.resultsToken)#\(sourceFilter)#\(url.path)")
-            } label: {
-                sourceLabel(url, count: countOfFiles(in: root))
-            }
-        } else {
-            sourceLabel(url, count: 0)
-        }
+    /// Flattens the sources and whatever is open under them into the rows the sidebar
+    /// draws. Walking the tree is what this costs, so it runs when the tree, the filter,
+    /// the sources or the open folders move, and at no other time.
+    private func rebuildSourceRows() {
+        sourceRows = sidebarSourceRows(sources: selection, tree: shownExplorerTree,
+                                       expanded: explorerExpanded)
     }
 
-    private func sourceLabel(_ url: URL, count: Int) -> some View {
+    /// One row of the source tree, wired to the sidebar around it.
+    private func explorerRow(_ entry: FlatExplorerRow) -> some View {
+        ExplorerRow(
+            node: entry.node, depth: entry.depth, expanded: $explorerExpanded,
+            selected: reviewing,
+            select: { key in
+                reviewing = key
+                sidebarTarget = .document(key)
+                // The shelf has to be told, or a filter that hides this file leaves the
+                // middle of the window saying nothing matches while the panel describes it.
+                NotificationCenter.default.post(
+                    name: .showDocumentInCatalogue, object: nil, userInfo: ["key": key])
+            },
+            focusPath: { sidebarTarget = .folder($0) },
+            openFolder: showFolder,
+            keepOpen: keepDocumentOpen,
+            focusedPath: focusedSidebarPath,
+            expandAll: { explorerExpanded = explorerFolderIDs(shownExplorerTree) },
+            collapseAll: { explorerExpanded = [] }
+        )
+    }
+
+    /// One source: its name, how many files it holds, and the triangle that unfolds it.
+    private func sourceLabel(_ url: URL, count: Int, unfoldable: Bool) -> some View {
         let reachable = isReachable(url)
         let borrowed = temporarySource == url
+        let root = shownExplorerTree.first { $0.url == url }
         return SidebarSourceLabel(
             url: url,
             count: count,
@@ -1361,6 +1379,9 @@ struct ContentView: View {
             temporary: borrowed,
             focused: sidebarTarget == .source(url.path),
             hovered: hoveredSource == url,
+            unfoldable: unfoldable,
+            open: root.map { explorerExpanded.contains($0.id) } ?? false,
+            unfold: { if let root { toggleSourceExpansion(root.id) } },
             focus: { showFolder(url.path) },
             setHovered: { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) },
             // Leaving a borrowed folder is not removing a source. `removeSource` forgets
@@ -1371,17 +1392,8 @@ struct ContentView: View {
         )
     }
 
-    private func sourceExpansion(_ id: String) -> Binding<Bool> {
-        Binding(
-            get: { explorerExpanded.contains(id) },
-            set: { open in
-                if open { explorerExpanded.insert(id) } else { explorerExpanded.remove(id) }
-            }
-        )
-    }
-
-    private func countOfFiles(in node: ExplorerNode) -> Int {
-        node.documentCount
+    private func toggleSourceExpansion(_ id: String) {
+        if explorerExpanded.contains(id) { explorerExpanded.remove(id) } else { explorerExpanded.insert(id) }
     }
 
     private func refreshSessionSpend() async {
@@ -1803,6 +1815,12 @@ private struct SidebarSourceLabel: View {
     let temporary: Bool
     let focused: Bool
     let hovered: Bool
+    /// Whether there is anything under this source to unfold, and whether it is unfolded.
+    /// The triangle was a `DisclosureGroup`'s until the rows were flattened, and a source
+    /// with nothing in it gets the same blank column so the names still line up.
+    var unfoldable: Bool = false
+    var open: Bool = false
+    var unfold: () -> Void = {}
     let focus: () -> Void
     let setHovered: (Bool) -> Void
     let remove: () -> Void
@@ -1833,6 +1851,19 @@ private struct SidebarSourceLabel: View {
 
     var body: some View {
         HStack(spacing: Space.snug) {
+            if unfoldable {
+                Button(action: unfold) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(Face.micro)
+                        .frame(width: 12)
+                        .contentShape(Rectangle().inset(by: -5))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(open ? "Fold this source" : "Unfold this source")
+            } else {
+                Color.clear.frame(width: 12, height: 1)
+            }
             // Only when something is wrong. A folder glyph on every source is a column of
             // identical icons beside a disclosure triangle that already says "folder";
             // the warning is the one state worth a symbol.
@@ -2027,6 +2058,38 @@ func buildExplorerTree(_ items: [Item]) -> [ExplorerNode] {
     return top.order.map { top.children[$0]!.node() }
 }
 
+/// One row of the Sources section: a source, or something inside an open one.
+enum SidebarSourceRow: Identifiable {
+    case source(URL, count: Int, unfoldable: Bool)
+    case node(FlatExplorerRow)
+
+    var id: String {
+        switch self {
+        case let .source(url, _, _): return "source:" + url.path
+        case let .node(row): return row.id
+        }
+    }
+}
+
+/// The Sources section as one flat list: every source in the order they were added, and
+/// under an open one every folder and paper it holds.
+///
+/// A source with nothing under it is still a row; it simply has no triangle and nothing
+/// follows it. A folded source is one row whatever is beneath it.
+func sidebarSourceRows(sources: [URL], tree: [ExplorerNode],
+                       expanded: Set<String>) -> [SidebarSourceRow] {
+    var rows: [SidebarSourceRow] = []
+    for url in sources {
+        let root = tree.first { $0.url == url }
+        let children = root?.children ?? []
+        rows.append(.source(url, count: root?.documentCount ?? 0, unfoldable: !children.isEmpty))
+        guard let root, !children.isEmpty, expanded.contains(root.id) else { continue }
+        rows.append(contentsOf: flattenExplorer(children, expanded: expanded)
+            .map(SidebarSourceRow.node))
+    }
+    return rows
+}
+
 /// One row of the explorer as the sidebar draws it: the node and how deep it sits.
 struct FlatExplorerRow: Identifiable {
     let node: ExplorerNode
@@ -2052,39 +2115,19 @@ func flattenExplorer(_ nodes: [ExplorerNode], expanded: Set<String>,
     return rows
 }
 
-/// The Explorer's rows, held rather than rebuilt on every pass of the sidebar's body.
-///
-/// The same arrangement as `TreeRows` and for the same reason: a body pass is what
-/// toggling any panel causes, and flattening eleven hundred papers' worth of folders
-/// measures about two milliseconds, which is a dropped frame.
-///
-/// Keyed on `expanded` as well as the token. Folding a folder changes the rows and nothing
-/// else -- no file arrived, no query moved -- so a cache keyed on the token alone would go
-/// on drawing the folder open.
-final class ExplorerRows {
-    private var token: String?
-    private var expanded: Set<String>?
-    private var cached: [FlatExplorerRow] = []
-
-    func rows(for newToken: String, expanded folders: Set<String>,
-              compute: () -> [FlatExplorerRow]) -> [FlatExplorerRow] {
-        if token == newToken, expanded == folders { return cached }
-        let value = compute()
-        token = newToken
-        expanded = folders
-        cached = value
-        return value
-    }
-}
-
-/// The Explorer's tree, folded and unfolded from the outside.
+/// One row of the Explorer's tree, folded and unfolded from the outside.
 ///
 /// `OutlineGroup` keeps its own expansion state where nothing can reach it, which is fine
 /// until a header offers "unfold everything". A shared set of open folder paths puts that
-/// state somewhere both can act on, and the rows are flat so only what is on screen is
-/// built.
-struct ExplorerOutline: View {
-    let nodes: [ExplorerNode]
+/// state somewhere both can act on.
+///
+/// A row rather than the whole tree because the sidebar's stack is lazy and a view is one
+/// element of it however many rows its body draws: a tree returned from here built every
+/// row of every open folder on each show, which is most of what made the sidebar slow to
+/// come back. The sidebar flattens the tree itself and draws these.
+struct ExplorerRow: View {
+    let node: ExplorerNode
+    let depth: Int
     @Binding var expanded: Set<String>
     let selected: String?
     let select: (String) -> Void
@@ -2099,19 +2142,13 @@ struct ExplorerOutline: View {
     /// it still builds.
     var keepOpen: (String) -> Void = { _ in }
     var focusedPath: String? = nil
-    /// What `nodes` is, cheaply: the results these were built from and the query that
-    /// narrowed them. Flattening walks the whole tree, so it is done when one of those
-    /// moves rather than on every body pass.
-    var treeToken: String = ""
-    @State private var rowCache = ExplorerRows()
+    /// Folding a whole tree belongs to the tree rather than to one row of it, so the two
+    /// menu items ask the sidebar to do it.
+    var expandAll: () -> Void = {}
+    var collapseAll: () -> Void = {}
 
     var body: some View {
-        let rows = rowCache.rows(for: treeToken, expanded: expanded) {
-            flattenExplorer(nodes, expanded: expanded)
-        }
-        return ForEach(rows) { row in
-            self.row(row.node, depth: row.depth)
-        }
+        row(node, depth: depth)
     }
 
     private func toggle(_ id: String) {
@@ -2184,8 +2221,8 @@ struct ExplorerOutline: View {
                 Button(expanded.contains(node.id) ? "Collapse" : "Expand") { toggle(node.id) }
                 // Where the pair of square chevrons in the Sources header used to be.
                 // Folding a whole tree belongs to the tree, not to a heading over it.
-                Button("Expand All") { expanded = explorerFolderIDs(nodes) }
-                Button("Collapse All") { expanded = [] }
+                Button("Expand All", action: expandAll)
+                Button("Collapse All", action: collapseAll)
                 // The catalogue is the only thing that can honour the first of these, and
                 // it owns its own state, so the intent is posted rather than reached for.
                 Button("Show only this folder") { openFolder(node.url.path) }
