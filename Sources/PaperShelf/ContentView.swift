@@ -627,22 +627,44 @@ struct ContentView: View {
         // for the one column that answers "where am I": there the rows want to be small,
         // dense and close together.
         VStack(spacing: 0) {
-            List {
-                shelvesPanel
-                // Sources above projects: where the files came from is the question asked
-                // of a sidebar far more often than which piece of work they are for, and
-                // the four section headers are what separate them. There were rules
-                // between them; whitespace and a small caps heading do that job without
-                // drawing three more lines down a column that is already a list of lists.
-                sourcesPanel
-                projectsPanel
-                tagsPanel
+            // A scroll view of a lazy stack rather than a `List`. The sidebar is unmounted
+            // when the column collapses and built again when it comes back, and a `List`
+            // rebuilt that way costs a third of a second of frozen main thread on each
+            // show and each hide: thirty plain rows in one measured 2.3 seconds of hangs
+            // over sixteen toggles, where the same rows in this stack measured none. The
+            // rows here draw their own selection and their own spacing already, so what a
+            // sidebar `List` was supplying was the price and not the look.
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Space.roomy) {
+                    shelvesPanel
+                    // Sources above projects: where the files came from is the question
+                    // asked of a sidebar far more often than which piece of work they are
+                    // for, and the four section headers are what separate them. There were
+                    // rules between them; whitespace and a small caps heading do that job
+                    // without drawing three more lines down a column that is already a
+                    // list of lists.
+                    sourcesPanel
+                    projectsPanel
+                    tagsPanel
+                }
+                .padding(.horizontal, Space.snug)
+                .padding(.vertical, Space.step)
             }
-            .listStyle(.sidebar)
-            .listRowSeparator(.hidden)
             sidebarFooter
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// A heading over a group of sidebar rows, in the size a source list gives one.
+    ///
+    /// Written here because the stack under it is not a `List` any more and nothing else
+    /// styles a section header.
+    private func sidebarHeading(_ text: String) -> some View {
+        Text(text)
+            .font(Face.section)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Space.snug)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One row of the sidebar: something you can go to, and how much is there.
@@ -861,7 +883,7 @@ struct ContentView: View {
     /// at all: "carries no tag" is the absence of a term, and "opened but not finished"
     /// is a fact about the reader rather than about the file.
     private var shelvesPanel: some View {
-        Section("Library") {
+        Section {
             ForEach(SmartList.allCases) { list in
                 Button {
                     chrome.setReading(false)
@@ -884,6 +906,8 @@ struct ContentView: View {
                 .accessibilityAddTraits(shelves.current == list ? .isSelected : [])
                 .tip(list.explanation)
             }
+        } header: {
+            sidebarHeading("Library")
         }
         .task(id: runner.revision) {
             await shelves.refresh()
@@ -897,7 +921,7 @@ struct ContentView: View {
     /// opened from a link buried in the library tab, which is a filing cabinet in a
     /// drawer.
     private var projectsPanel: some View {
-        Section("Projects") {
+        Section {
             if Library.shared == nil {
                 Text("The library is unavailable").foregroundStyle(.secondary)
             } else if projects.isEmpty {
@@ -972,6 +996,8 @@ struct ContentView: View {
                 }
                 .buttonStyle(.link)
             }
+        } header: {
+            sidebarHeading("Projects")
         }
         .task(id: runner.revision) { await reloadProjects() }
         .confirmationDialog("Delete Project", isPresented: $deletingProject,
@@ -1149,7 +1175,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("library.tagCloud")
             }
         } header: {
-            Text("Tags")
+            sidebarHeading("Tags")
         }
         .task { await reloadTagCounts() }
         .onReceive(NotificationCenter.default.publisher(for: .libraryTagsChanged)) { _ in
@@ -1267,7 +1293,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.link)
             } header: {
-                Text("Sources")
+                sidebarHeading("Sources")
             }
             .task(id: runner.resultsToken) {
                 explorerTree = buildExplorerTree(runner.results)
