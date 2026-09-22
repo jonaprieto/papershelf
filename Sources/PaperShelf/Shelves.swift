@@ -65,6 +65,19 @@ final class Shelves {
     /// Bumped whenever the sets change, so a cached filter knows to recompute.
     private(set) var revision = 0
 
+    /// What each path resolves to, remembered rather than asked again.
+    ///
+    /// `matches` is asked about every file on the shelf, three times over, on every pass of
+    /// the sidebar's body, and resolving a link is a trip to the filesystem: two thousand
+    /// papers measured 64 milliseconds a pass, which is a dropped frame every time anything
+    /// in that column changes. Not observed, or filling it during a body pass would
+    /// invalidate the view that is being drawn.
+    @ObservationIgnored private var resolvedPaths: [String: String] = [:]
+    /// The four counts as they were for one collection and one set of lists. Not observed
+    /// for the same reason: it is filled while the sidebar's body is being drawn.
+    @ObservationIgnored
+    private var counted: (revision: Int, token: Int, counts: [SmartList: Int])?
+
     /// How far back "recently added" reaches. Two weeks: long enough that a weekend's
     /// downloads are still there on Monday, short enough that the list is not the shelf.
     static let recentDays = 14
@@ -83,6 +96,7 @@ final class Shelves {
         recent = b ?? []
         unfiled = c ?? []
         openedElsewhere = await Shelves.outsideSources((d ?? []).map(\.path), sources: sources)
+        resolvedPaths.removeAll(keepingCapacity: true)
         revision &+= 1
     }
 
@@ -142,15 +156,44 @@ final class Shelves {
         }
     }
 
-    func count(_ list: SmartList, among items: [Item]) -> Int {
-        guard list != .all else { return items.count }
-        // Counted from the library rather than from what is on screen: these documents are
-        // not among the shelf's items unless this list is the one showing.
-        guard list != .opened else { return openedElsewhere.count }
-        return items.reduce(0) { $0 + (contains($1, in: list) ? 1 : 0) }
+    /// How many of `items` are on a list, counted once per collection rather than once per
+    /// row of the sidebar.
+    ///
+    /// `token` is what the collection is, cheaply: the four counts are one walk of it, and
+    /// the sidebar asks for all four on every pass of its body. Counting them on each pass
+    /// measured seven milliseconds over two thousand papers and would be five times that on
+    /// a shelf of ten thousand.
+    func count(_ list: SmartList, among items: [Item], token: Int) -> Int {
+        if let counted, counted.revision == revision, counted.token == token {
+            return counted.counts[list] ?? 0
+        }
+        var counts: [SmartList: Int] = [:]
+        for list in SmartList.allCases {
+            switch list {
+            case .all: counts[.all] = items.count
+            // Counted from the library rather than from what is on screen: these documents
+            // are not among the shelf's items unless this list is the one showing.
+            case .opened: counts[.opened] = openedElsewhere.count
+            default: counts[list] = items.reduce(0) { $0 + (contains($1, in: list) ? 1 : 0) }
+            }
+        }
+        counted = (revision, token, counts)
+        return counts[list] ?? 0
     }
 
     private func matches(_ item: Item, _ paths: Set<String>) -> Bool {
-        paths.contains(item.key) || paths.contains(item.currentURL.resolvingSymlinksInPath().path)
+        paths.contains(item.key) || paths.contains(resolved(item.currentURL))
+    }
+
+    /// The path the filesystem calls this one, from memory when it has been asked before.
+    ///
+    /// A file that moves is a different `currentURL` and so a different question, and the
+    /// answers are dropped whenever the lists are read again, which is what would follow
+    /// a link changing underneath the shelf.
+    private func resolved(_ url: URL) -> String {
+        if let known = resolvedPaths[url.path] { return known }
+        let path = url.resolvingSymlinksInPath().path
+        resolvedPaths[url.path] = path
+        return path
     }
 }

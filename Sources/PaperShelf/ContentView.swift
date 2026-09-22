@@ -907,7 +907,8 @@ struct ContentView: View {
                     sidebarRow(shelves.current == list) {
                         Label(list.title, systemImage: list.icon)
                     } trailing: {
-                        Text(shelves.count(list, among: runner.results).formatted())
+                        Text(shelves.count(list, among: runner.results,
+                                           token: runner.resultsToken).formatted())
                     }
                 }
                 .buttonStyle(.plain)

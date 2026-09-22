@@ -31,7 +31,7 @@ final class ShelvesTests: XCTestCase {
         let shelves = Shelves.shared
         let item = renamedItem(from: "a.pdf", to: "a.pdf")
         XCTAssertTrue(shelves.contains(item, in: .all))
-        XCTAssertEqual(shelves.count(.all, among: [item, item]), 2)
+        XCTAssertEqual(shelves.count(.all, among: [item, item], token: 1), 2)
     }
 
     func testARenamedFileIsStillTheFileThatWasBeingRead() async throws {
