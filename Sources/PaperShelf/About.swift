@@ -50,7 +50,7 @@ struct AboutWindow: View {
                     case .about: summary
                     case .licence: text(AboutWindow.licence, mono: true, muted: false)
                     case .thirdParty: thirdPartyBody
-                    case .changelog: text(AboutWindow.changelog, mono: true, muted: false)
+                    case .changelog: ChangelogBody(markdown: AboutWindow.changelog)
                     }
                 }
                 .padding(Space.gutter)
@@ -219,5 +219,118 @@ struct AboutWindow: View {
             return "The changelog is not available in this build."
         }
         return text
+    }
+}
+
+/// One block of the changelog as the About window draws it.
+///
+/// The file is Keep a Changelog and nothing more: headings, bullets, and the paragraph at
+/// the top. Writing the four cases out is smaller than a Markdown library and says exactly
+/// what this window will and will not render.
+enum ChangelogBlock: Equatable {
+    case heading(level: Int, text: String)
+    case bullet(String)
+    case paragraph(String)
+}
+
+/// The changelog as blocks, with each block's own wrapping undone.
+///
+/// A Markdown file is wrapped where its author wrapped it, at whatever column suited the
+/// editor. Drawn line for line in a window of another width, a sentence breaks twice: once
+/// where the file breaks it and again where the window does. Lines are joined back into the
+/// block they belong to and wrapped once, by the window.
+func changelogBlocks(_ markdown: String) -> [ChangelogBlock] {
+    var blocks: [ChangelogBlock] = []
+    var bulleted = false
+    var buffer = ""
+
+    func flush() {
+        let text = buffer.trimmingCharacters(in: .whitespaces)
+        buffer = ""
+        guard !text.isEmpty else { return }
+        blocks.append(bulleted ? .bullet(text) : .paragraph(text))
+        bulleted = false
+    }
+
+    for line in markdown.components(separatedBy: .newlines) {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            flush()
+        } else if trimmed.hasPrefix("#") {
+            flush()
+            let hashes = trimmed.prefix { $0 == "#" }.count
+            let title = trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+            if !title.isEmpty { blocks.append(.heading(level: hashes, text: title)) }
+        } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+            flush()
+            bulleted = true
+            buffer = String(trimmed.dropFirst(2))
+        } else {
+            buffer += buffer.isEmpty ? trimmed : " " + trimmed
+        }
+    }
+    flush()
+    return blocks
+}
+
+/// The changelog, drawn rather than printed.
+///
+/// It was shown as the file's own characters in a monospaced face, so a reader looking for
+/// what changed in a version read `##`, `###` and `-` first. The same words, as headings
+/// and bullets.
+private struct ChangelogBody: View {
+    let markdown: String
+
+    var body: some View {
+        let blocks = changelogBlocks(markdown)
+        return VStack(alignment: .leading, spacing: Space.snug) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                row(block, first: index == 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func row(_ block: ChangelogBlock, first: Bool) -> some View {
+        switch block {
+        case let .heading(level, text):
+            Text(inline(text))
+                .font(font(forHeading: level))
+                .foregroundStyle(level >= 3 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                // A version heading needs air above it and none below: the entry under it
+                // belongs to it, and the gap that says so is the one before the next one.
+                .padding(.top, first ? 0 : Space.roomy)
+        case let .bullet(text):
+            HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
+                Text("•").foregroundStyle(.secondary)
+                Text(inline(text))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case let .paragraph(text):
+            Text(inline(text))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func font(forHeading level: Int) -> Font {
+        switch level {
+        case 1: return Face.title3
+        case 2: return Face.headline
+        default: return Face.section
+        }
+    }
+
+    /// Links, code spans and emphasis, which are the only inline markup the file uses.
+    /// Whitespace is preserved rather than collapsed: the joining above already decided
+    /// where the spaces are.
+    private func inline(_ text: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
     }
 }
