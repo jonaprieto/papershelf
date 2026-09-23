@@ -35,7 +35,7 @@ enum Prefs {
     static var backup: BackupSettings {
         let custom = defaults?.string(forKey: "backupCustomPath") ?? ""
         return BackupSettings(
-            enabled: defaults?.object(forKey: "moveOriginals") as? Bool ?? true,
+            enabled: defaults?.object(forKey: "moveOriginals") as? Bool ?? false,
             folderName: defaults?.string(forKey: "backupFolderName") ?? defaultBackupFolderName,
             customLocation: custom.isEmpty ? nil : URL(fileURLWithPath: custom))
     }

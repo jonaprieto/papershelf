@@ -223,7 +223,9 @@ final class Prefs {
     var returnAppliesRename: Bool = Store.flag("returnAppliesRename", true) {
         didSet { Store.put("returnAppliesRename", returnAppliesRename) }
     }
-    var moveOriginals: Bool = Store.flag("moveOriginals", true) {
+    /// Off by default. Keeping them writes a new folder into every source a rename
+    /// touches, which is something to opt into rather than find there afterwards.
+    var moveOriginals: Bool = Store.flag("moveOriginals", false) {
         didSet { Store.put("moveOriginals", moveOriginals) }
     }
     /// Whether the MCP server may move files. Off, because a model asking to tidy a folder
