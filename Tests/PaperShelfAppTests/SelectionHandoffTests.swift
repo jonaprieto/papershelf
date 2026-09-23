@@ -120,7 +120,12 @@ final class SelectionHandoffTests: XCTestCase {
         annotator.toggleAutomaticHighlight(colour: .yellow)
         view.currentSelection = try XCTUnwrap(document.findString("alpha", withOptions: []).first)
         annotator.selectionChanged()
-        try await Task.sleep(for: .milliseconds(200))
+        // Waited for rather than slept through: the mark is applied after a debounce of
+        // its own, and a fixed sleep a few milliseconds longer than that debounce is a
+        // test that passes on a quiet machine and fails on a busy one.
+        for _ in 0..<200 where annotator.marks.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
 
         XCTAssertTrue(annotator.automaticHighlighting)
         XCTAssertEqual(annotator.marks.count, 1)
