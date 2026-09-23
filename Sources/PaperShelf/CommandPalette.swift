@@ -277,10 +277,13 @@ struct CommandPalette: View {
             return Self.starters.map { Entry.starter($0.mode) }
                 + matchingCommands.map(Entry.command)
         }
-        return matchingPlaces.map(Entry.place)
-            + matchingPages.map(Entry.page)
-            + matchingDocuments.map(Entry.document)
+        // Documents lead, because a paper is what a query is most often after; the
+        // folders and lists whose names match come after them. `sections` keeps the same
+        // order, or the highlighted row would not be the one drawn highlighted.
+        return matchingDocuments.map(Entry.document)
             + elsewhereInLibrary.map(Entry.place)
+            + matchingPlaces.map(Entry.place)
+            + matchingPages.map(Entry.page)
             + textHits.map(Entry.text)
             + matchingCommands.map(Entry.command)
             + matchingSettings.map(Entry.setting)
@@ -410,13 +413,13 @@ struct CommandPalette: View {
             ]
         }
         var out: [(String, [Entry])] = []
-        if !matchingPlaces.isEmpty { out.append(("Go to", matchingPlaces.map(Entry.place))) }
-        if !matchingPages.isEmpty {
-            out.append((mode == .page ? "Page" : "In this document", matchingPages.map(Entry.page)))
-        }
         if !matchingDocuments.isEmpty { out.append(("Documents", matchingDocuments.map(Entry.document))) }
         if !elsewhereInLibrary.isEmpty {
             out.append(("In the library", elsewhereInLibrary.map(Entry.place)))
+        }
+        if !matchingPlaces.isEmpty { out.append(("Go to", matchingPlaces.map(Entry.place))) }
+        if !matchingPages.isEmpty {
+            out.append((mode == .page ? "Page" : "In this document", matchingPages.map(Entry.page)))
         }
         if !textHits.isEmpty {
             out.append(("In the text · \(textHits.count) match\(textHits.count == 1 ? "" : "es")",
