@@ -3526,7 +3526,10 @@ struct ResultsPane: View {
                 }
             }
         } label: {
-            Text(prefs.viewMode.label).help("Choose list, shelf, bibliography or duplicates")
+            // The icon with the name, so the choice reads the way it did in the menu.
+            Label(prefs.viewMode.label, systemImage: prefs.viewMode.icon)
+                .labelStyle(.titleAndIcon)
+                .help("Choose list, shelf, bibliography or duplicates")
         }
         .menuStyle(.borderlessButton)
         .accessibilityLabel("View: \(prefs.viewMode.label)")
