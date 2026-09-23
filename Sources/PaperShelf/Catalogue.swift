@@ -490,6 +490,22 @@ struct ResultsPane: View {
     /// clicked a shelf is what the single reader key used to do.
     private func showCollection() { readerFocused = false }
 
+    /// Whether the page has the middle of the window. The reader gives it that as surely
+    /// as reading mode does, and the book in the toolbar lit only for reading mode, so
+    /// pressing it with a paper open flipped a switch nothing on screen was reading.
+    private var pageOnly: Bool { reading || readerOpen }
+
+    /// The book toggles between the page on its own and the collection beside it. Leaving
+    /// keeps every tab open, the same as Escape.
+    private func toggleReadingMode() {
+        if pageOnly {
+            setReading(false)
+            showCollection()
+        } else {
+            setReading(true)
+        }
+    }
+
     private var currentPlace: Place {
         Place(mode: prefs.viewMode, shelf: shelves.current, folderPath: folderScope?.path,
               query: query)
@@ -1127,21 +1143,22 @@ struct ResultsPane: View {
                     } else {
                         contextualActions
                     }
-                    Button { setReading(!reading) } label: {
-                        Label("Reading mode", systemImage: reading ? "book.fill" : "book")
+                    Button(action: toggleReadingMode) {
+                        Label(pageOnly ? "Back to the collection" : "Reading mode",
+                              systemImage: pageOnly ? "book.fill" : "book")
                             .labelStyle(.iconOnly)
                             .frame(width: 28, height: 20)
                             .contentShape(Rectangle())
-                            .tip(reading ? "Show the shelf again" : "Hide everything but the page",
+                            .tip(pageOnly ? "Back to the collection" : "Hide everything but the page",
                                  command: .readingMode)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(reading ? Color.primary : .secondary)
-                    .background(reading ? Color.primary.opacity(0.12) : .clear,
+                    .foregroundStyle(pageOnly ? Color.primary : .secondary)
+                    .background(pageOnly ? Color.primary.opacity(0.12) : .clear,
                                 in: RoundedRectangle(cornerRadius: Metric.control))
-                    .accessibilityLabel("Reading mode")
+                    .accessibilityLabel(pageOnly ? "Back to the collection" : "Reading mode")
                     .accessibilityIdentifier("toolbar.readingMode")
-                    .accessibilityAddTraits(reading ? .isSelected : [])
+                    .accessibilityAddTraits(pageOnly ? .isSelected : [])
                     Button { prefs.inspectorCollapsed.toggle() } label: {
                         Label("Inspector", systemImage: prefs.inspectorCollapsed
                               ? "sidebar.right" : "sidebar.trailing")
@@ -1871,7 +1888,7 @@ struct ResultsPane: View {
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)
         case .viewDuplicates: choose(.duplicates)
-        case .readingMode: setReading(!reading)
+        case .readingMode: toggleReadingMode()
         case .zenMode: toggleZenMode()
         case .normalMode:
             if presentation { toggleZenMode() }
