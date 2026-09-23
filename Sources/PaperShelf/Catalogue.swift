@@ -350,6 +350,20 @@ struct ResultsPane: View {
         if deck.deck.isSplit { readerFocused = true }
     }
 
+    /// Back to one pane, with every paper from both still open in it.
+    private func joinReader() {
+        deck.deck = deck.deck.unsplitting()
+    }
+
+    /// A paper beside the one being read, asked for from a row's menu. The split was
+    /// reachable only from a button that appeared once two papers were already kept open,
+    /// which is a thing to know about before it can be found.
+    private func openBeside(_ key: String) {
+        deck.deck = deck.deck.openingBeside(key, makeAnnotator: { Annotator() })
+        readerFocused = true
+        selected = key
+    }
+
     /// A sidebar drag onto a reader is a request to read that paper here. The first one
     /// beside an open paper makes the two panes the drag is asking for.
     private func openDropped(_ urls: [URL], in pane: Deck.Pane.ID) -> Bool {
@@ -1997,7 +2011,10 @@ struct ResultsPane: View {
         case .nextTab: return stepTab(by: 1)
         case .previousTab: return stepTab(by: -1)
         case .toggleSplit:
-            guard !deck.deck.isSplit else { return false }
+            if deck.deck.isSplit {
+                joinReader()
+                return true
+            }
             splitReader()
             return deck.deck.isSplit
 
@@ -2200,6 +2217,8 @@ struct ResultsPane: View {
         return FileContextMenu(
             item: item,
             others: many.count > 1 ? many.count : 0,
+            openInTab: { openReader(item.key) },
+            openBeside: { openBeside(item.key) },
             rename: {
                 pick(item.key)
                 editCurrentName(item)
@@ -3221,7 +3240,8 @@ struct ResultsPane: View {
                    // every document in it and a field to narrow them. The + is the pointer's
                    // way to the same place ⌘K goes, not a picker of its own.
                    open: { focusPane(pane.id); showingPalette = true },
-                   split: deck.deck.canSplit ? splitReader : nil,
+                   split: deck.deck.isSplit ? joinReader : (deck.deck.canSplit ? splitReader : nil),
+                   isSplit: deck.deck.isSplit,
                    closeAll: closeAllTabs)
             Divider()
         }

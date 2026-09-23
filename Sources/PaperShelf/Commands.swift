@@ -276,7 +276,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .closeAllTabs: return "Close all open tabs and return to the library"
         case .nextTab: return "Next tab"
         case .previousTab: return "Previous tab"
-        case .toggleSplit: return "Split the reader"
+        case .toggleSplit: return "Split or join the reader"
         case .plan: return "Plan renames"
         case .apply: return "Apply the reviewed plan"
         case .refresh: return "Read the sources again"

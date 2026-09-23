@@ -14,6 +14,31 @@ final class ReadingDeckTests: XCTestCase {
         keys.reduce(deck) { $0.opening($1, kept: kept, makeAnnotator: annotator) }
     }
 
+    // MARK: opening beside
+
+    func testOpeningBesideKeepsThePaperOnScreenAndGivesTheNewOneASecondPane() {
+        let deck = open(empty(), ["a.pdf"], kept: false)
+            .openingBeside("b.pdf", makeAnnotator: annotator)
+        XCTAssertEqual(deck.panes.map { $0.tabs.map(\.key) }, [["a.pdf"], ["b.pdf"]])
+        XCTAssertEqual(deck.activeTab?.key, "b.pdf")
+        XCTAssertFalse(deck.panes[0].tabs[0].isPreview, "the paper left beside it is kept")
+    }
+
+    func testOpeningBesideWhenSplitFillsTheOtherPane() {
+        let split = open(empty(), ["a.pdf"]).openingBeside("b.pdf", makeAnnotator: annotator)
+        let deck = split.focusing(split.panes[1].id).openingBeside("c.pdf", makeAnnotator: annotator)
+        XCTAssertEqual(deck.panes.map { $0.tabs.map(\.key) }, [["a.pdf", "c.pdf"], ["b.pdf"]])
+        XCTAssertEqual(deck.activeTab?.key, "c.pdf")
+    }
+
+    func testOpeningBesideThePaperAlreadyShowingDoesNotSplit() {
+        let deck = open(empty(), ["a.pdf"]).openingBeside("a.pdf", makeAnnotator: annotator)
+        XCTAssertFalse(deck.isSplit)
+        let fresh = empty().openingBeside("a.pdf", makeAnnotator: annotator)
+        XCTAssertFalse(fresh.isSplit)
+        XCTAssertEqual(fresh.activeTab?.key, "a.pdf")
+    }
+
     // MARK: opening
 
     func testOpeningADocumentMakesItTheActiveTab() {

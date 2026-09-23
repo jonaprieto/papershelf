@@ -20,6 +20,8 @@ struct TabBar: View {
     let open: () -> Void
     /// Offered only while another open paper can fill the second pane.
     var split: (() -> Void)? = nil
+    /// Whether `split` joins the panes back into one rather than making two.
+    var isSplit = false
     var closeAll: (() -> Void)? = nil
 
     static let height: CGFloat = 28
@@ -39,15 +41,16 @@ struct TabBar: View {
             .scrollIndicators(.hidden)
             if let split {
                 Button(action: split) {
-                    Image(systemName: "rectangle.split.2x1")
+                    Image(systemName: isSplit ? "rectangle" : "rectangle.split.2x1")
                         .font(Face.control)
                         .frame(width: TabBar.height, height: TabBar.height)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Split reader")
+                .accessibilityLabel(isSplit ? "Join panes" : "Split reader")
                 .accessibilityIdentifier("tabBar.split")
-                .tip("Read two papers side by side", key: "⌘\\")
+                .tip(isSplit ? "Back to one pane, keeping every paper open"
+                             : "Read two papers side by side", key: "⌘\\")
             }
             openButton
         }

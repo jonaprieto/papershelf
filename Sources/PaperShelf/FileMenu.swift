@@ -15,6 +15,9 @@ struct FileContextMenu: View {
     /// How many files this menu is about when it was opened inside a selection. Zero for
     /// the ordinary case of one file, so the labels stay short where they always were.
     var others: Int = 0
+    /// Reading it in this window: in a tab of its own, or beside the paper already open.
+    var openInTab: (() -> Void)? = nil
+    var openBeside: (() -> Void)? = nil
     let rename: () -> Void
     let confirm: () -> Void
     let identify: () -> Void
@@ -37,7 +40,13 @@ struct FileContextMenu: View {
     var onNewTag: () -> Void = {}
 
     var body: some View {
-        Button("Open") { NSWorkspace.shared.open(item.currentURL) }
+        if let openInTab {
+            Button("Open in New Tab", action: openInTab)
+            if let openBeside { Button("Open Beside", action: openBeside) }
+            Button("Open in Default App") { NSWorkspace.shared.open(item.currentURL) }
+        } else {
+            Button("Open") { NSWorkspace.shared.open(item.currentURL) }
+        }
 
         Menu("Open With") {
             ForEach(applications(), id: \.self) { app in

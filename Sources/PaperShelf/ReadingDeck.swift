@@ -87,6 +87,28 @@ struct Deck: Equatable {
         return deck
     }
 
+    /// Opens a paper beside the one being read. Already split, it goes into the other
+    /// pane; otherwise the paper on screen keeps its pane and this one gets a second. With
+    /// nothing on screen, or asked for the paper already showing, it is a plain open.
+    func openingBeside(_ key: String, makeAnnotator: () -> Annotator) -> Deck {
+        if isSplit, let other = panes.first(where: { $0.id != activePane }) {
+            return focusing(other.id).opening(key, kept: true, makeAnnotator: makeAnnotator)
+        }
+        // Kept, because a paper put beside another was asked for rather than passed over.
+        let current = promotingPreview()
+        guard let showing = current.activeTab?.id else {
+            return current.opening(key, kept: true, makeAnnotator: makeAnnotator)
+        }
+        var deck = current.opening(key, kept: true, makeAnnotator: makeAnnotator)
+        guard let opened = deck.activeTab, opened.id != showing else { return deck }
+        deck.panes[0].tabs.removeAll { $0.id == opened.id }
+        deck.panes[0].active = showing
+        let pane = Pane(id: UUID(), tabs: [opened], active: opened.id)
+        deck.panes.append(pane)
+        deck.activePane = pane.id
+        return deck
+    }
+
     /// A collection selection opens one reader. Keep the focused pane's order and add the
     /// other pane's distinct papers after it, so leaving a split never makes the next PDF
     /// selection summon a second page on its own.
