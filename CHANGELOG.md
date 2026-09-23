@@ -4,6 +4,34 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.17.0] - 2026-09-23
+
+### Added
+
+- Open a paper in a new tab, or beside the one being read, from its row's menu. The split
+  button and ⌘\ now also join two panes back into one, keeping every paper open.
+- Settings gain Library and Updates & logs panes, taken out of a General pane that had
+  grown to ten sections.
+
+### Changed
+
+- Renaming no longer keeps a copy of the original by default. Turn Keep the originals on
+  under Files & passwords to have them moved to a folder inside each source; a setting
+  already chosen is left as it was.
+- The sidebar keeps rows for All Documents and Recently Added. Reading Now, Unfiled and
+  Opened are in the command palette, and take a row while they are the shelf on screen.
+- The command palette lists matching documents above the folders and lists whose names
+  match.
+
+### Fixed
+
+- The reading mode button lights whenever the page has the window, including with a paper
+  open, and pressing it then goes back to the collection with every tab kept. It used to
+  do nothing visible from an open paper.
+- Open With names each application once. Every copy of PaperShelf on the machine was
+  listed, with nothing to tell them apart.
+- The view menu shows the icon of the view it is on.
+
 ## [1.16.3] - 2026-09-23
 
 ### Fixed
