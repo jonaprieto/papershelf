@@ -4,7 +4,7 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
-## [1.16.2] - 2026-09-22
+## [1.16.3] - 2026-09-23
 
 ### Fixed
 
@@ -15,6 +15,10 @@ numbers rather than dates.
 - Draw the changelog in the About window as headings, bullets and paragraphs rather than
   printing the Markdown file verbatim. Each entry is joined back into one run of text, so
   a sentence wraps to the window instead of breaking where the file happens to break.
+- Wait for the armed highlighter's mark in its test rather than sleeping fifty
+  milliseconds past the debounce that applies it, which is margin enough on a quiet
+  machine and not on a loaded one. v1.16.2 was tagged and never built for this reason;
+  nothing was published under it.
 
 ## [1.16.1] - 2026-09-22
 
