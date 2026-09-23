@@ -4,6 +4,18 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.16.2] - 2026-09-22
+
+### Fixed
+
+- Offer the papers first on a shelf nothing has read yet. The window opened on "Ready to
+  run" and gave Review names, which reads every PDF's metadata, the one prominent button.
+  Show the papers is the cheap read of paths and names, and naming is a job you choose on
+  a shelf you can already see.
+- Draw the changelog in the About window as headings, bullets and paragraphs rather than
+  printing the Markdown file verbatim. Each entry is joined back into one run of text, so
+  a sentence wraps to the window instead of breaking where the file happens to break.
+
 ## [1.16.1] - 2026-09-22
 
 ### Performance
