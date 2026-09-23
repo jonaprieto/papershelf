@@ -752,7 +752,7 @@ struct ContentView: View {
     }
 
     private var sidebarTargets: [SidebarTarget] {
-        var targets = SmartList.allCases.map(SidebarTarget.shelf)
+        var targets = SmartList.sidebar(current: shelves.current).map(SidebarTarget.shelf)
         for source in selection {
             targets.append(.source(source.path))
             if let root = explorerTree.first(where: { $0.url == source }),
@@ -887,13 +887,11 @@ struct ContentView: View {
     // its width rather than being compressed away.
     // MARK: Where you are
 
-    /// Four rows at the top of the sidebar, because four questions get asked of a shelf
-    /// often enough to deserve one each. Two of them cannot be typed into the search box
-    /// at all: "carries no tag" is the absence of a term, and "opened but not finished"
-    /// is a fact about the reader rather than about the file.
+    /// The shelves at the top of the sidebar. Only the two asked for often keep a row; see
+    /// `SmartList.sidebar` for where the rest went.
     private var shelvesPanel: some View {
         Section {
-            ForEach(SmartList.allCases) { list in
+            ForEach(SmartList.sidebar(current: shelves.current)) { list in
                 Button {
                     chrome.setReading(false)
                     openProject = nil

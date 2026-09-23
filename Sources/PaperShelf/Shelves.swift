@@ -31,6 +31,14 @@ enum SmartList: String, CaseIterable, Identifiable, Codable, Equatable {
         }
     }
 
+    /// The rows the sidebar gives a list of its own. The others were rarely picked and
+    /// cost a row each above the sources, so they stay reachable from the command palette
+    /// and take a row only while one of them is the shelf being shown.
+    static func sidebar(current: SmartList) -> [SmartList] {
+        let always: [SmartList] = [.all, .recent]
+        return always.contains(current) ? always : always + [current]
+    }
+
     var explanation: String {
         switch self {
         case .all: return "Everything the sources hold"
