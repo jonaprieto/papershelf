@@ -133,8 +133,8 @@ on assertCatalogueLaunchState(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             repeat 50 times
-                if exists static text "Ready to run" of (window (my libraryWindowIndex(targetPID))) then
-                    error "Launch opened the rename prompt instead of the catalogue"
+                if exists static text "Nothing read yet" of (window (my libraryWindowIndex(targetPID))) then
+                    error "Launch opened the empty shelf instead of the catalogue"
                 end if
                 delay 0.1
             end repeat

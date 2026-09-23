@@ -57,7 +57,7 @@ final class AppleScriptTests: XCTestCase {
         // into the toolbar's overflow menu without taking it out of the toolbar.
         XCTAssertTrue(script.contains("more toolbar items"))
         XCTAssertTrue(script.contains("assertCatalogueLaunchState"))
-        XCTAssertTrue(script.contains("Launch opened the rename prompt instead of the catalogue"))
+        XCTAssertTrue(script.contains("Launch opened the empty shelf instead of the catalogue"))
         XCTAssertTrue(script.contains("AXIdentifier"))
 
         let contentView = try String(contentsOf: repositoryRoot

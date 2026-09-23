@@ -50,6 +50,9 @@ struct ResultsPane: View {
     let focusSidebar: () -> Void
     let handleSidebarKey: (UInt16) -> Bool
     let preview: () -> Void
+    /// Reads the sources into a shelf: paths and names, no PDF metadata. What a person
+    /// opening the app is asking for, and what an empty pane offers first.
+    var readShelf: () -> Void = {}
     /// Reads the sources again, for ⌘R. Owned by the window: this pane knows what is on
     /// screen, not where it came from.
     let refresh: () -> Void
@@ -3583,15 +3586,20 @@ struct ResultsPane: View {
                 Button("Try again", action: preview)
             }
         } else if hasSources {
+            // Reading the shelf is what somebody opening the app came for. Deciding names
+            // is a job you choose, on a shelf you can already see, and offering it as the
+            // one prominent button made a reading app open on a chore.
             ContentUnavailableView {
-                Label("Ready to run", systemImage: "wand.and.sparkles")
+                Label("Nothing read yet", systemImage: "books.vertical")
             } description: {
                 let missing = unavailableSourceCount > 0
                     ? " \(unavailableSourceCount) currently unavailable."
                     : ""
-                Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") queued.\(missing) Plan first, then apply.")
+                Text("\(sourceCount) source\(sourceCount == 1 ? "" : "s") added.\(missing) "
+                     + "Read them to see the papers; naming is a separate step whenever you want it.")
             } actions: {
-                Button("Review names", action: preview).buttonStyle(.borderedProminent)
+                Button("Show the papers", action: readShelf).buttonStyle(.borderedProminent)
+                Button("Review names", action: preview)
             }
         } else {
             FirstRun(chooseFiles: chooseFiles)

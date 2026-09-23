@@ -439,6 +439,7 @@ struct ContentView: View {
                 },
                 handleSidebarKey: handleSidebarKey,
                 preview: preview,
+                readShelf: libraryPreview,
                 refresh: forceRefresh,
                 apply: confirmApply,
                 applyOne: { item, name in
