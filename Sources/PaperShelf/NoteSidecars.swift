@@ -8,6 +8,8 @@ func moveNotesSidecar(for item: Item) {
     let oldPDF = item.source.resolvingSymlinksInPath()
     let newPDF = item.currentURL.resolvingSymlinksInPath()
     guard oldPDF.path != newPDF.path else { return }
+    // A sidecar written before the name changed travels too, under the name it has now.
+    adoptLegacyNotesSidecar(for: oldPDF)
 
     let oldSidecar = notesSidecarURL(for: oldPDF)
     let newSidecar = notesSidecarURL(for: newPDF)

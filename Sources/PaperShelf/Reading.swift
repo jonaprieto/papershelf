@@ -708,7 +708,7 @@ struct NotesRail: View {
     /// type the presentation would have had to carry.
     private func exportNotes() {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = (title as NSString).deletingPathExtension + " notes.md"
+        panel.nameFieldStringValue = (title as NSString).deletingPathExtension + "-notes.md"
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
         panel.message = "Where these notes go"

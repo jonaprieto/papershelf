@@ -55,13 +55,27 @@ final class MarkdownTests: XCTestCase {
         XCTAssertTrue(text.contains("Colour: `#FFCC00`"))
         XCTAssertTrue(text.contains("Marked 2025-08-"))
         XCTAssertEqual(notesSidecarURL(for: URL(fileURLWithPath: "/tmp/papers/book.pdf")).path,
-                       "/tmp/papers/book notes.md")
+                       "/tmp/papers/book-notes.md")
     }
 
     func testNotesSayWhichVersionWroteThemAndWhenAtTheTop() throws {
         let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: [], date: moment)
         let line = try XCTUnwrap(text.range(of: "PaperShelf \(paperShelfVersion) \u{00B7} last updated 2025-08-"))
         XCTAssertLessThan(line.lowerBound, try XCTUnwrap(text.range(of: "# Book")).lowerBound)
+    }
+
+    func testASidecarUnderTheOldNameIsAdoptedRatherThanLeftBeside() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("legacy-sidecar-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pdf = folder.appendingPathComponent("book.pdf")
+        try Data("old".utf8).write(to: legacyNotesSidecarURL(for: pdf))
+
+        adoptLegacyNotesSidecar(for: pdf)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyNotesSidecarURL(for: pdf).path))
+        XCTAssertEqual(try String(contentsOf: notesSidecarURL(for: pdf), encoding: .utf8), "old")
     }
 
     /// A line must not be able to turn itself into a heading, a list item or a quote.

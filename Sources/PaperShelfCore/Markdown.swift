@@ -25,10 +25,28 @@ public struct MarkExport: Sendable, Equatable {
 }
 
 /// The managed Markdown file beside a PDF, kept distinct from a hand-authored `.md` with
-/// the same stem.
+/// the same stem. A hyphen rather than a space, so the name reads as one word in a shell
+/// and sorts beside the PDF it belongs to.
 public func notesSidecarURL(for pdf: URL) -> URL {
     let stem = pdf.deletingPathExtension().lastPathComponent
+    return pdf.deletingLastPathComponent().appendingPathComponent(stem + "-notes.md")
+}
+
+/// Where the managed file was kept up to 1.17: "<stem> notes.md".
+public func legacyNotesSidecarURL(for pdf: URL) -> URL {
+    let stem = pdf.deletingPathExtension().lastPathComponent
     return pdf.deletingLastPathComponent().appendingPathComponent(stem + " notes.md")
+}
+
+/// Renames a sidecar still under the old name, so the rewrite that follows replaces it
+/// rather than leaving a stale copy beside the new one. A file already under the new name
+/// wins, and a move that fails leaves the old file where it was.
+public func adoptLegacyNotesSidecar(for pdf: URL) {
+    let old = legacyNotesSidecarURL(for: pdf)
+    let new = notesSidecarURL(for: pdf)
+    let manager = FileManager.default
+    guard manager.fileExists(atPath: old.path), !manager.fileExists(atPath: new.path) else { return }
+    try? manager.moveItem(at: old, to: new)
 }
 
 /// Escapes only what would otherwise be read as structure.

@@ -1039,6 +1039,7 @@ final class Annotator {
                 try data.write(to: temporary, options: .atomic)
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
                 if let sidecar {
+                    adoptLegacyNotesSidecar(for: url)
                     let destination = notesSidecarURL(for: url)
                     let sidecarFile = destination.deletingLastPathComponent()
                         .appendingPathComponent(".papershelf-notes-\(UUID().uuidString).md")
@@ -1060,6 +1061,7 @@ final class Annotator {
     private nonisolated static func persistNotesSidecar(_ text: String, for url: URL) async -> String? {
         await Task.detached(priority: .utility) { () -> String? in
             do {
+                adoptLegacyNotesSidecar(for: url)
                 try text.write(to: notesSidecarURL(for: url), atomically: true, encoding: .utf8)
                 return nil
             } catch {
