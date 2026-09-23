@@ -8,13 +8,15 @@ import PaperShelfCore
 /// looking at" and "what is my API key" at the same level and gave the sidebar two jobs.
 /// These are the things you set once and rarely return to; the sidebar is where you are.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, files, naming, bibtex, highlighters, keyboard, ai, integrations
+    case general, library, files, naming, bibtex, highlighters, keyboard, ai, integrations, updates
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: return "General"
+        case .library: return "Library"
+        case .updates: return "Updates & logs"
         case .files: return "Files & passwords"
         case .naming: return "Name rules"
         case .bibtex: return "BibTeX"
@@ -28,6 +30,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .library: return "books.vertical"
+        case .updates: return "arrow.triangle.2.circlepath"
         case .files: return "folder"
         case .naming: return "textformat"
         case .bibtex: return "text.quote"
@@ -44,10 +48,15 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var keywords: [String] {
         switch self {
         case .general:
-            return ["appearance", "theme", "dark mode", "light", "night", "tint", "sources",
-                    "folders", "watch", "scan", "open in", "view", "sort", "ordering",
-                    "modified date", "default PDF viewer", "PDF app", "presentation", "slides",
-                    "left", "right", "arrows", "pages", "updates", "releases", "version"]
+            return ["appearance", "theme", "dark mode", "light", "night", "tint", "contrast",
+                    "sort", "ordering", "modified date", "default PDF viewer", "PDF app",
+                    "notes", "sidecar", "presentation", "slides", "left", "right", "arrows",
+                    "pages"]
+        case .library:
+            return ["sources", "folders", "watch", "scan", "open in", "view", "return",
+                    "tidy", "forget", "missing"]
+        case .updates:
+            return ["updates", "releases", "version", "diagnostics", "log"]
         case .files:
             return ["password", "encrypted", "locked", "originals", "backup", "trash",
                     "cache", "covers"]
@@ -121,6 +130,8 @@ struct SettingsWindowView: View {
             Group {
                 switch prefs.settingsPane {
                 case .general: GeneralSettings()
+                case .library: GeneralSettings(part: .library)
+                case .updates: GeneralSettings(part: .updates)
                 case .files: FileSettings()
                 case .naming: NameRulesSettings()
                 case .bibtex: BibtexSettings()
@@ -166,7 +177,12 @@ struct SettingsWindowChrome: NSViewRepresentable {
 
 // MARK: - General
 
+/// Three panes drawn by one view, because their sections share the sources and the
+/// library they act on. They were one pane of ten sections, which was a long scroll to
+/// find any of them; the optional AI switch it also carried lives under AI & spend.
 struct GeneralSettings: View {
+    enum Part { case general, library, updates }
+    var part: Part = .general
     @Bindable private var prefs = Prefs.shared
     @State private var addingSource = false
     @State private var isDefaultPDFViewer = false
@@ -178,296 +194,331 @@ struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            AIFeaturesSection()
-            Section {
-                HStack {
-                    Text("Theme")
-                    Spacer()
-                    HStack(spacing: 0) {
-                        ForEach(Appearance.allCases) { mode in
-                            Button(mode.label) { prefs.appearance = mode }
-                                .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Space.tight)
-                                .foregroundStyle(prefs.appearance == mode ? .white : .primary)
-                                .background(prefs.appearance == mode
-                                            ? Color.accentColor : .clear,
-                                            in: RoundedRectangle(cornerRadius: Metric.control))
-                                .accessibilityIdentifier("settings.theme.\(mode.rawValue)")
-                                .tip("Use the \(mode.label.lowercased()) application theme")
-                                .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
-                        }
-                    }
-                    .padding(2)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
-                    .frame(maxWidth: 310)
-                }
-                .accessibilityElement(children: .contain)
-
-                HStack {
-                    Text("PDF contrast")
-                    Spacer()
-                    HStack(spacing: 0) {
-                        ForEach(PDFReadingAppearance.allCases) { mode in
-                            Button(mode.label) { prefs.readingAppearance = mode }
-                                .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Space.tight)
-                                .foregroundStyle(prefs.readingAppearance == mode ? .white : .primary)
-                                .background(prefs.readingAppearance == mode
-                                            ? Color.accentColor : .clear,
-                                            in: RoundedRectangle(cornerRadius: Metric.control))
-                                .accessibilityIdentifier("settings.pdfContrast.\(mode.rawValue)")
-                                .tip("Read PDFs with \(mode.label.lowercased()) contrast")
-                                .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
-                        }
-                    }
-                    .padding(2)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
-                    .frame(maxWidth: 310)
-                }
-                .accessibilityElement(children: .contain)
-            } header: {
-                Text("Appearance")
-            } footer: {
-                Text("Dark tint preserves figures and scanned plates. White on black "
-                     + "inverts the PDF canvas for high-contrast reading; the notes and "
-                     + "other controls stay unchanged.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Picker("Default catalogue order", selection: $prefs.sortOrder) {
-                    ForEach(ItemSort.allCases) { order in
-                        Text(order.label).tag(order)
-                    }
-                }
-            } header: {
-                Text("Catalogue")
-            } footer: {
-                Text("This is also the order used by the catalogue toolbar. Modified date "
-                     + "starts with the newest PDF; change the direction there when needed.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                HStack(spacing: Space.step) {
-                    VStack(alignment: .leading, spacing: Space.hair) {
-                        Text(isDefaultPDFViewer
-                             ? "PaperShelf opens PDFs by default"
-                             : "Another app opens PDFs by default")
-                        Text(isDefaultPDFViewer
-                             ? "PDFs opened from Finder and other apps use PaperShelf."
-                             : "Set PaperShelf as the app macOS uses when a PDF is opened.")
-                            .font(Face.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: Space.step)
-                    if isDefaultPDFViewer {
-                        Label("Default", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Make PaperShelf default") {
-                            makeDefaultPDFViewer()
-                        }
-                        .accessibilityHint("Makes PaperShelf the macOS default app for PDF files")
-                    }
-                }
-                if let defaultPDFViewerMessage {
-                    Text(defaultPDFViewerMessage)
-                        .font(Face.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } header: {
-                Text("Default PDF viewer")
-            } footer: {
-                Text("This changes the PDF file association in macOS. It does not change "
-                     + "documents that are already open.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Automatically check for releases", isOn: $prefs.automaticallyCheckForReleases)
-                    .accessibilityIdentifier("settings.automaticallyCheckForReleases")
-                    .tip("Check GitHub at most once a day when PaperShelf becomes active")
-                    .onChange(of: prefs.automaticallyCheckForReleases) { _, enabled in
-                        if enabled { checkForUpdates(manual: false) }
-                    }
-                CheckForUpdatesButton()
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text("Checks the public GitHub release without sending document or library data. "
-                     + "On by default for releases; manual by default for development builds. "
-                     + "Completed local builds are checked when the app becomes active.")
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Keep a Markdown notes file beside each PDF",
-                       isOn: $prefs.syncNotesSidecar)
-            } header: {
-                Text("Notes")
-            } footer: {
-                Text("PaperShelf overwrites the generated <PDF stem> notes.md file from "
-                     + "the PDF annotations. Turning this off stops future writes but does "
-                     + "not delete an existing file.")
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Left and right arrows turn PDF pages", isOn: $prefs.leftRightTurnsPages)
-                    .accessibilityIdentifier("settings.leftRightTurnsPages")
-            } header: {
-                Text("Presentation")
-            } footer: {
-                Text("On by default. Presentation mode fits one PDF page to the screen; "
-                     + "turn this off if the arrow keys should stay with the PDF canvas.")
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                if sources.isEmpty {
-                    Text("Nothing added yet").foregroundStyle(.secondary)
-                }
-                ForEach(sources, id: \.self) { url in
-                    HStack {
-                        Label(url.lastPathComponent, systemImage: "folder")
-                        Spacer()
-                        Text(url.deletingLastPathComponent().path)
-                            .font(Face.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                        Button {
-                            remove(url)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Stop reading \(url.lastPathComponent)")
-                        .tip("Remove this source from PaperShelf; its files stay on disk")
-                    }
-                }
-                Button {
-                    addingSource = true
-                } label: {
-                    Label("Add a folder or a PDF", systemImage: "plus.circle")
-                }
-                .buttonStyle(.link)
-            } header: {
-                Text("Sources")
-            } footer: {
-                Text("Kept as a set of non-overlapping roots. Picking a folder absorbs "
-                     + "anything already selected inside it — a file reachable from two "
-                     + "roots would be attributed to whichever was scanned first, and that "
-                     + "root decides where its originals land.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .fileImporter(isPresented: $addingSource,
-                          allowedContentTypes: [.pdf, .folder],
-                          allowsMultipleSelection: true) { outcome in
-                guard case .success(let urls) = outcome else { return }
-                add(urls)
-            }
-
-            Section {
-                LabeledContent("Documents no source accounts for") {
-                    HStack(spacing: Space.step) {
-                        if let vanished {
-                            Text("\(vanished)").monospacedDigit().foregroundStyle(.secondary)
-                        }
-                        Button(checking ? "Checking\u{2026}" : "Check") { Task { await check() } }
-                            .disabled(checking)
-                        if let vanished, vanished > 0 {
-                            Button("Forget them\u{2026}", role: .destructive) { confirmingTidy = true }
-                        }
-                    }
-                }
-            } header: {
-                Text("Tidy the library")
-            } footer: {
-                Text("A document belongs here because a source brought it. This finds the "
-                     + "ones no source accounts for any more \u{2014} a folder that stopped "
-                     + "being a source, or a file deleted out of one that did not \u{2014} "
-                     + "and forgets them, along with their tags, notes, place in any "
-                     + "reading project and reading position.\n\n"
-                     + "A file missing from a folder that is missing too is left alone: an "
-                     + "unplugged drive is not a deleted library. Nothing on disk is "
-                     + "touched either way.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .confirmationDialog("Forget \(vanished ?? 0) document\((vanished ?? 0) == 1 ? "" : "s")?",
-                                isPresented: $confirmingTidy, titleVisibility: .visible) {
-                Button("Forget them", role: .destructive) { Task { await tidy() } }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Their tags, notes, place in any reading project and reading position "
-                     + "go with them. Nothing on disk is touched.")
-            }
-
-            Section {
-                LabeledContent("Log file") {
-                    HStack(spacing: Space.step) {
-                        ShareLink(item: AppDiagnostics.shared.url) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                        }
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([AppDiagnostics.shared.url])
-                        }
-                    }
-                }
-            } header: {
-                Text("Diagnostics")
-            } footer: {
-                Text("PaperShelf keeps a small local log of app events and setting changes. "
-                     + "It does not include PDF text, passwords or API keys.")
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Toggle("Watch the sources for changes", isOn: $prefs.watchSources)
-                Toggle("Plan as soon as a source is added", isOn: $prefs.autoPreview)
-                Toggle("Return in the name field renames the file", isOn: $prefs.returnAppliesRename)
-                Picker("Open in", selection: $prefs.viewMode) {
-                    ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
-                }
-            } header: {
-                Text("Running")
-            } footer: {
-                Text("Return renames the file there and then. Turn it off to have Return "
-                     + "confirm the name into the plan instead, to be carried out with "
-                     + "everything else when you apply.\n\n"
-                     + "The watcher checks each new file against what is already known rather "
-                     + "than rescanning the shelf, which is what lets it notice a copy of "
-                     + "something you already own as it arrives.")
-                .font(Face.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            switch part {
+            case .general:
+                appearance
+                catalogue
+                defaultViewer
+                notes
+                presentation
+            case .library:
+                sourcesSection
+                running
+                tidy
+            case .updates:
+                updates
+                diagnostics
             }
         }
         .formStyle(.grouped)
         .onAppear { refreshDefaultPDFViewer() }
+    }
+
+    private var appearance: some View {
+        Section {
+            HStack {
+                Text("Theme")
+                Spacer()
+                HStack(spacing: 0) {
+                    ForEach(Appearance.allCases) { mode in
+                        Button(mode.label) { prefs.appearance = mode }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Space.tight)
+                            .foregroundStyle(prefs.appearance == mode ? .white : .primary)
+                            .background(prefs.appearance == mode
+                                        ? Color.accentColor : .clear,
+                                        in: RoundedRectangle(cornerRadius: Metric.control))
+                            .accessibilityIdentifier("settings.theme.\(mode.rawValue)")
+                            .tip("Use the \(mode.label.lowercased()) application theme")
+                            .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
+                    }
+                }
+                .padding(2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
+                .frame(maxWidth: 310)
+            }
+            .accessibilityElement(children: .contain)
+
+            HStack {
+                Text("PDF contrast")
+                Spacer()
+                HStack(spacing: 0) {
+                    ForEach(PDFReadingAppearance.allCases) { mode in
+                        Button(mode.label) { prefs.readingAppearance = mode }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Space.tight)
+                            .foregroundStyle(prefs.readingAppearance == mode ? .white : .primary)
+                            .background(prefs.readingAppearance == mode
+                                        ? Color.accentColor : .clear,
+                                        in: RoundedRectangle(cornerRadius: Metric.control))
+                            .accessibilityIdentifier("settings.pdfContrast.\(mode.rawValue)")
+                            .tip("Read PDFs with \(mode.label.lowercased()) contrast")
+                            .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
+                    }
+                }
+                .padding(2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
+                .frame(maxWidth: 310)
+            }
+            .accessibilityElement(children: .contain)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Dark tint preserves figures and scanned plates. White on black "
+                 + "inverts the PDF canvas for high-contrast reading; the notes and "
+                 + "other controls stay unchanged.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var catalogue: some View {
+        Section {
+            Picker("Default catalogue order", selection: $prefs.sortOrder) {
+                ForEach(ItemSort.allCases) { order in
+                    Text(order.label).tag(order)
+                }
+            }
+        } header: {
+            Text("Catalogue")
+        } footer: {
+            Text("This is also the order used by the catalogue toolbar. Modified date "
+                 + "starts with the newest PDF; change the direction there when needed.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var defaultViewer: some View {
+        Section {
+            HStack(spacing: Space.step) {
+                VStack(alignment: .leading, spacing: Space.hair) {
+                    Text(isDefaultPDFViewer
+                         ? "PaperShelf opens PDFs by default"
+                         : "Another app opens PDFs by default")
+                    Text(isDefaultPDFViewer
+                         ? "PDFs opened from Finder and other apps use PaperShelf."
+                         : "Set PaperShelf as the app macOS uses when a PDF is opened.")
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: Space.step)
+                if isDefaultPDFViewer {
+                    Label("Default", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Make PaperShelf default") {
+                        makeDefaultPDFViewer()
+                    }
+                    .accessibilityHint("Makes PaperShelf the macOS default app for PDF files")
+                }
+            }
+            if let defaultPDFViewerMessage {
+                Text(defaultPDFViewerMessage)
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Default PDF viewer")
+        } footer: {
+            Text("This changes the PDF file association in macOS. It does not change "
+                 + "documents that are already open.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var updates: some View {
+        Section {
+            Toggle("Automatically check for releases", isOn: $prefs.automaticallyCheckForReleases)
+                .accessibilityIdentifier("settings.automaticallyCheckForReleases")
+                .tip("Check GitHub at most once a day when PaperShelf becomes active")
+                .onChange(of: prefs.automaticallyCheckForReleases) { _, enabled in
+                    if enabled { checkForUpdates(manual: false) }
+                }
+            CheckForUpdatesButton()
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text("Checks the public GitHub release without sending document or library data. "
+                 + "On by default for releases; manual by default for development builds. "
+                 + "Completed local builds are checked when the app becomes active.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var notes: some View {
+        Section {
+            Toggle("Keep a Markdown notes file beside each PDF",
+                   isOn: $prefs.syncNotesSidecar)
+        } header: {
+            Text("Notes")
+        } footer: {
+            Text("PaperShelf overwrites the generated <PDF stem> notes.md file from "
+                 + "the PDF annotations. Turning this off stops future writes but does "
+                 + "not delete an existing file.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var presentation: some View {
+        Section {
+            Toggle("Left and right arrows turn PDF pages", isOn: $prefs.leftRightTurnsPages)
+                .accessibilityIdentifier("settings.leftRightTurnsPages")
+        } header: {
+            Text("Presentation")
+        } footer: {
+            Text("On by default. Presentation mode fits one PDF page to the screen; "
+                 + "turn this off if the arrow keys should stay with the PDF canvas.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var sourcesSection: some View {
+        Section {
+            if sources.isEmpty {
+                Text("Nothing added yet").foregroundStyle(.secondary)
+            }
+            ForEach(sources, id: \.self) { url in
+                HStack {
+                    Label(url.lastPathComponent, systemImage: "folder")
+                    Spacer()
+                    Text(url.deletingLastPathComponent().path)
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Button {
+                        remove(url)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Stop reading \(url.lastPathComponent)")
+                    .tip("Remove this source from PaperShelf; its files stay on disk")
+                }
+            }
+            Button {
+                addingSource = true
+            } label: {
+                Label("Add a folder or a PDF", systemImage: "plus.circle")
+            }
+            .buttonStyle(.link)
+        } header: {
+            Text("Sources")
+        } footer: {
+            Text("Kept as a set of non-overlapping roots. Picking a folder absorbs "
+                 + "anything already selected inside it — a file reachable from two "
+                 + "roots would be attributed to whichever was scanned first, and that "
+                 + "root decides where its originals land.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .fileImporter(isPresented: $addingSource,
+                      allowedContentTypes: [.pdf, .folder],
+                      allowsMultipleSelection: true) { outcome in
+            guard case .success(let urls) = outcome else { return }
+            add(urls)
+        }
+    }
+
+    private var tidy: some View {
+        Section {
+            LabeledContent("Documents no source accounts for") {
+                HStack(spacing: Space.step) {
+                    if let vanished {
+                        Text("\(vanished)").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Button(checking ? "Checking\u{2026}" : "Check") { Task { await check() } }
+                        .disabled(checking)
+                    if let vanished, vanished > 0 {
+                        Button("Forget them\u{2026}", role: .destructive) { confirmingTidy = true }
+                    }
+                }
+            }
+        } header: {
+            Text("Tidy the library")
+        } footer: {
+            Text("A document belongs here because a source brought it. This finds the "
+                 + "ones no source accounts for any more \u{2014} a folder that stopped "
+                 + "being a source, or a file deleted out of one that did not \u{2014} "
+                 + "and forgets them, along with their tags, notes, place in any "
+                 + "reading project and reading position.\n\n"
+                 + "A file missing from a folder that is missing too is left alone: an "
+                 + "unplugged drive is not a deleted library. Nothing on disk is "
+                 + "touched either way.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .confirmationDialog("Forget \(vanished ?? 0) document\((vanished ?? 0) == 1 ? "" : "s")?",
+                            isPresented: $confirmingTidy, titleVisibility: .visible) {
+            Button("Forget them", role: .destructive) { Task { await tidy() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Their tags, notes, place in any reading project and reading position "
+                 + "go with them. Nothing on disk is touched.")
+        }
+    }
+
+    private var diagnostics: some View {
+        Section {
+            LabeledContent("Log file") {
+                HStack(spacing: Space.step) {
+                    ShareLink(item: AppDiagnostics.shared.url) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([AppDiagnostics.shared.url])
+                    }
+                }
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("PaperShelf keeps a small local log of app events and setting changes. "
+                 + "It does not include PDF text, passwords or API keys.")
+                .font(Face.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var running: some View {
+        Section {
+            Toggle("Watch the sources for changes", isOn: $prefs.watchSources)
+            Toggle("Plan as soon as a source is added", isOn: $prefs.autoPreview)
+            Toggle("Return in the name field renames the file", isOn: $prefs.returnAppliesRename)
+            Picker("Open in", selection: $prefs.viewMode) {
+                ForEach(ViewMode.allCases) { Text($0.label).tag($0) }
+            }
+        } header: {
+            Text("Running")
+        } footer: {
+            Text("Return renames the file there and then. Turn it off to have Return "
+                 + "confirm the name into the plan instead, to be carried out with "
+                 + "everything else when you apply.\n\n"
+                 + "The watcher checks each new file against what is already known rather "
+                 + "than rescanning the shelf, which is what lets it notice a copy of "
+                 + "something you already own as it arrives.")
+            .font(Face.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func refreshDefaultPDFViewer() {

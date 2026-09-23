@@ -469,6 +469,15 @@ final class SettingsSearchTests: XCTestCase {
         XCTAssertTrue(SettingsPane.files.matches("password"))
     }
 
+    /// General was ten sections long; the library and the update log have panes of their
+    /// own now, and a search for them has to land there.
+    func testTheLibraryAndUpdatesHavePanesOfTheirOwn() {
+        XCTAssertTrue(SettingsPane.library.matches("sources"))
+        XCTAssertFalse(SettingsPane.general.matches("sources"))
+        XCTAssertTrue(SettingsPane.updates.matches("releases"))
+        XCTAssertFalse(SettingsPane.general.matches("releases"))
+    }
+
     func testSearchIsCaseInsensitive() {
         XCTAssertTrue(SettingsPane.bibtex.matches("BibLaTeX"))
     }

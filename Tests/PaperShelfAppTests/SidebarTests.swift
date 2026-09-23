@@ -30,7 +30,8 @@ final class SidebarTests: XCTestCase {
     /// renamed without updating this, breaks here first.
     func testSettingsPanesAreAllStillThere() {
         let expected: [SettingsPane] = [
-            .general, .files, .naming, .bibtex, .highlighters, .keyboard, .ai, .integrations,
+            .general, .library, .files, .naming, .bibtex, .highlighters, .keyboard, .ai,
+            .integrations, .updates,
         ]
         XCTAssertEqual(SettingsPane.allCases, expected)
     }
