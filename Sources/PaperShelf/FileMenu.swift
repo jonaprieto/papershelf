@@ -134,7 +134,29 @@ struct FileContextMenu: View {
     /// Every application the system says can open this file, which is the same list
     /// Finder shows.
     private func applications() -> [URL] {
-        NSWorkspace.shared.urlsForApplications(toOpen: item.currentURL)
+        Self.distinctByName(NSWorkspace.shared.urlsForApplications(toOpen: item.currentURL),
+                            preferring: Bundle.main.bundleURL)
+    }
+
+    /// One entry per application name. Launch Services lists every copy it knows of, and
+    /// a machine that builds this app has several (the installed one, `dist/`, the copies
+    /// a build stages), so the menu named PaperShelf three times with nothing to tell them
+    /// apart. The copy that is running wins its name; otherwise the first listed does.
+    static func distinctByName(_ apps: [URL], preferring running: URL) -> [URL] {
+        let name = { (url: URL) in url.deletingPathExtension().lastPathComponent }
+        let runningPath = running.standardizedFileURL.path
+        var chosen: [String: URL] = [:]
+        var order: [String] = []
+        for app in apps {
+            let key = name(app)
+            if chosen[key] == nil {
+                order.append(key)
+                chosen[key] = app
+            } else if app.standardizedFileURL.path == runningPath {
+                chosen[key] = app
+            }
+        }
+        return order.compactMap { chosen[$0] }
     }
 
     private func copy(_ text: String) {
