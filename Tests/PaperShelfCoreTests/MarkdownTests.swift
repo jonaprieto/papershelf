@@ -58,6 +58,12 @@ final class MarkdownTests: XCTestCase {
                        "/tmp/papers/book notes.md")
     }
 
+    func testNotesSayWhichVersionWroteThemAndWhenAtTheTop() throws {
+        let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: [], date: moment)
+        let line = try XCTUnwrap(text.range(of: "PaperShelf \(paperShelfVersion) \u{00B7} last updated 2025-08-"))
+        XCTAssertLessThan(line.lowerBound, try XCTUnwrap(text.range(of: "# Book")).lowerBound)
+    }
+
     /// A line must not be able to turn itself into a heading, a list item or a quote.
     func testEscapingProtectsStructureAndNotMuchElse() {
         XCTAssertEqual(markdownEscape("# not a heading"), "\\# not a heading")
