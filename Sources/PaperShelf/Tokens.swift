@@ -229,7 +229,14 @@ func swatchImage(_ colour: NSColor, size: CGFloat = 12) -> Image {
 final class SessionSecret {
     static let shared = SessionSecret()
     var encryptPassword = ""
+    /// Passwords given to a single PDF this run: typed to open one, or set to lock one.
+    private(set) var pdfPasswords: [String] = []
     private init() {}
+
+    func remember(_ password: String) {
+        guard !password.isEmpty, !pdfPasswords.contains(password) else { return }
+        pdfPasswords.append(password)
+    }
 }
 
 extension Color {

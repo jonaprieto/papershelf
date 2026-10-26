@@ -1371,6 +1371,11 @@ struct PDFPreview: NSViewRepresentable {
             selector: #selector(Coordinator.selectionChanged),
             name: .PDFViewSelectionChanged, object: view
         )
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.fileRewritten(_:)),
+            name: .pdfRewritten, object: nil
+        )
         return view
     }
 
@@ -1391,6 +1396,9 @@ struct PDFPreview: NSViewRepresentable {
         // Set before the early return: the fit changes far more often than the file, and
         // reading a different document is not what a zoom menu is asking for.
         view.fit = fit
+        // Kept current for the re-read after a rewrite: a password set or typed since the
+        // file was opened is the one that will open it next.
+        coordinator.passwords = passwords
         if coordinator.wanted == url, let page, coordinator.shown != page {
             coordinator.shown = page
             Self.go(view, to: page)
@@ -1593,6 +1601,14 @@ struct PDFPreview: NSViewRepresentable {
         @MainActor @objc private func checkForRewrite() {
             guard let watched else { return }
             PDFPreview.refreshIfChanged(watched, coordinator: self)
+        }
+
+        @objc func fileRewritten(_ note: Notification) {
+            guard let url = note.object as? URL else { return }
+            Task { @MainActor in
+                guard url.resolvingSymlinksInPath() == wanted?.resolvingSymlinksInPath() else { return }
+                checkForRewrite()
+            }
         }
 
         @objc func selectionChanged() {

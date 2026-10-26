@@ -187,3 +187,80 @@ struct DocumentPane<Overlay: View>: View {
         }
     }
 }
+
+/// Putting a password on the PDF in front, or taking it off. One sheet for both: either
+/// way it is a password or two and a button.
+struct PasswordSheet: View {
+    enum Purpose: String, Identifiable {
+        case lock, unlock
+        var id: String { rawValue }
+    }
+
+    let purpose: Purpose
+    let annotator: Annotator
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+    @State private var again = ""
+    @State private var problem: String?
+    @State private var working = false
+
+    private var name: String { annotator.url?.lastPathComponent ?? "this PDF" }
+    private var nothingToRemove: Bool { purpose == .unlock && !annotator.isEncrypted }
+    private var ready: Bool {
+        purpose == .unlock || (!password.isEmpty && password == again)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.roomy) {
+            Text(purpose == .lock ? "Lock \(name)" : "Remove the password from \(name)")
+                .font(Face.control.weight(.semibold))
+                .lineLimit(2)
+            if nothingToRemove {
+                Text("This PDF has no password.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(purpose == .lock
+                     ? "Anyone opening the file will need this password. PaperShelf keeps it "
+                       + "until it quits and writes it down nowhere, so keep it somewhere safe."
+                     : "Anyone with the file will be able to open it.")
+                    .font(Face.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if purpose == .lock {
+                    SecureField("Password", text: $password)
+                    SecureField("Password again", text: $again)
+                } else if annotator.isLocked {
+                    SecureField("Current password", text: $password)
+                }
+            }
+            if let problem {
+                Text(problem)
+                    .font(Face.caption)
+                    .foregroundStyle(Ink.red)
+            }
+            HStack {
+                Spacer()
+                Button(nothingToRemove ? "Done" : "Cancel", role: .cancel) { dismiss() }
+                if !nothingToRemove {
+                    Button(purpose == .lock ? "Lock" : "Remove Password") {
+                        Task { await change() }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!ready || working)
+                }
+            }
+        }
+        .padding(Space.margin)
+        .frame(width: 400)
+    }
+
+    private func change() async {
+        working = true
+        problem = await annotator.changePassword(
+            to: purpose == .lock ? password : nil,
+            typed: purpose == .unlock && !password.isEmpty ? password : nil)
+        working = false
+        if problem == nil { dismiss() }
+    }
+}

@@ -179,6 +179,7 @@ struct ResultsPane: View {
     /// hangs in, and a strong reference the other way would keep a closed one alive.
     @State private var paneWindow = PaneWindow()
     @State private var showingPalette = false
+    @State private var passwordPurpose: PasswordSheet.Purpose?
     @State private var paletteTags: [TagCount] = []
     @State private var paletteProjects: [ProjectSummary] = []
     /// The projects a file can be filed into from its own menu. Loaded with the shelf
@@ -945,6 +946,15 @@ struct ResultsPane: View {
     /// is past what the type-checker will finish.
     private func withReaderRequests<V: View>(_ view: V) -> some View {
         view
+            .onReceive(NotificationCenter.default.publisher(for: .windowCommand)) { note in
+                guard let window = note.object as? NSWindow, window === paneWindow.window,
+                      let raw = note.userInfo?["command"] as? String,
+                      let command = Command(rawValue: raw) else { return }
+                perform(command)
+            }
+            .sheet(item: $passwordPurpose) { purpose in
+                PasswordSheet(purpose: purpose, annotator: readerAnnotator)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .printPDF)) { note in
                 guard let window = note.object as? NSWindow, window === paneWindow.window else { return }
                 readerAnnotator.printPDF()
@@ -1878,6 +1888,7 @@ struct ResultsPane: View {
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates, .openFile,
+        .lockPDF, .unlockPDF,
     ]
 
     /// Carries out one command, whatever asked for it.
@@ -1946,6 +1957,9 @@ struct ResultsPane: View {
         case .focusSearch: showingPalette = true
         case .toggleSidebar: toggleSidebar()
         case .printPDF: return readerAnnotator.printPDF()
+        case .lockPDF, .unlockPDF:
+            guard readerAnnotator.url != nil else { return false }
+            passwordPurpose = command == .lockPDF ? .lock : .unlock
         case .findInDocument: openFind()
         case .toggleInspector: prefs.inspectorCollapsed.toggle()
         case .toggleNotes:

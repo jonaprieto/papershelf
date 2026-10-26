@@ -1248,6 +1248,48 @@ private func copiedOutline(_ node: PDFOutline, from source: PDFDocument,
     return copy
 }
 
+/// Why a password could not be put on a PDF or taken off it. In every case the file on
+/// disk is exactly as it was.
+public enum PasswordChange: Error, Equatable {
+    case unreadable, wrongPassword, notWritten
+}
+
+/// Rewrites the PDF at `url` locked with `password`, or with no password when it is nil,
+/// opening it first with whichever of `known` it needs.
+///
+/// The new file is written beside the old one and swapped in, so a failure part-way
+/// leaves the original as it was. It is rebuilt page by page for the reason
+/// `decryptedCopy` gives: written as it stands, an unlocked document keeps the encryption
+/// it was opened with.
+public func setPassword(_ password: String?, on url: URL, known: [String]) throws {
+    guard let data = try? Data(contentsOf: url), let doc = PDFDocument(data: data) else {
+        throw PasswordChange.unreadable
+    }
+    if doc.isLocked {
+        var opened = false
+        for candidate in known where doc.unlock(withPassword: candidate) {
+            opened = true
+            break
+        }
+        guard opened else { throw PasswordChange.wrongPassword }
+    }
+    guard let clean = decryptedCopy(of: doc) else { throw PasswordChange.notWritten }
+    let manager = FileManager.default
+    let temp = url.deletingLastPathComponent()
+        .appendingPathComponent(".papershelf-\(UUID().uuidString).pdf")
+    let encryption = EncryptionSettings(enabled: password != nil, password: password ?? "")
+    guard clean.write(to: temp, withOptions: writeOptions(encryption)) else {
+        try? manager.removeItem(at: temp)
+        throw PasswordChange.notWritten
+    }
+    do {
+        _ = try manager.replaceItemAt(url, withItemAt: temp)
+    } catch {
+        try? manager.removeItem(at: temp)
+        throw PasswordChange.notWritten
+    }
+}
+
 /// Makes a user-typed name safe to use as a filename: no path separators, no colons,
 /// never empty, always a `.pdf`.
 public func sanitizedFilename(_ name: String) -> String {

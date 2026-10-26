@@ -211,6 +211,11 @@ final class Prefs {
     var passwords: String = Store.text("passwords", "") {
         didSet { Store.put("passwords", passwords) }
     }
+    /// What a locked PDF is offered: the passwords listed in Settings, then the ones given
+    /// this run, which are never written down.
+    var pdfPasswords: [String] {
+        PasswordList.active(passwords) + SessionSecret.shared.pdfPasswords
+    }
 
     // MARK: - Renaming
 

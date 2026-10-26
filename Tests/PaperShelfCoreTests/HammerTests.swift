@@ -1689,4 +1689,33 @@ extension HammerTests {
         XCTAssertEqual(written.outlineRoot?.numberOfChildren, 3)
         XCTAssertEqual(written.outlineRoot?.child(at: 1)?.label, "Chapter 2")
     }
+
+    /// One file, locked and then opened again where it stands, with nothing left behind
+    /// beside it and its pages and table of contents intact both ways.
+    func testAPasswordIsPutOnAndTakenOffInPlace() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(scratchName("password"))
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("paper.pdf")
+        XCTAssertTrue(try makeOutlinedPDF(pages: 2).write(to: url))
+
+        try setPassword("s3cret", on: url, known: [])
+        let locked = try XCTUnwrap(loadPDF(url))
+        XCTAssertTrue(locked.isLocked)
+        XCTAssertTrue(locked.unlock(withPassword: "s3cret"))
+        XCTAssertEqual(locked.pageCount, 2)
+        XCTAssertEqual(locked.outlineRoot?.numberOfChildren, 2)
+
+        XCTAssertThrowsError(try setPassword(nil, on: url, known: ["wrong"])) { error in
+            XCTAssertEqual(error as? PasswordChange, .wrongPassword)
+        }
+        XCTAssertTrue(try XCTUnwrap(loadPDF(url)).isLocked, "a refused change touched the file")
+
+        try setPassword(nil, on: url, known: ["wrong", "s3cret"])
+        let open = try XCTUnwrap(loadPDF(url))
+        XCTAssertFalse(open.isEncrypted)
+        XCTAssertEqual(open.pageCount, 2)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), ["paper.pdf"])
+    }
 }

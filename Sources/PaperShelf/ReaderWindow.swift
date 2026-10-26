@@ -26,6 +26,7 @@ struct ReaderWindow: View {
     @State private var writingNote = false
     @State private var showsNotes = false
     @State private var showingPalette = false
+    @State private var passwordPurpose: PasswordSheet.Purpose?
     /// The row this file has in the library, made when it is opened. Opening records; it
     /// never renames, moves or files anything.
     @State private var documentID: String?
@@ -36,7 +37,7 @@ struct ReaderWindow: View {
     private var palette: Palette { Palette.shared }
     private var prefs: Prefs { Prefs.shared }
 
-    private var passwords: [String] { PasswordList.active(prefs.passwords) }
+    private var passwords: [String] { prefs.pdfPasswords }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,7 +102,7 @@ struct ReaderWindow: View {
             guard let window = note.object as? NSWindow, window === readerWindow.window else { return }
             openFind()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .readerCommand)) { note in
+        .onReceive(NotificationCenter.default.publisher(for: .windowCommand)) { note in
             guard let window = note.object as? NSWindow, window === readerWindow.window,
                   let raw = note.userInfo?["command"] as? String,
                   let command = Command(rawValue: raw) else { return }
@@ -110,6 +111,9 @@ struct ReaderWindow: View {
         .sheet(isPresented: $showingPalette) {
             CommandPalette(commands: Self.paletteCommands, documents: [],
                            run: perform, open: { _ in }, sources: paletteSources)
+        }
+        .sheet(item: $passwordPurpose) { purpose in
+            PasswordSheet(purpose: purpose, annotator: annotator)
         }
         .task { await record() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
@@ -170,7 +174,7 @@ struct ReaderWindow: View {
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .removeBookmark, .showBookmarks, .nextMark, .previousMark,
         .findInDocument, .toggleNotes, .toggleContents, .zenMode,
-        .printPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
+        .printPDF, .lockPDF, .unlockPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
     ]
 
     /// Every command this window answers, from its palette, its menu items and its keys.
@@ -201,6 +205,8 @@ struct ReaderWindow: View {
         case .toggleContents: prefs.contentsShown.toggle()
         case .zenMode: togglePresentation()
         case .printPDF: annotator.printPDF()
+        case .lockPDF: passwordPurpose = .lock
+        case .unlockPDF: passwordPurpose = .unlock
         case .openExternally: NSWorkspace.shared.open(url)
         case .revealInFinder: NSWorkspace.shared.activateFileViewerSelecting([url])
         case .openFile: AppDelegate.current?.choosePDFs()

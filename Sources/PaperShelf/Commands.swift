@@ -90,7 +90,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Reading
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
-    case nextMark, previousMark, openExternally, printPDF
+    case nextMark, previousMark, openExternally, printPDF, lockPDF, unlockPDF
     case fitPage, fitWidth, actualSize, nextPage, previousPage, firstPage, lastPage
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
@@ -112,6 +112,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .revealInFinder: return "open pdf file finder location folder reveal"
         case .suggestTags: return "ai suggest generate subject tags labels current pdf paper"
         case .printPDF: return "print printer paper copies pages pdf"
+        case .lockPDF: return "encrypt protect secure password lock pdf"
+        case .unlockPDF: return "decrypt unlock remove password unprotect pdf"
         case .actualSize: return "zoom 100% original size"
         case .firstPage: return "start beginning of document"
         case .lastPage: return "end of document"
@@ -175,7 +177,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally, .printPDF,
-             .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
+             .lockPDF, .unlockPDF, .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
@@ -261,6 +263,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .removeBookmark: return "Remove the bookmark at the current page"
         case .findInDocument: return "Find in this PDF"
         case .printPDF: return "Print PDF..."
+        case .lockPDF: return "Lock this PDF with a password..."
+        case .unlockPDF: return "Remove this PDF's password..."
         case .nextMark: return "Next highlight"
         case .previousMark: return "Previous highlight"
         case .fitPage: return "Fit page"
@@ -376,6 +380,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .revealInFinder: return Shortcut("r", [.command, .option])
         case .newTag: return nil
         case .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates: return nil
+        case .lockPDF, .unlockPDF: return nil
         case .shortcuts: return Shortcut("?", [])
         }
     }

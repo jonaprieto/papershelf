@@ -188,6 +188,9 @@ final class Annotator {
             ? Int((view.scaleFactor * 100).rounded()) : nil
     }
     private(set) var url: URL?
+    /// Whether the file on screen is locked: none of the passwords it was offered opened it.
+    private(set) var isLocked = false
+    var isEncrypted: Bool { view?.document?.isEncrypted ?? false }
     private(set) var documentID: String?
 
     /// Bumped on every attach, so a scan still walking the file you just left stops
@@ -231,6 +234,7 @@ final class Annotator {
         flush()
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         NotificationCenter.default.removeObserver(self, name: .PDFViewScaleChanged, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .PDFDocumentDidUnlock, object: nil)
         self.view = view
         self.url = url
         lastError = nil
@@ -252,6 +256,7 @@ final class Annotator {
         writtenDate = nil
         writtenPage = nil
         pageCount = view.document?.pageCount ?? 0
+        isLocked = view.document?.isLocked ?? false
         page = 1
         let attributes = view.document?.documentAttributes
         webArticle = view.document.flatMap(WebArticle.read)
@@ -261,6 +266,14 @@ final class Annotator {
             self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: view)
         NotificationCenter.default.addObserver(
             self, selector: #selector(scaleChanged), name: .PDFViewScaleChanged, object: view)
+        // A locked file asks for its password over the page, in PDFKit's own field. Its
+        // marks, outline and title cannot be read until that is answered, so they are read
+        // again when it is.
+        if let document = view.document, document.isLocked {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(documentUnlocked), name: .PDFDocumentDidUnlock,
+                object: document)
+        }
         scaleChanged()
         restorePosition()
         // Outline and annotation walks are deferred one run-loop turn. The PDF page can
@@ -279,6 +292,7 @@ final class Annotator {
         flush()
         NotificationCenter.default.removeObserver(self, name: .PDFViewPageChanged, object: nil)
         NotificationCenter.default.removeObserver(self, name: .PDFViewScaleChanged, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .PDFDocumentDidUnlock, object: nil)
         generation &+= 1
         automaticHighlightTask?.cancel()
         positionTask?.cancel()
@@ -300,6 +314,33 @@ final class Annotator {
     func finishSaving() async {
         flush()
         await writeTask?.value
+    }
+
+    /// Locks the file on screen with `password`, or takes its password off when that is
+    /// nil, once the marks still waiting have been written into it. `typed` is a password
+    /// somebody gave to open it, tried before the ones already known. Nil on success, or
+    /// what went wrong in a sentence; either way the file is never left half written.
+    func changePassword(to password: String?, typed: String? = nil) async -> String? {
+        guard let url else { return "There is no PDF open." }
+        await finishSaving()
+        let known = (typed.map { [$0] } ?? []) + Prefs.shared.pdfPasswords
+        let name = url.lastPathComponent
+        let failure = await Task.detached { () -> String? in
+            do {
+                try PaperShelfCore.setPassword(password, on: url, known: known)
+                return nil
+            } catch PasswordChange.wrongPassword {
+                return "That password does not open \(name)."
+            } catch {
+                return "\(name) could not be rewritten. It is as it was."
+            }
+        }.value
+        guard failure == nil else { return failure }
+        if let password { SessionSecret.shared.remember(password) }
+        // Re-read now rather than at the next poll: a mark made in between would write the
+        // document this view still holds, unlocked, back over the file just locked.
+        NotificationCenter.default.post(name: .pdfRewritten, object: url)
+        return nil
     }
 
     func reportOpenFailure(_ url: URL) {
@@ -504,6 +545,11 @@ final class Annotator {
     /// Debounced: scrolling a long document walks through pages several a second, and a
     /// write for each of them is a database transaction per scroll tick. What is
     /// published moves immediately; only the trip to the library waits.
+    @objc private func documentUnlocked() {
+        guard let view, let url else { return }
+        attach(view, url: url)
+    }
+
     @objc private func pageChanged() {
         guard let view, let document = view.document, let current = view.currentPage else { return }
         page = document.index(for: current) + 1
@@ -1104,4 +1150,10 @@ final class Annotator {
             }
         }.value
     }
+}
+
+extension Notification.Name {
+    /// This app rewrote a PDF in place, outside the annotator's own saves; the URL is the
+    /// object. A view showing it reads it again straight away.
+    static let pdfRewritten = Notification.Name("PaperShelf.pdfRewritten")
 }

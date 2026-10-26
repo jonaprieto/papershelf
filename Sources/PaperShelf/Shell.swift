@@ -178,9 +178,15 @@ struct PaperShelfApp: App {
     /// Hands a command to the reader in front, when the window in front is one.
     private func sendToReader(_ command: Command) -> Bool {
         guard let key = NSApp.keyWindow, AppDelegate.current?.isReader(key) == true else { return false }
-        NotificationCenter.default.post(name: .readerCommand, object: key,
-                                        userInfo: ["command": command.rawValue])
+        sendToKeyWindow(command)
         return true
+    }
+
+    /// Hands a command to whichever window is in front, reader or library.
+    private func sendToKeyWindow(_ command: Command) {
+        guard let key = NSApp.keyWindow else { return }
+        NotificationCenter.default.post(name: .windowCommand, object: key,
+                                        userInfo: ["command": command.rawValue])
     }
 
     /// A PDFKit view owns the first responder while a paper is open, which can leave
@@ -221,6 +227,9 @@ struct PaperShelfApp: App {
                     .commandShortcut(.openWebsite)
             }
             CommandGroup(replacing: .printItem) {
+                Button("Lock with Password…") { sendToKeyWindow(.lockPDF) }
+                Button("Remove Password…") { sendToKeyWindow(.unlockPDF) }
+                Divider()
                 Button("Print...") {
                     guard let window = NSApp.keyWindow else { return }
                     NotificationCenter.default.post(name: .printPDF, object: window)
@@ -576,10 +585,11 @@ extension Notification.Name {
     static let scriptToggleReading = Notification.Name("PaperShelf.scriptToggleReading")
     static let scriptToggleZen = Notification.Name("PaperShelf.scriptToggleZen")
     static let scriptOpenCommandPalette = Notification.Name("PaperShelf.scriptOpenCommandPalette")
-    /// A command for the reader opened from Finder whose window is the object, named by its
-    /// raw value under "command". The menu bar reaches those windows this way because they
-    /// are AppKit's, not a scene with focused values of its own the menu can always read.
-    static let readerCommand = Notification.Name("PaperShelf.readerCommand")
+    /// A command for the window that is the object, named by its raw value under
+    /// "command". The menu bar reaches readers opened from Finder this way because they
+    /// are AppKit's, not a scene with focused values the menu can always read, and the
+    /// library window answers it too for the commands both kinds share.
+    static let windowCommand = Notification.Name("PaperShelf.windowCommand")
     static let scriptCopyCitation = Notification.Name("PaperShelf.scriptCopyCitation")
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")

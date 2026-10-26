@@ -120,7 +120,7 @@ struct ContentView: View {
     @FocusState private var sidebarFocused: Bool
     @Bindable var chrome: Chrome
 
-    private var passwords: [String] { PasswordList.active(prefs.passwords) }
+    private var passwords: [String] { prefs.pdfPasswords }
     private var passwordRows: [String] { PasswordList.rows(prefs.passwords) }
 
     /// Adds a row and puts the caret in it, so Add is one click and then typing.

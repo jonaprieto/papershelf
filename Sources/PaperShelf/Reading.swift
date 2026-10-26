@@ -290,7 +290,7 @@ struct NotesRail: View {
         guard shadow.url?.resolvingSymlinksInPath() != url.resolvingSymlinksInPath() else { return }
         readingFile = true
         defer { readingFile = false }
-        let passwords = PasswordList.active(Prefs.shared.passwords)
+        let passwords = Prefs.shared.pdfPasswords
         let document = await Task.detached { () -> PDFDocument? in
             guard let document = PDFDocument(url: url) else { return nil }
             if document.isLocked {
