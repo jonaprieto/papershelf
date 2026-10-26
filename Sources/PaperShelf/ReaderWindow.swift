@@ -25,6 +25,7 @@ struct ReaderWindow: View {
     @State private var addingNote = false
     @State private var writingNote = false
     @State private var showsNotes = false
+    @State private var showingPalette = false
     /// The row this file has in the library, made when it is opened. Opening records; it
     /// never renames, moves or files anything.
     @State private var documentID: String?
@@ -71,6 +72,8 @@ struct ReaderWindow: View {
                 HStack(spacing: Space.roomy) {
                     PageBar(annotator: annotator, fit: $fit, openFind: openFind,
                             presentation: presentation, togglePresentation: togglePresentation)
+                    notesButton
+                    paletteButton
                     Spacer()
                     Text(url.lastPathComponent)
                         .font(Face.caption)
@@ -97,6 +100,16 @@ struct ReaderWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .openPDFSearch)) { note in
             guard let window = note.object as? NSWindow, window === readerWindow.window else { return }
             openFind()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readerCommand)) { note in
+            guard let window = note.object as? NSWindow, window === readerWindow.window,
+                  let raw = note.userInfo?["command"] as? String,
+                  let command = Command(rawValue: raw) else { return }
+            perform(command)
+        }
+        .sheet(isPresented: $showingPalette) {
+            CommandPalette(commands: Self.paletteCommands, documents: [],
+                           run: perform, open: { _ in }, sources: paletteSources)
         }
         .task { await record() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
@@ -150,6 +163,114 @@ struct ReaderWindow: View {
         annotator.setDocumentID(record.id)
         let projects = (try? await library.projects(containingDocument: record.id)) ?? []
         documentProjectScopes = projects.map { .project(id: $0.id, name: $0.name) }
+    }
+
+    /// What one paper can do with no library window behind it.
+    static let paletteCommands: [Command] = Command.pageActions + [
+        .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
+        .addNote, .addBookmark, .removeBookmark, .showBookmarks, .nextMark, .previousMark,
+        .findInDocument, .toggleNotes, .toggleContents, .zenMode,
+        .printPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
+    ]
+
+    /// Every command this window answers, from its palette, its menu items and its keys.
+    private func perform(_ command: Command) {
+        if command.performPageAction(on: annotator, fit: $fit) { return }
+        switch command {
+        case .palette: showingPalette = true
+        case .highlight1: highlight(slot: 0)
+        case .highlight2: highlight(slot: 1)
+        case .highlight3: highlight(slot: 2)
+        case .highlight4: highlight(slot: 3)
+        case .highlight5: highlight(slot: 4)
+        case .addNote:
+            guard annotator.hasSelection || annotator.selectedMark != nil else { return }
+            showsNotes = true
+            addingNote = true
+            writingNote = true
+        case .addBookmark: _ = annotator.toggleBookmark()
+        case .removeBookmark:
+            if let bookmark = annotator.bookmarkOnCurrentPage { _ = annotator.removeBookmark(bookmark) }
+        case .showBookmarks:
+            prefs.contentsShown = true
+            prefs.contentsRailMode = .bookmarks
+        case .nextMark: stepMark(by: 1)
+        case .previousMark: stepMark(by: -1)
+        case .findInDocument: openFind()
+        case .toggleNotes: showsNotes.toggle()
+        case .toggleContents: prefs.contentsShown.toggle()
+        case .zenMode: togglePresentation()
+        case .printPDF: annotator.printPDF()
+        case .openExternally: NSWorkspace.shared.open(url)
+        case .revealInFinder: NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .openFile: AppDelegate.current?.choosePDFs()
+        case .shortcuts:
+            prefs.settingsPane = .keyboard
+            PaletteSettings.openSettingsWindow()
+        default: break
+        }
+    }
+
+    private func highlight(slot: Int) {
+        guard annotator.hasSelection, currentStyles.indices.contains(slot) else { return }
+        let style = currentStyles[slot]
+        _ = annotator.highlightSelection(colour: style.nsColor)
+        prefs.lastHighlightColour = style.id.uuidString
+    }
+
+    private func stepMark(by delta: Int) {
+        guard !annotator.marks.isEmpty else { return }
+        let current = annotator.marks.firstIndex { $0.id == annotator.selectedMark }
+        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + annotator.marks.count)
+            % annotator.marks.count
+        annotator.jump(to: annotator.marks[next])
+    }
+
+    /// This paper's passages and pages, and the library's other papers, each opening in a
+    /// reader of its own.
+    private var paletteSources: PaletteSources {
+        PaletteSources(
+            inTheLibrary: { text in
+                await PaletteSources.libraryDocuments(matching: text) { path in
+                    AppDelegate.current?.openReader(for: URL(fileURLWithPath: path))
+                }
+            },
+            inThisDocument: { text in
+                annotator.find(text).map { hit in
+                    PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
+                            line: hit.line, go: hit.jump)
+                }
+            },
+            goToPage: { annotator.go(toPage: $0) },
+            help: { perform(.shortcuts) }
+        )
+    }
+
+    /// The notes beside the page, and how many there are. Without it a reader opened from
+    /// Finder showed its notes only to somebody who selected text or clicked a highlight.
+    private var notesButton: some View {
+        Button { showsNotes.toggle() } label: {
+            Label(annotator.marks.isEmpty ? "Notes" : "\(annotator.marks.count)",
+                  systemImage: "highlighter")
+                .font(Face.caption)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(showsNotes ? Color.accentColor : .secondary)
+        .accessibilityLabel(showsNotes ? "Hide the notes" : "Show the notes")
+        .tip(showsNotes ? "Hide the notes" : "Highlights and notes in this PDF", command: .toggleNotes)
+    }
+
+    /// The palette's key, on screen. Nothing in this window said ⌘K existed.
+    private var paletteButton: some View {
+        Button { showingPalette = true } label: {
+            Label(Keymap.shared.shortcut(for: .palette)?.display ?? "Commands",
+                  systemImage: "magnifyingglass")
+                .font(Face.caption)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Open command palette")
+        .tip("Search this paper or the library, or run any command", command: .palette)
     }
 
     private var title: String {
@@ -275,9 +396,7 @@ struct ReaderWindow: View {
         let highlights: [Command] = [.highlight1, .highlight2, .highlight3, .highlight4, .highlight5]
         guard let slot = highlights.firstIndex(where: { Keymap.shared.shortcut(for: $0)?.matches(press) == true }),
               currentStyles.indices.contains(slot) else { return .ignored }
-        let style = currentStyles[slot]
-        _ = annotator.highlightSelection(colour: style.nsColor)
-        prefs.lastHighlightColour = style.id.uuidString
+        highlight(slot: slot)
         return .handled
     }
 }

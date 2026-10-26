@@ -133,25 +133,6 @@ final class Chrome {
     }
 }
 
-/// The folder the window should borrow for this session, or nil to leave the sources
-/// alone.
-///
-/// A paper opened from Finder brings no library with it: the app was started by a double
-/// click and closed the library window it had made on its own (see `AppDelegate`). ⌘K
-/// there opens a palette over a window with nothing in it, because nobody picked any
-/// sources for this paper. The folder the paper is in is the collection somebody is
-/// actually standing in, so the window borrows it.
-///
-/// Both conditions matter, and for different reasons. The key window has to be one the
-/// delegate opened, or an ordinary launch -- where nothing has set `wantsLibrary` either
-/// -- would scope the library to whatever is being read. And no library window may be on
-/// screen, because the sources behind one are sources somebody chose, and ⌘K is not a
-/// request to replace them.
-func folderToStandIn(document: URL?, isReader: Bool, showsLibrary: Bool) -> URL? {
-    guard let document, document.isFileURL, isReader, !showsLibrary else { return nil }
-    return document.deletingLastPathComponent()
-}
-
 @main
 struct PaperShelfApp: App {
     @State private var chrome = Chrome()
@@ -179,28 +160,27 @@ struct PaperShelfApp: App {
     private func openAbout() { openWindow(id: AboutWindow.windowID) }
 
     /// The library monitor owns its window only. The menu is the app-wide route, so this
-    /// also works from Settings and from a reader opened directly from Finder.
+    /// also works from Settings.
+    ///
+    /// A reader opened from Finder answers ⌘K itself, with a palette over its own paper.
+    /// It used to open the library window instead, pointed at the paper's folder, which
+    /// took the reader somewhere they had not asked to go just to find a command.
     private func openCommandPalette() {
-        let key = NSApp.keyWindow
-        let document = key?.representedURL
-        let standIn = folderToStandIn(document, of: key)
+        if sendToReader(.palette) { return }
+        let document = NSApp.keyWindow?.representedURL
         AppDelegate.current?.wantsLibrary = true
         openWindow(id: "main")
         DispatchQueue.main.async {
-            // Before the palette, so the window is pointed at the folder by the time the
-            // palette has anything to jump around in.
-            if let standIn {
-                NotificationCenter.default.post(name: .standInForFolder, object: standIn)
-            }
             NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: document)
         }
     }
 
-    private func folderToStandIn(_ document: URL?, of window: NSWindow?) -> URL? {
-        guard let window, let delegate = AppDelegate.current else { return nil }
-        return PaperShelf.folderToStandIn(document: document,
-                                          isReader: delegate.isReader(window),
-                                          showsLibrary: delegate.showsLibrary)
+    /// Hands a command to the reader in front, when the window in front is one.
+    private func sendToReader(_ command: Command) -> Bool {
+        guard let key = NSApp.keyWindow, AppDelegate.current?.isReader(key) == true else { return false }
+        NotificationCenter.default.post(name: .readerCommand, object: key,
+                                        userInfo: ["command": command.rawValue])
+        return true
     }
 
     /// A PDFKit view owns the first responder while a paper is open, which can leave
@@ -269,6 +249,7 @@ struct PaperShelfApp: App {
                        action: chrome.toggleReading)
                 .commandShortcut(.readingMode)
                 Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
+                    if sendToReader(.toggleNotes) { return }
                     if chrome.notesShown { chrome.inspectorCollapsed = true } else { chrome.showNotes() }
                 }
                 .commandShortcut(.toggleNotes)
@@ -595,8 +576,10 @@ extension Notification.Name {
     static let scriptToggleReading = Notification.Name("PaperShelf.scriptToggleReading")
     static let scriptToggleZen = Notification.Name("PaperShelf.scriptToggleZen")
     static let scriptOpenCommandPalette = Notification.Name("PaperShelf.scriptOpenCommandPalette")
-    /// One folder the window should borrow for this session, carried as the object.
-    static let standInForFolder = Notification.Name("PaperShelf.standInForFolder")
+    /// A command for the reader opened from Finder whose window is the object, named by its
+    /// raw value under "command". The menu bar reaches those windows this way because they
+    /// are AppKit's, not a scene with focused values of its own the menu can always read.
+    static let readerCommand = Notification.Name("PaperShelf.readerCommand")
     static let scriptCopyCitation = Notification.Name("PaperShelf.scriptCopyCitation")
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")

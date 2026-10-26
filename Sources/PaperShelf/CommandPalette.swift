@@ -145,6 +145,18 @@ struct CommandPalette: View {
         .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
     ]
 
+    /// The starters with something behind them. A reader opened from Finder has no tags
+    /// or projects to offer, and a row that leads to an empty list is a row that lies.
+    private var offeredStarters: [(mode: Mode, title: String, detail: String)] {
+        Self.starters.filter { starter in
+            switch starter.mode {
+            case .tags: return sources.places.contains { $0.kind == .tag }
+            case .projects: return sources.places.contains { $0.kind == .project }
+            default: return true
+            }
+        }
+    }
+
     /// An empty field has nothing to match, so it shows the way in instead.
     private var showsStarters: Bool { mode == nil && needle.isEmpty }
 
@@ -274,7 +286,7 @@ struct CommandPalette: View {
 
     private var entries: [Entry] {
         if showsStarters {
-            return Self.starters.map { Entry.starter($0.mode) }
+            return offeredStarters.map { Entry.starter($0.mode) }
                 + matchingCommands.map(Entry.command)
         }
         // Documents lead, because a paper is what a query is most often after; the
@@ -408,7 +420,7 @@ struct CommandPalette: View {
     private var sections: [(title: String, entries: [Entry])] {
         if showsStarters {
             return [
-                ("Start with", Self.starters.map { Entry.starter($0.mode) }),
+                ("Start with", offeredStarters.map { Entry.starter($0.mode) }),
                 ("Views", matchingCommands.map(Entry.command)),
             ]
         }
@@ -639,5 +651,28 @@ struct CommandPalette: View {
         }
         return documents.first(where: { $0.currentFilename == hit.title })
             ?? documents.first(where: { $0.documentInfo["Title"] == hit.title })
+    }
+}
+
+extension PaletteSources {
+    /// Documents anywhere in the library whose title, author or PDF info mention `text`,
+    /// each handed to `open` by its resolved path when chosen.
+    @MainActor
+    static func libraryDocuments(matching text: String,
+                                 open: @escaping (String) -> Void) async -> [PalettePlace] {
+        guard let library = Library.shared else { return [] }
+        let records = (try? await library.documentsMatchingMetadata(text, limit: 6)) ?? []
+        var found: [PalettePlace] = []
+        for record in records {
+            guard let locations = try? await library.locations(forDocument: record.id),
+                  let path = locations.first?.path else { continue }
+            let key = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            let name = record.title?.isEmpty == false
+                ? record.title! : URL(fileURLWithPath: path).lastPathComponent
+            found.append(PalettePlace(id: "doc:" + key, title: name,
+                                      detail: record.author ?? "in the library",
+                                      kind: .document) { open(key) })
+        }
+        return found
     }
 }

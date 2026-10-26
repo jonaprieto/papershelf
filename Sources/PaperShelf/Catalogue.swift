@@ -1530,22 +1530,7 @@ struct ResultsPane: View {
                 return (try? await library.fullTextHits(text, limit: 6)) ?? []
             },
             inTheLibrary: { text in
-                guard let library = Library.shared else { return [] }
-                let records = (try? await library.documentsMatchingMetadata(text, limit: 6)) ?? []
-                var found: [PalettePlace] = []
-                for record in records {
-                    guard let locations = try? await library.locations(forDocument: record.id),
-                          let path = locations.first?.path else { continue }
-                    let key = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-                    let name = record.title?.isEmpty == false
-                        ? record.title! : URL(fileURLWithPath: path).lastPathComponent
-                    found.append(PalettePlace(id: "doc:" + key, title: name,
-                                              detail: record.author ?? "in the library",
-                                              kind: .document) {
-                        openAnywhere(key)
-                    })
-                }
-                return found
+                await PaletteSources.libraryDocuments(matching: text, open: openAnywhere)
             },
             inThisDocument: { text in
                 readerAnnotator.find(text).map { hit in

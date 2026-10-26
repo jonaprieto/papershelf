@@ -64,10 +64,6 @@ struct ContentView: View {
     /// the results pane, says what is on it.
     @State private var annotator = Annotator()
     @State private var selection: [URL] = []
-    /// The folder this window is borrowing instead of the sources that were remembered,
-    /// or nil when it is showing those. While it is set, `selection` is exactly this one
-    /// folder and nothing writes it to `prefs.sources`: see `standIn(for:)`.
-    @State private var temporarySource: URL?
     @State private var sidebarTarget: SidebarTarget?
     /// The project row a drag is currently over, so exactly one row lights up.
     @State private var dropProject: Int64?
@@ -349,7 +345,6 @@ struct ContentView: View {
 
     private func registerWebSource(_ note: Notification) {
         guard let url = note.object as? URL else { return }
-        endStandInBeforeEditingSources()
         selection = mergedSources(selection, adding: [url.deletingLastPathComponent()])
         persistSources()
         startWatching()
@@ -497,9 +492,6 @@ struct ContentView: View {
         .onChange(of: prefs.sources) { _, stored in
             let wanted = storedSources(stored)
             guard wanted.map(\.path) != selection.map(\.path) else { return }
-            // Somebody edited the sources in Settings, which is a decision about the
-            // library rather than about this window. It ends the borrowing.
-            temporarySource = nil
             // Kept whether or not each one can be reached right now, the same bargain the
             // launch makes (`restoreSources`). This used to filter on `fileExists`, which
             // asked the filesystem on the main thread -- the one call the availability pass
@@ -540,8 +532,6 @@ struct ContentView: View {
             chrome.canUndo = runner.canUndo
             sizeWindowOnFirstLaunch()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .standInForFolder),
-                   perform: receiveStandIn)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             guard chrome.zenMode,
                   let window = note.object as? NSWindow,
@@ -1371,13 +1361,11 @@ struct ContentView: View {
     /// One source: its name, how many files it holds, and the triangle that unfolds it.
     private func sourceLabel(_ url: URL, count: Int, unfoldable: Bool) -> some View {
         let reachable = isReachable(url)
-        let borrowed = temporarySource == url
         let root = shownExplorerTree.first { $0.url == url }
         return SidebarSourceLabel(
             url: url,
             count: count,
             reachable: reachable,
-            temporary: borrowed,
             focused: sidebarTarget == .source(url.path),
             hovered: hoveredSource == url,
             unfoldable: unfoldable,
@@ -1385,11 +1373,7 @@ struct ContentView: View {
             unfold: { if let root { toggleSourceExpansion(root.id) } },
             focus: { showFolder(url.path) },
             setHovered: { hoveredSource = $0 ? url : (hoveredSource == url ? nil : hoveredSource) },
-            // Leaving a borrowed folder is not removing a source. `removeSource` forgets
-            // every document under it -- tags, notes, reading positions, project
-            // membership -- which is the right question for a folder somebody chose and
-            // the wrong one entirely for a folder the window is only standing in.
-            remove: { borrowed ? leaveStandIn() : askToRemove(url) }
+            remove: { askToRemove(url) }
         )
     }
 
@@ -1455,7 +1439,6 @@ struct ContentView: View {
     /// The selection is a set of non-overlapping roots: a folder absorbs anything already
     /// picked inside it, and nothing already covered is added twice.
     private func add(_ urls: [URL]) {
-        endStandInBeforeEditingSources()
         let before = selection
         selection = mergedSources(selection, adding: urls)
         guard selection.map(\.path) != before.map(\.path) else { return }
@@ -1623,10 +1606,6 @@ struct ContentView: View {
     }
 
     private func persistSources() {
-        // A borrowed folder is never written down. This is the bug the whole arrangement
-        // exists to avoid: the next launch opening on wherever a file happened to have
-        // been double-clicked, instead of on the sources somebody picked.
-        guard temporarySource == nil else { return }
         prefs.sources = selection.map(\.path).joined(separator: "\n")
     }
 
@@ -1636,9 +1615,6 @@ struct ContentView: View {
     private func openTheShelf() async {
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
-        // ⌘K over a paper opened from Finder lands before this and has already
-        // restored, watched and scanned (`standIn(for:)`).
-        guard temporarySource == nil else { return }
         guard AppDelegate.current?.libraryUnwanted != true else { return }
         restoreSources()
         // Which sources are actually there, before anything is asked of them. One bounded
@@ -1664,47 +1640,6 @@ struct ContentView: View {
             }
         }
         if aiReady && availableModels.isEmpty { loadModels() }
-    }
-
-    private func receiveStandIn(_ note: Notification) {
-        guard let folder = note.object as? URL else { return }
-        standIn(for: folder)
-    }
-
-    /// Shows one folder, for this window and this session only.
-    ///
-    /// What ⌘K over a paper opened from Finder does. `Shell.folderToStandIn` decides
-    /// whether to ask; this is what happens when it does.
-    private func standIn(for folder: URL) {
-        guard temporarySource != folder else { return }
-        temporarySource = folder
-        selection = [folder]
-        expanded = []
-        reviewing = nil
-        rescanSources()
-    }
-
-    /// Gives the window its own sources back. The borrowed folder was never written down,
-    /// so there is nothing to undo but the selection.
-    private func leaveStandIn() {
-        guard temporarySource != nil else { return }
-        temporarySource = nil
-        selection = []
-        restoreSources()
-        expanded = []
-        reviewing = nil
-        rescanSources()
-    }
-
-    /// A real edit to the sources ends the borrowing first, so the edit lands on the
-    /// remembered list rather than on the folder this window happens to be standing in.
-    /// Without this, dropping a folder onto a borrowed window would either lose the drop
-    /// or quietly adopt the borrowed folder as a source.
-    private func endStandInBeforeEditingSources() {
-        guard temporarySource != nil else { return }
-        temporarySource = nil
-        selection = []
-        restoreSources()
     }
 
     /// Reads whatever the window is now pointed at, the same way the launch task does.
@@ -1747,7 +1682,6 @@ struct ContentView: View {
 
     /// Everything the app remembers between launches.
     private func forgetEverything() {
-        temporarySource = nil
         selection = []
         prefs.sources = ""
         expanded = []
@@ -1820,9 +1754,6 @@ private struct SidebarSourceLabel: View {
     let url: URL
     let count: Int
     let reachable: Bool
-    /// Borrowed for this session rather than chosen, which is worth saying on the row: it
-    /// is why this folder is the only source, and why it will not be here next time.
-    let temporary: Bool
     let focused: Bool
     let hovered: Bool
     /// Whether there is anything under this source to unfold, and whether it is unfolded.
@@ -1848,11 +1779,6 @@ private struct SidebarSourceLabel: View {
     /// Its own property for the reason `highlight` is one: written inline it is a nested
     /// conditional inside a modifier chain the type checker already struggles with.
     private var explanation: String {
-        if temporary {
-            return url.path + ": borrowed for this session because a paper here was "
-                + "opened from Finder. It is not saved as a source; your own are one "
-                + "click away."
-        }
         guard !reachable else { return url.path }
         return url.path + ": not reachable right now. The volume may be unmounted, or "
             + "this build may not have been granted access to the folder yet. It is "
@@ -1880,9 +1806,6 @@ private struct SidebarSourceLabel: View {
             if !reachable {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Ink.amber)
-            } else if temporary {
-                Image(systemName: "clock")
-                    .foregroundStyle(.secondary)
             }
             Text(url.lastPathComponent)
                 .lineLimit(1)
@@ -1893,10 +1816,6 @@ private struct SidebarSourceLabel: View {
                 Text("cannot be read")
                     .font(Face.caption)
                     .foregroundStyle(Ink.amber)
-            } else if temporary {
-                Text("this session")
-                    .font(Face.caption)
-                    .foregroundStyle(.secondary)
             } else if count > 0 {
                 Text(count.formatted())
                     .font(Face.body.monospacedDigit())
@@ -1908,9 +1827,7 @@ private struct SidebarSourceLabel: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .tip(temporary
-                     ? "Go back to your own sources."
-                     : "Stop watching this source. Nothing on disk is touched.")
+                .tip("Stop watching this source. Nothing on disk is touched.")
             }
         }
         .contentShape(Rectangle())
