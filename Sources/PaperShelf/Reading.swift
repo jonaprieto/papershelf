@@ -500,7 +500,19 @@ struct NotesRail: View {
                 // The list follows the page. Marks are in page order, so the one to bring
                 // up is the first that is not behind you; past the last mark the list
                 // stays at the end rather than springing back to the top.
-                .onChange(of: annotator.page) { _, page in
+                //
+                // Once the page settles, not on every page it passes: scrolling a long
+                // paper started an animation per page, each cutting the last one off, and
+                // the list stuttered behind the page. And not away from a mark somebody
+                // chose while it is still in view: a jump lands its mark low on a page
+                // often enough for the next page to count as current, and the list used
+                // to follow that page off the row that had just been clicked.
+                .task(id: annotator.page) {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard !Task.isCancelled else { return }
+                    let page = annotator.page
+                    if let chosen = shownMarks.first(where: { $0.id == annotator.selectedMark }),
+                       abs(chosen.page - page) <= 1 { return }
                     let target = shownMarks.first { $0.page >= page } ?? shownMarks.last
                     guard let target else { return }
                     withAnimation(.easeOut(duration: 0.18)) {
@@ -509,11 +521,15 @@ struct NotesRail: View {
                 }
                 // Jumping to a mark from anywhere else -- the page, the palette -- brings
                 // it up here too, so the list and the page never disagree about which
-                // mark is being looked at.
-                .onChange(of: annotator.selectedMark) { _, mark in
+                // mark is being looked at. Initially as well: clicking a highlight with
+                // the notes shut opens them on that click, and the list has to start on
+                // the mark rather than at the top. A turn later, so its rows exist.
+                .onChange(of: annotator.selectedMark, initial: true) { _, mark in
                     guard let mark else { return }
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        notes.scrollTo(mark, anchor: .center)
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            notes.scrollTo(mark, anchor: .center)
+                        }
                     }
                 }
             }

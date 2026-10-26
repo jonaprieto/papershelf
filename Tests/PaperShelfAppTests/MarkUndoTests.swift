@@ -37,6 +37,21 @@ final class MarkUndoTests: XCTestCase {
         page.annotations.filter { $0.type == "Highlight" }
     }
 
+    /// Jumping to a mark finds it without selecting text. The selection it used to make was
+    /// built from the mark's box, and was a selection like any other for an armed
+    /// highlighter to paint over.
+    func testJumpingToAMarkSelectsNoText() throws {
+        let (annotator, view, _) = try reader()
+        defer { annotator.detach() }
+        annotator.highlightSelection(colour: .systemYellow)
+        view.clearSelection()
+        let mark = try XCTUnwrap(annotator.marks.first)
+
+        annotator.jump(to: mark)
+        XCTAssertEqual(annotator.selectedMark, mark.id)
+        XCTAssertTrue(view.currentSelection?.string?.isEmpty ?? true, "a jump selected text")
+    }
+
     func testUndoTakesAHighlightOffThePageAndOutOfTheFile() throws {
         let (annotator, _, page) = try reader()
         defer { annotator.detach() }

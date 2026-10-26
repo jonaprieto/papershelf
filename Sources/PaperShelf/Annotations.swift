@@ -893,15 +893,19 @@ final class Annotator {
                       width: box.width, height: box.height)
     }
 
-    /// Scrolls to a mark and selects the text under it, which is what makes it findable:
-    /// a highlight on a page you are not looking at is invisible by definition.
+    /// Scrolls to a mark, which is what makes it findable: a highlight on a page you are
+    /// not looking at is invisible by definition.
+    ///
+    /// It used to select the text under the mark as well. That selection was built from
+    /// the mark's box, which can take in words the mark never covered; it swapped the
+    /// mark's bar for the bar that makes a new highlight; and with the highlighter armed
+    /// it was a selection like any other, there to be painted over. The mark is drawn on
+    /// the page and its row is lit in the list, which is enough to find it by.
     func jump(to mark: Mark) {
         guard let view, let page = mark.annotation.page else { return }
         selectedMark = mark.id
+        view.clearSelection()
         view.go(to: PDFDestination(page: page, at: CGPoint(x: 0, y: mark.annotation.bounds.maxY)))
-        if let selection = page.selection(for: mark.annotation.bounds) {
-            view.setCurrentSelection(selection, animate: true)
-        }
     }
 
     /// Marks the document dirty and waits out a short pause before writing.
