@@ -4,6 +4,61 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.18.0] - 2026-10-26
+
+### Added
+
+- Open a PDF from the File menu (⌘O), in a window of its own the way a double-click in
+  Finder opens one, and reopen one from Open Recent, which the Dock's menu shares.
+- ⌘K over a PDF opened on its own searches that PDF: its passages and pages, its
+  highlighters, notes, bookmarks and print, and the library's other papers, each opening
+  in a window of its own. It used to open the library window instead, pointed at the
+  paper's folder. The reader's bottom bar shows the palette's key and how many marks the
+  paper has.
+- Lock a PDF with a password, or take its password off, from the File menu or the palette.
+  Marks still waiting are written into it first, and the file is replaced only once the
+  new one is complete. A password set this way is kept until PaperShelf quits and is
+  written down nowhere.
+- Highlights and notes made in Preview, Acrobat or any other app reach the notes file once
+  the paper is read. A notes file that exists is kept current wherever the paper is shown;
+  a new one is written only for a paper opened to read, never for one passed in a list.
+- The View menu has Appearance and PDF Contrast, which were only in the library toolbar;
+  Library moves to the Window menu; and Help leads to the keyboard shortcuts and the
+  palette instead of a page saying there is no help.
+- A notes file says which PaperShelf wrote it and when, above its title.
+
+### Changed
+
+- The notes file beside a PDF is named `paper-notes.md` rather than `paper notes.md`. A
+  file under the old name is renamed the next time it is written or its PDF is renamed.
+- Jumping to a mark no longer selects the text under it. That selection was built from
+  the mark's box and could take in words the mark never covered.
+- The first screen names ⌘O and ⌘K, and no longer says originals are kept by default.
+
+### Fixed
+
+- A launch in the list no longer plans every PDF in the sources again, blanking the
+  window and the paper open in it until it had. Last run's plan is shown at once and only
+  new files are read.
+- A paper opened from Finder while the library is on screen no longer closes the library,
+  and opening a second paper no longer brings up an empty one.
+- The notes list stays on the mark you chose instead of following the page off it, and
+  clicking a highlight with the notes shut opens them on that mark.
+- A locked PDF answered in its password field over the page now shows its marks, outline
+  and title, which stayed empty while it was shut.
+- Print reaches a file with no page on screen, from a row of the list or the BibTeX view.
+- The palette's button stays in a narrow library toolbar instead of folding into the
+  overflow with everything else, and the palette fits a narrow reader.
+- The app builds with Swift 6.4, and the UI smoke test reads the toolbar and settings on
+  macOS 27.
+
+### Performance
+
+- Covers are held to 96 MB as well as to four hundred, share one Core Image context, and
+  a page turn in a reader opened from Finder is written to the library once, not twice.
+- The library database opens off the main thread, a sort no longer re-syncs every path,
+  and a page in a window nobody can see is not polled for rewrites.
+
 ## [1.17.0] - 2026-09-23
 
 ### Added
