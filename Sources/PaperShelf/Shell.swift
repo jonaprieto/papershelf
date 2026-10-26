@@ -341,7 +341,13 @@ final class Covers {
         return queue
     }()
 
-    init() { cache.countLimit = 400 }
+    /// Four hundred covers by count, but no more than this many bytes of them. A cover is
+    /// drawn at the screen's scale, about half a megabyte each on a Retina display, so
+    /// the count alone let the cache grow past two hundred megabytes on a large shelf.
+    init() {
+        cache.countLimit = 400
+        cache.totalCostLimit = 96 << 20
+    }
 
     /// The cover if one is already rendered. Synchronous and cheap, so a card that has
     /// its cover draws it on the first pass with no flicker.
@@ -386,12 +392,17 @@ final class Covers {
             }
         }
 
-        if let image { cache.setObject(image, forKey: key as NSString) }
+        if let image { cache.setObject(image, forKey: key as NSString, cost: Covers.bytes(of: image)) }
         else { unrenderable.insert(key) }
         for pending in waiting.removeValue(forKey: key) ?? [] {
             pending.resume(returning: image)
         }
         return image
+    }
+
+    private static func bytes(of image: NSImage) -> Int {
+        let pixels = image.representations.map { $0.pixelsWide * $0.pixelsHigh }.max() ?? 0
+        return max(pixels, Int(image.size.width * image.size.height)) * 4
     }
 
     private func cacheKey(_ item: Item, appearance: PDFReadingAppearance, isDark: Bool) -> String {
@@ -431,14 +442,19 @@ func firstPageImage(of url: URL, passwords: [String], height: CGFloat,
     return styledThumbnail(thumbnail, appearance: appearance, isDark: isDark)
 }
 
+/// One context for every cover. Making one costs about eighteen milliseconds, and each
+/// styled cover made its own; a context is safe to share between threads.
+private let thumbnailContext = CIContext()
+
 private func styledThumbnail(_ image: NSImage, appearance: PDFReadingAppearance,
                              isDark: Bool) -> NSImage {
     // The same rule the reader applies, so a cover shows the contrast the page will have:
     // dark tint only against a dark window, sepia under either theme.
     let wash = appearance == .tint && !isDark ? nil : appearance.wash
     guard appearance == .whiteOnBlack || wash != nil,
-          let tiff = image.tiffRepresentation,
-          let source = CIImage(data: tiff) else { return image }
+          let bitmap = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else { return image }
+    let source = CIImage(cgImage: bitmap)
 
     let output: CIImage?
     switch appearance {
@@ -457,7 +473,7 @@ private func styledThumbnail(_ image: NSImage, appearance: PDFReadingAppearance,
     }
 
     guard let output,
-          let cgImage = CIContext().createCGImage(output, from: source.extent)
+          let cgImage = thumbnailContext.createCGImage(output, from: source.extent)
     else { return image }
     return NSImage(cgImage: cgImage, size: image.size)
 }

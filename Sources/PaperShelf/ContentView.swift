@@ -1609,7 +1609,9 @@ struct ContentView: View {
         let remounted = !sourceAvailability.isEmpty && current.contains { path, reachable in
             reachable && sourceAvailability[path] == false
         }
-        sourceAvailability = current
+        // Only on a change. The whole window reads this, and handing it the same answer
+        // every three seconds is a redraw of the window nobody asked for.
+        if current != sourceAvailability { sourceAvailability = current }
         return remounted
     }
 
