@@ -142,11 +142,54 @@ on assertCatalogueLaunchState(targetPID)
     end tell
 end assertCatalogueLaunchState
 
+-- What one toolbar element says about itself, as {identifier, tooltip}. Handed `a reference
+-- to` an index path, never an element: System Events rewrites an element it hands back as
+-- `window "<title>"`, and on macOS 27 a window whose title carries a subtitle cannot be found
+-- again by that name, so every attribute of a kept element failed to read. `entire contents`
+-- returns only such elements, which is how this audit came to find an empty toolbar.
+on readControl(element)
+    tell application "System Events"
+        set identifier to ""
+        try
+            set identifier to (value of attribute "AXIdentifier" of element) as text
+        end try
+        set tooltip to ""
+        try
+            set tooltip to (help of element) as text
+        end try
+        if tooltip is "missing value" then set tooltip to ""
+        return {identifier, tooltip}
+    end tell
+end readControl
+
+-- Every control in the library window's toolbar, three levels down: an item, the stack a
+-- group of buttons is drawn in, and the buttons.
+on toolbarControls(targetPID, w)
+    set found to {}
+    tell application "System Events"
+        tell first application process whose unix id is targetPID
+            repeat with a from 1 to (count of UI elements of toolbar 1 of window w)
+                set end of found to my readControl(a reference to UI element a of toolbar 1 of window w)
+                repeat with b from 1 to (count of UI elements of UI element a of toolbar 1 of window w)
+                    set end of found to my readControl(a reference to ¬
+                        UI element b of UI element a of toolbar 1 of window w)
+                    repeat with c from 1 to (count of UI elements of UI element b of ¬
+                        UI element a of toolbar 1 of window w)
+                        set end of found to my readControl(a reference to ¬
+                            UI element c of UI element b of UI element a of toolbar 1 of window w)
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+    end tell
+    return found
+end toolbarControls
+
 on auditToolbar(targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
-            set labels to description of every button of toolbar 1 of ¬
-                (window (my libraryWindowIndex(targetPID)))
+            set w to my libraryWindowIndex(targetPID)
+            set labels to description of every button of toolbar 1 of window w
             repeat with label in labels
                 set labelText to contents of label as text
                 if labelText is "button" or labelText is "" or labelText is "missing value" then
@@ -154,15 +197,10 @@ on auditToolbar(targetPID)
                 end if
             end repeat
             set paletteFound to false
-            set controls to entire contents of toolbar 1 of (window (my libraryWindowIndex(targetPID)))
-            repeat with candidateControl in controls
-                set identifier to ""
-                try
-                    set identifier to value of attribute "AXIdentifier" of candidateControl
-                end try
+            repeat with found in my toolbarControls(targetPID, w)
+                set identifier to item 1 of found
                 if identifier starts with "toolbar." then
-                    set tooltip to help of candidateControl
-                    if tooltip is missing value or tooltip is "" then
+                    if item 2 of found is "" then
                         error "Toolbar tooltip is missing: " & identifier
                     end if
                     if identifier is "toolbar.commandPalette" then set paletteFound to true
@@ -172,21 +210,22 @@ on auditToolbar(targetPID)
             -- manager can keep the window narrow whatever size the app asks for. The button is
             -- still in the toolbar then, one click away, so it is looked for there too rather
             -- than failing a run on a machine that tiles its windows.
-            if not paletteFound then
-                repeat with candidateControl in controls
-                    try
-                        if (description of candidateControl) is "more toolbar items" then
-                            click candidateControl
-                            delay 0.3
-                            if exists (menu item "Open command palette" of menu 1 of candidateControl) then
-                                set paletteFound to true
-                            end if
-                            key code 53
-                            delay 0.2
-                            exit repeat
-                        end if
-                    end try
-                end repeat
+            set overflowShown to false
+            try
+                set overflowShown to (description of pop up button 1 of toolbar 1 of window w) ¬
+                    is "more toolbar items"
+            end try
+            if not paletteFound and overflowShown then
+                try
+                    click pop up button 1 of toolbar 1 of window w
+                    delay 0.3
+                    if exists (menu item "Open command palette" of menu 1 of ¬
+                        pop up button 1 of toolbar 1 of window w) then
+                        set paletteFound to true
+                    end if
+                end try
+                key code 53
+                delay 0.2
             end if
             if not paletteFound then error "Command palette button is missing from the toolbar"
         end tell
@@ -236,21 +275,44 @@ on auditSettings(targetPID)
     end tell
 end auditSettings
 
+-- The element under this one carrying an identifier, as a reference built from indices, or
+-- missing value. Walked rather than taken from `entire contents`, for the reason
+-- `readControl` gives.
+on elementWithIdentifier(element, wanted, depth)
+    tell application "System Events"
+        set identifier to ""
+        try
+            set identifier to (value of attribute "AXIdentifier" of element) as text
+        end try
+        if identifier is wanted then return element
+        if depth > 14 then return missing value
+        set childCount to 0
+        try
+            set childCount to count of UI elements of element
+        end try
+        repeat with position from 1 to childCount
+            set found to my elementWithIdentifier(a reference to UI element position of element, ¬
+                wanted, depth + 1)
+            if found is not missing value then return found
+        end repeat
+        return missing value
+    end tell
+end elementWithIdentifier
+
 -- Sections can move without changing the controls a keyboard or screen reader reaches.
 on clickSettingsControl(identifier, targetPID)
     tell application "System Events"
         tell first application process whose unix id is targetPID
             -- Changing the theme rebuilds the settings hierarchy before the next control appears.
             repeat 20 times
-                set controls to entire contents of (first window whose name is "General")
-                repeat with candidateControl in controls
-                    set controlIdentifier to ""
-                    try
-                        set controlIdentifier to value of attribute "AXIdentifier" of candidateControl
-                    end try
-                    if controlIdentifier is identifier then
-                        click candidateControl
-                        return
+                repeat with position from 1 to (count of windows)
+                    if (name of window position as text) is "General" then
+                        set found to my elementWithIdentifier(a reference to window position, ¬
+                            identifier, 0)
+                        if found is not missing value then
+                            click found
+                            return
+                        end if
                     end if
                 end repeat
                 delay 0.1
