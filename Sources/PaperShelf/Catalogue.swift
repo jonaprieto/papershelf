@@ -867,7 +867,7 @@ struct ResultsPane: View {
     }
 
     var body: some View {
-        withTabs(withShelfNavigation(withSidebarRequests(withDialogs(withKeys(core)))))
+        withTabs(withReaderRequests(withShelfNavigation(withSidebarRequests(withDialogs(withKeys(core))))))
     }
 
     /// What is open, put back and written down. Its own wrapper for the reason `withKeys`
@@ -933,6 +933,12 @@ struct ResultsPane: View {
                 }
                 showingPalette = true
             }
+    }
+
+    /// Split from `withShelfNavigation` for the reason `withKeys` gives: one chain this long
+    /// is past what the type-checker will finish.
+    private func withReaderRequests<V: View>(_ view: V) -> some View {
+        view
             .onReceive(NotificationCenter.default.publisher(for: .printPDF)) { note in
                 guard let window = note.object as? NSWindow, window === paneWindow.window else { return }
                 readerAnnotator.printPDF()
