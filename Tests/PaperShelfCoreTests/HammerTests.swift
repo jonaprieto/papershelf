@@ -1387,16 +1387,8 @@ extension HammerTests {
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let doc = PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: 3)))!
-        doc.documentAttributes?[PDFDocumentAttribute.titleAttribute] = "Rich"
-        let outline = PDFOutline()
-        for index in 0..<doc.pageCount {
-            let child = PDFOutline()
-            child.label = "Chapter \(index + 1)"
-            child.destination = PDFDestination(page: doc.page(at: index)!, at: .zero)
-            outline.insertChild(child, at: index)
-        }
-        doc.outlineRoot = outline
+        let doc = try makeOutlinedPDF(pages: 3)
+        doc.documentAttributes = [PDFDocumentAttribute.titleAttribute: "Rich"]
         let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 40, height: 20),
                                  forType: .text, withProperties: nil)
         doc.page(at: 0)?.addAnnotation(note)
@@ -1683,15 +1675,7 @@ extension HammerTests {
         let root = fm.temporaryDirectory.appendingPathComponent(scratchName("pdfnorm"))
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
-        let document = try XCTUnwrap(PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: 3))))
-        let outline = PDFOutline()
-        for index in 0..<document.pageCount {
-            let child = PDFOutline()
-            child.label = "Chapter \(index + 1)"
-            child.destination = PDFDestination(page: document.page(at: index)!, at: .zero)
-            outline.insertChild(child, at: index)
-        }
-        document.outlineRoot = outline
+        let document = try makeOutlinedPDF(pages: 3)
         let source = root.appendingPathComponent("Book 2024-06.pdf")
         XCTAssertTrue(document.write(to: source))
 

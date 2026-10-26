@@ -3,6 +3,7 @@ import PDFKit
 import CoreGraphics
 import CoreText
 import AppKit
+import XCTest
 
 /// Writes a one-page PDF, optionally encrypted with `password` as both the user and
 /// owner password (PDFKit requires an owner password to encrypt at all).
@@ -97,6 +98,27 @@ func makeScratchPDF(pages: Int = 1) throws -> URL {
     ctx.closePDF()
     try (raw as Data).write(to: url)
     return url
+}
+
+/// A scratch document whose outline names each page "Chapter n".
+///
+/// Built as a fresh document with the pages copied in, because PDFKit on macOS 27 drops an
+/// outline given to a document that was read from data without one: the two tests that
+/// check a rebuild keeps the table of contents were writing a book that had none.
+func makeOutlinedPDF(pages: Int) throws -> PDFDocument {
+    let source = try XCTUnwrap(PDFDocument(data: try Data(contentsOf: try makeScratchPDF(pages: pages))))
+    let document = PDFDocument()
+    let outline = PDFOutline()
+    for index in 0..<source.pageCount {
+        let page = try XCTUnwrap(source.page(at: index)?.copy() as? PDFPage)
+        document.insert(page, at: index)
+        let child = PDFOutline()
+        child.label = "Chapter \(index + 1)"
+        child.destination = PDFDestination(page: page, at: .zero)
+        outline.insertChild(child, at: index)
+    }
+    document.outlineRoot = outline
+    return document
 }
 
 /// Writes a multi-page PDF where each page's text is chosen independently: `nil` draws a
