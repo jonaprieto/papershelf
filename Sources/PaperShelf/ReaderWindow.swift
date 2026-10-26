@@ -16,7 +16,7 @@ extension Notification.Name {
 struct ReaderWindow: View {
     let url: URL
 
-    @State private var annotator = Annotator()
+    @State private var annotator = Annotator(opensToRead: true)
     @State private var fit: PageFit = .width
     @State private var presentation = false
     @State private var presentationFit: PageFit?

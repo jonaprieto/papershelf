@@ -262,7 +262,7 @@ struct ResultsPane: View {
     private func openWebsite(_ url: URL? = nil) {
         let key = "website:" + UUID().uuidString
         websites[key] = WebReaderModel(initialURL: url)
-        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator(opensToRead: true) })
         deck.deck.activeTab?.annotator.readingLiveWebsite = true
         readerFocused = true
         selected = key
@@ -280,7 +280,7 @@ struct ResultsPane: View {
     private func openReader(_ key: String?) {
         guard let key else { return }
         if !readerFocused { deck.deck = deck.deck.unsplitting() }
-        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator() })
+        deck.deck = deck.deck.opening(key, kept: true, makeAnnotator: { Annotator(opensToRead: true) })
         readerFocused = true
         selected = key
     }
@@ -359,7 +359,7 @@ struct ResultsPane: View {
     /// reachable only from a button that appeared once two papers were already kept open,
     /// which is a thing to know about before it can be found.
     private func openBeside(_ key: String) {
-        deck.deck = deck.deck.openingBeside(key, makeAnnotator: { Annotator() })
+        deck.deck = deck.deck.openingBeside(key, makeAnnotator: { Annotator(opensToRead: true) })
         readerFocused = true
         selected = key
     }
@@ -380,7 +380,7 @@ struct ResultsPane: View {
                   $0.currentURL.resolvingSymlinksInPath() == url.resolvingSymlinksInPath()
               })
         else { return false }
-        deck.deck = deck.deck.focusing(pane).opening(item.key, kept: true, makeAnnotator: Annotator.init)
+        deck.deck = deck.deck.focusing(pane).opening(item.key, kept: true, makeAnnotator: { Annotator(opensToRead: true) })
         readerFocused = true
         selected = item.key
         if deck.deck.canSplit { splitReader() }
@@ -437,7 +437,7 @@ struct ResultsPane: View {
             // is newer than what was open last time, so it wins.
             guard deck.deck.panes.allSatisfy({ $0.tabs.isEmpty }) else { return }
             deck.deck = Deck.restoring(stored, reachable: present.contains,
-                                       makeAnnotator: { _ in Annotator() })
+                                       makeAnnotator: { _ in Annotator(opensToRead: true) })
             // Whatever was already selected is still selected, and restoring threw its
             // preview tab away with everything else. Nothing else puts it back until the
             // selection moves.
@@ -876,6 +876,12 @@ struct ResultsPane: View {
     private func withTabs<V: View>(_ view: V) -> some View {
         view
             .onAppear(perform: restoreTabs)
+            // A kept tab is a paper opened to read; the selection passing through the
+            // single reader is not (see `Annotator.opensToRead`).
+            .onChange(of: deck.deck.activeTab?.isPreview == false && !deck.deck.showingSelection,
+                      initial: true) { _, reading in
+                annotator.opensToRead = reading
+            }
             .onReceive(NotificationCenter.default.publisher(for: .readingFileRemoved)) { note in
                 guard let url = note.object as? URL else { return }
                 let key = url.resolvingSymlinksInPath().path

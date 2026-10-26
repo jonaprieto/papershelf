@@ -206,6 +206,17 @@ final class Annotator {
     /// while that is true would throw them away.
     var hasUnwrittenMarks: Bool { unsaved || saveTask != nil }
 
+    /// Whether this paper was opened to read rather than shown in passing. Only then does a
+    /// paper with marks and no notes file get one as soon as its marks are read: a list
+    /// arrowed through should not leave a new file beside every PDF it passed.
+    var opensToRead = false {
+        didSet { if opensToRead, !oldValue, scan == nil { refreshNotesFileIfStale() } }
+    }
+
+    init(opensToRead: Bool = false) {
+        self.opensToRead = opensToRead
+    }
+
     /// The last position written to the library, and the write waiting out a scroll. A
     /// page turn is cheap; a database write per scroll tick is not.
     private var positionTask: Task<Void, Never>?
@@ -436,7 +447,25 @@ final class Annotator {
             guard !Task.isCancelled, mine == self.generation else { return }
             self.marks = found.sorted(by: Annotator.precedes)
             self.scan = nil
+            self.refreshNotesFileIfStale()
         }
+    }
+
+    /// Brings the notes file up to the marks just read when the PDF is newer than it.
+    ///
+    /// Marks made in Preview or Acrobat, and a PDF another program rewrote, reached the
+    /// file only once something was marked here or Sync was pressed, so a paper could sit
+    /// with its highlights and a notes file that said nothing of them. A file that already
+    /// exists is kept current wherever the paper is shown; a new one is written only for
+    /// a paper opened to read, and never for one with no marks.
+    private func refreshNotesFileIfStale() {
+        guard let url, Prefs.shared.syncNotesSidecar, !notesSidecarIsCurrent,
+              !hasUnwrittenMarks else { return }
+        let manager = FileManager.default
+        let exists = manager.fileExists(atPath: notesSidecarURL(for: url).path)
+            || manager.fileExists(atPath: legacyNotesSidecarURL(for: url).path)
+        guard exists || (opensToRead && !marks.isEmpty) else { return }
+        syncNotesSidecar()
     }
 
     private func rescanIfNeeded() {
@@ -461,8 +490,10 @@ final class Annotator {
             let type = annotation.type ?? "Note"
             guard Annotator.markTypes.contains(type) else { return nil }
             let id = marks.first { $0.annotation === annotation }?.id ?? UUID()
+            // A sticky note quotes nothing: the words under its icon are not what it is
+            // about, and the library's own reading of marks already says so.
             return Mark(id: id, page: number, kind: type,
-                        quoted: quotedText(of: annotation, on: page),
+                        quoted: type == "Text" ? "" : quotedText(of: annotation, on: page),
                         note: annotation.contents ?? "", colour: annotation.color,
                         annotation: annotation)
         }
