@@ -110,7 +110,8 @@ struct ReaderWindow: View {
         }
         .sheet(isPresented: $showingPalette) {
             CommandPalette(commands: Self.paletteCommands, documents: [],
-                           run: perform, open: { _ in }, sources: paletteSources)
+                           run: perform, open: { _ in }, sources: paletteSources,
+                           width: min(640, max(360, (readerWindow.window?.frame.width ?? 640) - 32)))
         }
         .sheet(item: $passwordPurpose) { purpose in
             PasswordSheet(purpose: purpose, annotator: annotator)

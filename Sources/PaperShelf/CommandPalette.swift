@@ -85,6 +85,9 @@ struct CommandPalette: View {
     let run: (Command) -> Void
     let open: (Item) -> Void
     var sources = PaletteSources()
+    /// A sheet is not narrowed to the window it hangs from, so a reader tiled narrower
+    /// than this had the palette's edges cut off by its own frame.
+    var width: CGFloat = 640
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -309,7 +312,7 @@ struct CommandPalette: View {
             Divider()
             footer
         }
-        .frame(width: 640)
+        .frame(width: width)
         .onAppear { fieldFocused = true }
         .onChange(of: query) { index = 0 }
         .task(id: needle) { await searchTheLibrary() }
@@ -362,7 +365,10 @@ struct CommandPalette: View {
                     .onKeyPress(.rightArrow) { acceptCompletion() }
                     .onKeyPress(.escape) { dismiss(); return .handled }
             }
-            Text("\(documents.count) documents · \(commands.count) commands")
+            // A reader opened on its own has no shelf to count; "0 documents" there read as
+            // a library that had lost everything.
+            Text(documents.isEmpty ? "\(commands.count) commands"
+                 : "\(documents.count) documents · \(commands.count) commands")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
         }
