@@ -1162,10 +1162,19 @@ struct ResultsPane: View {
                 }
                 .fixedSize()
             }
+            // An item of its own, ahead of the rest. The group below is one toolbar item, so
+            // when a window is too narrow for it the whole of it folds into the overflow
+            // chevron; at a tiled 945 points it did, and the palette's button went with it,
+            // leaving nothing on screen to say the palette was there. In a stack of one for
+            // the reason the group is a stack: a lone button is promoted to a native one,
+            // which drops its name, its identifier and its tooltip.
+            ToolbarItem(placement: .primaryAction) {
+                HStack { commandPaletteButton }
+                    .fixedSize()
+            }
             ToolbarItem(placement: .primaryAction) {
                 // Keep the SwiftUI controls together so native toolbar promotion does not drop their help.
                 HStack(spacing: Space.step) {
-                    commandPaletteButton
                     Button { openWebsite() } label: {
                         Label("Open Website", systemImage: "globe")
                             .tip("Open a website to save, highlight and cite", command: .openWebsite)
