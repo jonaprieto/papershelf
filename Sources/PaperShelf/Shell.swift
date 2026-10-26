@@ -225,6 +225,12 @@ struct PaperShelfApp: App {
                 CheckForUpdatesButton().commandShortcut(.checkForUpdates)
             }
             CommandGroup(replacing: .newItem) {
+                // A viewer with no Open and no Open Recent left a new user with a File menu
+                // that could only open websites.
+                Button("Open…") { AppDelegate.current?.choosePDFs() }
+                    .commandShortcut(.openFile)
+                OpenRecentMenu()
+                Divider()
                 Button("Open Website…") {
                     AppDelegate.current?.wantsLibrary = true
                     openWindow(id: "main")
@@ -278,13 +284,29 @@ struct PaperShelfApp: App {
                 Button("Toggle Sidebar", action: chrome.toggleSidebar)
                     .commandShortcut(.toggleSidebar)
                 Divider()
+                // The theme and the page's contrast were only in the toolbar's Display
+                // menu, which a reader opened from Finder does not have.
+                Picker("Appearance", selection: Binding(get: { Prefs.shared.appearance },
+                                                        set: { Prefs.shared.appearance = $0 })) {
+                    ForEach(Appearance.allCases) { mode in Text(mode.label).tag(mode) }
+                }
+                .pickerStyle(.menu)
+                Picker("PDF Contrast", selection: Binding(get: { Prefs.shared.readingAppearance },
+                                                          set: { Prefs.shared.readingAppearance = $0 })) {
+                    ForEach(PDFReadingAppearance.allCases) { mode in Text(mode.label).tag(mode) }
+                }
+                .pickerStyle(.menu)
+            }
+            CommandGroup(before: .windowList) {
                 // Reading a file opened from Finder no longer builds a library window, so
-                // there has to be a way to ask for one.
+                // there has to be a way to ask for one. In the Window menu, where a window
+                // is looked for.
                 Button("Library") {
                     AppDelegate.current?.wantsLibrary = true
                     openWindow(id: "main")
                 }
                     .keyboardShortcut("0", modifiers: .command)
+                Divider()
             }
         }
 

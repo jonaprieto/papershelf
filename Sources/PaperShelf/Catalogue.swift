@@ -1886,7 +1886,7 @@ struct ResultsPane: View {
         .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
-        .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates,
+        .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates, .openFile,
     ]
 
     /// Carries out one command, whatever asked for it.
@@ -1904,6 +1904,7 @@ struct ResultsPane: View {
         }
         switch command {
         case .openWebsite: openWebsite()
+        case .openFile: AppDelegate.current?.choosePDFs()
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)
         case .viewBibliography: choose(.bibliography)

@@ -95,7 +95,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
     // Library
-    case plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
+    case openFile, plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
     case removeFromLibrary, trashNow
     case suggestTags, checkForUpdates
 
@@ -103,6 +103,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var searchAliases: String {
         switch self {
+        case .openFile: return "open file pdf document read browse choose"
         case .checkForUpdates: return "update upgrade new latest version release build"
         case .editName: return "rename edit change current file pdf filename name"
         case .applyOne: return "rename save apply current file filename now"
@@ -177,8 +178,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
-        case .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates:
+        case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
+             .newTag, .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates:
             return .library
         }
     }
@@ -277,6 +278,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .nextTab: return "Next tab"
         case .previousTab: return "Previous tab"
         case .toggleSplit: return "Split or join the reader"
+        case .openFile: return "Open a PDF..."
         case .plan: return "Plan renames"
         case .apply: return "Apply the reviewed plan"
         case .refresh: return "Read the sources again"
@@ -361,6 +363,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .previousTab: return Shortcut("{", [.command, .shift])
         case .toggleSplit: return Shortcut("\\", .command)
         case .printPDF: return Shortcut("p", .command)
+        case .openFile: return Shortcut("o", .command)
         case .plan: return Shortcut("p", [.command, .shift])
         case .apply: return Shortcut("\r", .command)
         case .findDuplicates: return Shortcut("d", .command)

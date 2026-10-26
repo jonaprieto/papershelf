@@ -33,8 +33,8 @@ struct FirstRun: View {
                       "Browse the folders you already use, or add one PDF. Sources stay "
                       + "separate, searchable, and easy to revisit.")
                 point("textformat.abc", "Names you can trust",
-                      "Review suggested names before anything changes. Originals stay safe "
-                      + "by default, and Trash is always recoverable.")
+                      "Review suggested names before anything changes. Nothing is renamed "
+                      + "until you apply it, and Trash is always recoverable.")
                 point("highlighter", "Highlights that mean something",
                       "Use a small personal palette for definitions, evidence, questions, "
                       + "and follow-ups, then attach notes to the passage.")
@@ -52,6 +52,12 @@ struct FirstRun: View {
                 Text("or drop folders and PDFs anywhere in this window")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
+                // The two keys a new reader needs before anything else, said once here
+                // rather than left for the menus to be found.
+                Text("\(key(.openFile, or: "File > Open")) reads a single PDF on its own. "
+                     + "\(key(.palette, or: "View > Command Palette")) finds a paper or any command.")
+                    .font(Face.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(Space.bay)
@@ -59,6 +65,10 @@ struct FirstRun: View {
         // The whole pane is the target, not just the button.
         .contentShape(Rectangle())
         .onTapGesture(perform: chooseFiles)
+    }
+
+    private func key(_ command: Command, or menu: String) -> String {
+        Keymap.shared.shortcut(for: command)?.display ?? menu
     }
 
     private func point(_ icon: String, _ title: String, _ body: String) -> some View {

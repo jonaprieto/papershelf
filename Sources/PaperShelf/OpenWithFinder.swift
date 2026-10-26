@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import PaperShelfCore
 
 /// What happens when the machine hands the app a file.
@@ -111,7 +112,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where a reader's own size and position are kept between launches.
     static let readerFrameName = "reader"
 
+    /// File > Open. A paper chosen here opens the way one double-clicked in Finder does: in
+    /// a window of its own, with no library built around it.
+    func choosePDFs() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls { openReader(for: url) }
+    }
+
     func openReader(for url: URL) {
+        RecentPDFs.shared.note(url)
         let key = url.resolvingSymlinksInPath().path
         if let existing = readers[key] {
             existing.window?.makeKeyAndOrderFront(nil)
@@ -179,5 +191,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func closeLibraryWindow() {
         libraryAppearedAt = nil
         for window in libraryWindows { window.close() }
+    }
+}
+
+/// The papers File > Open Recent offers, kept in the system's own list so the Dock's menu
+/// and Finder's recent items show the same ones.
+@MainActor
+@Observable
+final class RecentPDFs {
+    static let shared = RecentPDFs()
+    private(set) var urls: [URL] = NSDocumentController.shared.recentDocumentURLs
+
+    /// Kept here as well as handed to the system, so the menu does not depend on when the
+    /// system gets round to updating its copy.
+    func note(_ url: URL) {
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        let limit = NSDocumentController.shared.maximumRecentDocumentCount
+        let path = url.resolvingSymlinksInPath().path
+        urls = Array(([url] + urls.filter { $0.resolvingSymlinksInPath().path != path }).prefix(limit))
+    }
+
+    func clear() {
+        NSDocumentController.shared.clearRecentDocuments(nil)
+        urls = []
+    }
+}
+
+struct OpenRecentMenu: View {
+    private var recents: RecentPDFs { .shared }
+
+    var body: some View {
+        Menu("Open Recent") {
+            ForEach(recents.urls, id: \.self) { url in
+                Button(url.lastPathComponent) { AppDelegate.current?.openReader(for: url) }
+            }
+            if !recents.urls.isEmpty { Divider() }
+            Button("Clear Menu") { recents.clear() }
+                .disabled(recents.urls.isEmpty)
+        }
     }
 }
