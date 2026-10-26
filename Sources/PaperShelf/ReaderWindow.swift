@@ -150,12 +150,13 @@ struct ReaderWindow: View {
     private func recordAndRestore() async {
         guard let library = Library.shared else { return }
         let resolved = url.resolvingSymlinksInPath()
-        // Off the main actor: this parses the document for its title, author and page
-        // count, which is a tenth of a second on a long paper.
-        let input = await Task.detached { indexInput(for: resolved) }.value
         // Split rather than coalesced with ??: an autoclosure cannot carry an await.
         var record = try? await library.document(atPath: resolved.path)
         if record == nil {
+            // Off the main actor, and only for a paper the library has not met: this
+            // parses the whole document a second time for its title, author and page
+            // count, which is a tenth of a second on a long paper.
+            let input = await Task.detached { indexInput(for: resolved) }.value
             record = (try? await library.indexDocuments([input]))?.first
         }
         guard let record else { return }

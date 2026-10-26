@@ -534,6 +534,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            AppDelegate.current?.libraryAppearedAt = Date()
             seedNamePatternIfNeeded()
             chrome.undo = { runner.undo() }
             chrome.canUndo = runner.canUndo
@@ -1636,6 +1637,7 @@ struct ContentView: View {
         // ⌘K over a paper opened from Finder lands before this and has already
         // restored, watched and scanned (`standIn(for:)`).
         guard temporarySource == nil else { return }
+        guard AppDelegate.current?.libraryUnwanted != true else { return }
         restoreSources()
         // Which sources are actually there, before anything is asked of them. One bounded
         // pass costs the launch a fraction of a second at worst and keeps a folder that
@@ -1649,7 +1651,13 @@ struct ContentView: View {
             let hadCache = runner.showCached(fingerprint: fingerprint)
             if prefs.viewMode == .catalogue {
                 libraryPreview(preservingVisibleResults: hadCache)
-            } else if prefs.autoPreview || hadCache {
+            } else if hadCache {
+                // Last run's plan is already on screen. Folding in what changed on disk
+                // opens only the new files; planning again read every PDF in the sources
+                // on every launch, and blanked the window, open paper included, until it
+                // had.
+                await absorbChanges(nil)
+            } else if prefs.autoPreview {
                 preview()
             }
         }

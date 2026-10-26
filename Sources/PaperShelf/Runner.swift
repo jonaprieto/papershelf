@@ -594,7 +594,8 @@ final class Runner {
     /// folder index and the cursor are rebuilt from the new order.
     func sortResults(by order: ItemSort, descending: Bool) {
         guard !results.isEmpty else { return }
-        finish(sorted(results, by: order, descending: descending), keepingDecisions: true)
+        finish(sorted(results, by: order, descending: descending), keepingDecisions: true,
+               syncLibrary: false)
     }
 
     /// The entry type the next rebuild should use.
@@ -832,7 +833,13 @@ final class Runner {
         let fresh = found.filter { known[$0.key] == nil }
         let present = Set(found.map(\.key))
         let vanished = results.filter { !present.contains($0.key) }.map(\.key)
-        guard !fresh.isEmpty || !vanished.isEmpty else { return }
+        guard !fresh.isEmpty || !vanished.isEmpty else {
+            // The disk agrees with the shelf, so what launch put on screen from the cache
+            // is now what is there, and the next burst can be walked where it happened.
+            jobs = found
+            showingCached = false
+            return
+        }
 
         var arrived: [String: Item] = [:]
         if !fresh.isEmpty {

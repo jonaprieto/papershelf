@@ -167,6 +167,10 @@ struct PaperShelfApp: App {
         _ = AppBuild.current
         AppDiagnostics.shared.start()
         Prefs.shared.prepareForLaunch()
+        // Opening the database runs its migrations and can wait out another process's
+        // write lock. The first view to ask for it would otherwise do that on the main
+        // thread, while the window is trying to appear.
+        Task.detached(priority: .userInitiated) { _ = Library.shared }
         NSSetUncaughtExceptionHandler { exception in
             AppDiagnostics.uncaughtException(exception)
         }

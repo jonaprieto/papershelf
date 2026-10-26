@@ -90,4 +90,26 @@ final class ScopedAbsorbTests: XCTestCase {
         XCTAssertEqual(runner.results.count, 4,
                        "papers the scoped walk never looked at vanished from a cached shelf")
     }
+
+    /// A launch in the list puts last run's plan on screen and walks the sources behind it.
+    /// When the walk finds the disk unchanged, the shelf is current: it stops saying it is
+    /// cached, and the next change is walked where it happened rather than everywhere.
+    func testALaunchThatFindsNothingNewSettlesTheCachedShelf() async throws {
+        let scanned = try await scannedRunner()
+        saveRunCache(RunCache(fingerprint: "settled", items: scanned.results))
+        let runner = Runner()
+        XCTAssertTrue(runner.showCached(fingerprint: "settled"))
+        await runner.absorbChanges(roots: [source], options: options, fingerprint: "settled")
+        XCTAssertFalse(runner.activity.showingCached, "an unchanged disk left the shelf marked as cached")
+
+        let arrived = source.appendingPathComponent("inbox/four.pdf")
+        try makePDF(at: arrived, password: nil)
+        let unreported = source.appendingPathComponent("archive/unreported.pdf")
+        try makePDF(at: unreported, password: nil)
+        await runner.absorbChanges(roots: [source], options: options, fingerprint: "settled",
+                                   changed: [.file(arrived)])
+        XCTAssertTrue(keys(runner).contains(Item.identity(of: arrived)))
+        XCTAssertFalse(keys(runner).contains(Item.identity(of: unreported)),
+                       "the settled shelf still walked every source for one change")
+    }
 }

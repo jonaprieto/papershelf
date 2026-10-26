@@ -25,6 +25,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         super.init()
         AppDelegate.current = self
+        // Cleared once the library is really gone. SwiftUI keeps a closed `Window` scene's
+        // view and does not always say it disappeared, which left a launch's library looking
+        // as if it had been on screen all along when the next file arrived. Nor is a close
+        // notice proof: one arrives for the library just before a file does, with the
+        // window still on screen after it, so it is checked a moment later.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                               object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let window = note.object as? NSWindow,
+                      self.libraryWindows.contains(where: { $0 === window }) else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    if !self.showsLibrary { self.libraryAppearedAt = nil }
+                }
+            }
+        }
     }
 
     /// Whether anybody has asked to see the library this session. Until they have, a
@@ -36,15 +52,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// paper twice raises the window that already has it rather than making a second.
     private var readers: [String: NSWindowController] = [:]
 
-    /// When this delegate was made, which SwiftUI does as the app starts. A file that
-    /// arrives within a few seconds of that is the reason the app is running; one that
-    /// arrives later is somebody double-clicking a second paper while the library is
-    /// already open, and their library window is theirs to keep.
+    /// When the library window last came on screen, or nil while there is none. Set by the
+    /// window itself.
     ///
-    /// Time rather than `applicationDidFinishLaunching`: the open event and the finish of
-    /// launching race, and which arrives first is not something to build on.
+    /// A library that was already on screen when a file arrives is somebody's, and stays.
+    /// One that came up with the file is SwiftUI answering the activation the open caused,
+    /// and goes. How long it has been there is what tells them apart: the open event and
+    /// the finish of launching race, and which arrives first is not something to build on.
+    /// This used to be described here with nothing behind it, so a paper double-clicked
+    /// while an ordinary launch's library was on screen closed that library.
+    var libraryAppearedAt: Date?
+
+    /// Whether the only windows anybody asked for are readers. The library window SwiftUI
+    /// makes anyway should then do none of its own work: scanning sources, watching
+    /// folders and reopening tabs, for a window that is closed again a moment later.
+    var libraryUnwanted: Bool { !wantsLibrary && !readers.isEmpty }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        if !wantsLibrary, let appeared = libraryAppearedAt, Date().timeIntervalSince(appeared) > 2 {
+            wantsLibrary = true
+        }
         for url in urls { openReader(for: url) }
         guard !wantsLibrary else { return }
         // Twice, and the second one late. The window this closes is not always there yet:
@@ -150,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func closeLibraryWindow() {
+        libraryAppearedAt = nil
         for window in libraryWindows { window.close() }
     }
 }
