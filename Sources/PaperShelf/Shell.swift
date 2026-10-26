@@ -236,6 +236,15 @@ struct PaperShelfApp: App {
                 }
                 .commandShortcut(.printPDF)
             }
+            // The stock Help item opens a page saying there is no help, which is the last
+            // thing somebody new should find there. The keys and the palette are the help.
+            CommandGroup(replacing: .help) {
+                Button("Keyboard Shortcuts") {
+                    Prefs.shared.settingsPane = .keyboard
+                    PaletteSettings.openSettingsWindow()
+                }
+                Button("Command Palette", action: openCommandPalette)
+            }
             CommandGroup(after: .textEditing) {
                 Button("Find in PDF", action: openPDFSearch)
                     .commandShortcut(.findInDocument)
