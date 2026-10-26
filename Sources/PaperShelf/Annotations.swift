@@ -177,6 +177,22 @@ final class Annotator {
         return true
     }
 
+    /// Prints a file that is not on screen, scaled the way the page would be. ⌘P on a row
+    /// of the list with no page beside it, or in the BibTeX view, did nothing at all.
+    static func printFile(_ url: URL, passwords: [String]) -> Bool {
+        guard let document = PDFDocument(url: url) else { return false }
+        if document.isLocked {
+            for password in passwords where document.unlock(withPassword: password) { break }
+        }
+        guard !document.isLocked, document.allowsPrinting, document.pageCount > 0,
+              let operation = document.printOperation(for: NSPrintInfo.shared.copy() as? NSPrintInfo,
+                                                      scalingMode: .pageScaleDownToFit,
+                                                      autoRotate: true)
+        else { return false }
+        operation.run()
+        return true
+    }
+
     func setPageFit(_ mode: PageFit) {
         customZoomPercent = nil
         (view as? FitWidthPDFView)?.requestFit(mode)

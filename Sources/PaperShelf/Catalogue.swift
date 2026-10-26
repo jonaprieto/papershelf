@@ -1956,7 +1956,10 @@ struct ResultsPane: View {
         case .palette: showingPalette = true
         case .focusSearch: showingPalette = true
         case .toggleSidebar: toggleSidebar()
-        case .printPDF: return readerAnnotator.printPDF()
+        case .printPDF:
+            if readerAnnotator.printPDF() { return true }
+            guard let item = readerItem ?? selectedItem else { return false }
+            return Annotator.printFile(item.currentURL, passwords: passwords)
         case .lockPDF, .unlockPDF:
             guard readerAnnotator.url != nil else { return false }
             passwordPurpose = command == .lockPDF ? .lock : .unlock
