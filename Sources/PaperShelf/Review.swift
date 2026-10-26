@@ -1596,10 +1596,15 @@ struct PDFPreview: NSViewRepresentable {
             watch = Timer.scheduledTimer(timeInterval: 1.5, target: self,
                                          selector: #selector(checkForRewrite),
                                          userInfo: nil, repeats: true)
+            // Lets the system fold these wakeups in with others rather than waking for each.
+            watch?.tolerance = 0.5
         }
 
         @MainActor @objc private func checkForRewrite() {
             guard let watched else { return }
+            // A page nobody can see, minimised or behind another window or on another Space,
+            // has nothing to keep current; the first tick after it is seen again catches up.
+            if let window = watched.window, !window.occlusionState.contains(.visible) { return }
             PDFPreview.refreshIfChanged(watched, coordinator: self)
         }
 
