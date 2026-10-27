@@ -462,10 +462,10 @@ struct ContentView: View {
             Divider()
             statusBar
         }
-        // 640 × 480. It was 1011 × 560, and 1252 wide the moment the notes were open,
-        // because the rail, the notes rail and the contents rail were all fixed
-        // neighbours the width arithmetic had to reserve for. Each of them folds now, so
-        // the window's floor is a number the app chose rather than a sum it was handed.
+        // 360 × 480, the shelf's own floor. It was 1011 × 560, and 1252 wide the moment
+        // the notes were open, because the rail, the notes rail and the contents rail were
+        // all fixed neighbours the width arithmetic had to reserve for. Each of them folds
+        // now, and so does the sidebar, so a tiled column of any useful width fits.
         .frame(minWidth: Metric.windowFloorWidth, minHeight: Metric.windowFloorHeight)
         .preferredColorScheme(prefs.appearance.colorScheme)
         .dropDestination(for: URL.self) { urls, _ in

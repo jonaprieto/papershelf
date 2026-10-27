@@ -32,6 +32,8 @@ struct ReaderWindow: View {
     @State private var documentID: String?
     @State private var documentProjectScopes: [HighlightMeaningScope] = []
     @State private var readerWindow = PaneWindow()
+    /// How wide the row under the page is, so it can fold before its controls collide.
+    @State private var barWidth = SplitLayout.readerIdealWidth
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the delegate is the one that builds this window.
     private var palette: Palette { Palette.shared }
@@ -76,14 +78,17 @@ struct ReaderWindow: View {
                     notesButton
                     paletteButton
                     Spacer()
-                    Text(url.lastPathComponent)
-                        .font(Face.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if !barFolded {
+                        Text(url.lastPathComponent)
+                            .font(Face.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 .padding(.horizontal, Space.roomy)
                 .padding(.vertical, Space.tight)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
             }
         }
         .navigationTitle(title)
@@ -255,10 +260,16 @@ struct ReaderWindow: View {
 
     /// The notes beside the page, and how many there are. Without it a reader opened from
     /// Finder showed its notes only to somebody who selected text or clicked a highlight.
+    /// A narrow reader: the file name goes and the buttons keep only their icons.
+    private var barFolded: Bool { barWidth < SplitLayout.readerBarFoldsBelow }
+
     private var notesButton: some View {
         Button { showsNotes.toggle() } label: {
-            Label(annotator.marks.isEmpty ? "Notes" : "\(annotator.marks.count)",
-                  systemImage: "highlighter")
+            Label {
+                if !barFolded { Text(annotator.marks.isEmpty ? "Notes" : "\(annotator.marks.count)") }
+            } icon: {
+                Image(systemName: "highlighter")
+            }
                 .font(Face.caption)
         }
         .buttonStyle(.borderless)
@@ -270,8 +281,11 @@ struct ReaderWindow: View {
     /// The palette's key, on screen. Nothing in this window said ⌘K existed.
     private var paletteButton: some View {
         Button { showingPalette = true } label: {
-            Label(Keymap.shared.shortcut(for: .palette)?.display ?? "Commands",
-                  systemImage: "magnifyingglass")
+            Label {
+                if !barFolded { Text(Keymap.shared.shortcut(for: .palette)?.display ?? "Commands") }
+            } icon: {
+                Image(systemName: "magnifyingglass")
+            }
                 .font(Face.caption)
         }
         .buttonStyle(.borderless)

@@ -240,14 +240,20 @@ final class LayoutTests: XCTestCase {
 final class FoldingTests: XCTestCase {
 
     func testTheWindowFloorIsWhatTheRedesignPromises() {
-        XCTAssertEqual(SplitLayout.windowFloorWidth, 640)
+        XCTAssertEqual(SplitLayout.windowFloorWidth, 360)
         XCTAssertEqual(SplitLayout.windowFloorHeight, 480)
     }
 
-    /// The detail side asks for one pane's floor, not two. Sidebar minimum plus this has
-    /// to fit inside the window's floor, or the window cannot reach it.
-    func testTheDetailFloorLeavesRoomForTheSidebarInsideTheWindowFloor() {
-        XCTAssertLessThanOrEqual(220 + SplitLayout.detailMinWidth(), SplitLayout.windowFloorWidth)
+    /// The floor is narrower than the sidebar and the shelf together, so a window at its
+    /// floor has folded the sidebar, and the shelf still has its own floor to itself.
+    func testAtTheWindowFloorTheSidebarHasFoldedAndTheShelfFits() {
+        XCTAssertFalse(SplitLayout.showsSidebar(windowWidth: SplitLayout.windowFloorWidth))
+        XCTAssertGreaterThanOrEqual(SplitLayout.windowFloorWidth, SplitLayout.detailMinWidth())
+    }
+
+    /// A reader can only reach its floor with the row under the page folded.
+    func testAReaderAtItsFloorHasFoldedItsBar() {
+        XCTAssertLessThan(SplitLayout.readerFloorWidth, SplitLayout.readerBarFoldsBelow)
     }
 
     func testEachPaneFoldsAtItsOwnWidthAndStaysFoldedBelowIt() {

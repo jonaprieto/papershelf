@@ -183,16 +183,27 @@ public extension SplitLayout {
     }
 
     /// The smallest window the app will open at, and the smallest it can be dragged to.
-    static let windowFloorWidth: CGFloat = 640
+    ///
+    /// The shelf's own floor and nothing more. It was 640, a number chosen so the sidebar
+    /// fitted beside the shelf, and a tiling window manager hands out columns narrower than
+    /// that: three windows on a 1440 point laptop are 466 points each. A window that refuses
+    /// its column runs over the one next to it. The sidebar folds below `showsSidebar` and
+    /// the inspector overlays the page, so nothing is left needing the room.
+    static let windowFloorWidth: CGFloat = contentFloor
     static let windowFloorHeight: CGFloat = 480
 
     /// A reader is a page and the bar under it, so it is taller than the library window
     /// and narrower. What it opens at where the display can show it.
     static let readerIdealWidth: CGFloat = 900
     static let readerIdealHeight: CGFloat = 1000
-    /// And the smallest it is worth drawing: below this the page bar's own controls start
-    /// running into each other.
-    static let readerFloorWidth: CGFloat = 520
+    /// And the smallest it is worth drawing: the page bar alone, once the row under the
+    /// page has folded (see `readerBarFoldsBelow`). It was 520, the whole row at full
+    /// width, which no tiled column on a laptop is.
+    static let readerFloorWidth: CGFloat = 400
+
+    /// Below this the row under a reader's page drops the file name, which the title bar
+    /// already shows, and the words on its Notes and command buttons, keeping their icons.
+    static let readerBarFoldsBelow: CGFloat = 520
     static let readerFloorHeight: CGFloat = 400
 
     /// What a reader opens at on a display that leaves this much room.
@@ -250,6 +261,6 @@ public extension SplitLayout {
 
     /// What the detail side of the window has to be at least. Two panes and a divider
     /// while both are drawn side by side; one pane's floor once the panel overlays it,
-    /// which is the whole reason the window can now reach 640.
+    /// which is the whole reason the window can reach its floor.
     static func detailMinWidth() -> CGFloat { contentFloor }
 }
