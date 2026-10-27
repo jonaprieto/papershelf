@@ -388,11 +388,12 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     /// The second key some commands have always answered to. Not rebindable and not shown
     /// as the shortcut: `C` confirms because a hand resting on the left of the keyboard
     /// should not have to reach for Return, and `N`/`P` move because some people's do.
+    /// ⇧J and ⇧K move while reading, where J and K alone scroll the page.
     var alternates: [Shortcut] {
         switch self {
         case .confirm: return [Shortcut("c", [])]
-        case .nextFile: return [Shortcut("n", []), Shortcut("\u{F701}", [])]
-        case .previousFile: return [Shortcut("p", []), Shortcut("\u{F700}", [])]
+        case .nextFile: return [Shortcut("n", []), Shortcut("\u{F701}", []), Shortcut("j", .shift)]
+        case .previousFile: return [Shortcut("p", []), Shortcut("\u{F700}", []), Shortcut("k", .shift)]
         default: return []
         }
     }

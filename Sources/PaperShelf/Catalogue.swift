@@ -1806,6 +1806,13 @@ struct ResultsPane: View {
             readerAnnotator.go(toPage: readerAnnotator.page + delta)
             return true
         }
+        // Ahead of the reader's commands: J and K are next and previous file everywhere
+        // else, and here they scroll. Shift moves between files instead.
+        if let step = FitWidthPDFView.scrollStep(for: event, keymap: .shared),
+           let view = readerAnnotator.view as? FitWidthPDFView {
+            view.scroll(by: step)
+            return true
+        }
         let delta: Int?
         switch event.keyCode {
         case 126, 116: delta = -1            // ↑ Page Up

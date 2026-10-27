@@ -1148,6 +1148,43 @@ final class FitWidthPDFView: PDFView {
         }
     }
 
+    /// Which way H, J, K and L move the page: the way they move the cursor in vi.
+    enum ScrollStep { case left, down, up, right }
+
+    /// Only a bare key, and only one no reader command answers to, so a highlighter
+    /// somebody moved onto H still highlights.
+    static func scrollStep(for event: NSEvent, keymap: Keymap) -> ScrollStep? {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .shift, .control])
+        guard modifiers.isEmpty, keymap.command(for: event, in: .reader) == nil else { return nil }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "h": return .left
+        case "j": return .down
+        case "k": return .up
+        case "l": return .right
+        default: return nil
+        }
+    }
+
+    /// Four of PDFView's own lines a press: one is ten points, which a held key barely
+    /// moves. Up and down go through PDFView's line scroll because it keeps the current
+    /// page in step; moving the clip view directly left the page bar where it started.
+    /// Sideways never changes the page, and PDFView has no sideways line to scroll by.
+    func scroll(by step: ScrollStep) {
+        let lines = 4
+        switch step {
+        case .down: for _ in 0..<lines { scrollLineDown(nil) }
+        case .up: for _ in 0..<lines { scrollLineUp(nil) }
+        case .left, .right:
+            guard let scrollView = documentView?.enclosingScrollView else { return }
+            let clip = scrollView.contentView
+            let distance = scrollView.horizontalLineScroll * CGFloat(lines) / scrollView.magnification
+            var origin = clip.bounds.origin
+            origin.x += step == .left ? -distance : distance
+            clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+            scrollView.reflectScrolledClipView(clip)
+        }
+    }
+
     override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
         axis == .horizontal && onDocumentSwipe != nil
     }
@@ -1180,6 +1217,10 @@ final class FitWidthPDFView: PDFView {
            let onPageStep,
            let step = Self.pageStep(for: event.keyCode, arrowsEnabled: true) {
             onPageStep(step)
+            return
+        }
+        if let step = Self.scrollStep(for: event, keymap: .shared) {
+            scroll(by: step)
             return
         }
         super.keyDown(with: event)

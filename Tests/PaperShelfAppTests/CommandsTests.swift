@@ -103,6 +103,35 @@ final class CommandsTests: XCTestCase {
         XCTAssertNil(command("d"))
     }
 
+    func testVimKeysScrollTheReaderAndShiftMovesBetweenFiles() {
+        let keymap = Keymap(store: scratchStore())
+        func event(_ key: String, _ modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                             timestamp: 0, windowNumber: 0, context: nil,
+                             characters: key, charactersIgnoringModifiers: key,
+                             isARepeat: false, keyCode: 0)!
+        }
+        XCTAssertEqual(FitWidthPDFView.scrollStep(for: event("h"), keymap: keymap), .left)
+        XCTAssertEqual(FitWidthPDFView.scrollStep(for: event("j"), keymap: keymap), .down)
+        XCTAssertEqual(FitWidthPDFView.scrollStep(for: event("k"), keymap: keymap), .up)
+        XCTAssertEqual(FitWidthPDFView.scrollStep(for: event("l"), keymap: keymap), .right)
+        XCTAssertNil(FitWidthPDFView.scrollStep(for: event("J", .shift), keymap: keymap))
+        XCTAssertEqual(ResultsPane.readerCommand(for: event("J", .shift), keymap: keymap), .nextFile)
+        XCTAssertEqual(ResultsPane.readerCommand(for: event("K", .shift), keymap: keymap), .previousFile)
+        keymap.bind(.highlight1, to: Shortcut("h", []))
+        XCTAssertNil(FitWidthPDFView.scrollStep(for: event("h"), keymap: keymap),
+                     "A reader command bound to H keeps it")
+
+        // The page bar reads the current page, so scrolling down has to move it.
+        let document = PDFDocument()
+        for index in 0..<3 { document.insert(PDFPage(), at: index) }
+        let view = FitWidthPDFView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        view.document = document
+        view.go(to: document.page(at: 0)!)
+        for _ in 0..<200 { view.scroll(by: .down) }
+        XCTAssertTrue(view.currentPage === document.page(at: 2))
+    }
+
     func testDocumentManagementIsAvailableInThePaletteWhileReading() {
         for command in [Command.removeFromLibrary, .trashNow, .revealInFinder, .openExternally, .suggestTags] {
             XCTAssertTrue(ResultsPane.performable.contains(command))
