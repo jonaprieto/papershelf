@@ -173,10 +173,7 @@ struct MarkdownSheet: View {
                 await converting.convert(item, passwords: passwords, using: picked)
             }
         }
-        .fileExporter(isPresented: $saving,
-                      document: TextDocument(text: converting.result ?? ""),
-                      contentType: .plainText,
-                      defaultFilename: (item.currentFilename as NSString)
-                        .deletingPathExtension + ".md") { _ in }
+        .textExporter(isPresented: $saving, text: converting.result ?? "",
+                      filename: (item.currentFilename as NSString).deletingPathExtension + ".md")
     }
 }

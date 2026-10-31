@@ -1222,10 +1222,7 @@ struct ResultsPane: View {
                 .accessibilityElement(children: .contain)
             }
         }
-        .fileExporter(isPresented: $savingBib,
-                      document: TextDocument(text: builtBib.text),
-                      contentType: .plainText,
-                      defaultFilename: bibFileName) { _ in }
+        .textExporter(isPresented: $savingBib, text: builtBib.text, filename: bibFileName)
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
                 commands: Self.performable.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags].contains($0)) },

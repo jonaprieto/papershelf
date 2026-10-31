@@ -101,10 +101,8 @@ struct ProjectWorkspace: View {
             await model.load()
             seedChosen()
         }
-        .fileExporter(isPresented: $exporting,
-                      document: TextDocument(text: conversation.threadMarkdown),
-                      contentType: .plainText,
-                      defaultFilename: project.name) { _ in }
+        .textExporter(isPresented: $exporting, text: conversation.threadMarkdown,
+                      filename: project.name)
         .sheet(isPresented: $showingAddDocuments) {
             AddDocumentsSheet(candidates: model.available, knownSections: model.knownSections) { hashes, section in
                 Task { await model.addBatch(hashes, section: section) }

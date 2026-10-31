@@ -96,9 +96,7 @@ struct ActivityLog: View {
             .padding(.vertical, Space.step)
         }
         .frame(width: 420, height: 460)
-        .fileExporter(isPresented: $saving,
-                      document: TextDocument(text: logText(entries)),
-                      contentType: .plainText,
-                      defaultFilename: "papershelf-activity") { _ in }
+        .textExporter(isPresented: $saving, text: logText(entries),
+                      filename: "papershelf-activity")
     }
 }

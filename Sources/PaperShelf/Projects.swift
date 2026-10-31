@@ -965,11 +965,10 @@ struct ProjectConversationView: View {
         // A file rather than a note kept in the library: there is nowhere in the library
         // that holds an answer, and a button that looked like it saved one would be
         // saving it nowhere.
-        .fileExporter(isPresented: Binding(get: { saving != nil },
+        .textExporter(isPresented: Binding(get: { saving != nil },
                                            set: { if !$0 { saving = nil } }),
-                      document: TextDocument(text: saving.map(markdown) ?? ""),
-                      contentType: .plainText,
-                      defaultFilename: model.project.name) { _ in saving = nil }
+                      text: saving.map(markdown) ?? "",
+                      filename: model.project.name) { saving = nil }
     }
 
     /// What an answer was built from. Not what it cost: a price per answer is not
