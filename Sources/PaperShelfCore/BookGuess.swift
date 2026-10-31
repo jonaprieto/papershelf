@@ -80,6 +80,10 @@ public func filename(for guess: BookGuess, rules: NameRules = .standard) -> Stri
     return normalizedName(for: parts.joined(separator: " ") + ".pdf", rules: rules)
 }
 
+/// How much of a document `openingText` reads. It bounds what a model is sent, and a folder
+/// search stops here too, however many pages it asked for.
+public let openingTextLimit = 4000
+
 /// Text from the opening pages, for sending to a model. Returns an empty string for a
 /// scan with no text layer, which is a normal outcome rather than a failure.
 public func openingText(of url: URL, passwords: [String], pages: Int = 3) -> String {
@@ -91,7 +95,7 @@ public func openingText(of url: URL, passwords: [String], pages: Int = 3) -> Str
     for index in 0..<min(pages, document.pageCount) {
         guard let text = document.page(at: index)?.string else { continue }
         collected += text + "\n"
-        if collected.count > 4000 { break }
+        if collected.count > openingTextLimit { break }
     }
     return collected
 }

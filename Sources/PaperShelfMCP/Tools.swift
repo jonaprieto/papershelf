@@ -69,9 +69,10 @@ let folderTools: [Tool] = [
         description: "Search a folder of PDFs. The query language is the app's own: bare "
             + "words match the filename, and field terms are supported, including "
             + "text:<words>, year:, pages:>100, size:>2mb and status:. A text: term reads "
-            + "the opening pages of every document, which is slow over a large folder and "
-            + "will not find a phrase buried deep in a book. Raise pages_per_document to "
-            + "look further in, at proportional cost.",
+            + "the opening of every document, stopping at about \(openingTextLimit) "
+            + "characters, which is slow over a large folder and will not find a phrase "
+            + "further in. To search past that, omit the folder: the library searches the "
+            + "text it has indexed.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -81,7 +82,7 @@ let folderTools: [Tool] = [
                 "limit": ["type": "integer", "description": "Maximum results. Default 20 for the library, 50 for a folder."],
                 "cursor": ["type": "string", "description": "From a previous result's next_cursor. Library only."],
                 "pages_per_document": ["type": "integer",
-                                       "description": "How many opening pages a text: term reads. Folder only. Default 6."],
+                                       "description": "The most opening pages a text: term reads. It stops sooner at about \(openingTextLimit) characters, so raising this rarely reads further. Folder only. Default 6."],
             ],
             "required": ["query"],
         ],
