@@ -207,8 +207,8 @@ struct ReaderWindow: View {
         case .showBookmarks:
             prefs.contentsShown = true
             prefs.contentsRailMode = .bookmarks
-        case .nextMark: stepMark(by: 1)
-        case .previousMark: stepMark(by: -1)
+        case .nextMark: annotator.stepMark(by: 1)
+        case .previousMark: annotator.stepMark(by: -1)
         case .findInDocument: openFind()
         case .toggleNotes: showsNotes.toggle()
         case .toggleContents: prefs.contentsShown.toggle()
@@ -233,14 +233,6 @@ struct ReaderWindow: View {
         prefs.lastHighlightColour = style.id.uuidString
     }
 
-    private func stepMark(by delta: Int) {
-        guard !annotator.marks.isEmpty else { return }
-        let current = annotator.marks.firstIndex { $0.id == annotator.selectedMark }
-        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + annotator.marks.count)
-            % annotator.marks.count
-        annotator.jump(to: annotator.marks[next])
-    }
-
     /// This paper's passages and pages, and the library's other papers, each opening in a
     /// reader of its own.
     private var paletteSources: PaletteSources {
@@ -250,12 +242,7 @@ struct ReaderWindow: View {
                     AppDelegate.current?.openReader(for: URL(fileURLWithPath: path))
                 }
             },
-            inThisDocument: { text in
-                annotator.find(text).map { hit in
-                    PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
-                            line: hit.line, go: hit.jump)
-                }
-            },
+            inThisDocument: { annotator.pageHits($0) },
             goToPage: { annotator.go(toPage: $0) },
             help: { perform(.shortcuts) }
         )
@@ -373,9 +360,7 @@ struct ReaderWindow: View {
                 }
                 Divider().frame(height: 14)
                 AskReadingAssistant {
-                    guard let selection = annotator.selectionForHandoff() else { return nil }
-                    return ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
-                                                 page: selection.page, title: selection.title)
+                    annotator.selectionPrompt()
                 }
                 Button {
                     showsNotes = true

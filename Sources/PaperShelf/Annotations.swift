@@ -718,6 +718,23 @@ final class Annotator {
         }
     }
 
+    /// The palette's passages from this document, each turning to where it was found.
+    func pageHits(_ text: String) -> [PageHit] {
+        find(text).map { hit in
+            PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
+                    line: hit.line, go: hit.jump)
+        }
+    }
+
+    /// Moves to the next mark in the document and scrolls the page to it, since a
+    /// highlight on a page you are not looking at is invisible by definition.
+    func stepMark(by delta: Int) {
+        guard !marks.isEmpty else { return }
+        let current = marks.firstIndex { $0.id == selectedMark }
+        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + marks.count) % marks.count
+        jump(to: marks[next])
+    }
+
     func go(to chapter: Chapter) {
         guard let view, let destination = chapter.destination else { return }
         view.go(to: destination)
@@ -802,6 +819,13 @@ final class Annotator {
     /// number or note the way `Mark` has them; both are read straight off the current
     /// selection and the file on screen, the same way `highlightSelection` reads the
     /// selection fresh rather than from a cached property.
+    /// The selection as a message to a reading assistant, saying where it came from.
+    func selectionPrompt() -> String? {
+        selectionForHandoff().map {
+            ChatGPTHandoff.prompt(quoted: $0.quoted, note: "", page: $0.page, title: $0.title)
+        }
+    }
+
     func selectionForHandoff() -> (quoted: String, page: Int, title: String)? {
         guard let view, let selection = view.currentSelection,
               let quoted = selection.string, !quoted.isEmpty,

@@ -1557,12 +1557,7 @@ struct ResultsPane: View {
             inTheLibrary: { text in
                 await PaletteSources.libraryDocuments(matching: text, open: openAnywhere)
             },
-            inThisDocument: { text in
-                readerAnnotator.find(text).map { hit in
-                    PageHit(id: "doc-\(hit.page)-\(hit.line.prefix(24))", page: hit.page,
-                            line: hit.line, go: hit.jump)
-                }
-            },
+            inThisDocument: { readerAnnotator.pageHits($0) },
             goToPage: readerAnnotator.view == nil ? nil : { readerAnnotator.go(toPage: $0) },
             help: { showingShortcuts = true }
         )
@@ -2019,8 +2014,8 @@ struct ResultsPane: View {
         case .removeBookmark:
             guard let bookmark = readerAnnotator.bookmarkOnCurrentPage else { return false }
             return readerAnnotator.removeBookmark(bookmark)
-        case .nextMark: stepMark(by: 1)
-        case .previousMark: stepMark(by: -1)
+        case .nextMark: readerAnnotator.stepMark(by: 1)
+        case .previousMark: readerAnnotator.stepMark(by: -1)
 
         case .openInNewTab:
             // The preview tab is the reviewer's selection passing through, so keeping it
@@ -2132,16 +2127,6 @@ struct ResultsPane: View {
                   let mark = readerAnnotator.marks.first(where: { $0.id == selected }) {
             readerAnnotator.setColour(colour, on: mark)
         }
-    }
-
-    /// Moves to the next mark in the document and scrolls the page to it, since a
-    /// highlight on a page you are not looking at is invisible by definition.
-    private func stepMark(by delta: Int) {
-        guard !readerAnnotator.marks.isEmpty else { return }
-        let current = readerAnnotator.marks.firstIndex { $0.id == readerAnnotator.selectedMark }
-        let next = ((current ?? (delta > 0 ? -1 : 0)) + delta + readerAnnotator.marks.count)
-            % readerAnnotator.marks.count
-        readerAnnotator.jump(to: readerAnnotator.marks[next])
     }
 
     /// Leaving the name field has to hand focus somewhere, or Return drops it on the
@@ -3204,9 +3189,7 @@ struct ResultsPane: View {
                 SelectionNoteButton(annotator: annotator, colour: .systemYellow)
                     .buttonStyle(.plain)
                 AskReadingAssistant {
-                    guard let selection = annotator.selectionForHandoff() else { return nil }
-                    return ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
-                                                 page: selection.page, title: selection.title)
+                    annotator.selectionPrompt()
                 }
                 .buttonStyle(.plain)
                 ForEach(palette.styles(for: scopes)) { style in

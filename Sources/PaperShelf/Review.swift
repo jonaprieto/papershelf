@@ -661,9 +661,7 @@ struct ReviewInspector: View {
                  ? "Bookmark this page" : "Remove the bookmark from this page")
 
             AskReadingAssistant {
-                guard let selection = annotator.selectionForHandoff() else { return nil }
-                return ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
-                                             page: selection.page, title: selection.title)
+                annotator.selectionPrompt()
             }
             .buttonStyle(.plain)
 
@@ -701,9 +699,7 @@ struct ReviewInspector: View {
     /// pressed rather than held in state, so a selection changed while the menu was open
     /// cannot send the passage the reader was looking at a moment ago.
     private func handOffSelection(copyOnly: Bool) {
-        guard let selection = annotator.selectionForHandoff() else { return }
-        let prompt = ChatGPTHandoff.prompt(quoted: selection.quoted, note: "",
-                                           page: selection.page, title: selection.title)
+        guard let prompt = annotator.selectionPrompt() else { return }
         if copyOnly {
             ChatGPTHandoff.copy(prompt)
         } else {
