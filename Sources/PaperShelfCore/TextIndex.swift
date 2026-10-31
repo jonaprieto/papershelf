@@ -66,7 +66,11 @@ public func indexedMarkdown(of url: URL, passwords: [String],
         collected += "## Page \(index + 1)\n\n"
         collected += text
         collected += "\n\n"
-        if collected.count >= limit {
+        // `count` walks the whole string, and asking after every page made a long book
+        // quadratic. A string has at least as many bytes as characters, so only one past
+        // the limit in bytes can be past it in characters. A running total of each page's
+        // count would be cheaper still and wrong: a page ending in \r joins the \n after it.
+        if collected.utf8.count >= limit, collected.count >= limit {
             return (String(collected.prefix(limit)), .clipped)
         }
     }
