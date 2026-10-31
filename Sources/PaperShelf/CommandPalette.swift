@@ -94,6 +94,7 @@ struct CommandPalette: View {
     @State private var index = 0
     @State private var textHits: [TextHit] = []
     @State private var libraryHits: [PalettePlace] = []
+    @State private var documentHits: [PageHit] = []
     @FocusState private var fieldFocused: Bool
 
     private enum Entry: Identifiable {
@@ -288,9 +289,7 @@ struct CommandPalette: View {
 
     private var matchingPages: [PageHit] {
         switch mode {
-        case .inDocument:
-            guard !needle.isEmpty else { return [] }
-            return sources.inThisDocument(needle)
+        case .inDocument: return documentHits
         case .page:
             guard let number = Int(needle), let go = sources.goToPage else { return [] }
             return [PageHit(id: "page-\(number)", page: number,
@@ -298,6 +297,14 @@ struct CommandPalette: View {
         default:
             return []
         }
+    }
+
+    /// PDFKit's find walks the whole document on the main thread, so it runs once for each
+    /// thing typed and the rows read the answer. Asked from `matchingPages` it ran 25 times
+    /// a render, once for every row drawn: 27 ms each on a 300-page book, most of a second
+    /// between a key and the letter appearing.
+    private func searchThisDocument() {
+        documentHits = mode == .inDocument && !needle.isEmpty ? sources.inThisDocument(needle) : []
     }
 
     /// Library matches, minus anything the shelf is already offering under Documents.
@@ -335,7 +342,10 @@ struct CommandPalette: View {
         }
         .frame(width: width)
         .onAppear { fieldFocused = true }
-        .onChange(of: query) { index = 0 }
+        .onChange(of: query) {
+            index = 0
+            searchThisDocument()
+        }
         .task(id: needle) { await searchTheLibrary() }
         .onKeyPress(.downArrow) { move(1) }
         .onKeyPress(.upArrow) { move(-1) }
@@ -415,6 +425,9 @@ struct CommandPalette: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.gutter)
         } else {
+            // Once, here: each row asking for its own place rebuilt the whole list to find it.
+            let positions = Dictionary(entries.enumerated().map { ($1.id, $0) },
+                                       uniquingKeysWith: { first, _ in first })
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Space.hair) {
@@ -425,7 +438,7 @@ struct CommandPalette: View {
                                 .padding(.horizontal, Space.roomy)
                                 .padding(.top, Space.step)
                             ForEach(section.entries) { entry in
-                                let position = entries.firstIndex { $0.id == entry.id } ?? 0
+                                let position = positions[entry.id] ?? 0
                                 row(entry, selected: position == index)
                                     .id(entry.id)
                                     .contentShape(Rectangle())
