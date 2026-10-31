@@ -40,10 +40,6 @@ enum PaletteSettings {
         let prefs = Prefs.shared
         var settings: [PaletteSetting] = []
 
-        settings.append(PaletteSetting(
-            id: "settings", title: "Open Settings", value: { "in Settings" },
-            act: openSettingsWindow, opensSettings: true))
-
         func flag(_ id: String, _ title: String,
                   _ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) {
             settings.append(PaletteSetting(id: id, title: title,
@@ -52,15 +48,6 @@ enum PaletteSettings {
         }
 
         // Reading
-        settings.append(PaletteSetting(
-            id: "pdfAppearance", title: "PDF reading contrast",
-            value: { prefs.readingAppearance.label },
-            act: {
-                let all = PDFReadingAppearance.allCases
-                let next = (all.firstIndex(of: prefs.readingAppearance).map { $0 + 1 } ?? 0)
-                    % all.count
-                prefs.readingAppearance = all[next]
-            }))
         flag("leftRightTurnsPages", "Left and right arrows turn PDF pages",
              { prefs.leftRightTurnsPages }, { prefs.leftRightTurnsPages = $0 })
         flag("selectionPalette", "Show the highlighters beside a selection",
@@ -105,18 +92,7 @@ enum PaletteSettings {
         flag("bibOmitFile", "Omit the file field in BibTeX",
              { prefs.bibOmitFile }, { prefs.bibOmitFile = $0 })
 
-        // Settings with a handful of values cycle through them, which is the whole editor a
-        // choice of three needs.
-        settings.append(PaletteSetting(
-            id: "appearance", title: "Appearance",
-            value: { prefs.appearance.label },
-            act: {
-                let all = Appearance.allCases
-                let next = (all.firstIndex(of: prefs.appearance).map { $0 + 1 } ?? 0) % all.count
-                prefs.appearance = all[next]
-            }))
-
-        // And the ones whose value is text open the window that can edit it properly.
+        // The ones whose value is text open the window that can edit it properly.
         for (id, title) in [("aiModel", "AI model"), ("aiBaseURL", "AI endpoint"),
                             ("namePattern", "Naming pattern"), ("passwords", "Passwords"),
                             ("apiKey", "API key")] {

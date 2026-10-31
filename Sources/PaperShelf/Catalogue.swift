@@ -1676,8 +1676,8 @@ struct ResultsPane: View {
         .nextFile, .previousFile,
     ]
 
-    static let alwaysAvailable: Set<Command> = [
-        .palette, .focusSearch, .shortcuts, .zenMode, .normalMode, .checkForUpdates,
+    static let alwaysAvailable: Set<Command> = Set(Command.appearanceChoices).union([
+        .palette, .focusSearch, .shortcuts, .zenMode, .normalMode, .checkForUpdates, .openSettings,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
         // What is open and what is on the shelf are different questions. A paper put back
@@ -1686,7 +1686,7 @@ struct ResultsPane: View {
         // a row. Left under the gate, ⌘W would fall through to File > Close and take the
         // whole window down with papers still open in it.
         .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite,
-    ]
+    ])
 
     private func handle(_ event: NSEvent) -> Bool {
         guard Self.handlesKeys(from: event.window, in: paneWindow.window) else { return false }
@@ -1888,7 +1888,7 @@ struct ResultsPane: View {
     /// Kept beside the switch below and used to build the palette, so a line can never be
     /// offered that would do nothing. Anything absent here is still reachable — it simply
     /// belongs to a different surface, and its key event falls through to whoever owns it.
-    static let performable: [Command] = Command.pageActions + [
+    static let performable: [Command] = Command.pageActions + Command.appearanceChoices + [
         .openWebsite,
         .confirm, .editName, .askAI, .copyCitation, .applyOne,
         .skip, .skipFolder, .moveTo, .trash, .reopen,
@@ -1904,7 +1904,7 @@ struct ResultsPane: View {
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates, .openFile,
-        .lockPDF, .unlockPDF,
+        .lockPDF, .unlockPDF, .openSettings,
     ]
 
     /// Carries out one command, whatever asked for it.
@@ -1920,8 +1920,10 @@ struct ResultsPane: View {
         if Command.pageActions.contains(command) {
             return command.performPageAction(on: readerAnnotator, fit: $prefs.pageFit)
         }
+        if command.performAppearanceChoice() { return true }
         switch command {
         case .openWebsite: openWebsite()
+        case .openSettings: PaletteSettings.openSettingsWindow()
         case .openFile: AppDelegate.current?.choosePDFs()
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)

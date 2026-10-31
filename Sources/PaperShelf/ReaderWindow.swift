@@ -176,18 +176,21 @@ struct ReaderWindow: View {
     }
 
     /// What one paper can do with no library window behind it.
-    static let paletteCommands: [Command] = Command.pageActions + [
+    static let paletteCommands: [Command] = Command.pageActions + Command.appearanceChoices + [
         .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
         .addNote, .addBookmark, .removeBookmark, .showBookmarks, .nextMark, .previousMark,
         .findInDocument, .toggleNotes, .toggleContents, .zenMode,
         .printPDF, .lockPDF, .unlockPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
+        .openSettings,
     ]
 
     /// Every command this window answers, from its palette, its menu items and its keys.
     private func perform(_ command: Command) {
         if command.performPageAction(on: annotator, fit: $fit) { return }
+        if command.performAppearanceChoice() { return }
         switch command {
         case .palette: showingPalette = true
+        case .openSettings: PaletteSettings.openSettingsWindow()
         case .highlight1: highlight(slot: 0)
         case .highlight2: highlight(slot: 1)
         case .highlight3: highlight(slot: 2)

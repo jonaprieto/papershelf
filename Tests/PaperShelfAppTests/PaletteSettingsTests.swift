@@ -7,9 +7,10 @@ import XCTest
 final class PaletteSettingsTests: XCTestCase {
 
     func testThePaletteCanOpenTheSettingsWindow() {
-        let setting = try! XCTUnwrap(PaletteSettings.all().first { $0.id == "settings" })
-        XCTAssertEqual(setting.title, "Open Settings")
-        XCTAssertTrue(setting.opensSettings)
+        XCTAssertEqual(Command.openSettings.title, "Open Settings")
+        XCTAssertTrue(ResultsPane.performable.contains(.openSettings))
+        XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.openSettings))
+        XCTAssertTrue(ReaderWindow.paletteCommands.contains(.openSettings))
     }
 
     func testDefaultPDFViewerIsSearchableInGeneralSettings() {
@@ -29,22 +30,6 @@ final class PaletteSettingsTests: XCTestCase {
         XCTAssertEqual(prefs.watchSources, !before)
         XCTAssertEqual(setting.value(), !before ? "On" : "Off", "and says it again after")
         XCTAssertFalse(setting.opensSettings)
-    }
-
-    func testAChoiceCyclesThroughItsValues() {
-        let prefs = Prefs.shared
-        let before = prefs.appearance
-        defer { prefs.appearance = before }
-
-        let setting = try! XCTUnwrap(PaletteSettings.all().first { $0.id == "appearance" })
-        var seen: [Appearance] = [prefs.appearance]
-        for _ in 1..<Appearance.allCases.count {
-            setting.act()
-            seen.append(prefs.appearance)
-        }
-        XCTAssertEqual(Set(seen), Set(Appearance.allCases), "every value is reachable")
-        setting.act()
-        XCTAssertEqual(prefs.appearance, before, "and it comes back round")
     }
 
     /// A key typed into a search field is a key in a search field's history.

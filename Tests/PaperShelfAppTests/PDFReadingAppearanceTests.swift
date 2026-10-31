@@ -57,20 +57,24 @@ final class PDFReadingAppearanceTests: XCTestCase {
         XCTAssertEqual(Double(color!.blueComponent), 235.0 / 255.0, accuracy: 0.001)
     }
 
-    func testPaletteSettingCyclesThroughEveryPDFAppearance() {
+    func testThePaletteChoosesEveryPageColourAndThemeByName() {
         let prefs = Prefs.shared
-        let before = prefs.readingAppearance
-        defer { prefs.readingAppearance = before }
-
-        let setting = try! XCTUnwrap(
-            PaletteSettings.all().first { $0.id == "pdfAppearance" }
-        )
-        var seen: [PDFReadingAppearance] = [prefs.readingAppearance]
-        for _ in 1..<PDFReadingAppearance.allCases.count {
-            setting.act()
-            seen.append(prefs.readingAppearance)
+        let page = prefs.readingAppearance
+        let theme = prefs.appearance
+        defer {
+            prefs.readingAppearance = page
+            prefs.appearance = theme
         }
-        XCTAssertEqual(Set(seen), Set(PDFReadingAppearance.allCases))
-        XCTAssertEqual(setting.value(), prefs.readingAppearance.label)
+
+        XCTAssertEqual(Set(Command.appearanceChoices.compactMap(\.pageColour)),
+                       Set(PDFReadingAppearance.allCases))
+        XCTAssertEqual(Set(Command.appearanceChoices.compactMap(\.theme)), Set(Appearance.allCases))
+        for command in Command.appearanceChoices {
+            XCTAssertTrue(command.performAppearanceChoice())
+            XCTAssertTrue(command.isCurrentChoice, command.title)
+            if let colour = command.pageColour { XCTAssertEqual(prefs.readingAppearance, colour) }
+            if let wanted = command.theme { XCTAssertEqual(prefs.appearance, wanted) }
+        }
+        XCTAssertFalse(Command.printPDF.performAppearanceChoice())
     }
 }

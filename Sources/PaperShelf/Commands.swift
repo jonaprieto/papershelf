@@ -81,6 +81,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Views
     case viewList, viewCatalogue, viewBibliography, viewDuplicates
     case readingMode, zenMode, normalMode, toggleNotes, toggleContents
+    case pageColourNormal, pageColourSepia, pageColourTint, pageColourWhiteOnBlack
+    case themeSystem, themeLight, themeDark
 
     // Deciding
     case confirm, editName, askAI, copyCitation, applyOne
@@ -97,7 +99,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Library
     case openFile, plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
     case removeFromLibrary, trashNow
-    case suggestTags, checkForUpdates
+    case suggestTags, checkForUpdates, openSettings
 
     var id: String { rawValue }
 
@@ -112,6 +114,16 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .revealInFinder: return "open pdf file finder location folder reveal"
         case .suggestTags: return "ai suggest generate subject tags labels current pdf paper"
         case .printPDF: return "print printer paper copies pages pdf"
+        case .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack:
+            return "color background paper reading contrast night dark invert"
+        case .themeSystem, .themeLight, .themeDark: return "appearance mode window interface"
+        case .toggleInspector: return "panel right info notes cite close"
+        case .toggleSidebar: return "panel left close"
+        case .readingMode: return "focus distraction page only"
+        case .findInDocument: return "search"
+        case .refresh: return "reload rescan scan"
+        case .shortcuts: return "keyboard keys keybindings bindings help"
+        case .openSettings: return "preferences options configure"
         case .lockPDF: return "encrypt protect secure password lock pdf"
         case .unlockPDF: return "decrypt unlock remove password unprotect pdf"
         case .actualSize: return "zoom 100% original size"
@@ -169,7 +181,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .focusSearch, .toggleSidebar, .toggleInspector:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
-             .readingMode, .zenMode, .normalMode, .toggleNotes, .toggleContents:
+             .readingMode, .zenMode, .normalMode, .toggleNotes, .toggleContents,
+             .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack,
+             .themeSystem, .themeLight, .themeDark:
             return .views
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
              .moveTo, .trash, .reopen, .nextFile, .previousFile, .confirmAllPending, .undo:
@@ -181,7 +195,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
-             .newTag, .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates:
+             .newTag, .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates,
+             .openSettings:
             return .library
         }
     }
@@ -238,6 +253,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .normalMode: return "Normal mode"
         case .toggleNotes: return "Show or hide the notes"
         case .toggleContents: return "Show or hide the contents"
+        case .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack:
+            return "Page colour: " + (pageColour?.label ?? "")
+        case .themeSystem, .themeLight, .themeDark: return "Theme: " + (theme?.label ?? "")
         case .confirm: return "Confirm the name and go to the next file"
         case .editName: return "Rename the current file..."
         case .askAI: return "Ask the model for a name"
@@ -294,6 +312,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .suggestTags: return "Suggest tags for this PDF…"
         case .newTag: return "New tag…"
         case .checkForUpdates: return "Check for updates"
+        case .openSettings: return "Open Settings"
         case .shortcuts: return "Every shortcut"
         }
     }
@@ -322,6 +341,11 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .readingMode: return Shortcut("r", [.command, .shift])
         case .zenMode: return Shortcut("f", [.command, .control])
         case .normalMode: return nil
+        // Reached from the page bar and the palette. Rebindable, but nothing here spends a
+        // key on something chosen once a session.
+        case .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack,
+             .themeSystem, .themeLight, .themeDark, .openSettings:
+            return nil
         case .toggleNotes: return Shortcut("n", [.command, .shift])
         case .toggleContents: return Shortcut("t", [.command, .shift])
         case .confirm: return Shortcut("\r", [])
@@ -403,6 +427,54 @@ extension Command {
     static let pageActions: [Command] = [
         .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
     ]
+
+    /// One line per value rather than one that cycles: the palette is where a person says
+    /// which colour they want, and stepping past it to find out what comes next is not
+    /// saying it.
+    static let appearanceChoices: [Command] = [
+        .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack,
+        .themeSystem, .themeLight, .themeDark,
+    ]
+
+    var pageColour: PDFReadingAppearance? {
+        switch self {
+        case .pageColourNormal: return .normal
+        case .pageColourSepia: return .sepia
+        case .pageColourTint: return .tint
+        case .pageColourWhiteOnBlack: return .whiteOnBlack
+        default: return nil
+        }
+    }
+
+    var theme: Appearance? {
+        switch self {
+        case .themeSystem: return .system
+        case .themeLight: return .light
+        case .themeDark: return .dark
+        default: return nil
+        }
+    }
+
+    /// Whether this is the value in force now, so the palette can mark it.
+    @MainActor
+    var isCurrentChoice: Bool {
+        if let pageColour { return Prefs.shared.readingAppearance == pageColour }
+        if let theme { return Prefs.shared.appearance == theme }
+        return false
+    }
+
+    /// Both windows choose the same way, and neither needs a paper open to do it.
+    @MainActor
+    func performAppearanceChoice() -> Bool {
+        if let pageColour {
+            Prefs.shared.readingAppearance = pageColour
+        } else if let theme {
+            Prefs.shared.appearance = theme
+        } else {
+            return false
+        }
+        return true
+    }
 
     /// Both reader surfaces use the page bar's sizing state and PDF navigation.
     @MainActor

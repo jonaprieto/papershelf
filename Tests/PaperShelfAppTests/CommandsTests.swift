@@ -369,6 +369,36 @@ final class CommandsTests: XCTestCase {
         }
     }
 
+    /// Each of these is a word somebody typed and got nothing, or got a hundred papers.
+    func testThePaletteFindsCommandsByTheWordsPeopleUse() {
+        func found(_ query: String) -> [Command] {
+            CommandPalette.matchingCommands(in: ResultsPane.performable, query: query, commandsOnly: false)
+        }
+        XCTAssertEqual(found("print"), [.printPDF])
+        XCTAssertEqual(found("sepia"), [.pageColourSepia])
+        XCTAssertEqual(found("dark theme"), [.themeDark])
+        XCTAssertEqual(Set(found("theme")), [.themeSystem, .themeLight, .themeDark])
+        XCTAssertTrue(found("color").contains(.pageColourWhiteOnBlack))
+        XCTAssertTrue(found("settings").contains(.openSettings))
+        XCTAssertTrue(found("panel").contains(.toggleInspector))
+    }
+
+    /// Print has to outrank every paper that says print, and a paper's name has to outrank
+    /// a command that only contains those letters.
+    func testACommandLeadsOnlyWhenItIsWhatWasTyped() {
+        func leads(_ query: String) -> Bool {
+            let found = CommandPalette.matchingCommands(in: ResultsPane.performable,
+                                                        query: query, commandsOnly: false)
+            return CommandPalette.namesACommand(query, among: found)
+        }
+        XCTAssertTrue(leads("print"))
+        XCTAssertTrue(leads("theme"))
+        XCTAssertTrue(leads("dark theme"))
+        XCTAssertFalse(leads("pr"), "two letters are still the start of a paper's name")
+        XCTAssertFalse(leads("rint"), "the middle of a word is not its name")
+        XCTAssertFalse(leads("crdt"))
+    }
+
     func testNormalModeIsDiscoverableWithoutAPDFSelection() {
         XCTAssertTrue(ResultsPane.alwaysAvailable.contains(.normalMode))
         for query in ["normal mode", "exit presentation", "leave full screen", "restore window"] {

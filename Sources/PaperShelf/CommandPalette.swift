@@ -232,15 +232,35 @@ struct CommandPalette: View {
         return Self.matchingCommands(in: commands, query: needle, commandsOnly: mode == .commands)
     }
 
+    /// Word by word, so "dark theme" finds "Theme: Dark".
     static func matchingCommands(in commands: [Command], query: String,
                                  commandsOnly: Bool) -> [Command] {
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let matches = commands.filter {
-            needle.isEmpty || $0.title.lowercased().contains(needle)
-                || $0.searchAliases.lowercased().contains(needle)
-                || (Keymap.shared.shortcut(for: $0)?.display.lowercased().contains(needle) ?? false)
+        let words = query.lowercased().split(separator: " ")
+        let matches = commands.filter { command in
+            let text = "\(command.title) \(command.searchAliases)".lowercased()
+            let key = Keymap.shared.shortcut(for: command)?.display.lowercased() ?? ""
+            return words.allSatisfy { text.contains($0) || key.contains($0) }
         }
         return commandsOnly ? matches : Array(matches.prefix(8))
+    }
+
+    /// Whether what was typed is the name of something to do rather than a word from a
+    /// paper. Documents lead otherwise, but "print" matches print in a hundred papers, and
+    /// the one command it meant sat under all of them, below the bottom of the list, where
+    /// it read as a command the app did not have. Three letters first, so that a paper's
+    /// name is not pushed down by the opening of a word.
+    static func namesACommand(_ query: String, among commands: [Command]) -> Bool {
+        let words = query.lowercased().split(separator: " ")
+        guard query.count >= 3 else { return false }
+        return commands.contains { command in
+            let names = "\(command.title) \(command.searchAliases)".lowercased()
+                .split { !$0.isLetter && !$0.isNumber }
+            return words.allSatisfy { word in names.contains { $0.hasPrefix(word) } }
+        }
+    }
+
+    private var commandsLead: Bool {
+        mode == nil && Self.namesACommand(needle, among: matchingCommands)
     }
 
     private var matchingPlaces: [PalettePlace] {
@@ -295,12 +315,13 @@ struct CommandPalette: View {
         // Documents lead, because a paper is what a query is most often after; the
         // folders and lists whose names match come after them. `sections` keeps the same
         // order, or the highlighted row would not be the one drawn highlighted.
-        return matchingDocuments.map(Entry.document)
+        let found = matchingDocuments.map(Entry.document)
             + elsewhereInLibrary.map(Entry.place)
             + matchingPlaces.map(Entry.place)
             + matchingPages.map(Entry.page)
             + textHits.map(Entry.text)
-            + matchingCommands.map(Entry.command)
+        let actions = matchingCommands.map(Entry.command)
+        return (commandsLead ? actions + found : found + actions)
             + matchingSettings.map(Entry.setting)
     }
 
@@ -443,7 +464,10 @@ struct CommandPalette: View {
             out.append(("In the text · \(textHits.count) match\(textHits.count == 1 ? "" : "es")",
                         textHits.map(Entry.text)))
         }
-        if !matchingCommands.isEmpty { out.append(("Commands", matchingCommands.map(Entry.command))) }
+        if !matchingCommands.isEmpty {
+            out.insert(("Commands", matchingCommands.map(Entry.command)),
+                       at: commandsLead ? 0 : out.count)
+        }
         if !matchingSettings.isEmpty { out.append(("Settings", matchingSettings.map(Entry.setting))) }
         return out
     }
@@ -537,6 +561,11 @@ struct CommandPalette: View {
                     .font(Face.micro)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 Text(command.title).lineLimit(1)
+                if command.isCurrentChoice {
+                    Image(systemName: "checkmark")
+                        .font(Face.micro)
+                        .accessibilityLabel("Current")
+                }
                 Spacer(minLength: Space.step)
                 Text(command.scope.label)
                     .font(Face.caption)
