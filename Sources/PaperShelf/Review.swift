@@ -398,13 +398,12 @@ struct ReviewInspector: View {
         header
     }
 
-    /// Four tabs, and the way back out of the reader. Nothing else.
+    /// Four tabs, the way back out of the reader, and the way to hide the panel.
     ///
-    /// It used to carry a status pill, the contents toggle, Reveal, Open, a notes button
-    /// and a collapse chevron beside them, which on a 320-point panel left the four tabs
-    /// squeezed to about half the row. Every one of those has a key and a home elsewhere:
-    /// the contents rail and the panel itself are toolbar buttons, Reveal and Open are
-    /// ⌘R and O, and Notes is one of the tabs.
+    /// It used to carry a status pill, the contents toggle, Reveal, Open and a notes button
+    /// beside them, which on a 320-point panel left the four tabs squeezed to about half
+    /// the row. Every one of those has a key and a home elsewhere: the contents rail is a
+    /// toolbar button, Reveal and Open are ⌥⌘R and O, and Notes is one of the tabs.
     private var header: some View {
         HStack(spacing: Space.step) {
             if let leaveReader {
@@ -424,6 +423,20 @@ struct ReviewInspector: View {
             .labelsHidden()
             .disabled(prefs.inspectorCollapsed)
             .tip("Rename this file, read what it says about itself, or take its citation")
+
+            // The way out, on the panel itself. The toolbar has one too, but that one folds
+            // into the overflow chevron on exactly the narrow window that wants this panel
+            // gone, and a dragged divider only resizes.
+            if !prefs.inspectorCollapsed {
+                Button { prefs.inspectorCollapsed = true } label: {
+                    Image(systemName: "sidebar.trailing")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Hide the inspector")
+                .accessibilityIdentifier("inspector.hide")
+                .tip("Hide the inspector", command: .toggleInspector)
+            }
         }
         .padding(.horizontal, Space.roomy)
         .padding(.vertical, Space.step)
