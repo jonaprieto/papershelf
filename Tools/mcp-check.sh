@@ -600,6 +600,9 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":"120","method":"tools/call","params":{"name":"rename_bookmark","arguments":{"id":1,"label":"Start here","document_id":"doc-1"}}}' \
   '{"jsonrpc":"2.0","id":"121","method":"tools/call","params":{"name":"remove_bookmark","arguments":{"id":1,"document_id":"doc-1"}}}' \
   '{"jsonrpc":"2.0","id":"122","method":"tools/call","params":{"name":"list_bookmarks","arguments":{"document_id":"doc-1"}}}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"123\",\"method\":\"tools/call\",\"params\":{\"name\":\"search_documents\",\"arguments\":{\"query\":\"hello\",\"folder\":\"$FOLDER\",\"limit\":-1}}}" \
+  "{\"jsonrpc\":\"2.0\",\"id\":\"124\",\"method\":\"tools/call\",\"params\":{\"name\":\"search_documents\",\"arguments\":{\"query\":\"text:hello\",\"folder\":\"$FOLDER\",\"pages_per_document\":-1}}}" \
+  '{"jsonrpc":"2.0","id":"125","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-1","max_characters":-1}}}' \
   '{"jsonrpc":"2.0","id":"91","method":"tools/call","params":{"name":"apply_file_changes","arguments":{"token":"deadbeef"}}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"92\",\"method\":\"tools/call\",\"params\":{\"name\":\"propose_file_changes\",\"arguments\":{\"folder\":\"$RENAMES\"}}}" \
   | PAPERSHELF_LIBRARY_PATH="$LIBRARY_DB" \

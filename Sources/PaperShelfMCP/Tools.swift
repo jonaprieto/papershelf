@@ -95,13 +95,13 @@ let folderTools: [Tool] = [
             let items = try scan(root: folder,
                                  recursive: optionalBool(arguments, "recursive", default: true))
             let prepared = PreparedQuery(query)
-            let limit = arguments["limit"] as? Int ?? 50
+            let limit = max(0, arguments["limit"] as? Int ?? 50)
 
             // Reading a page of a PDF is the expensive part, so the documents are read
             // at once rather than one after another, the same as the app does it.
             var texts = [String?](repeating: nil, count: items.count)
             if query.needsText {
-                let depth = arguments["pages_per_document"] as? Int ?? 6
+                let depth = max(0, arguments["pages_per_document"] as? Int ?? 6)
                 let lock = NSLock()
                 DispatchQueue.concurrentPerform(iterations: items.count) { index in
                     let text = openingText(of: items[index].currentURL, passwords: Prefs.passwords, pages: depth)
@@ -154,7 +154,7 @@ let folderTools: [Tool] = [
             guard !markdown.isEmpty else {
                 throw ToolFailure("that document has no text layer to read")
             }
-            let cap = arguments["max_characters"] as? Int ?? 200_000
+            let cap = max(0, arguments["max_characters"] as? Int ?? 200_000)
             let clipped = markdown.count > cap
                 ? String(markdown.prefix(cap)) + "\n\n[truncated at \(cap) characters]"
                 : markdown

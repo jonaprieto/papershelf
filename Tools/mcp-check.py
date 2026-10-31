@@ -49,7 +49,8 @@ check.failed = False
 # with a different token than 92's, and the same folder proposed twice more (94, 95) with
 # only `recursive` differing between the two, which have to answer with different tokens
 # from each other despite describing the same one move.
-check("no reply to a notification", len(seen) == 10 + 5 + 78 + 3)
+# The three negative limits (123-125) are in the 81 as well.
+check("no reply to a notification", len(seen) == 10 + 5 + 81 + 3)
 
 d = result("d")
 check(
@@ -918,6 +919,24 @@ check(
 check(
     "MCP can reset a document override",
     result("114").get("structuredContent", {}).get("reset") is True,
+)
+
+# A negative limit is a caller's mistake, and `prefix` and `0..<n` trap on one: without the
+# clamp these end the server, and every reply after them with it.
+check(
+    "a negative limit shows nothing rather than ending the server",
+    result("123").get("structuredContent", {}).get("documents") == []
+    and not result("123").get("isError"),
+)
+check(
+    "negative pages_per_document reads no pages",
+    result("124").get("structuredContent", {}).get("matched") == 0
+    and not result("124").get("isError"),
+)
+check(
+    "negative max_characters clips to nothing",
+    "truncated at 0 characters" in json.dumps(result("125"))
+    and not result("125").get("isError"),
 )
 
 sys.exit(1 if check.failed else 0)
