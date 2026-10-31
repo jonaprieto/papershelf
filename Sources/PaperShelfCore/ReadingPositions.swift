@@ -96,12 +96,6 @@ extension Library {
         }
     }
 
-    public func forgetReadingPosition(forDocument documentID: String) throws {
-        try run("DELETE FROM reading_positions WHERE document_id = ?;") { statement in
-            bindText(statement, 1, documentID)
-        }
-    }
-
     /// Every path of every document that is part-read, so a shelf can pick its own files
     /// out without asking about each one.
     ///
@@ -142,26 +136,6 @@ extension Library {
         }
     }
 
-    /// The reading position of every part-read document, by path.
-    public func readingPositionsByPath() throws -> [String: ReadingPosition] {
-        try withStatement("""
-            SELECT l.path, r.document_id, r.page, r.page_count, r.updated_at
-            FROM reading_positions r
-            JOIN locations l ON l.document_id = r.document_id;
-            """) { statement in
-            var out: [String: ReadingPosition] = [:]
-            while sqlite3_step(statement) == SQLITE_ROW {
-                guard let path = columnText(statement, 0) else { continue }
-                out[path] = ReadingPosition(
-                    documentID: columnText(statement, 1) ?? "",
-                    page: columnInt(statement, 2) ?? 1,
-                    pageCount: columnInt(statement, 3),
-                    updatedAt: columnText(statement, 4).flatMap(Library.isoDate) ?? Date()
-                )
-            }
-            return out
-        }
-    }
 }
 
 extension Library {
