@@ -272,8 +272,8 @@ struct NotesRail: View {
     }
 
     private func count(_ highlights: Int, _ notes: Int) -> String {
-        "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
-            + "\(notes) note\(notes == 1 ? "" : "s")"
+        "\(counted(highlights, "highlight")) · "
+            + counted(notes, "note")
     }
 
     /// Loads the selected document into the shadow annotator, so its marks are the same

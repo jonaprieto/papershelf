@@ -193,7 +193,7 @@ struct ProjectWorkspace: View {
     private var subtitle: String {
         let sections = Set(model.members.compactMap(\.section)).count
         let unread = model.members.count - choosable.count
-        var parts = ["\(model.members.count) document\(model.members.count == 1 ? "" : "s")"]
+        var parts = [counted(model.members.count, "document")]
         // How much there is to ask across, which is the number that decides whether a
         // question can be answered at all. Words rather than characters: nobody has an
         // intuition for 1,200,000 characters.
@@ -202,7 +202,7 @@ struct ProjectWorkspace: View {
             parts.append("\(words.formatted(.number.notation(.compactName))) words indexed")
         }
         if unread > 0 { parts.append("\(unread) not indexed") }
-        if sections > 0 { parts.append("\(sections) section\(sections == 1 ? "" : "s")") }
+        if sections > 0 { parts.append(counted(sections, "section")) }
         return parts.joined(separator: " \u{00B7} ")
     }
 

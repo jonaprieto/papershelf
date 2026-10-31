@@ -374,7 +374,7 @@ struct SettingsPanel: View {
     }
 
     private func callSummary(_ totals: SpendTotals) -> String {
-        var parts = ["\(totals.calls) call\(totals.calls == 1 ? "" : "s")"]
+        var parts = [counted(totals.calls, "call")]
         if totals.failedCalls > 0 { parts.append("\(totals.failedCalls) failed") }
         if totals.callsWithUnknownCost > 0 { parts.append("\(totals.callsWithUnknownCost) cost unknown") }
         return parts.joined(separator: ", ")

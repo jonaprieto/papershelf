@@ -3439,23 +3439,23 @@ struct ResultsPane: View {
         case .list where !runner.results.isEmpty:
             let total = runner.results.count
             let done = runner.reviewed
-            return "\(total) file\(total == 1 ? "" : "s") \u{00B7} \(done) decided "
+            return "\(counted(total, "file")) \u{00B7} \(done) decided "
                 + "\u{00B7} \(runner.pendingCount) to go"
         case .duplicates:
             let groups = visibleDuplicates
             let files = groups.reduce(0) { $0 + $1.items.count }
-            return "\(groups.count) group\(groups.count == 1 ? "" : "s") · \(files) files"
+            return "\(counted(groups.count, "group")) · \(files) files"
         case .bibliography:
             let entries = visibleBib.count
             let where_ = folderScope?.lastPathComponent
                 ?? runner.results.first?.root.lastPathComponent
-            return [where_, "\(entries) entr\(entries == 1 ? "y" : "ies")",
+            return [where_, counted(entries, "entry", plural: "entries"),
                     "rebuilt as you change anything"]
                 .compactMap { $0 }.joined(separator: " · ")
         default:
             let shown = visibleKeys?.count ?? runner.results.count
             let reachable = max(0, sourceCount - unavailableSourceCount)
-            let sources = "\(reachable) source\(reachable == 1 ? "" : "s")"
+            let sources = counted(reachable, "source")
             let missing = unavailableSourceCount > 0
                 ? " · \(unavailableSourceCount) unavailable"
                 : ""

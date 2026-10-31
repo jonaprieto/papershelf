@@ -284,7 +284,7 @@ final class Runner {
     func undo() {
         guard let step = undoStack.popLast() else { return }
         for (key, decision) in step { set(decision, for: key) }
-        note(.edited, subject: "\(step.count) file\(step.count == 1 ? "" : "s")", detail: "undone")
+        note(.edited, subject: counted(step.count, "file"), detail: "undone")
     }
 
     func note(_ kind: LogEntry.Kind, subject: String, detail: String = "") {
@@ -849,11 +849,11 @@ final class Runner {
                 process(jobs: fresh, options: options)
             }.value
             arrived = Dictionary(uniqueKeysWithValues: previewed.map { ($0.key, $0) })
-            note(.scanned, subject: "\(fresh.count) new file\(fresh.count == 1 ? "" : "s")",
+            note(.scanned, subject: counted(fresh.count, "new file"),
                  detail: "picked up while watching")
         }
         if !vanished.isEmpty {
-            note(.vanished, subject: "\(vanished.count) file\(vanished.count == 1 ? "" : "s")",
+            note(.vanished, subject: counted(vanished.count, "file"),
                  detail: "no longer on disk")
         }
 

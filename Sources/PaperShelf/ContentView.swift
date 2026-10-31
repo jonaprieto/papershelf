@@ -328,7 +328,7 @@ struct ContentView: View {
     private var applyWarnings: [String] {
         var lines: [String] = []
         if runner.deletedCount > 0 {
-            lines.append("\(runner.deletedCount) file\(runner.deletedCount == 1 ? "" : "s") "
+            lines.append("\(counted(runner.deletedCount, "file")) "
                          + "will be moved to the Trash, recoverable from Finder.")
         }
         if !prefs.moveOriginals && runner.confirmedCount > 0 {
@@ -601,7 +601,7 @@ struct ContentView: View {
     private var sessionSpendLabel: String? {
         guard let sessionSpend, sessionSpend.calls > 0 else { return nil }
         guard !sessionSpend.byCurrency.isEmpty else {
-            return "\(sessionSpend.calls) unpriced call\(sessionSpend.calls == 1 ? "" : "s")"
+            return counted(sessionSpend.calls, "unpriced call")
         }
         let amounts = sessionSpend.byCurrency.sorted { $0.key < $1.key }
             .map { $1.formatted(.currency(code: $0)) }
@@ -1021,7 +1021,7 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: { project in
             Text("Deleting \"\(project.name)\" removes the project and its list of "
-                 + "\(project.documentCount) document\(project.documentCount == 1 ? "" : "s"). "
+                 + "\(counted(project.documentCount, "document")). "
                  + "The documents themselves are left alone. This cannot be undone.")
         }
     }
@@ -1126,7 +1126,7 @@ struct ContentView: View {
         if short > 0 { parts.append("\(short) incomplete") }
         let keys = runner.bib.map(\.key)
         let duplicates = keys.count - Set(keys).count
-        parts.append("\(duplicates) duplicate key\(duplicates == 1 ? "" : "s")")
+        parts.append(counted(duplicates, "duplicate key"))
         return parts.joined(separator: " · ")
     }
 
@@ -1248,7 +1248,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(sidebarTarget == .tag(tag.name) ? .isSelected : [])
         .accessibilityLabel("\(tag.name), \(tag.documents) documents")
-        .tip("Show the \(tag.documents) document\(tag.documents == 1 ? "" : "s") carrying this tag")
+        .tip("Show the \(counted(tag.documents, "document")) carrying this tag")
         .contextMenu {
             Button("Rename…") {
                 tagBeingRenamed = tag
@@ -1477,7 +1477,7 @@ struct ContentView: View {
             return "Nothing on disk is touched. The library holds nothing from this "
                 + "folder, so nothing is forgotten."
         }
-        var message = "\(count) document\(count == 1 ? "" : "s") "
+        var message = "\(counted(count, "document")) "
             + "\(count == 1 ? "is" : "are") known only from this folder, and "
             + "\(count == 1 ? "leaves" : "leave") the library with it."
         if !removing.curation.isEmpty {

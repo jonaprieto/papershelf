@@ -76,7 +76,7 @@ func askReadiness(of documents: [ProjectDocument]) -> AskReadiness {
 func recognitionDetail(author: String?, pageCount: Int?) -> String? {
     var parts: [String] = []
     if let author, !author.isEmpty { parts.append(author) }
-    if let pageCount { parts.append("\(pageCount) page\(pageCount == 1 ? "" : "s")") }
+    if let pageCount { parts.append(counted(pageCount, "page")) }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
 }
 
@@ -712,7 +712,7 @@ struct AddDocumentsSheet: View {
     }
 
     private var addButtonTitle: String {
-        selected.isEmpty ? "Add" : "Add \(selected.count) Document\(selected.count == 1 ? "" : "s")"
+        selected.isEmpty ? "Add" : "Add \(counted(selected.count, "Document"))"
     }
 
     private func toggle(_ member: ProjectMember) {
@@ -977,8 +977,8 @@ struct ProjectConversationView: View {
     private func footnote(for turn: ProjectTurn) -> String {
         guard !turn.isLoading, turn.error == nil, !turn.excerpts.isEmpty else { return "" }
         let documents = Set(turn.excerpts.map(\.contentHash)).count
-        var parts = ["\(turn.excerpts.count) chunk\(turn.excerpts.count == 1 ? "" : "s") "
-                     + "from \(documents) document\(documents == 1 ? "" : "s")"]
+        var parts = ["\(counted(turn.excerpts.count, "chunk")) "
+                     + "from \(counted(documents, "document"))"]
         if !model.modelName.isEmpty { parts.append(model.modelName) }
         return parts.joined(separator: " \u{00B7} ")
     }
@@ -1060,7 +1060,7 @@ struct ProjectConversationView: View {
 
     private var confirmationTitle: String {
         guard let preview = model.pendingPreview else { return "" }
-        return "Send \(preview.documentCount) document\(preview.documentCount == 1 ? "" : "s") to \(preview.endpointHost)?"
+        return "Send \(counted(preview.documentCount, "document")) to \(preview.endpointHost)?"
     }
 
     /// Restated in full every time a question is asked, never a checkbox ticked once: the

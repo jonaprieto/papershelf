@@ -1795,7 +1795,7 @@ struct MetadataPanel: View {
                      : item.root.lastPathComponent + " / " + folder.replacingOccurrences(of: "/", with: " / ")))
         let size = [
             item.byteCount.map { formattedBytes($0) },
-            item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
+            item.pageCount.map { counted($0, "page") },
         ].compactMap { $0 }.joined(separator: " · ")
         if !size.isEmpty { rows.append(("Size", size)) }
         if let modified = item.modifiedDate {

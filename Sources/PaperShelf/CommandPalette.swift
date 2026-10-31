@@ -474,7 +474,7 @@ struct CommandPalette: View {
             out.append((mode == .page ? "Page" : "In this document", matchingPages.map(Entry.page)))
         }
         if !textHits.isEmpty {
-            out.append(("In the text · \(textHits.count) match\(textHits.count == 1 ? "" : "es")",
+            out.append(("In the text · \(counted(textHits.count, "match", plural: "matches"))",
                         textHits.map(Entry.text)))
         }
         if !matchingCommands.isEmpty {

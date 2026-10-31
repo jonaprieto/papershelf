@@ -106,7 +106,7 @@ struct StatusBar: View {
 
         var built: String {
             guard let builtAt else { return "No plan built yet" }
-            let source = "\(sources) source\(sources == 1 ? "" : "s")"
+            let source = counted(sources, "source")
             return "Plan built \(ago(builtAt)) from \(source)"
         }
 
@@ -117,8 +117,8 @@ struct StatusBar: View {
             switch seconds {
             case ..<60: return "just now"
             case ..<3600: return "\(Int(seconds / 60)) min ago"
-            case ..<86_400: return "\(Int(seconds / 3600)) hour\(Int(seconds / 3600) == 1 ? "" : "s") ago"
-            default: return "\(Int(seconds / 86_400)) day\(Int(seconds / 86_400) == 1 ? "" : "s") ago"
+            case ..<86_400: return "\(counted(Int(seconds / 3600), "hour")) ago"
+            default: return "\(counted(Int(seconds / 86_400), "day")) ago"
             }
         }
     }
@@ -137,14 +137,14 @@ struct StatusBar: View {
             if let bytes {
                 parts.append(formattedBytes(bytes))
             }
-            if pages > 0 { parts.append("\(pages) page\(pages == 1 ? "" : "s")") }
+            if pages > 0 { parts.append(counted(pages, "page")) }
             parts.append(locked ? "locked" : "unlocked")
             return parts.joined(separator: " · ")
         }
 
         var marks: String {
-            "\(highlights) highlight\(highlights == 1 ? "" : "s") · "
-                + "\(notes) note\(notes == 1 ? "" : "s")"
+            "\(counted(highlights, "highlight")) · "
+                + counted(notes, "note")
         }
     }
 
@@ -365,7 +365,7 @@ struct StatusBar: View {
     private var watchingLabel: String {
         if !watching {
             return unavailableSources > 0
-                ? "\(unavailableSources) source\(unavailableSources == 1 ? "" : "s") unavailable"
+                ? "\(counted(unavailableSources, "source")) unavailable"
                 : "Not watching"
         }
         let taken = activity.lastAbsorbed
@@ -373,9 +373,9 @@ struct StatusBar: View {
             let missing = unavailableSources > 0
                 ? " · \(unavailableSources) unavailable"
                 : ""
-            return "Watching \(sources) source\(sources == 1 ? "" : "s")\(missing)"
+            return "Watching \(counted(sources, "source"))\(missing)"
         }
-        return "Took in \(taken) new file\(taken == 1 ? "" : "s")"
+        return "Took in \(counted(taken, "new file"))"
     }
 
     private var separator: some View {
@@ -465,10 +465,10 @@ struct StatusBar: View {
 
     private var idleLabel: String {
         guard !runner.results.isEmpty else {
-            return sources == 0 ? "No sources yet" : "Nothing found in \(sources) source\(sources == 1 ? "" : "s")"
+            return sources == 0 ? "No sources yet" : "Nothing found in \(counted(sources, "source"))"
         }
         guard runner.lastRunWasDry else { return "Applied to \(runner.results.count) files" }
-        return "\(runner.results.count) file\(runner.results.count == 1 ? "" : "s")"
+        return counted(runner.results.count, "file")
     }
 
     /// Only while there is a plan to be part-way through. A row of zeroes is noise.
@@ -488,7 +488,7 @@ struct StatusBar: View {
         let locked = runner.statusCounts.first { $0.0 == .locked }?.1 ?? 0
         if locked > 0 { out.append(("\(locked) locked", Ink.amber)) }
         if !runner.duplicates.isEmpty {
-            out.append(("\(runner.duplicates.count) duplicate group\(runner.duplicates.count == 1 ? "" : "s")", Ink.purple))
+            out.append((counted(runner.duplicates.count, "duplicate group"), Ink.purple))
         }
         // Files the indexer could not open. Said once, as a number: on a disk that has
         // stopped answering this is every file, and a list of names would be the whole

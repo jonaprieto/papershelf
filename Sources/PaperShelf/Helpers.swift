@@ -10,3 +10,11 @@ func copyToPasteboard(_ text: String) {
 func formattedBytes(_ bytes: some BinaryInteger) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
 }
+
+/// A count and the noun it counts: "1 file", "2 files".
+///
+/// Plain text, so not for a `Text("...")` or `Button("...")` literal: those format the number
+/// for the reader's locale, 1,000 rather than 1000, and this would quietly stop that.
+func counted(_ count: some BinaryInteger, _ noun: String, plural: String? = nil) -> String {
+    "\(count) \(count == 1 ? noun : plural ?? noun + "s")"
+}
