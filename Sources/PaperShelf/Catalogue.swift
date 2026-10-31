@@ -1404,7 +1404,7 @@ struct ResultsPane: View {
             // The two things anybody does with a bibliography, where the actions are,
             // rather than inside the pane that happens to render the file.
             Button {
-                copyText(builtBib.text)
+                copyToPasteboard(builtBib.text)
                 bibCopied = true
                 Task { try? await Task.sleep(for: .seconds(2)); bibCopied = false }
             } label: {
@@ -1485,12 +1485,12 @@ struct ResultsPane: View {
                 .commandShortcut(.findDuplicates)
             Divider()
             Button("Copy the catalogue as Markdown") {
-                copyText(markdownCatalogue(runner.results, known: runner.ai.guesses))
+                copyToPasteboard(markdownCatalogue(runner.results, known: runner.ai.guesses))
             }
             Button("Copy the bibliography as Markdown") {
                 Task {
                     await runner.ensureBibReady()
-                    copyText(markdownBibliography(runner.bib))
+                    copyToPasteboard(markdownBibliography(runner.bib))
                 }
             }
         } label: {
@@ -2323,10 +2323,6 @@ struct ResultsPane: View {
         )
     }
 
-    private func copyText(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 
     private func revealInFinder() {
         guard let item = readerItem ?? selectedItem else { return }
@@ -2388,8 +2384,7 @@ struct ResultsPane: View {
                 await runner.ensureBibReady()
             }
             guard let entry = runner.bibByItem[item.key] else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(bibtexBlock(entry, style: bibStyle) + "\n", forType: .string)
+            copyToPasteboard(bibtexBlock(entry, style: bibStyle) + "\n")
             runner.note(.edited, subject: item.relativePath, detail: "citation copied")
         }
     }

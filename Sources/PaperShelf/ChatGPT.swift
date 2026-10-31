@@ -51,7 +51,6 @@ enum ChatGPTHandoff {
 
     /// For a conversation already open, which no deep link can reach.
     static func copy(_ prompt: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(prompt, forType: .string)
+        copyToPasteboard(prompt)
     }
 }

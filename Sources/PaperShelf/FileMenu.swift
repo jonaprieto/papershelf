@@ -72,9 +72,9 @@ struct FileContextMenu: View {
 
         Divider()
 
-        Button("Copy Name") { copy(item.currentFilename) }
-        Button("Copy Path") { copy(item.currentURL.path) }
-        Button("Copy Suggested Name") { copy(item.destinationName) }
+        Button("Copy Name") { copyToPasteboard(item.currentFilename) }
+        Button("Copy Path") { copyToPasteboard(item.currentURL.path) }
+        Button("Copy Suggested Name") { copyToPasteboard(item.destinationName) }
 
         Divider()
 
@@ -168,10 +168,6 @@ struct FileContextMenu: View {
         return order.compactMap { chosen[$0] }
     }
 
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }
 
 /// The system Quick Look panel, driven by a single URL.

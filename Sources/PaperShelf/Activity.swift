@@ -83,8 +83,7 @@ struct ActivityLog: View {
 
             HStack {
                 Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(logText(entries), forType: .string)
+                    copyToPasteboard(logText(entries))
                 }
                 .disabled(entries.isEmpty)
                 .tip("Copy the activity log")

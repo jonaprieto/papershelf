@@ -733,8 +733,7 @@ struct NotesRail: View {
     }
 
     private func copyNotes() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(notesMarkdown, forType: .string)
+        copyToPasteboard(notesMarkdown)
     }
 
     private var chatGPTNotesPrompt: String {

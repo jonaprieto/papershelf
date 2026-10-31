@@ -1006,8 +1006,7 @@ struct ProjectConversationView: View {
     }
 
     private func copy(_ turn: ProjectTurn) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(markdown(turn), forType: .string)
+        copyToPasteboard(markdown(turn))
     }
 
     /// What would be sent, on screen the whole time a question is being typed.

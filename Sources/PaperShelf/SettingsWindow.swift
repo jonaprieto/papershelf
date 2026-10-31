@@ -793,8 +793,7 @@ struct KeyboardSettings: View {
                 lines.append("| \(command.title) | \(command.scope.label) | \(key) |")
             }
         }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+        copyToPasteboard(lines.joined(separator: "\n"))
     }
 
     @ViewBuilder
@@ -996,7 +995,7 @@ struct IntegrationSettings: View {
                                 .font(Face.mono)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Button("Copy") { copy(server.path) }
+                            Button("Copy") { copyToPasteboard(server.path) }
                         }
                     }
                 } else {
@@ -1007,10 +1006,10 @@ struct IntegrationSettings: View {
                 }
 
                 LabeledContent("Claude Code") {
-                    Button("Copy the command") { copy(claudeCode) }
+                    Button("Copy the command") { copyToPasteboard(claudeCode) }
                 }
                 LabeledContent("Codex") {
-                    Button("Copy the config") { copy(codex) }
+                    Button("Copy the config") { copyToPasteboard(codex) }
                 }
                 Toggle("Let it rename and move files", isOn: $prefs.mcpFileOperations)
             } header: {
@@ -1127,10 +1126,6 @@ struct IntegrationSettings: View {
         }
     }
 
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }
 
 

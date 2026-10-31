@@ -121,8 +121,7 @@ struct MarkdownSheet: View {
                 Spacer()
                 if let result = converting.result {
                     Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(result, forType: .string)
+                        copyToPasteboard(result)
                     }
                     Button("Save…") { saving = true }
                     // The same text a reading project reads its own documents with, kept

@@ -41,8 +41,7 @@ extension ReviewInspector {
                 // when it runs out, so a narrow panel gets two readable rows.
                 FlowRow(spacing: Space.step) {
                     Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(citationDraft + "\n", forType: .string)
+                        copyToPasteboard(citationDraft + "\n")
                     }
                     .tip("Copy the entry as it stands", key: "B")
 

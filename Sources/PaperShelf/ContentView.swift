@@ -2187,7 +2187,7 @@ struct ExplorerRow: View {
                     NSWorkspace.shared.activateFileViewerSelecting([node.url])
                 }
                 Divider()
-                Button("Copy path") { copy(node.url.path) }
+                Button("Copy path") { copyToPasteboard(node.url.path) }
             } else {
                 // A file used to reach the same empty menu a folder fills, and an empty
                 // menu is drawn as nothing at all, so right-clicking a paper here looked
@@ -2211,16 +2211,12 @@ struct ExplorerRow: View {
                 Divider()
                 // The row truncates a long name through the middle, so the name is
                 // something you can want and cannot read off the tree.
-                Button("Copy name") { copy(node.url.lastPathComponent) }
-                Button("Copy path") { copy(node.url.path) }
+                Button("Copy name") { copyToPasteboard(node.url.lastPathComponent) }
+                Button("Copy path") { copyToPasteboard(node.url.path) }
             }
         }
     }
 
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
 }
 
 /// Every folder in the tree, for "unfold everything". Files are left out: they have nothing
