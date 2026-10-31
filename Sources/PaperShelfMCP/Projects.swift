@@ -327,6 +327,14 @@ final class LibraryReader {
         }
     }
 
+    /// Whether a document has stored text, without reading what can be megabytes of it.
+    func hasExtractedText(forDocument id: String) throws -> Bool {
+        try withStatement("SELECT 1 FROM extracted_text WHERE document_id = ?;",
+                          bind: { statement in bindText(statement, 1, id) }) { statement in
+            sqlite3_step(statement) == SQLITE_ROW
+        }
+    }
+
     func notes(forDocument id: String) throws -> [(body: String, createdAt: String)] {
         try withStatement("""
             SELECT body, created_at FROM notes WHERE document_id = ? ORDER BY created_at;

@@ -424,7 +424,7 @@ let libraryTools: [Tool] = [
             // for a folder. What this must not do is hide the shortfall, so it is counted
             // and said plainly instead.
             let unread = documents.filter { document, _ in
-                (try? reader.extractedText(forDocument: document.id)) == nil
+                (try? reader.hasExtractedText(forDocument: document.id)) != true
             }.count
             // The section a document is filed under is most of what a reading list says,
             // so it travels with each row and heads each run in the text.
