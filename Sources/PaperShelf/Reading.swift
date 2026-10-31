@@ -786,6 +786,8 @@ struct PageBar: View {
                 .fixedSize()
                 .tip("How big the page is drawn")
 
+                pageColourMenu
+
                 Divider().frame(height: 14)
 
                 if let openFind {
@@ -821,6 +823,31 @@ struct PageBar: View {
             .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
             .fixedSize()
         }
+    }
+
+    /// Beside the size because it is the same sort of thing, how the page is drawn. It was
+    /// only in the toolbar's Display menu, which folds away on a narrow window and asks a
+    /// reader to look away from the page to change the page.
+    private var pageColourMenu: some View {
+        let prefs = Prefs.shared
+        return Menu {
+            ForEach(PDFReadingAppearance.allCases) { mode in
+                Toggle(mode.label, isOn: Binding(
+                    get: { prefs.readingAppearance == mode },
+                    set: { _ in prefs.readingAppearance = mode }
+                ))
+            }
+        } label: {
+            Image(systemName: "paintpalette")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Page colour")
+        .accessibilityValue(prefs.readingAppearance.label)
+        .accessibilityIdentifier("reader.pageColour")
+        .tip("Page colour: \(prefs.readingAppearance.label)")
     }
 
     private func step(_ delta: Int, _ icon: String, _ what: String) -> some View {

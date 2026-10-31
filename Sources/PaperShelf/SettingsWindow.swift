@@ -241,7 +241,7 @@ struct GeneralSettings: View {
             .accessibilityElement(children: .contain)
 
             HStack {
-                Text("PDF contrast")
+                Text("Page colour")
                 Spacer()
                 HStack(spacing: 0) {
                     ForEach(PDFReadingAppearance.allCases) { mode in
@@ -254,7 +254,7 @@ struct GeneralSettings: View {
                                         ? Color.accentColor : .clear,
                                         in: RoundedRectangle(cornerRadius: Metric.control))
                             .accessibilityIdentifier("settings.pdfContrast.\(mode.rawValue)")
-                            .tip("Read PDFs with \(mode.label.lowercased()) contrast")
+                            .tip("Read PDFs on \(mode.label.lowercased()) pages")
                             .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
                     }
                 }

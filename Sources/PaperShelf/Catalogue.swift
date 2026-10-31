@@ -1274,7 +1274,7 @@ struct ResultsPane: View {
                 }
             }
             if showsPage {
-                Section("PDF contrast") {
+                Section("Page colour") {
             ForEach(PDFReadingAppearance.allCases) { mode in
                 Button {
                     prefs.readingAppearance = mode

@@ -290,7 +290,7 @@ struct PaperShelfApp: App {
                     ForEach(Appearance.allCases) { mode in Text(mode.label).tag(mode) }
                 }
                 .pickerStyle(.menu)
-                Picker("PDF Contrast", selection: Binding(get: { Prefs.shared.readingAppearance },
+                Picker("Page Colour", selection: Binding(get: { Prefs.shared.readingAppearance },
                                                           set: { Prefs.shared.readingAppearance = $0 })) {
                     ForEach(PDFReadingAppearance.allCases) { mode in Text(mode.label).tag(mode) }
                 }
