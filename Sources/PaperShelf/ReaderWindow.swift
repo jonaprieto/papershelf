@@ -307,8 +307,8 @@ struct ReaderWindow: View {
     }
 
     private var currentMeaningScopes: [HighlightMeaningScope] {
-        [.forDocument(url, id: documentID),
-         .forFolder(url.deletingLastPathComponent()), .library]
+        [.forDocument(url, id: documentID), .forFolder(url.deletingLastPathComponent())]
+            + documentProjectScopes + [.library]
     }
 
     private var currentStyles: [HighlightStyle] {
