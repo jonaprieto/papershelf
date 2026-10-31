@@ -926,7 +926,7 @@ public actor Library {
     public func documentIDsMatchingText(_ phrase: String, limit: Int = 20_000) throws -> [String] {
         let trimmed = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let quoted = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        let quoted = ftsPhrase(trimmed)
         return try withStatement("""
             SELECT e.document_id
             FROM extracted_text_fts
@@ -1016,7 +1016,7 @@ public actor Library {
         // not the place to make someone escape SQL; a phrase (adjacent tokens, in order) is
         // also the FTS5 primitive closest to what Search.swift's own `text:"..."` term
         // already means, see the type-level comment above.
-        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        let phrase = ftsPhrase(trimmed)
         return try withStatement("""
             SELECT d.id, d.first_seen_at, d.last_seen_at, d.content_hash, d.byte_count, d.page_count,
                    d.title, d.author, d.document_info
@@ -1325,6 +1325,11 @@ public struct ExtractedText: Sendable, Equatable {
     public var extractedAt: Date
     /// Nil for text stored before page markers existed, which is what makes it stale.
     public var format: TextFormat?
+}
+
+/// Text as one FTS5 phrase: whatever it holds is matched as words, not read as query syntax.
+public func ftsPhrase(_ text: String) -> String {
+    "\"\(text.replacingOccurrences(of: "\"", with: "\"\""))\""
 }
 
 /// Mirrors `runCacheURL` (`Cache.swift`) exactly, down to the same folder: the run cache is

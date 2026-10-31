@@ -211,7 +211,7 @@ final class LibraryReader {
     func search(inProject projectID: Int64, query: String, limit: Int, offset: Int = 0) throws -> [DocumentSummary] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        let phrase = ftsPhrase(trimmed)
         return try withStatement("""
             SELECT \(Self.documentColumns)
             FROM extracted_text_fts
@@ -296,7 +296,7 @@ final class LibraryReader {
     func search(query: String, limit: Int, offset: Int) throws -> [DocumentSummary] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        let phrase = ftsPhrase(trimmed)
         return try withStatement("""
             SELECT \(Self.documentColumns)
             FROM extracted_text_fts

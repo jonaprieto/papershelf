@@ -193,7 +193,7 @@ extension Library {
     public func fullTextHits(_ text: String, limit: Int = 5) throws -> [TextHit] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, limit > 0 else { return [] }
-        let phrase = "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
+        let phrase = ftsPhrase(trimmed)
         return try withStatement("""
             SELECT d.id, d.title, d.author, e.markdown
             FROM extracted_text_fts
