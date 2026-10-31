@@ -344,11 +344,12 @@ public func bibtexProtectCapitals(_ value: String) -> String {
 /// Already-doubled dashes, and anything that is not a plain number range (`43+`, a
 /// single page), pass through unchanged.
 public func bibtexPageRange(_ value: String) -> String {
-    guard let regex = try? NSRegularExpression(pattern: "(\\d)\\s*[-\\u2010-\\u2015]+\\s*(\\d)")
-    else { return value }
     let range = NSRange(value.startIndex..., in: value)
-    return regex.stringByReplacingMatches(in: value, range: range, withTemplate: "$1--$2")
+    return pageRangeRegex.stringByReplacingMatches(in: value, range: range, withTemplate: "$1--$2")
 }
+
+private let pageRangeRegex = try! NSRegularExpression(
+    pattern: "(\\d)\\s*[-\\u2010-\\u2015]+\\s*(\\d)")
 
 /// The twelve BibTeX month macros, keyed by every spelling this app accepts: the digit,
 /// the zero-padded digit, the three-letter macro itself, and the full English name.

@@ -1094,18 +1094,23 @@ public actor Library {
         }
     }
 
-    static func isoString(_ date: Date) -> String {
+    // Shared because every row read carries two dates, and building a formatter costs twice
+    // what using one does. Behind a lock because nothing promises they are thread-safe.
+    private static let isoLock = NSLock()
+    private static let isoPrecise: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        return formatter
+    }()
+    private static let isoWhole = ISO8601DateFormatter()
+
+    static func isoString(_ date: Date) -> String {
+        isoLock.withLock { isoPrecise.string(from: date) }
     }
 
     static func isoDate(_ text: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = precise.date(from: text) { return date }
         // Whole-second fallback, in case a value predates fractional seconds being added.
-        return ISO8601DateFormatter().date(from: text)
+        isoLock.withLock { isoPrecise.date(from: text) ?? isoWhole.date(from: text) }
     }
 
     #if DEBUG
