@@ -295,6 +295,14 @@ struct PaperShelfApp: App {
                     ForEach(PDFReadingAppearance.allCases) { mode in Text(mode.label).tag(mode) }
                 }
                 .pickerStyle(.menu)
+                Divider()
+                // Sent to the window in front rather than left to a key monitor: PDFKit
+                // holds the first responder in a reader from Finder, and these two are
+                // what a person tries first with no idea whether the app has them.
+                Button("Zoom In") { sendToKeyWindow(.zoomIn) }
+                    .commandShortcut(.zoomIn)
+                Button("Zoom Out") { sendToKeyWindow(.zoomOut) }
+                    .commandShortcut(.zoomOut)
             }
             CommandGroup(before: .windowList) {
                 // Reading a file opened from Finder no longer builds a library window, so

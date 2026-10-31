@@ -379,6 +379,7 @@ final class CommandsTests: XCTestCase {
         XCTAssertEqual(found("dark theme"), [.themeDark])
         XCTAssertEqual(Set(found("theme")), [.themeSystem, .themeLight, .themeDark])
         XCTAssertTrue(found("color").contains(.pageColourWhiteOnBlack))
+        XCTAssertTrue(found("zoom").contains(.zoomIn))
         XCTAssertTrue(found("settings").contains(.openSettings))
         XCTAssertTrue(found("panel").contains(.toggleInspector))
     }
@@ -397,6 +398,35 @@ final class CommandsTests: XCTestCase {
         XCTAssertFalse(leads("pr"), "two letters are still the start of a paper's name")
         XCTAssertFalse(leads("rint"), "the middle of a word is not its name")
         XCTAssertFalse(leads("crdt"))
+    }
+
+    func testZoomUsesThePlatformKeysAndChangesTheAttachedPDF() {
+        XCTAssertEqual(Command.zoomIn.defaultShortcut, Shortcut("=", .command))
+        XCTAssertEqual(Command.zoomOut.defaultShortcut, Shortcut("-", .command))
+        XCTAssertTrue(ResultsPane.performable.contains(.zoomIn))
+        XCTAssertTrue(ReaderWindow.paletteCommands.contains(.zoomOut))
+        XCTAssertNil(Keymap(store: UserDefaults(suiteName: scratchName("zoom-keys"))!)
+            .conflict(for: Shortcut("=", .command), assigning: .zoomIn))
+
+        let document = PDFDocument()
+        let page = PDFPage()
+        page.setBounds(CGRect(x: 0, y: 0, width: 600, height: 800), for: .mediaBox)
+        document.insert(page, at: 0)
+        let view = FitWidthPDFView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".pdf"))
+        defer { annotator.detach() }
+        let fit = Binding<PageFit>(get: { view.fit }, set: { view.fit = $0 })
+        view.layout()
+
+        let fitted = view.scaleFactor
+        XCTAssertTrue(Command.zoomIn.performPageAction(on: annotator, fit: fit))
+        XCTAssertGreaterThan(view.scaleFactor, fitted)
+        XCTAssertTrue(view.usesCustomZoom, "the page bar has to show a percentage now")
+        XCTAssertTrue(Command.zoomOut.performPageAction(on: annotator, fit: fit))
+        XCTAssertEqual(view.scaleFactor, fitted, accuracy: 0.01)
     }
 
     func testNormalModeIsDiscoverableWithoutAPDFSelection() {

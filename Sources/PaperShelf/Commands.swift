@@ -93,7 +93,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally, printPDF, lockPDF, unlockPDF
-    case fitPage, fitWidth, actualSize, nextPage, previousPage, firstPage, lastPage
+    case fitPage, fitWidth, actualSize, zoomIn, zoomOut
+    case nextPage, previousPage, firstPage, lastPage
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
 
     // Library
@@ -117,6 +118,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .pageColourNormal, .pageColourSepia, .pageColourTint, .pageColourWhiteOnBlack:
             return "color background paper reading contrast night dark invert"
         case .themeSystem, .themeLight, .themeDark: return "appearance mode window interface"
+        case .zoomIn: return "bigger larger enlarge magnify"
+        case .zoomOut: return "smaller shrink reduce"
         case .toggleInspector: return "panel right info notes cite close"
         case .toggleSidebar: return "panel left close"
         case .readingMode: return "focus distraction page only"
@@ -191,7 +194,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally, .printPDF,
-             .lockPDF, .unlockPDF, .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
+             .lockPDF, .unlockPDF, .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
+             .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
             return .reading
         case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
@@ -207,7 +211,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark,
-             .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
+             .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
+             .nextPage, .previousPage, .firstPage, .lastPage,
              .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
             return .reader
         case .confirm, .editName, .askAI, .copyCitation, .applyOne, .skip, .skipFolder,
@@ -288,6 +293,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .fitPage: return "Fit page"
         case .fitWidth: return "Fit width"
         case .actualSize: return "Actual size"
+        case .zoomIn: return "Zoom in"
+        case .zoomOut: return "Zoom out"
         case .nextPage: return "Next page"
         case .previousPage: return "Previous page"
         case .firstPage: return "First page"
@@ -369,6 +376,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight5: return Shortcut("5", [])
         case .addNote: return Shortcut("n", [])
         case .addBookmark, .showBookmarks, .removeBookmark: return nil
+        // The keys every Mac document window gives these. ⌘0 is already the Library window.
+        case .zoomIn: return Shortcut("=", .command)
+        case .zoomOut: return Shortcut("-", .command)
         case .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage:
             return nil
         case .findInDocument: return Shortcut("f", .command)
@@ -412,12 +422,14 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     /// The second key some commands have always answered to. Not rebindable and not shown
     /// as the shortcut: `C` confirms because a hand resting on the left of the keyboard
     /// should not have to reach for Return, and `N`/`P` move because some people's do.
-    /// ⇧J and ⇧K move while reading, where J and K alone scroll the page.
+    /// ⇧J and ⇧K move while reading, where J and K alone scroll the page. ⌘+ is the same
+    /// key as ⌘= on some layouts and needs Shift on the rest.
     var alternates: [Shortcut] {
         switch self {
         case .confirm: return [Shortcut("c", [])]
         case .nextFile: return [Shortcut("n", []), Shortcut("\u{F701}", []), Shortcut("j", .shift)]
         case .previousFile: return [Shortcut("p", []), Shortcut("\u{F700}", []), Shortcut("k", .shift)]
+        case .zoomIn: return [Shortcut("+", .command), Shortcut("+", [.command, .shift])]
         default: return []
         }
     }
@@ -425,7 +437,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 
 extension Command {
     static let pageActions: [Command] = [
-        .fitPage, .fitWidth, .actualSize, .nextPage, .previousPage, .firstPage, .lastPage,
+        .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
+        .nextPage, .previousPage, .firstPage, .lastPage,
     ]
 
     /// One line per value rather than one that cycles: the palette is where a person says
@@ -485,6 +498,8 @@ extension Command {
             let mode: PageFit = self == .fitPage ? .page : self == .fitWidth ? .width : .actual
             fit.wrappedValue = mode
             annotator.setPageFit(mode)
+        case .zoomIn: annotator.view?.zoomIn(nil)
+        case .zoomOut: annotator.view?.zoomOut(nil)
         case .nextPage: annotator.go(toPage: annotator.page + 1)
         case .previousPage: annotator.go(toPage: annotator.page - 1)
         case .firstPage: annotator.go(toPage: 1)
