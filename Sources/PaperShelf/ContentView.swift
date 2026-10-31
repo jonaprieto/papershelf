@@ -648,11 +648,19 @@ struct ContentView: View {
                     tagsPanel
                 }
                 .padding(.horizontal, Space.snug)
-                .padding(.vertical, Space.step)
+                // Inside the scroll view, with the safe area ignored below. Left to the
+                // system the toolbar's height is counted twice in this column on an app
+                // linked against an older SDK, which is this one, and the sidebar opened
+                // with 60 empty points under the toolbar. Padding outside the scroll view
+                // doubles the same way; nothing can inset this.
+                .padding(.top, Metric.toolbar + Space.step)
+                .padding(.bottom, Space.step)
             }
             sidebarFooter
         }
         .frame(maxWidth: .infinity)
+        .ignoresSafeArea(.container, edges: .top)
+        .labelStyle(SidebarLabelStyle())
     }
 
     /// A heading over a group of sidebar rows, in the size a source list gives one.
@@ -665,6 +673,13 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, Space.snug)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What a section says when it has nothing in it, on the same edge as its heading.
+    private func sidebarNote(_ text: String) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Space.snug)
     }
 
     /// One row of the sidebar: something you can go to, and how much is there.
@@ -922,9 +937,9 @@ struct ContentView: View {
     private var projectsPanel: some View {
         Section {
             if Library.shared == nil {
-                Text("The library is unavailable").foregroundStyle(.secondary)
+                sidebarNote("The library is unavailable")
             } else if projects.isEmpty {
-                Text("No projects yet").foregroundStyle(.secondary)
+                sidebarNote("No projects yet")
             } else {
                 ForEach(projects) { project in
                     // A row rather than a Button: a Button takes the drag for itself, so a
@@ -994,6 +1009,7 @@ struct ContentView: View {
                     Label("New project", systemImage: "plus.circle")
                 }
                 .buttonStyle(.link)
+                .padding(.horizontal, Space.snug)
             }
         } header: {
             sidebarHeading("Projects")
@@ -1161,15 +1177,16 @@ struct ContentView: View {
     private var tagsPanel: some View {
         Section {
             if Library.shared == nil {
-                Text("The library is unavailable").foregroundStyle(.secondary)
+                sidebarNote("The library is unavailable")
             } else if tagCounts.isEmpty {
-                Text("No tags yet").foregroundStyle(.secondary)
+                sidebarNote("No tags yet")
             } else {
                 FlowRow(spacing: Space.snug) {
                     ForEach(tagCounts) { tag in
                         tagRow(tag)
                     }
                 }
+                .padding(.horizontal, Space.snug)
                 .padding(.vertical, Space.tight)
                 .accessibilityIdentifier("library.tagCloud")
             }
@@ -1280,8 +1297,7 @@ struct ContentView: View {
     private var sourcesPanel: some View {
             Section {
                 if selection.isEmpty {
-                    Text("Nothing added yet")
-                        .foregroundStyle(.secondary)
+                    sidebarNote("Nothing added yet")
                         .padding(.vertical, Space.hair)
                 }
                 ForEach(sourceRows) { row in
@@ -1296,6 +1312,7 @@ struct ContentView: View {
                     Label("Add source", systemImage: "plus.circle")
                 }
                 .buttonStyle(.link)
+                .padding(.horizontal, Space.snug)
             } header: {
                 sidebarHeading("Sources")
             }
@@ -1750,6 +1767,18 @@ func storedSources(_ text: String) -> [URL] {
 
 // MARK: - Sidebar pieces
 
+/// An icon in the sidebar's one column and its name on the sidebar's one edge. A stock
+/// `Label` starts the name wherever its glyph happens to end, which put All Documents and
+/// Recently Added four points apart.
+private struct SidebarLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: Space.snug) {
+            configuration.icon.frame(width: Metric.sidebarIcon)
+            configuration.title
+        }
+    }
+}
+
 private struct SidebarSourceLabel: View {
     let url: URL
     let count: Int
@@ -1791,14 +1820,14 @@ private struct SidebarSourceLabel: View {
                 Button(action: unfold) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
                         .font(Face.micro)
-                        .frame(width: 12)
+                        .frame(width: Metric.sidebarIcon)
                         .contentShape(Rectangle().inset(by: -5))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(open ? "Fold this source" : "Unfold this source")
             } else {
-                Color.clear.frame(width: 12, height: 1)
+                Color.clear.frame(width: Metric.sidebarIcon, height: 1)
             }
             // Only when something is wrong. A folder glyph on every source is a column of
             // identical icons beside a disclosure triangle that already says "folder";
@@ -1830,6 +1859,7 @@ private struct SidebarSourceLabel: View {
                 .tip("Stop watching this source. Nothing on disk is touched.")
             }
         }
+        .padding(.horizontal, Space.snug)
         .contentShape(Rectangle())
         .background(highlight, in: RoundedRectangle(cornerRadius: Metric.card))
         .accessibilityAddTraits(focused ? .isSelected : [])
@@ -2118,7 +2148,7 @@ struct ExplorerRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .padding(.leading, CGFloat(depth) * 12)
+        .padding(.leading, Space.snug + CGFloat(depth) * 12)
         .padding(.vertical, Space.tight)
         .contentShape(Rectangle())
         .background(

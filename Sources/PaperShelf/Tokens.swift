@@ -49,6 +49,9 @@ enum Metric {
 
     // Rows
     static let sidebarRow: CGFloat = 26
+    /// The column every sidebar icon and disclosure triangle sits in, so the names beside
+    /// them start at one edge however wide each glyph happens to be.
+    static let sidebarIcon: CGFloat = 18
     /// One character in a key cap. Fixed so a column of prefixes lines up rather than
     /// each row indenting by however wide its own glyph happens to be.
     static let keyWidth: CGFloat = 14
