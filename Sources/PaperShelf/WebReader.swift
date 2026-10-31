@@ -339,7 +339,7 @@ struct WebReader: View {
                 HStack(spacing: Space.snug) {
                     Label("Highlight", systemImage: "highlighter")
                         .font(.callout).foregroundStyle(.secondary).fixedSize()
-                    HStack(spacing: 2) {
+                    HStack(spacing: Space.hair) {
                         ForEach(Palette.shared.styles(for: [.library])) { style in
                             Button {
                                 Task { if let url = await model.freeze(highlightColour: style.nsColor) { saved(url) } }

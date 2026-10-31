@@ -35,8 +35,8 @@ struct UpdateNotice: View {
             Button { showingDetails = true } label: {
                 Text(local.showsBadge ? "Local build available" : "Update available")
                     .font(Face.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Space.snug)
+                    .padding(.vertical, Space.hair)
                     .background(Color.accentColor.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)

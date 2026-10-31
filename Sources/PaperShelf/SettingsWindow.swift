@@ -234,7 +234,7 @@ struct GeneralSettings: View {
                             .accessibilityAddTraits(prefs.appearance == mode ? .isSelected : [])
                     }
                 }
-                .padding(2)
+                .padding(Space.hair)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
                 .frame(maxWidth: 310)
             }
@@ -258,7 +258,7 @@ struct GeneralSettings: View {
                             .accessibilityAddTraits(prefs.readingAppearance == mode ? .isSelected : [])
                     }
                 }
-                .padding(2)
+                .padding(Space.hair)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.control + 2))
                 .frame(maxWidth: 310)
             }
@@ -691,7 +691,7 @@ struct HighlighterSettings: View {
                             .padding(.horizontal, Space.snug)
                             .padding(.vertical, Space.hair)
                             .background(style.swatch.opacity(0.38),
-                                        in: RoundedRectangle(cornerRadius: 3))
+                                        in: RoundedRectangle(cornerRadius: Metric.keyCap))
                         Spacer(minLength: 0)
                     }
                 }

@@ -768,7 +768,7 @@ struct PageBar: View {
                     .fixedSize()
                 step(1, "chevron.right", "Next page")
 
-                Divider().frame(height: 14)
+                Divider().frame(height: Metric.barDivider)
 
                 Menu {
                     ForEach(PageFit.allCases) { mode in
@@ -787,7 +787,7 @@ struct PageBar: View {
 
                 pageColourMenu
 
-                Divider().frame(height: 14)
+                Divider().frame(height: Metric.barDivider)
 
                 if let openFind {
                     Button(action: openFind) {
@@ -799,7 +799,7 @@ struct PageBar: View {
                     .accessibilityIdentifier("reader.find")
                     .tip("Find in this PDF", command: .findInDocument)
 
-                    Divider().frame(height: 14)
+                    Divider().frame(height: Metric.barDivider)
                 }
 
                 Button {

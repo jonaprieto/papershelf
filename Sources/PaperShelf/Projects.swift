@@ -936,7 +936,7 @@ struct ProjectConversationView: View {
                                         .font(Face.mono.weight(.bold))
                                         .padding(.horizontal, Space.tight)
                                         .background(.white.opacity(0.22),
-                                                    in: RoundedRectangle(cornerRadius: 3))
+                                                    in: RoundedRectangle(cornerRadius: Metric.keyCap))
                                 }
                             }
                         }

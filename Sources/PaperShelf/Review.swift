@@ -1043,7 +1043,7 @@ struct KeyLabel: View {
                 Text(key)
                     .font(Face.mono.weight(.bold))
                     .frame(minWidth: 14, minHeight: 14)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: Metric.keyCap))
             }
             Text(title)
         }

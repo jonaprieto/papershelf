@@ -77,9 +77,9 @@ struct DuplicateReviewView: View {
                 Image(nsImage: image)
                     .resizable().scaledToFit()
                     .frame(width: 200, height: 240)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                    .overlay(RoundedRectangle(cornerRadius: Metric.popover).stroke(.separator))
             } else {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Metric.popover)
                     .fill(.quaternary)
                     .frame(width: 200, height: 240)
             }

@@ -157,7 +157,7 @@ struct MarkdownSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(Space.step)
                 }
-                .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
+                .background(RoundedRectangle(cornerRadius: Metric.popover).fill(.quaternary.opacity(0.4)))
             } else {
                 Spacer()
             }

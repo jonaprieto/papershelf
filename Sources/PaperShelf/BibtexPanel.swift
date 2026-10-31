@@ -30,8 +30,8 @@ extension ReviewInspector {
                 BibtexEditor(text: $citationDraft) { citationHeight = $0 }
                     .frame(height: max(citationHeight, 40))
                     .padding(Space.tight)
-                .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.4)))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                .background(RoundedRectangle(cornerRadius: Metric.popover).fill(.quaternary.opacity(0.4)))
+                .overlay(RoundedRectangle(cornerRadius: Metric.popover).strokeBorder(.quaternary))
 
                 // Wrapping, not compressing. Five controls in an inspector that can be
                 // 280 points wide is more than one line holds, and an `HStack` answers

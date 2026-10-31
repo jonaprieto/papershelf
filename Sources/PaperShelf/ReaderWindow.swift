@@ -355,7 +355,7 @@ struct ReaderWindow: View {
                     .buttonStyle(.plain)
                     .help(palette.meaning(for: style.nsColor, scopes: currentMeaningScopes))
                 }
-                Divider().frame(height: 14)
+                Divider().frame(height: Metric.barDivider)
                 AskReadingAssistant {
                     annotator.selectionPrompt()
                 }

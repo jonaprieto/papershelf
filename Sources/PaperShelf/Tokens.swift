@@ -37,6 +37,8 @@ enum Metric {
     static let toolbar: CGFloat = 52
     static let filterBar: CGFloat = 38
     static let statusBar: CGFloat = 26
+    /// The rule between groups of controls in a floating bar.
+    static let barDivider: CGFloat = 14
 
     // Panels
     static let sidebarMin: CGFloat = 220
