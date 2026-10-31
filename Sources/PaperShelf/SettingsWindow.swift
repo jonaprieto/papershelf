@@ -869,7 +869,7 @@ struct KeyboardSettings: View {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             // Escape leaves the binding alone, which is the only way out that does not
             // require choosing a key you did not want.
-            if event.keyCode == 53 {
+            if event.keyCode == KeyCode.escape {
                 recording = nil
                 return nil
             }

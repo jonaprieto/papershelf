@@ -272,7 +272,7 @@ struct ResultsPane: View {
     static func shouldOpenQuickLook(keyCode: UInt16, viewMode: ViewMode,
                                     reading: Bool, readerOpen: Bool,
                                     hasSelection: Bool) -> Bool {
-        keyCode == 49 && !reading && !readerOpen && hasSelection
+        keyCode == KeyCode.space && !reading && !readerOpen && hasSelection
             && (viewMode == .catalogue || viewMode == .list)
     }
 
@@ -1689,7 +1689,7 @@ struct ResultsPane: View {
         guard !runner.busy else { return false }
         // A palette field owns its arrows and Return. The local monitor otherwise sees
         // them first and turns the PDF page before the palette can move its selection.
-        if event.keyCode == 53 {                     // ⎋
+        if event.keyCode == KeyCode.escape {
             if QuickLook.closeIfVisible() { return true }
             return escape()
         }
@@ -1746,7 +1746,7 @@ struct ResultsPane: View {
         // The lists are table views and move themselves; the catalogue is a grid and has
         // no such thing, so the arrows are handled here when a table is not in charge.
         let onATable = event.window?.firstResponder is NSTableView
-        let arrows: Set<UInt16> = [123, 124, 125, 126]
+        let arrows = [KeyCode.left, KeyCode.right, KeyCode.down, KeyCode.up]
         if reading || readerOpen {
             // PDFView owns the page, but its AppKit responder is not reliable when the
             // reader was opened from the keyboard. Keep the common navigation keys here;
@@ -1758,10 +1758,10 @@ struct ResultsPane: View {
             // and right move to the neighbour.
             let row = prefs.viewMode == .catalogue ? max(1, gridColumns) : 1
             switch event.keyCode {
-            case 125: step(by: row); return true    // down
-            case 126: step(by: -row); return true   // up
-            case 124: step(by: 1); return true      // right
-            case 123: step(by: -1); return true     // left
+            case KeyCode.down: step(by: row); return true
+            case KeyCode.up: step(by: -row); return true
+            case KeyCode.right: step(by: 1); return true
+            case KeyCode.left: step(by: -1); return true
             default: break
             }
         } else if arrows.contains(event.keyCode) {
@@ -1807,12 +1807,12 @@ struct ResultsPane: View {
         }
         let delta: Int?
         switch event.keyCode {
-        case 126, 116: delta = -1            // ↑ Page Up
-        case 49, 125, 121: delta = 1         // Space, ↓ Page Down
-        case 115:
+        case KeyCode.up, KeyCode.pageUp: delta = -1
+        case KeyCode.space, KeyCode.down, KeyCode.pageDown: delta = 1
+        case KeyCode.home:
             readerAnnotator.go(toPage: 1)
             return true
-        case 119:
+        case KeyCode.end:
             readerAnnotator.go(toPage: readerAnnotator.pageCount)
             return true
         default: return false
@@ -2091,13 +2091,13 @@ struct ResultsPane: View {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let mapping: [UInt16: Command]
         if flags.contains(.control), flags.intersection([.command, .option, .shift]).isEmpty {
-            mapping = [18: .focusSidebar, 19: .focusContents, 20: .focusDocument,
-                       21: .focusInspector, 23: .focusStatus]
+            mapping = [KeyCode.digit1: .focusSidebar, KeyCode.digit2: .focusContents, KeyCode.digit3: .focusDocument,
+                       KeyCode.digit4: .focusInspector, KeyCode.digit5: .focusStatus]
         } else if flags.contains(.command), flags.intersection([.option, .shift, .control]).isEmpty {
             // Some keyboard layouts deliver command-number events without a usable
             // `charactersIgnoringModifiers`; key codes are stable for the number row.
-            mapping = [18: .viewList, 19: .viewCatalogue, 20: .viewBibliography,
-                       21: .viewDuplicates]
+            mapping = [KeyCode.digit1: .viewList, KeyCode.digit2: .viewCatalogue,
+                       KeyCode.digit3: .viewBibliography, KeyCode.digit4: .viewDuplicates]
         } else {
             return nil
         }

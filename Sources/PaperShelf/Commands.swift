@@ -1,6 +1,28 @@
 import SwiftUI
 import AppKit
 
+/// The hardware keys read directly: ones with no character of their own, and the number
+/// row, whose control and command chords can arrive without a usable one.
+enum KeyCode {
+    static let escape: UInt16 = 53
+    static let space: UInt16 = 49
+    static let `return`: UInt16 = 36
+    static let keypadEnter: UInt16 = 76
+    static let left: UInt16 = 123
+    static let right: UInt16 = 124
+    static let down: UInt16 = 125
+    static let up: UInt16 = 126
+    static let home: UInt16 = 115
+    static let end: UInt16 = 119
+    static let pageUp: UInt16 = 116
+    static let pageDown: UInt16 = 121
+    static let digit1: UInt16 = 18
+    static let digit2: UInt16 = 19
+    static let digit3: UInt16 = 20
+    static let digit4: UInt16 = 21
+    static let digit5: UInt16 = 23
+}
+
 /// A reader-scoped menu action. The menu bar resolves Command-key equivalents before a
 /// hosted PDF view sees them, so the focused reader supplies the action the menu invokes.
 struct FindInPDFAction {

@@ -798,11 +798,11 @@ struct ContentView: View {
     /// through to the document list behind it.
     private func handleSidebarKey(_ keyCode: UInt16) -> Bool {
         switch keyCode {
-        case 125: return moveSidebar(by: 1)
-        case 126: return moveSidebar(by: -1)
-        case 124: return expandSidebarTarget()
-        case 123: return collapseSidebarTarget()
-        case 36, 76: return activateSidebarTarget()
+        case KeyCode.down: return moveSidebar(by: 1)
+        case KeyCode.up: return moveSidebar(by: -1)
+        case KeyCode.right: return expandSidebarTarget()
+        case KeyCode.left: return collapseSidebarTarget()
+        case KeyCode.return, KeyCode.keypadEnter: return activateSidebarTarget()
         default: return false
         }
     }

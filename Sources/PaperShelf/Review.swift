@@ -1146,8 +1146,8 @@ final class FitWidthPDFView: PDFView {
     static func pageStep(for keyCode: UInt16, arrowsEnabled: Bool) -> Int? {
         guard arrowsEnabled else { return nil }
         switch keyCode {
-        case 123: return -1
-        case 124: return 1
+        case KeyCode.left: return -1
+        case KeyCode.right: return 1
         default: return nil
         }
     }
