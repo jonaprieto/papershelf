@@ -376,11 +376,7 @@ struct NotesRail: View {
                         .foregroundStyle(.secondary)
                         .tip("Hide the notes", command: .toggleNotes)
                 }
-                .padding(.horizontal, Space.roomy)
-                .padding(.vertical, Space.step)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
+                .paneBar()
             }
 
             summaryBar
@@ -1125,11 +1121,7 @@ struct ContentsRail: View {
             .fixedSize()
             .tip("The chapters, pages, or bookmarks")
         }
-        .padding(.horizontal, Space.roomy)
-        .padding(.vertical, Space.step)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
+        .paneBar()
     }
 
     private var findRail: some View {
@@ -1200,11 +1192,9 @@ struct ContentsRail: View {
                             in: RoundedRectangle(cornerRadius: Metric.control))
             }
             .buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
-            .listRowSeparator(.hidden)
+            .railRow()
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
+        .railList()
     }
 
     private var bookmarks: some View {
@@ -1258,11 +1248,9 @@ struct ContentsRail: View {
                             _ = annotator.removeBookmark(bookmark)
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
-                    .listRowSeparator(.hidden)
+                    .railRow()
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                .railList()
             }
         }
     }
@@ -1310,11 +1298,9 @@ struct ContentsRail: View {
                     .accessibilityLabel("Occurrence \(hit.id + 1), page \(hit.page), \(hit.text)")
                     .accessibilityIdentifier("reader.findHit.\(hit.id)")
                     .tip("Show this occurrence on page \(hit.page)")
-                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
-                    .listRowSeparator(.hidden)
+                    .railRow()
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                .railList()
                 .onChange(of: annotator.selectedFindHit) { _, selected in
                     guard let selected else { return }
                     withAnimation(.easeOut(duration: 0.18)) {
@@ -1348,5 +1334,18 @@ struct PageThumbnails: NSViewRepresentable {
 
     static func dismantleNSView(_ thumbnails: PDFThumbnailView, coordinator: ()) {
         thumbnails.pdfView = nil
+    }
+}
+
+private extension View {
+    /// A row of the contents rail: close to its neighbours, with no rule between them.
+    func railRow() -> some View {
+        listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+            .listRowSeparator(.hidden)
+    }
+
+    /// A list in the rail, drawn on the rail's own background.
+    func railList() -> some View {
+        listStyle(.inset).scrollContentBackground(.hidden)
     }
 }

@@ -437,11 +437,7 @@ struct ReviewInspector: View {
                 .tip("Hide the inspector", command: .toggleInspector)
             }
         }
-        .padding(.horizontal, Space.roomy)
-        .padding(.vertical, Space.step)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
+        .paneBar()
     }
 
     /// The marking bar, placed against the selection rather than parked at an edge.

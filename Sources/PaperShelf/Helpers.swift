@@ -21,6 +21,15 @@ func counted(_ count: some BinaryInteger, _ noun: String, plural: String? = nil)
 }
 
 extension View {
+    /// The strip across the top of a pane.
+    func paneBar() -> some View {
+        padding(.horizontal, Space.roomy)
+            .padding(.vertical, Space.step)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+    }
+
     /// Saves text to a file the person chooses.
     func textExporter(isPresented: Binding<Bool>, text: String, filename: String,
                       onDone: @escaping () -> Void = {}) -> some View {
