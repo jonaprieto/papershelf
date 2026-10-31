@@ -273,7 +273,7 @@ let folderTools: [Tool] = [
                 structured["not_considered"] = resolution.uncountedByCap
                 text += "\n\n\(resolution.uncountedByCap) more document"
                     + (resolution.uncountedByCap == 1 ? " was" : "s were")
-                    + " never looked at: this scope holds more than the 1000 documents "
+                    + " never looked at: this scope holds more than the \(scopeCap) documents "
                     + "this tool checks per call."
             }
             return ToolOutput(text: text, structured: structured)

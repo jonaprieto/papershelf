@@ -250,6 +250,9 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
     return kept.joined(separator: "\n")
 }
 
+/// The most documents one call looks at in a project or under a tag.
+let scopeCap = 1000
+
 /// What one bibliography scope resolved to. `requested` is how many documents the scope
 /// considered in total (project/tag membership up to the 1000-document cap below, or the
 /// length of `document_ids`); `paths` is the subset of those with a usable path to actually
@@ -303,7 +306,7 @@ func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> Bibl
     case "project":
         let reader = try openLibraryOrFail()
         let project = try resolveProject(try requireString(arguments, "project"), in: reader)
-        let documents = try reader.documents(inProject: project.id, limit: 1000).map(\.0)
+        let documents = try reader.documents(inProject: project.id, limit: scopeCap).map(\.0)
         let total = try reader.memberCount(ofProject: project.id)
         return BibliographyResolution(
             paths: documents.compactMap(\.path),
@@ -313,7 +316,7 @@ func bibliographyPaths(_ arguments: [String: Any], scope: String) throws -> Bibl
     case "tag":
         let reader = try openLibraryOrFail()
         let tag = try requireString(arguments, "tag")
-        let documents = try reader.documents(taggedWith: tag, limit: 1000)
+        let documents = try reader.documents(taggedWith: tag, limit: scopeCap)
         let total = try reader.documentCount(taggedWith: tag)
         return BibliographyResolution(
             paths: documents.compactMap(\.path),
@@ -416,7 +419,7 @@ let libraryTools: [Tool] = [
             // search_documents, which clamp both ends of `limit` rather than only the
             // lower one, and 1000 matches the cap bibliographyPaths already puts on a
             // project scope, so nothing in this file quietly answers past it.
-            let limit = max(0, min(arguments["limit"] as? Int ?? 500, 1000))
+            let limit = max(0, min(arguments["limit"] as? Int ?? 500, scopeCap))
             let documents = try reader.documents(inProject: project.id, limit: limit)
             // Neither this tool nor search_project extracts text for a document that has
             // none: a project can hold hundreds of files, and reading every one of them
@@ -540,7 +543,7 @@ let libraryTools: [Tool] = [
             // See the identical clamp in list_project_documents: SQLite treats a negative
             // LIMIT as unlimited, not zero or an error, and the upper bound of 1000
             // matches the cap bibliographyPaths already puts on a tag scope.
-            let limit = max(0, min(arguments["limit"] as? Int ?? 200, 1000))
+            let limit = max(0, min(arguments["limit"] as? Int ?? 200, scopeCap))
             let documents = try reader.documents(taggedWith: tag, limit: limit)
             let rows = documents.map(describeDocument)
             let text = documents.isEmpty
