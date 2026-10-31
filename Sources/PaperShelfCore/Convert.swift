@@ -258,7 +258,7 @@ public func markdownFromScan(url: URL, passwords: [String], title: String? = nil
         guard let page = document.page(at: index) else { continue }
         let lines = recognisedLines(on: page)
         guard !lines.isEmpty else { continue }
-        out += "## Page \(index + 1)\n\n"
+        out += pageHeading(index + 1)
         // One paragraph per run of lines, joined the way the reader joins them: OCR
         // returns a line per line of print, and a page of those is not a paragraph.
         out += markdownEscape(lines.joined(separator: " ")) + "\n\n"
@@ -324,7 +324,7 @@ public func markdownFromPDF(url: URL, passwords: [String], title: String? = nil,
     var out = "# \(markdownEscape(title ?? (url.lastPathComponent as NSString).deletingPathExtension))\n\n"
     for index in 0..<document.pageCount {
         guard let text = document.page(at: index)?.string, !text.isEmpty else { continue }
-        if pageMarkers { out += "## Page \(index + 1)\n\n" }
+        if pageMarkers { out += pageHeading(index + 1) }
 
         // Lines that end mid-sentence belong to the paragraph that follows: a PDF wraps
         // for the page it was set for, not for the width this will be read at.

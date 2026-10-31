@@ -13,7 +13,11 @@ public struct Excerpt: Sendable, Equatable {
     }
 }
 
-private let pageMarker = "## Page "
+/// How a page's text begins in page-marked Markdown, the marker's digits following it.
+public let pageMarkerPrefix = "## Page "
+
+/// The marker a page's text is written under.
+func pageHeading(_ page: Int) -> String { "\(pageMarkerPrefix)\(page)\n\n" }
 
 /// The page a position in page-marked Markdown falls on.
 ///
@@ -22,7 +26,7 @@ private let pageMarker = "## Page "
 /// book with one blank page the nth marker is not page n. Counting would be quietly wrong
 /// on exactly the documents nobody checks.
 public func pageNumber(in markdown: String, before offset: String.Index) -> Int? {
-    guard let marker = markdown.range(of: pageMarker, options: .backwards,
+    guard let marker = markdown.range(of: pageMarkerPrefix, options: .backwards,
                                       range: markdown.startIndex..<offset) else { return nil }
     let digits = markdown[marker.upperBound...].prefix { $0.isNumber }
     return Int(digits)
@@ -98,7 +102,7 @@ private func passages(in markdown: String, matching needle: String,
 /// which should land just before it (earlier, toward the match).
 private func excludingMarker(_ index: String.Index, in markdown: String, keepingBefore: Bool) -> String.Index {
     let line = lineBounds(enclosing: index, in: markdown)
-    guard markdown[line].hasPrefix(pageMarker) else { return index }
+    guard markdown[line].hasPrefix(pageMarkerPrefix) else { return index }
     return keepingBefore ? line.lowerBound : line.upperBound
 }
 
@@ -110,7 +114,7 @@ private func excludingMarker(_ index: String.Index, in markdown: String, keeping
 /// moves strictly forward and can never land on the same heading a second time.
 private func headingLineEnd(enclosing index: String.Index, in markdown: String) -> String.Index? {
     let line = lineBounds(enclosing: index, in: markdown)
-    guard markdown[line].hasPrefix(pageMarker) else { return nil }
+    guard markdown[line].hasPrefix(pageMarkerPrefix) else { return nil }
     return line.upperBound
 }
 
@@ -127,7 +131,7 @@ private func lineBounds(enclosing index: String.Index, in markdown: String) -> R
 private func cleaned(_ passage: String) -> String {
     passage
         .split(separator: "\n")
-        .filter { !$0.hasPrefix(pageMarker) }
+        .filter { !$0.hasPrefix(pageMarkerPrefix) }
         .joined(separator: " ")
         .split(separator: " ", omittingEmptySubsequences: true)
         .joined(separator: " ")

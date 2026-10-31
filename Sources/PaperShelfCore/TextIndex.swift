@@ -34,7 +34,7 @@ public enum TextFormat: String, Sendable, Equatable {
 /// that stops it, called before a row is tagged rather than trusted to already be true.
 public func hasPageMarkers(_ markdown: String) -> Bool {
     markdown.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
-        line.hasPrefix("## Page ") && Int(line.dropFirst("## Page ".count)) != nil
+        line.hasPrefix(pageMarkerPrefix) && Int(line.dropFirst(pageMarkerPrefix.count)) != nil
     }
 }
 
@@ -63,7 +63,7 @@ public func indexedMarkdown(of url: URL, passwords: [String],
     collected.reserveCapacity(min(limit, 1 << 16))
     for index in 0..<document.pageCount {
         guard let text = document.page(at: index)?.string, !text.isEmpty else { continue }
-        collected += "## Page \(index + 1)\n\n"
+        collected += pageHeading(index + 1)
         collected += text
         collected += "\n\n"
         // `count` walks the whole string, and asking after every page made a long book

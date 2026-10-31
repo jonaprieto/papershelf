@@ -233,8 +233,8 @@ func pageSlice(_ markdown: String, range: String) throws -> String {
     var current: Int?
     var highestSeen = 0
     for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-        if line.hasPrefix("## Page ") {
-            current = Int(line.dropFirst("## Page ".count).prefix { $0.isNumber })
+        if line.hasPrefix(pageMarkerPrefix) {
+            current = Int(line.dropFirst(pageMarkerPrefix.count).prefix { $0.isNumber })
             if let current { highestSeen = max(highestSeen, current) }
         }
         if let current, current >= first, current <= last { kept.append(String(line)) }
