@@ -1279,8 +1279,7 @@ final class FitWidthPDFView: PDFView {
             wantsFit = true
             displayMode = presentation ? .singlePage : .singlePageContinuous
             displaysPageBreaks = !presentation
-            let margin = pageMargin
-            pageBreakMargins = NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
+            pageBreakMargins = pageInsets
             needsLayout = true
         }
     }
@@ -1290,7 +1289,18 @@ final class FitWidthPDFView: PDFView {
     /// shadow and this margin together are for.
     static let margin: CGFloat = 28
 
+    /// The space above and below a page, so half the gap between two of them. PDFKit reads
+    /// this in page points and multiplies it by the zoom, which is why it cannot share
+    /// `margin`: at 28 a fitted page sat some 90 points of bare canvas from the next one,
+    /// and the eye crossed that at the foot of every page.
+    static let pageSpacing: CGFloat = 5
+
     private var pageMargin: CGFloat { presentation ? 16 : Self.margin }
+
+    var pageInsets: NSEdgeInsets {
+        let vertical = presentation ? pageMargin : Self.pageSpacing
+        return NSEdgeInsets(top: vertical, left: pageMargin, bottom: vertical, right: pageMargin)
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -1400,10 +1410,7 @@ struct PDFPreview: NSViewRepresentable {
         // and the margin are what say where the page ends, which matters most on a scan
         // whose own paper is off-white and on a figure that runs to the trim.
         view.pageShadowsEnabled = true
-        view.pageBreakMargins = NSEdgeInsets(top: FitWidthPDFView.margin,
-                                             left: FitWidthPDFView.margin,
-                                             bottom: FitWidthPDFView.margin,
-                                             right: FitWidthPDFView.margin)
+        view.pageBreakMargins = view.pageInsets
         // Not `.underPageBackgroundColor`, which is very nearly white: against it a page
         // has no edge, and the shadow has nothing to fall on.
         view.backgroundColor = Self.canvasColor(for: appearance)

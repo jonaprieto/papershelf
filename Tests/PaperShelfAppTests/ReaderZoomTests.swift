@@ -59,6 +59,28 @@ final class ReaderZoomTests: XCTestCase {
         XCTAssertFalse(view.usesCustomZoom)
     }
 
+    func testPagesStayCloseAtReadingZoomAfterPresentation() {
+        let document = PDFDocument()
+        for index in 0..<2 {
+            let page = PDFPage()
+            page.setBounds(CGRect(x: 0, y: 0, width: 612, height: 792), for: .mediaBox)
+            document.insert(page, at: index)
+        }
+        let view = FitWidthPDFView(frame: CGRect(x: 0, y: 0, width: 900, height: 700))
+        view.autoScales = false
+        view.displayMode = .singlePageContinuous
+        view.document = document
+        view.presentation = true
+        view.presentation = false
+        view.scaleFactor = 1.6
+        view.layoutDocumentView()
+
+        let first = view.convert(document.page(at: 0)!.bounds(for: .cropBox), from: document.page(at: 0)!)
+        let second = view.convert(document.page(at: 1)!.bounds(for: .cropBox), from: document.page(at: 1)!)
+        XCTAssertEqual(first.minY - second.maxY, 16, accuracy: 1,
+                       "The zoom multiplies the gap, so a margin meant for the pane's edge opens it to 90 points")
+    }
+
     func testAutomaticFitStillRespondsToResizingAndNewDocuments() throws {
         let document = PDFDocument()
         let page = PDFPage()
