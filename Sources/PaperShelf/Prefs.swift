@@ -405,3 +405,17 @@ private enum Store {
         defaults.set(value.rawValue, forKey: key)
     }
 }
+
+extension Prefs {
+    /// Brings the inspector out on one of its tabs.
+    func showInspector(_ panel: InspectorPanel) {
+        inspectorPanel = panel
+        inspectorCollapsed = false
+    }
+
+    /// Brings the rail beside the page out on one of its modes.
+    func showContents(_ mode: ContentsRailMode) {
+        contentsShown = true
+        contentsRailMode = mode
+    }
+}

@@ -166,8 +166,7 @@ struct DocumentPane<Overlay: View>: View {
                         _ = annotator.toggleBookmark()
                     }
                     Button("Show Bookmarks") {
-                        prefs.contentsShown = true
-                        prefs.contentsRailMode = .bookmarks
+                        prefs.showContents(.bookmarks)
                     }
                 }
             }

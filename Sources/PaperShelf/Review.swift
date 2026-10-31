@@ -335,8 +335,7 @@ struct ReviewInspector: View {
     private func openFind() {
         annotator.openFind()
         guard annotator.showsFind else { return }
-        prefs.contentsShown = true
-        prefs.contentsRailMode = .find
+        prefs.showContents(.find)
     }
 
     private var panelColumn: some View {
@@ -496,8 +495,7 @@ struct ReviewInspector: View {
     private func selectMark(at point: CGPoint) {
         guard let mark = annotator.mark(atViewPoint: point) else { return }
         annotator.selectedMark = mark.id
-        prefs.inspectorPanel = .notes
-        prefs.inspectorCollapsed = false
+        prefs.showInspector(.notes)
     }
 
     private func hideMarkBar(after delay: Duration) {
@@ -577,8 +575,7 @@ struct ReviewInspector: View {
 
             Button {
                 annotator.selectedMark = mark.id
-                prefs.inspectorPanel = .notes
-                prefs.inspectorCollapsed = false
+                prefs.showInspector(.notes)
                 noteText = mark.note
                 addingNote = true
             } label: {
@@ -618,8 +615,7 @@ struct ReviewInspector: View {
                 Button {
                     annotator.highlightSelection(colour: style.nsColor)
                     prefs.lastHighlightColour = style.id.uuidString
-                    prefs.inspectorPanel = .notes
-                    prefs.inspectorCollapsed = false
+                    prefs.showInspector(.notes)
                 } label: {
                     Circle()
                         .fill(style.swatch)
@@ -639,8 +635,7 @@ struct ReviewInspector: View {
             Divider().frame(height: 16)
 
             Button {
-                prefs.inspectorPanel = .notes
-                prefs.inspectorCollapsed = false
+                prefs.showInspector(.notes)
                 addingNote = true
             } label: {
                 Label("Note", systemImage: "text.bubble")

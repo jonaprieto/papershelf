@@ -204,8 +204,7 @@ struct ReaderWindow: View {
         case .removeBookmark:
             if let bookmark = annotator.bookmarkOnCurrentPage { _ = annotator.removeBookmark(bookmark) }
         case .showBookmarks:
-            prefs.contentsShown = true
-            prefs.contentsRailMode = .bookmarks
+            prefs.showContents(.bookmarks)
         case .nextMark: annotator.stepMark(by: 1)
         case .previousMark: annotator.stepMark(by: -1)
         case .findInDocument: openFind()
@@ -310,8 +309,7 @@ struct ReaderWindow: View {
     private func openFind() {
         annotator.openFind()
         guard annotator.showsFind else { return }
-        prefs.contentsShown = true
-        prefs.contentsRailMode = .find
+        prefs.showContents(.find)
     }
 
     private func togglePresentation() {

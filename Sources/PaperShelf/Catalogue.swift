@@ -925,8 +925,7 @@ struct ResultsPane: View {
                 showShelf(shelf)
             }
             .onReceive(NotificationCenter.default.publisher(for: .scriptShowNotes)) { _ in
-                prefs.inspectorPanel = .notes
-                prefs.inspectorCollapsed = false
+                prefs.showInspector(.notes)
             }
             .onReceive(NotificationCenter.default.publisher(for: .openWebsiteTab)) { note in
                 openWebsite(note.object as? URL)
@@ -976,8 +975,7 @@ struct ResultsPane: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .scriptShowBookmarks)) { _ in
                 guard readerAnnotator.hasPages else { return }
-                prefs.contentsShown = true
-                prefs.contentsRailMode = .bookmarks
+                prefs.showContents(.bookmarks)
             }
     }
 
@@ -1372,8 +1370,7 @@ struct ResultsPane: View {
             Button("Find in PDF", action: openFind)
             Button("Add note") {
                 addingNote = true
-                prefs.inspectorPanel = .notes
-                prefs.inspectorCollapsed = false
+                prefs.showInspector(.notes)
             }
             Button(readerAnnotator.bookmarkOnCurrentPage == nil ? "Add bookmark" : "Remove bookmark") {
                 _ = readerAnnotator.toggleBookmark()
@@ -1986,8 +1983,7 @@ struct ResultsPane: View {
             if !prefs.inspectorCollapsed, prefs.inspectorPanel == .notes {
                 prefs.inspectorCollapsed = true
             } else {
-                prefs.inspectorPanel = .notes
-                prefs.inspectorCollapsed = false
+                prefs.showInspector(.notes)
             }
         case .toggleContents: prefs.contentsShown.toggle()
         case .trash: markDeleted()
@@ -2001,15 +1997,13 @@ struct ResultsPane: View {
 
         case .addNote:
             guard readerAnnotator.selectedMark != nil || readerAnnotator.hasSelection else { return false }
-            prefs.inspectorPanel = .notes
-            prefs.inspectorCollapsed = false
+            prefs.showInspector(.notes)
             addingNote = true
         case .addBookmark:
             return readerAnnotator.toggleBookmark()
         case .showBookmarks:
             guard readerAnnotator.hasPages else { return false }
-            prefs.contentsShown = true
-            prefs.contentsRailMode = .bookmarks
+            prefs.showContents(.bookmarks)
         case .removeBookmark:
             guard let bookmark = readerAnnotator.bookmarkOnCurrentPage else { return false }
             return readerAnnotator.removeBookmark(bookmark)
@@ -2074,8 +2068,7 @@ struct ResultsPane: View {
     private func openFind() {
         guard readerAnnotator.hasPages else { return }
         readerAnnotator.openFind()
-        prefs.contentsShown = true
-        prefs.contentsRailMode = .find
+        prefs.showContents(.find)
     }
 
     private func focusRegion(by delta: Int) {
@@ -2143,8 +2136,7 @@ struct ResultsPane: View {
         guard !runner.busy, let item = target ?? readerItem ?? selectedItem else { return }
         selected = item.key
         if runner.decision(for: item) == .applied { runner.reopen(item) }
-        prefs.inspectorPanel = .rename
-        prefs.inspectorCollapsed = false
+        prefs.showInspector(.rename)
         Task { @MainActor in
             await Task.yield()
             guard selected == item.key else { return }
