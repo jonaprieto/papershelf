@@ -1803,7 +1803,7 @@ struct MetadataPanel: View {
                      ? item.root.lastPathComponent
                      : item.root.lastPathComponent + " / " + folder.replacingOccurrences(of: "/", with: " / ")))
         let size = [
-            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+            item.byteCount.map { formattedBytes($0) },
             item.pageCount.map { "\($0) page\($0 == 1 ? "" : "s")" },
         ].compactMap { $0 }.joined(separator: " · ")
         if !size.isEmpty { rows.append(("Size", size)) }

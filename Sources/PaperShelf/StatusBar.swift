@@ -135,8 +135,7 @@ struct StatusBar: View {
         var physical: String {
             var parts: [String] = []
             if let bytes {
-                parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes),
-                                                       countStyle: .file))
+                parts.append(formattedBytes(bytes))
             }
             if pages > 0 { parts.append("\(pages) page\(pages == 1 ? "" : "s")") }
             parts.append(locked ? "locked" : "unlocked")
@@ -456,11 +455,11 @@ struct StatusBar: View {
     /// asking a size question, and the app knew both numbers and said neither.
     private var sizeLabel: String {
         let here = runner.results.reduce(0) { $0 + ($1.byteCount ?? 0) }
-        let shown = ByteCountFormatter.string(fromByteCount: Int64(here), countStyle: .file)
+        let shown = formattedBytes(here)
         guard let totals = runner.libraryTotals, totals.bytes > here else {
             return "\(shown) here"
         }
-        let whole = ByteCountFormatter.string(fromByteCount: Int64(totals.bytes), countStyle: .file)
+        let whole = formattedBytes(totals.bytes)
         return "\(shown) here · \(whole) in the library"
     }
 

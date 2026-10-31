@@ -2600,7 +2600,7 @@ struct ResultsPane: View {
                  + "\(groups.count - identical - sameText) by name")
                 .font(Face.control)
                 .foregroundStyle(.secondary)
-            Text(ByteCountFormatter.string(fromByteCount: Int64(reclaimable), countStyle: .file)
+            Text(formattedBytes(reclaimable)
                  + " in spare copies")
                 .font(Face.control)
                 .foregroundStyle(.secondary)
@@ -4389,7 +4389,7 @@ struct CoverCard: View {
     private var physical: String {
         [
             item.pageCount.map { "\($0) pp" },
-            item.byteCount.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+            item.byteCount.map { formattedBytes($0) },
         ].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -4621,7 +4621,7 @@ struct DuplicateSection: View {
                     .help(duplicateExplanation(group.kind))
                 Text("\(group.items.count) copies")
                     .foregroundStyle(.secondary)
-                Text(ByteCountFormatter.string(fromByteCount: Int64(group.reclaimable), countStyle: .file)
+                Text(formattedBytes(group.reclaimable)
                      + " spare")
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -4699,7 +4699,7 @@ struct DuplicateRow: View {
 
             Spacer(minLength: Space.step)
 
-            Text(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount ?? 0), countStyle: .file))
+            Text(formattedBytes(item.byteCount ?? 0))
                 .font(Face.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 

@@ -109,7 +109,7 @@ struct DuplicateReviewView: View {
 
     private func formattedSize(_ bytes: Int?) -> String {
         guard let bytes else { return "unknown" }
-        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        return formattedBytes(bytes)
     }
 }
 

@@ -27,7 +27,7 @@ struct DuplicateCompare: View {
 
     private func byteText(_ bytes: Int?) -> String {
         guard let bytes else { return "—" }
-        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+        return formattedBytes(bytes)
     }
 
     private func dateText(_ date: Date?) -> String {
