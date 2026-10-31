@@ -436,6 +436,11 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
 }
 
 extension Command {
+    /// The five highlighters, in the order the palette's colours are counted.
+    static let highlights: [Command] = [
+        .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
+    ]
+
     static let pageActions: [Command] = [
         .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
         .nextPage, .previousPage, .firstPage, .lastPage,

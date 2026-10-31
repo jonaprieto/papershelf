@@ -1916,6 +1916,10 @@ struct ResultsPane: View {
             return command.performPageAction(on: readerAnnotator, fit: $prefs.pageFit)
         }
         if command.performAppearanceChoice() { return true }
+        if let slot = Command.highlights.firstIndex(of: command) {
+            highlight(colourAt: slot)
+            return true
+        }
         switch command {
         case .openWebsite: openWebsite()
         case .openSettings: PaletteSettings.openSettingsWindow()
@@ -1995,11 +1999,6 @@ struct ResultsPane: View {
             guard canApply else { return false }
             apply()
 
-        case .highlight1: highlight(colourAt: 0)
-        case .highlight2: highlight(colourAt: 1)
-        case .highlight3: highlight(colourAt: 2)
-        case .highlight4: highlight(colourAt: 3)
-        case .highlight5: highlight(colourAt: 4)
         case .addNote:
             guard readerAnnotator.selectedMark != nil || readerAnnotator.hasSelection else { return false }
             prefs.inspectorPanel = .notes

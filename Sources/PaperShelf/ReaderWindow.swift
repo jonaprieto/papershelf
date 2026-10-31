@@ -188,14 +188,13 @@ struct ReaderWindow: View {
     private func perform(_ command: Command) {
         if command.performPageAction(on: annotator, fit: $fit) { return }
         if command.performAppearanceChoice() { return }
+        if let slot = Command.highlights.firstIndex(of: command) {
+            highlight(slot: slot)
+            return
+        }
         switch command {
         case .palette: showingPalette = true
         case .openSettings: PaletteSettings.openSettingsWindow()
-        case .highlight1: highlight(slot: 0)
-        case .highlight2: highlight(slot: 1)
-        case .highlight3: highlight(slot: 2)
-        case .highlight4: highlight(slot: 3)
-        case .highlight5: highlight(slot: 4)
         case .addNote:
             guard annotator.hasSelection || annotator.selectedMark != nil else { return }
             showsNotes = true
@@ -402,8 +401,7 @@ struct ReaderWindow: View {
             writingNote = true
             return .handled
         }
-        let highlights: [Command] = [.highlight1, .highlight2, .highlight3, .highlight4, .highlight5]
-        guard let slot = highlights.firstIndex(where: { Keymap.shared.shortcut(for: $0)?.matches(press) == true }),
+        guard let slot = Command.highlights.firstIndex(where: { Keymap.shared.shortcut(for: $0)?.matches(press) == true }),
               currentStyles.indices.contains(slot) else { return .ignored }
         highlight(slot: slot)
         return .handled
