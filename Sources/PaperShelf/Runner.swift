@@ -812,9 +812,19 @@ final class Runner {
         // before, rather than every file outside the changed places vanishing.
         let previous = Set(jobs.map(\.key)) == Set(known.keys) ? jobs : nil
         let changed = previous == nil ? nil : request.changed
-        let found = await Task.detached(priority: .utility) {
+        let walk = await Task.detached(priority: .utility) { () -> (found: [Job], rewritten: [Job]) in
+            // Only what this walk looked at: a stat of the whole shelf for every burst is
+            // the cost scoping exists to avoid.
+            func rewritten(among jobs: [Job]) -> [Job] {
+                jobs.filter { job in
+                    known[job.key].map {
+                        wasRewritten(seen: $0.modifiedDate, onDisk: modificationDate(job.file))
+                    } ?? false
+                }
+            }
             guard let changed, let previous, changed.count <= scopedRescanLimit else {
-                return collectJobs(roots: roots, recursive: recursive, backup: backup)
+                let all = collectJobs(roots: roots, recursive: recursive, backup: backup)
+                return (all, rewritten(among: all))
             }
             let sources = roots.map { Item.identity(of: $0) + "/" }
             let skip = backup.safeFolderName
@@ -827,13 +837,19 @@ final class Runner {
             }
             let scopes = relevant.map(\.url).filter { FileManager.default.fileExists(atPath: $0.path) }
             let walked = collectJobs(roots: scopes, recursive: recursive, backup: backup)
-            return mergeRescan(previous: previous, found: walked, changed: relevant, roots: roots)
+            // Out of the merge rather than the walk: a walked job is rooted at the place it
+            // was walked from, and only the merge gives it back its source.
+            let merged = mergeRescan(previous: previous, found: walked, changed: relevant, roots: roots)
+            let looked = Set(walked.map(\.key))
+            return (merged, rewritten(among: merged.filter { looked.contains($0.key) }))
         }.value
 
+        let found = walk.found
+        let rewritten = walk.rewritten
         let fresh = found.filter { known[$0.key] == nil }
         let present = Set(found.map(\.key))
         let vanished = results.filter { !present.contains($0.key) }.map(\.key)
-        guard !fresh.isEmpty || !vanished.isEmpty else {
+        guard !fresh.isEmpty || !vanished.isEmpty || !rewritten.isEmpty else {
             // The disk agrees with the shelf, so what launch put on screen from the cache
             // is now what is there, and the next burst can be walked where it happened.
             jobs = found
@@ -842,15 +858,28 @@ final class Runner {
         }
 
         var arrived: [String: Item] = [:]
-        if !fresh.isEmpty {
-            total = fresh.count
+        if !fresh.isEmpty || !rewritten.isEmpty {
+            total = fresh.count + rewritten.count
             done = 0
             let previewed = await Task.detached(priority: .utility) {
-                process(jobs: fresh, options: options)
+                process(jobs: fresh + rewritten, options: options)
             }.value
             arrived = Dictionary(uniqueKeysWithValues: previewed.map { ($0.key, $0) })
+        }
+        if !fresh.isEmpty {
             note(.scanned, subject: counted(fresh.count, "new file"),
                  detail: "picked up while watching")
+        }
+        if !rewritten.isEmpty {
+            note(.scanned, subject: counted(rewritten.count, "rewritten file"),
+                 detail: "read again")
+        }
+        for job in rewritten {
+            guard let item = arrived[job.key] else { continue }
+            let quoted = excerpts[job.key] != nil
+            replace(job.key, with: item)
+            // Asked for once, on selection. A paper already selected would not ask again.
+            if quoted { loadExcerpt(for: item, passwords: options.passwords) }
         }
         if !vanished.isEmpty {
             note(.vanished, subject: counted(vanished.count, "file"),
@@ -858,7 +887,7 @@ final class Runner {
         }
 
         // Rebuilt in scan order, so a new file lands where it belongs rather than at the end.
-        let merged = found.compactMap { known[$0.key] ?? arrived[$0.key] }
+        let merged = found.compactMap { arrived[$0.key] ?? known[$0.key] }
         for key in vanished {
             set(nil, for: key)
             ai.forget(key)
@@ -872,7 +901,8 @@ final class Runner {
         self.fingerprint = fingerprint
         saveRunCache(RunCache(fingerprint: fingerprint, items: merged))
 
-        await announceDuplicates(among: arrived.values.map { $0 }, all: merged, options: options)
+        await announceDuplicates(among: fresh.compactMap { arrived[$0.key] }, all: merged,
+                                 options: options)
     }
 
     /// One absorb's worth of work, kept so a burst that lands mid-absorb is not lost.

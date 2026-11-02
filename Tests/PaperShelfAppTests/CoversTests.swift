@@ -32,6 +32,27 @@ final class CoversTests: XCTestCase {
         XCTAssertFalse(covers.couldNotRender(missing))
     }
 
+    /// The cover is drawn from the path, and a rewrite keeps the path. Only the file's date
+    /// can tell the two versions apart.
+    func testARewrittenFileDoesNotShowItsOldCover() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("covers-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let pdf = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: pdf, text: "first")
+        let first = item(pdf.path)
+        let covers = Covers()
+        let drawn = await covers.cover(for: first, passwords: [], height: 200)
+        XCTAssertNotNil(drawn)
+        XCTAssertNotNil(covers.cached(first))
+
+        var rewritten = first
+        rewritten.modifiedDate = Date().addingTimeInterval(60)
+        XCTAssertNil(covers.cached(rewritten), "a rewritten file answered with its old cover")
+    }
+
     func testEachPDFContrastHasItsOwnRenderedThumbnail() async throws {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("covers-\(UUID().uuidString)")

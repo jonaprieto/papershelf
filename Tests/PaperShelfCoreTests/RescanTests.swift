@@ -85,6 +85,20 @@ final class RescanTests: XCTestCase {
 
     /// The comparison a rescan makes to tell what vanished: a job for a file that has gone
     /// must still have the key the item made from it has.
+    /// The run cache keeps whole seconds. Reading that back as a rewrite would re-open every
+    /// file on the shelf at every launch, which is the cost the cache exists to save.
+    func testADateRoundedByTheRunCacheIsNotARewrite() {
+        let read = Date(timeIntervalSinceReferenceDate: 815_000_000.75)
+        let cached = Date(timeIntervalSinceReferenceDate: 815_000_000)
+        XCTAssertFalse(wasRewritten(seen: cached, onDisk: read))
+        XCTAssertFalse(wasRewritten(seen: read, onDisk: read))
+        XCTAssertTrue(wasRewritten(seen: cached, onDisk: read.addingTimeInterval(2)))
+        // An older date is a rewrite too: a download or a restore can carry its own.
+        XCTAssertTrue(wasRewritten(seen: read, onDisk: read.addingTimeInterval(-3600)))
+        XCTAssertFalse(wasRewritten(seen: nil, onDisk: read))
+        XCTAssertFalse(wasRewritten(seen: read, onDisk: nil))
+    }
+
     func testAJobKeepsItsKeyOnceItsFileHasGone() throws {
         let paper = URL(fileURLWithPath: "/private" + source.path).appendingPathComponent("top.pdf")
         let job = Job(root: source, file: paper)

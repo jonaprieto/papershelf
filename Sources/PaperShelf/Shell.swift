@@ -435,7 +435,13 @@ final class Covers {
     }
 
     private func cacheKey(_ item: Item, appearance: PDFReadingAppearance, isDark: Bool) -> String {
-        "\(item.key)#\(appearance.rawValue)#\(isDark)"
+        "\(Covers.version(of: item))#\(appearance.rawValue)#\(isDark)"
+    }
+
+    /// Which version of the file a cover shows, so a rewrite asks for a new one. Rendering
+    /// is by path, and the path is what a rewrite keeps.
+    static func version(of item: Item) -> String {
+        "\(item.key)#\(item.modifiedDate?.timeIntervalSince1970 ?? 0)"
     }
 
     /// Renders already in flight are left to finish rather than cancelled: resuming their

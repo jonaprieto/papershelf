@@ -23,6 +23,16 @@ public enum ChangedPlace: Sendable, Hashable {
 /// more than the one walk it was meant to replace.
 public let scopedRescanLimit = 256
 
+/// Whether a file on the shelf has been written since it was read.
+///
+/// A rewrite keeps the path, so a walk asking only what is new and what is gone goes straight
+/// past it. Within a second counts as the same date: the run cache keeps whole seconds, and a
+/// shelf restored from it would otherwise read as entirely rewritten at every launch.
+public func wasRewritten(seen: Date?, onDisk: Date?) -> Bool {
+    guard let seen, let onDisk else { return false }
+    return abs(onDisk.timeIntervalSince(seen)) >= 1
+}
+
 /// The jobs a plan has once the places that changed have been walked again.
 ///
 /// Everything from the last scan that sits outside what changed is kept as it was. Inside

@@ -4407,7 +4407,7 @@ struct CoverCard: View {
                     }
                 }
             .overlay(alignment: .topTrailing) { badges }
-            .task(id: "\(item.key)#\(covers.generation)#\(appearance.rawValue)#\(isDark)") {
+            .task(id: "\(Covers.version(of: item))#\(covers.generation)#\(appearance.rawValue)#\(isDark)") {
                 if let hit = covers.cached(item, appearance: appearance, isDark: isDark) {
                     cover = hit
                     unreadable = false

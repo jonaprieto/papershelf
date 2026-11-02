@@ -62,6 +62,55 @@ final class ScopedAbsorbTests: XCTestCase {
         XCTAssertEqual(runner.results.count, 4)
     }
 
+    /// A rewrite keeps the path, so it is neither a new file nor a missing one. Everything
+    /// the shelf says about the paper came from the version it read first, and went on
+    /// being said, across relaunches too, until the file moved.
+    func testAPaperRewrittenWhereItStandsIsReadAgain() async throws {
+        let runner = try await scannedRunner()
+        let paper = source.appendingPathComponent("inbox/three.pdf")
+        let key = Item.identity(of: paper)
+        let untouched = runner.results.first { $0.key != key }
+        let before = try XCTUnwrap(runner.results.first { $0.key == key })
+        runner.loadExcerpt(for: before, passwords: [])
+        for _ in 0..<300 where runner.excerpt(for: before) == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        try makeTextPDF(at: paper, pages: ["Rewritten", "Two", "Three", "Four"])
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(5)],
+                             ofItemAtPath: paper.path)
+        await runner.absorbChanges(roots: [source], options: options, fingerprint: "f",
+                                   changed: [.file(paper)])
+
+        let reread = try XCTUnwrap(runner.results.first { $0.key == key })
+        XCTAssertEqual(reread.pageCount, 4, "the shelf still describes the first version")
+        XCTAssertEqual(reread.modifiedDate, modificationDate(paper))
+        // The walk is rooted at the file. The row belongs to the source, or it leaves the
+        // folder it sits in.
+        XCTAssertEqual(reread.relativePath, before.relativePath)
+        for _ in 0..<300 where runner.excerpt(for: reread)?.contains("Rewritten") != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(runner.excerpt(for: reread)?.contains("Rewritten"), true,
+                       "the panel still quotes the first version")
+        XCTAssertEqual(runner.results.count, 3, "a rewrite is not a new paper")
+        XCTAssertEqual(runner.results.first { $0.key == untouched?.key }?.modifiedDate,
+                       untouched?.modifiedDate)
+    }
+
+    /// The walk at launch has no places to go on, and a paper rebuilt while the app was
+    /// closed has to be caught by it or by nothing.
+    func testARewriteIsCaughtByAWalkOfEverything() async throws {
+        let runner = try await scannedRunner()
+        let paper = source.appendingPathComponent("archive/one.pdf")
+        try makeTextPDF(at: paper, pages: ["One", "Two", "Three", "Four"])
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(5)],
+                             ofItemAtPath: paper.path)
+        await runner.absorbChanges(roots: [source], options: options, fingerprint: "f",
+                                   changed: nil)
+        XCTAssertEqual(runner.results.first { $0.key == Item.identity(of: paper) }?.pageCount, 4)
+    }
+
     func testAPaperDeletedIsTakenOff() async throws {
         let runner = try await scannedRunner()
         let gone = source.appendingPathComponent("archive/two.pdf")
