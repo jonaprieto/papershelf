@@ -149,6 +149,39 @@ final class PDFPreviewRefreshTests: XCTestCase {
         XCTAssertEqual(view.currentPage.flatMap { view.document?.index(for: $0) }, 2)
     }
 
+    /// A mark is written when the pause after it runs out, with nobody leaving the file.
+    /// The paper is still open and still being rebuilt, and having marked it once must not
+    /// be what stops the page following it.
+    func testAMarkAlreadyWrittenDoesNotHoldOffTheRefresh() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("preview-marked"))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: url, text: "First unique paper")
+
+        let view = FitWidthPDFView()
+        let annotator = Annotator()
+        let coordinator = PDFPreview.Coordinator(annotator: annotator)
+        defer { PDFPreview.dismantleNSView(view, coordinator: coordinator) }
+        PDFPreview(url: url, passwords: [], annotator: annotator)
+            .update(view, coordinator: coordinator)
+        try await waitForText(view, "First unique paper")
+
+        view.setCurrentSelection(view.document?.findString("First unique paper", withOptions: []).first,
+                                 animate: false)
+        annotator.selectionChanged()
+        XCTAssertGreaterThan(annotator.highlightSelection(colour: .systemYellow), 0)
+        for _ in 0..<300 where annotator.hasUnwrittenMarks {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(annotator.hasUnwrittenMarks, "A mark on disk still reads as waiting to be written")
+
+        try rewriteFromAnotherProcess(url, text: "Second unique paper")
+        PDFPreview.refreshIfChanged(view, coordinator: coordinator)
+        try await waitForText(view, "Second unique paper")
+    }
+
     /// Overwrites the file the way a build does: from another process, in place.
     ///
     /// Writing through `url` here would prove nothing. These tests used to, and stayed green

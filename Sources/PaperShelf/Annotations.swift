@@ -1037,6 +1037,12 @@ final class Annotator {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
             self?.persist()
+            // Held until the write lands, because that is the moment the file's date stops
+            // being this reader's news. Never cleared at all, one mark stopped the page
+            // following the file for as long as the paper stayed open.
+            await self?.writeTask?.value
+            guard !Task.isCancelled else { return }
+            self?.saveTask = nil
         }
     }
 
