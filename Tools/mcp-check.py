@@ -50,7 +50,7 @@ check.failed = False
 # only `recursive` differing between the two, which have to answer with different tokens
 # from each other despite describing the same one move.
 # The three negative limits (123-125) are in the 81 as well.
-check("no reply to a notification", len(seen) == 10 + 5 + 81 + 3)
+check("no reply to a notification", len(seen) == 10 + 5 + 81 + 3 + 1)
 
 d = result("d")
 check(
@@ -118,7 +118,12 @@ check(
     "since_revision"
     in list_highlights_spec.get("inputSchema", {}).get("properties", {}),
 )
-bookmark_tool_names = {"list_bookmarks", "add_bookmark", "rename_bookmark", "remove_bookmark"}
+bookmark_tool_names = {
+    "list_bookmarks",
+    "add_bookmark",
+    "rename_bookmark",
+    "remove_bookmark",
+}
 check(
     "the MCP server exposes durable bookmark tools",
     bookmark_tool_names.issubset({tool.get("name") for tool in listed_tools}),
@@ -281,10 +286,10 @@ check(
 o = result("51")
 check(
     "list_documents with no folder reports the library's totals",
-    # 8 original documents, plus doc-9 (Critical fix coverage) and the 1001 synthetic
-    # "cap-doc-*" documents (bibliography cap-visibility coverage), all in the same
-    # scratch library.
-    o.get("structuredContent", {}).get("totals", {}).get("documents") == 1010,
+    # 8 original documents, plus doc-9 (Critical fix coverage), doc-stale (text older than
+    # its file) and the 1001 synthetic "cap-doc-*" documents (bibliography cap-visibility
+    # coverage), all in the same scratch library.
+    o.get("structuredContent", {}).get("totals", {}).get("documents") == 1011,
 )
 check(
     # The library now holds far more than fits on one page; with no explicit `limit` this
@@ -387,6 +392,12 @@ check(
 check(
     "an unknown document id is an isError, not a crash",
     result("61").get("isError") is True,
+)
+
+stale_read = json.dumps(result("stale"))
+check(
+    "text stored before the file was rewritten is read again, not served",
+    "the first version" not in stale_read and "hello" in stale_read,
 )
 
 # The write path end to end, on doc-3, which starts this run with a location but no

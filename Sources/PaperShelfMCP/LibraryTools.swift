@@ -183,10 +183,17 @@ func storedOrExtracted(path: String, documentID: String?, pathExists: Bool) thro
     // row, a busy or locked connection say, is a cache concern, not the caller's problem. The
     // file is right there and readable, so that failure falls through to fresh extraction
     // rather than aborting a read that would otherwise succeed.
+    //
+    // Text stored before the file was last written is of a version that no longer exists, so
+    // it is read again rather than served. A file that has gone keeps its stored text: that
+    // is all there is, and `needsIndexing` leaves a missing date alone.
     if let documentID,
        let reader = try? LibraryReader.open(),
        let stored = try? reader.extractedText(forDocument: documentID),
-       stored.format != nil, !stored.markdown.isEmpty {
+       !stored.markdown.isEmpty,
+       !needsIndexing(extractedAt: stored.extractedAt,
+                      fileModified: modificationDate(URL(fileURLWithPath: path)),
+                      format: stored.format) {
         return (stored.markdown, false)
     }
     guard pathExists else {

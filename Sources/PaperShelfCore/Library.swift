@@ -1108,7 +1108,7 @@ public actor Library {
         isoLock.withLock { isoPrecise.string(from: date) }
     }
 
-    static func isoDate(_ text: String) -> Date? {
+    public static func isoDate(_ text: String) -> Date? {
         // Whole-second fallback, in case a value predates fractional seconds being added.
         isoLock.withLock { isoPrecise.date(from: text) ?? isoWhole.date(from: text) }
     }

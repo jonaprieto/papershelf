@@ -318,12 +318,13 @@ final class LibraryReader {
         }
     }
 
-    func extractedText(forDocument id: String) throws -> (markdown: String, format: TextFormat?)? {
-        try withStatement("SELECT markdown, format FROM extracted_text WHERE document_id = ?;",
+    func extractedText(forDocument id: String) throws -> (markdown: String, format: TextFormat?, extractedAt: Date?)? {
+        try withStatement("SELECT markdown, format, extracted_at FROM extracted_text WHERE document_id = ?;",
                           bind: { statement in bindText(statement, 1, id) }) { statement in
             guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
             return (columnText(statement, 0) ?? "",
-                    columnText(statement, 1).flatMap(TextFormat.init(rawValue:)))
+                    columnText(statement, 1).flatMap(TextFormat.init(rawValue:)),
+                    columnText(statement, 2).flatMap(Library.isoDate))
         }
     }
 

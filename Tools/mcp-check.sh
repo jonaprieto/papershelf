@@ -84,6 +84,8 @@ cp "$HELLO_PDF" "$HELLO2_PDF"
 # throwing "nothing to cite there" before the cap it is meant to exercise is ever reached.
 HELLO3_PDF="$FOLDER/hello3.pdf"
 cp "$HELLO_PDF" "$HELLO3_PDF"
+STALE_PDF="$FOLDER/rebuilt.pdf"
+cp "$HELLO_PDF" "$STALE_PDF"
 
 # Unquoted (unlike a plain schema-only heredoc) so $HELLO_PDF below expands; nothing else in
 # this block uses a shell metacharacter, so that is the only effect of the change.
@@ -203,6 +205,15 @@ INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count,
 VALUES ('doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', NULL, 580, 1, 'Hello', NULL, '{}');
 INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
 VALUES ('$HELLO_PDF', 'doc-3', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+
+-- Text stored long before its file was last written, as a PDF rebuilt since it was read
+-- leaves it. Anything served from this row is a version that no longer exists.
+INSERT INTO documents(id, first_seen_at, last_seen_at, content_hash, byte_count, page_count, title, author, document_info)
+VALUES ('doc-stale', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', NULL, 580, 1, 'Rebuilt', NULL, '{}');
+INSERT INTO locations(path, document_id, first_seen_at, last_seen_at)
+VALUES ('$STALE_PDF', 'doc-stale', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+INSERT INTO extracted_text(document_id, markdown, extracted_at, format)
+VALUES ('doc-stale', '## Page 1' || char(10) || char(10) || 'the first version', '2001-01-01T00:00:00Z', 'markdown-v1');
 
 -- Minor 6: a project holding one document with no extracted_text row at all, so
 -- list_project_documents' without_text count has something real to assert on. Nothing else
@@ -589,6 +600,7 @@ printf '%s\n' \
   "{\"jsonrpc\":\"2.0\",\"id\":\"109\",\"method\":\"tools/call\",\"params\":{\"name\":\"get_highlight_profile\",\"arguments\":{\"scope\":\"folder\",\"folder\":\"$RENAMES\"}}}" \
   '{"jsonrpc":"2.0","id":"110","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"project","project":"Dissertation","style_id":"00000000-0000-0000-0000-000000000001","meaning":"Omit"}}}' \
   '{"jsonrpc":"2.0","id":"111","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"project","project":"Dissertation"}}}' \
+  '{"jsonrpc":"2.0","id":"stale","method":"tools/call","params":{"name":"read_document","arguments":{"document_id":"doc-stale"}}}' \
   '{"jsonrpc":"2.0","id":"112","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"document","document_id":"doc-3","style_id":"00000000-0000-0000-0000-000000000001","meaning":"Review"}}}' \
   '{"jsonrpc":"2.0","id":"113","method":"tools/call","params":{"name":"get_highlight_profile","arguments":{"scope":"document","document_id":"doc-3"}}}' \
   '{"jsonrpc":"2.0","id":"114","method":"tools/call","params":{"name":"set_highlight_profile","arguments":{"scope":"document","document_id":"doc-3","style_id":"00000000-0000-0000-0000-000000000001","reset":true}}}' \
