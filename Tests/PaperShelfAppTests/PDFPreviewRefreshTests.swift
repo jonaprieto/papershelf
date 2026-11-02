@@ -20,7 +20,7 @@ final class PDFPreviewRefreshTests: XCTestCase {
         preview.update(view, coordinator: coordinator)
         try await waitForText(view, "First draft")
 
-        try makeTextPDF(at: url, text: "Second draft")
+        try rewriteFromAnotherProcess(url, text: "Second draft")
         PDFPreview.refreshIfChanged(view, coordinator: coordinator)
         try await waitForText(view, "Second draft")
     }
@@ -44,7 +44,7 @@ final class PDFPreviewRefreshTests: XCTestCase {
             .update(view, coordinator: coordinator)
         try await waitForText(view, "First draft")
 
-        try makeTextPDF(at: url, text: "Second draft")
+        try rewriteFromAnotherProcess(url, text: "Second draft")
         try await waitForText(view, "Second draft", tries: 600)
     }
 
@@ -110,6 +110,60 @@ final class PDFPreviewRefreshTests: XCTestCase {
         for _ in 0..<50 where coordinator.refreshing { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(view.document === shown, "Dropped a mark that had not reached the file")
         await annotator.finishSaving()
+    }
+
+    /// A paper being rebuilt is a paper being read. The new version lands where the reader
+    /// was, at the zoom the reader chose, or every recompile is a trip back to find the place.
+    func testANewVersionKeepsThePageAndTheZoom() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("preview-zoom"))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: url, pages: ["First a", "First b", "First c", "First d"])
+
+        let view = FitWidthPDFView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let annotator = Annotator()
+        let coordinator = PDFPreview.Coordinator(annotator: annotator)
+        defer { PDFPreview.dismantleNSView(view, coordinator: coordinator) }
+        PDFPreview(url: url, passwords: [], annotator: annotator)
+            .update(view, coordinator: coordinator)
+        try await waitForText(view, "First a")
+        view.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        view.scaleFactor = 2.3
+        view.go(to: try XCTUnwrap(view.document?.page(at: 2)))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(view.usesCustomZoom)
+
+        let draft = folder.appendingPathComponent(scratchName("draft"))
+        try makeTextPDF(at: draft, pages: ["Second a", "Second b", "Second c", "Second d"])
+        try rewriteFromAnotherProcess(url, copying: draft)
+        PDFPreview.refreshIfChanged(view, coordinator: coordinator)
+        try await waitForText(view, "Second a")
+        view.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(view.scaleFactor, 2.3, accuracy: 0.002, "a rebuild threw away the reader's zoom")
+        XCTAssertEqual(view.currentPage.flatMap { view.document?.index(for: $0) }, 2)
+    }
+
+    /// Overwrites the file the way a build does: from another process, in place.
+    ///
+    /// Writing through `url` here would prove nothing. These tests used to, and stayed green
+    /// while the reader missed every write made by anything else: a URL remembers the date
+    /// it read.
+    private func rewriteFromAnotherProcess(_ url: URL, text: String) throws {
+        let draft = url.deletingLastPathComponent().appendingPathComponent(scratchName("draft"))
+        try makeTextPDF(at: draft, text: text)
+        try rewriteFromAnotherProcess(url, copying: draft)
+    }
+
+    private func rewriteFromAnotherProcess(_ url: URL, copying draft: URL) throws {
+        let copy = try Process.run(URL(fileURLWithPath: "/bin/cp"), arguments: [draft.path, url.path])
+        copy.waitUntilExit()
+        XCTAssertEqual(copy.terminationStatus, 0)
     }
 
     private func waitForText(_ view: PDFView, _ text: String, tries: Int = 200) async throws {

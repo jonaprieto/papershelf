@@ -118,6 +118,11 @@ runs with it off by design, so the real apply path is verified by hand.
   `Plugin/papershelf/.codex-plugin/plugin.json`, and `CFBundleShortVersionString` in
   `Resources/Info.plist`. `PluginInstall.swift` also reproduces the manifest in Swift because
   a built `.app` has no source checkout. They have drifted before; tests now pin them.
+- A `URL` keeps the resource values it has read, and only reads on the main thread expire
+  them. Off it, a long-lived URL reports the date it first saw for good, so anything deciding
+  whether a file changed goes through `modificationDate(_:)`. A test of that has to rewrite
+  the file from another process: tests writing through the same URL passed with the reader
+  blind to every outside write.
 - The MCP check script writes plan files, and must keep pointing them at a scratch directory
   rather than the real `~/Library/Application Support/PaperShelf/`.
 

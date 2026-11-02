@@ -1087,6 +1087,18 @@ final class FitWidthPDFView: PDFView {
         }
     }
 
+    /// Puts a new version of the open file on the page. Assigning a document asks for a
+    /// fit, which is right for another paper and wrong for this one: the reader chose that
+    /// zoom, and a rebuild is no reason to take it away.
+    func replaceDocument(with document: PDFDocument) {
+        let zoom = usesCustomZoom ? (scale: scaleFactor, fitted: fittedScale) : nil
+        self.document = document
+        guard let zoom else { return }
+        wantsFit = false
+        fittedScale = zoom.fitted
+        scaleFactor = zoom.scale
+    }
+
     /// Explicit fit actions also work when the menu already names that mode.
     func requestFit(_ mode: PageFit) {
         fit = mode
@@ -1361,9 +1373,7 @@ final class FitWidthPDFView: PDFView {
 /// When a file was last written, read off the main thread: a PDF can sit on a network
 /// volume, where asking costs a round trip and the main thread is the one drawing the page.
 func fileModificationDate(_ url: URL) async -> Date? {
-    await Task.detached(priority: .utility) {
-        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-    }.value
+    await Task.detached(priority: .utility) { modificationDate(url) }.value
 }
 
 /// Renders the PDF as it is right now, unlocking it for display with the same passwords
@@ -1553,8 +1563,7 @@ struct PDFPreview: NSViewRepresentable {
             // Read before parsing: a file rewritten between the two is then remembered as
             // older than it is, which costs one re-read rather than leaving the reader on
             // a version nobody has any more.
-            let date = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate
+            let date = modificationDate(url)
             let document = PDFDocument(url: url)
             if document?.isLocked == true {
                 for password in passwords where document?.unlock(withPassword: password) == true {
@@ -1599,7 +1608,7 @@ struct PDFPreview: NSViewRepresentable {
             else { return }
             coordinator.loadedDate = loaded.date ?? date
             coordinator.annotator?.detach()
-            view.document = document
+            view.replaceDocument(with: document)
             view.pageShadowsEnabled = true
             coordinator.annotator?.attach(view, url: url)
             if let resume {

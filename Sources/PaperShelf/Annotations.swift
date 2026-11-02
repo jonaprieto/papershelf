@@ -1079,8 +1079,7 @@ final class Annotator {
 
     var notesSidecarIsCurrent: Bool {
         guard Prefs.shared.syncNotesSidecar, let url, let notesSidecarDate else { return false }
-        let pdfDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            ?? .distantFuture
+        let pdfDate = modificationDate(url) ?? .distantFuture
         return notesSidecarDate >= pdfDate
     }
 
@@ -1169,8 +1168,7 @@ final class Annotator {
                     try replaceOrMove(sidecarFile, at: destination)
                     temporarySidecar = nil
                 }
-                return (nil, try? url.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate)
+                return (nil, modificationDate(url))
             } catch {
                 try? FileManager.default.removeItem(at: temporary)
                 if let temporarySidecar { try? FileManager.default.removeItem(at: temporarySidecar) }

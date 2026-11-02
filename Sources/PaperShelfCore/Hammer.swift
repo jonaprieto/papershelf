@@ -906,8 +906,15 @@ public func collectJobs(
     return jobs.sorted { $0.file.path < $1.file.path }
 }
 
-private func modificationDate(_ url: URL) -> Date? {
-    (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+/// When a file was last written, asked of the disk.
+///
+/// `resourceValues` answers from what this URL has already been told, and only a read on
+/// the main thread ever expires that. Off it, a URL held across a rewrite goes on reporting
+/// the date it first saw, and a paper rebuilt underneath the reader looks untouched.
+public func modificationDate(_ url: URL) -> Date? {
+    var url = url
+    url.removeCachedResourceValue(forKey: .contentModificationDateKey)
+    return (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
 }
 
 private func byteCount(_ url: URL) -> Int? {
