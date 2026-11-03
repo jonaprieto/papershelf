@@ -81,6 +81,36 @@ final class ReaderZoomTests: XCTestCase {
                        "The zoom multiplies the gap, so a margin meant for the pane's edge opens it to 90 points")
     }
 
+    /// A beamer slide fitted to the width of a full-screen window is drawn at about four
+    /// times. The page must fill that width and no more, or the arrows slide it sideways.
+    func testAFittedSlideHasNoRoomToMoveSideways() throws {
+        let document = PDFDocument()
+        for index in 0..<3 {
+            let page = PDFPage()
+            page.setBounds(CGRect(x: 0, y: 0, width: 364, height: 273), for: .mediaBox)
+            document.insert(page, at: index)
+        }
+        let view = FitWidthPDFView(frame: CGRect(x: 0, y: 0, width: 1512, height: 982))
+        view.autoScales = false
+        view.minScaleFactor = 0.1
+        view.maxScaleFactor = 8
+        view.displayMode = .singlePageContinuous
+        view.displaysPageBreaks = true
+        view.pageBreakMargins = view.pageInsets
+        view.document = document
+        view.requestFit(.width)
+        view.layout()
+        view.layoutDocumentView()
+        XCTAssertGreaterThan(view.scaleFactor, 3.5)
+
+        let scrollView = try XCTUnwrap(view.documentView?.enclosingScrollView)
+        let room = try XCTUnwrap(view.documentView).frame.width - scrollView.contentView.bounds.width
+        XCTAssertLessThanOrEqual(room, 1, "Fitted to the width, the page has nowhere to slide")
+        let page = document.page(at: 0)!
+        XCTAssertEqual(view.convert(page.bounds(for: .mediaBox), from: page).minX, 28, accuracy: 1,
+                       "The margin on screen is still the pane's 28 points")
+    }
+
     func testAutomaticFitStillRespondsToResizingAndNewDocuments() throws {
         let document = PDFDocument()
         let page = PDFPage()

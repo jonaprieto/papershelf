@@ -634,12 +634,14 @@ final class Annotator {
     }
 
     /// Turns to a page, one-based, clamped to the document. The palette's `:` and the
-    /// jump that follows a full-text hit both come through here.
+    /// jump that follows a full-text hit both come through here. The page turns without
+    /// moving sideways: on a zoomed page, x 0 sent every arrow press to the left edge.
     func go(toPage number: Int) {
         guard let view, let document = view.document, document.pageCount > 0,
               let page = document.page(at: min(max(number, 1), document.pageCount) - 1)
         else { return }
-        view.go(to: PDFDestination(page: page, at: CGPoint(x: 0, y: page.bounds(for: .mediaBox).maxY)))
+        view.go(to: PDFDestination(page: page, at: CGPoint(x: kPDFDestinationUnspecifiedValue,
+                                                           y: page.bounds(for: .mediaBox).maxY)))
     }
 
     func openFind() {
