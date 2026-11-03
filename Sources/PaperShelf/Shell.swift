@@ -266,6 +266,10 @@ struct PaperShelfApp: App {
                 Button(chrome.reading ? "Leave Reading Mode" : "Reading Mode",
                        action: chrome.toggleReading)
                 .commandShortcut(.readingMode)
+                // A reader from Finder has no key monitor, and nothing else in the menu bar
+                // answers ⌃⌘F, so there the key did nothing at all.
+                Button("Presentation Mode") { sendToKeyWindow(.zenMode) }
+                    .commandShortcut(.zenMode)
                 Button(chrome.notesShown ? "Hide Notes" : "Show Notes") {
                     if sendToReader(.toggleNotes) { return }
                     if chrome.notesShown { chrome.inspectorCollapsed = true } else { chrome.showNotes() }
