@@ -122,6 +122,13 @@ struct ReaderWindow: View {
             PasswordSheet(purpose: purpose, annotator: annotator)
         }
         .task { await record() }
+        // A window that is only a page goes full screen to be shown, so the green button
+        // presents the way the presentation button does.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            guard !presentation, let window = note.object as? NSWindow,
+                  window === readerWindow.window else { return }
+            enterPresentation(in: window)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { note in
             guard presentation, let window = note.object as? NSWindow,
                   let presentationWindow, window === presentationWindow
@@ -325,12 +332,18 @@ struct ReaderWindow: View {
             return
         }
         guard let window = NSApp.keyWindow else { return }
+        enterPresentation(in: window)
+        window.toggleFullScreen(nil)
+    }
+
+    /// The page takes the keys, so the arrows turn it whatever was clicked last.
+    private func enterPresentation(in window: NSWindow) {
         presentationFit = fit
         fit = .page
         showsNotes = false
         presentation = true
         presentationWindow = window
-        window.toggleFullScreen(nil)
+        window.makeFirstResponder(annotator.view)
     }
 
     private func leavePresentation() {
