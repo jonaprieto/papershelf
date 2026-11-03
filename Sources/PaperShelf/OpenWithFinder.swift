@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
-        window.title = url.lastPathComponent
+        window.title = ReaderWindow.windowTitle(url.lastPathComponent, at: url)
         window.representedURL = url
         window.titlebarAppearsTransparent = false
         window.isReleasedWhenClosed = false

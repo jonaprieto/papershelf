@@ -91,7 +91,7 @@ struct ReaderWindow: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
             }
         }
-        .navigationTitle(title)
+        .navigationTitle(Self.windowTitle(title, at: url))
         .preferredColorScheme(prefs.appearance.colorScheme)
         .focusedValue(\.findInPDF, FindInPDFAction(perform: openFind))
         .focusedValue(\.togglePane, TogglePaneAction { showsNotes.toggle() })
@@ -284,6 +284,12 @@ struct ReaderWindow: View {
 
     private var title: String {
         annotator.statedTitle?.isEmpty == false ? annotator.statedTitle! : url.lastPathComponent
+    }
+
+    /// The Dock's menu and the Window menu list readers by this alone, and three readers
+    /// of three `main.pdf`s read the same there.
+    static func windowTitle(_ title: String, at url: URL) -> String {
+        "\(title) (\((url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath))"
     }
 
     private var nextColour: NSColor {
