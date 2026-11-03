@@ -4,6 +4,55 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.19.0] - 2026-11-03
+
+### Added
+
+- ⌘= and ⌘- zoom the page. They are in the View menu too, so a PDF opened from Finder has
+  them, and the palette finds them.
+- H, J, K and L scroll the page being read: J and K four lines a press, H and L sideways
+  on a page wider than the window. While reading, Shift-J and Shift-K move between files,
+  which J and K still do everywhere else.
+- The page bar has a menu for the page colour beside the page size, and the palette
+  chooses page colours and themes by name. The setting is called Page colour everywhere.
+- The inspector can be hidden from a button in its own header, which stays at every width.
+
+### Changed
+
+- A PDF opened from Finder presents when its window goes full screen, as the presentation
+  button does, and leaving full screen gives the reading layout back. Its title names the
+  folder the file is in, so the Dock's menu tells three `main.pdf` apart.
+
+### Fixed
+
+- ⌃⌘F presents from a PDF opened from Finder, where it did nothing. View > Presentation
+  Mode carries it.
+- A page fitted to the width no longer slides sideways, and turning a page with the arrows
+  keeps the view where it was across. A slide fitted to a full-screen window had some 170
+  points to move into, and the down arrow jumped it to its left edge.
+- The page follows a PDF rebuilt by another program, a LaTeX build for one, and keeps its
+  zoom when it does. One highlight no longer stops it following for as long as the paper
+  stays open.
+- The shelf reads a paper rewritten where it stands instead of showing the first
+  version's pages, size, dates, excerpt and cover, and `read_document` reads it again
+  instead of serving its old text.
+- A negative limit no longer ends the MCP server, and `search_documents` says how far a
+  text search reads.
+- A PDF opened from Finder uses its project's highlight meanings in its colours as well as
+  in its notes.
+- The library and a reader fit a column handed out by a tiling window manager: the library
+  down to 360 points, a reader to 400.
+- The gap between pages stays small at reading zoom, and the sidebar starts directly under
+  the toolbar.
+
+### Performance
+
+- The palette searches a document once for each thing typed. One render searched a
+  300-page book 25 times.
+- Indexing a long book no longer recounts its text on every page, `list_project_documents`
+  counts unread papers without reading them, and dates and page ranges keep their
+  formatters.
+
 ## [1.18.0] - 2026-10-26
 
 ### Added
