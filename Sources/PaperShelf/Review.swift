@@ -1180,12 +1180,17 @@ final class FitWidthPDFView: PDFView {
     /// Four of PDFView's own lines a press: one is ten points, which a held key barely
     /// moves. Up and down go through PDFView's line scroll because it keeps the current
     /// page in step; moving the clip view directly left the page bar where it started.
+    /// Its line scroll moves along the document view's y axis, which runs down the page
+    /// on macOS 27 and up it on macOS 26, so the direction follows the axis.
     /// Sideways never changes the page, and PDFView has no sideways line to scroll by.
     func scroll(by step: ScrollStep) {
         let lines = 4
+        let yRunsDown = documentView?.isFlipped ?? true
         switch step {
-        case .down: for _ in 0..<lines { scrollLineDown(nil) }
-        case .up: for _ in 0..<lines { scrollLineUp(nil) }
+        case .down, .up:
+            for _ in 0..<lines {
+                if (step == .down) == yRunsDown { scrollLineDown(nil) } else { scrollLineUp(nil) }
+            }
         case .left, .right:
             guard let scrollView = documentView?.enclosingScrollView else { return }
             let clip = scrollView.contentView
