@@ -1317,10 +1317,13 @@ final class FitWidthPDFView: PDFView {
     /// The sides are divided by the fitted zoom because PDFKit multiplies them by it, as it
     /// does `pageSpacing`. Left at 28 page points, a slide fitted to a full-screen window at
     /// four times its size had 170 points of room to slide sideways, and a page turned with
-    /// the down arrow jumped to its left edge.
+    /// the down arrow jumped to its left edge. PDFKit also rounds the document's width up
+    /// to a whole point, which left the fitted page a fraction of one to slide into, so
+    /// the sides are trimmed until page and margins make a whole width.
     var pageInsets: NSEdgeInsets {
         let vertical = presentation ? pageMargin : Self.pageSpacing
-        let side = pageMargin / (fittedScale ?? 1)
+        var side = pageMargin / (fittedScale ?? 1)
+        if let width = fittedPageSize?.width { side = (floor(width + 2 * side) - width) / 2 }
         return NSEdgeInsets(top: vertical, left: side, bottom: vertical, right: side)
     }
 
@@ -1367,9 +1370,9 @@ final class FitWidthPDFView: PDFView {
         }
         let target = min(max(wanted, minScaleFactor), maxScaleFactor)
         fittedScale = target
+        fittedPageSize = box.size
         pageBreakMargins = pageInsets
         fittedViewport = viewport
-        fittedPageSize = box.size
         wantsFit = false
         if abs(scaleFactor - target) > 0.002 { scaleFactor = target }
 
