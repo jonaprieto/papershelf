@@ -4,7 +4,7 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
-## [1.19.0] - 2026-11-03
+## [1.19.1] - 2026-11-10
 
 ### Added
 
@@ -25,6 +25,12 @@ numbers rather than dates.
 
 ### Fixed
 
+- The note editor opens in the notes list beside the passage it is about, under its mark
+  or where the new highlight will be filed, instead of above every mark and out of sight.
+- v1.19.0 was tagged and never built, and nothing was published under it. On the macOS 26
+  release runner J and K did not scroll, because PDFKit's line scroll runs the other way
+  there, and with scroll bars always shown a page fitted to the width sat four points off
+  its margin. Both are fixed here, and v1.19.0's changes are in this release.
 - ⌃⌘F presents from a PDF opened from Finder, where it did nothing. View > Presentation
   Mode carries it.
 - A page fitted to the width no longer slides sideways, and turning a page with the arrows
