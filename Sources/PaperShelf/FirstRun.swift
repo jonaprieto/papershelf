@@ -4,12 +4,14 @@ import PaperShelfCore
 
 /// The first screen anybody sees, and until now an empty list.
 ///
-/// It has three things to say and no room for a tour: where the books come from, that
-/// nothing on disk moves until you have looked at what would happen, and that the library
-/// is readable by an assistant without anything leaving the machine. Everything else can
-/// wait until there is a shelf to talk about.
+/// It has a few things to say and no room for a tour: where the books come from, that
+/// nothing on disk moves until you have looked at what would happen, what the reader and
+/// search do that a viewer does not, and that an assistant can read the library without
+/// anything leaving the machine. That last one gets a way in, because the setup lives in
+/// Settings and nothing else on a new shelf points there.
 struct FirstRun: View {
     let chooseFiles: () -> Void
+    private let prefs = Prefs.shared
 
     var body: some View {
         VStack(spacing: Space.margin) {
@@ -17,10 +19,10 @@ struct FirstRun: View {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.tint)
-                Text("A calm home for your PDFs")
+                Text("Read, mark and cite your papers")
                     .font(Face.title2)
-                Text("Keep papers named, searchable, and annotated. Point PaperShelf at the "
-                     + "folders your PDFs already live in; nothing moves until you say so.")
+                Text("Point PaperShelf at the folders your PDFs already live in. It reads "
+                     + "them where they are; nothing moves until you say so.")
                     .font(Face.control)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -29,19 +31,29 @@ struct FirstRun: View {
             }
 
             VStack(alignment: .leading, spacing: Space.roomy) {
-                point("books.vertical.fill", "One home for every paper",
-                      "Browse the folders you already use, or add one PDF. Sources stay "
-                      + "separate, searchable, and easy to revisit.")
+                point("text.magnifyingglass", "Search every page",
+                      "Index text for search makes every paper's words findable, so a phrase "
+                      + "you half remember finds its page. Convert to Markdown reads a scan "
+                      + "with the OCR built into macOS.")
+                point("highlighter", "Highlights that mean something",
+                      "Five highlighters for definitions, evidence, doubts and follow-ups, "
+                      + "with notes beside the passage. H, J, K and L scroll the page.")
                 point("textformat.abc", "Names you can trust",
                       "Review suggested names before anything changes. Nothing is renamed "
                       + "until you apply it, and Trash is always recoverable.")
-                point("highlighter", "Highlights that mean something",
-                      "Use a small personal palette for definitions, evidence, questions, "
-                      + "and follow-ups, then attach notes to the passage.")
-                point("sparkles", "AI when it helps",
-                      "An MCP server ships inside the app, so Claude Code or Codex can "
-                      + "search and read your library. It runs here; nothing leaves the "
-                      + "machine. Turn on AI only when you need it.")
+                point("sparkles", "Ask your library",
+                      "Claude Code, Codex or ChatGPT can search the shelf through the server "
+                      + "inside the app and answer with the passage and the page. It runs "
+                      + "here; nothing leaves the machine.")
+                if prefs.aiEnabled {
+                    Button("Connect an assistant…") {
+                        prefs.settingsPane = .integrations
+                        PaletteSettings.openSettingsWindow()
+                    }
+                    .buttonStyle(.link)
+                    .font(Face.caption)
+                    .padding(.leading, 22 + Space.roomy)
+                }
             }
             .frame(maxWidth: 520, alignment: .leading)
 
@@ -52,12 +64,14 @@ struct FirstRun: View {
                 Text("or drop folders and PDFs anywhere in this window")
                     .font(Face.caption)
                     .foregroundStyle(.secondary)
-                // The two keys a new reader needs before anything else, said once here
+                // The keys a new reader needs before anything else, said once here
                 // rather than left for the menus to be found.
                 Text("\(key(.openFile, or: "File > Open")) reads a single PDF on its own. "
-                     + "\(key(.palette, or: "View > Command Palette")) finds a paper or any command.")
+                     + "\(key(.palette, or: "View > Command Palette")) finds a paper or any "
+                     + "command, and Help > Keyboard Shortcuts lists the rest.")
                     .font(Face.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
         }
         .padding(Space.bay)
