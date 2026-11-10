@@ -53,4 +53,17 @@ final class MarkOrderTests: XCTestCase {
         XCTAssertEqual(marks.map(\.page), [1, 1, 3, 7])
         XCTAssertEqual(marks[1].annotation.bounds.maxY, 500)
     }
+
+    /// The note editor opens where its passage is listed, not above every mark, which
+    /// left it scrolled out of sight whenever the list had followed the page down.
+    func testTheNoteEditorOpensWhereItsPassageIsListed() {
+        let marks = [mark(page: 1, x: 0, top: 700), mark(page: 3, x: 0, top: 600),
+                     mark(page: 3, x: 0, top: 200), mark(page: 7, x: 0, top: 300)]
+        XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: (3, 400), selectedMark: nil), 2)
+        XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: (9, 400), selectedMark: nil), 4)
+        XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: nil, selectedMark: marks[1].id), 2)
+        XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: (1, 800), selectedMark: marks[3].id), 0,
+                       "Saving writes the selection, so the editor sits with the selection")
+        XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: nil, selectedMark: nil), 0)
+    }
 }

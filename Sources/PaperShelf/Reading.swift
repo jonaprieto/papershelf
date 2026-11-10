@@ -388,65 +388,6 @@ struct NotesRail: View {
             // scrolling to.
             ScrollViewReader { notes in
                 List {
-                    if addingNote {
-                        VStack(alignment: .leading, spacing: Space.snug) {
-                            Text("Note on the selection")
-                                .font(Face.caption).foregroundStyle(.secondary)
-                            TextField("What is worth remembering", text: $noteText, axis: .vertical)
-                                .textFieldStyle(.roundedBorder)
-                                .lineLimit(2...5)
-                                .focused($noteInputFocused)
-                                .onChange(of: noteInputFocused) { _, focused in
-                                    publishNoteEditorFocus(focused)
-                                }
-                            HStack {
-                                Button {
-                                    if dictation.isRecording {
-                                        Task {
-                                            if let text = await dictation.stop() {
-                                                let separator = noteText.isEmpty || noteText.hasSuffix(" ") || noteText.hasSuffix("\n") ? "" : " "
-                                                noteText += separator + text
-                                                noteInputFocused = true
-                                            }
-                                        }
-                                    } else {
-                                        dictation.start()
-                                    }
-                                } label: {
-                                    Image(systemName: dictation.isRecording ? "stop.circle.fill" : "mic.fill")
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(dictation.isTranscribing)
-                                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate note")
-                                .tip(dictation.isRecording ? "Stop recording and add the words to this note" : "Dictate this note on your Mac")
-                                if let error = dictation.error {
-                                    Text(error)
-                                        .font(Face.caption)
-                                        .foregroundStyle(Ink.red)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            HStack {
-                                Button("Save") {
-                                    if annotator.hasSelection {
-                                        annotator.highlightSelection(colour: lastColour, note: noteText)
-                                    } else if let id = annotator.selectedMark,
-                                              let mark = marks.first(where: { $0.id == id }) {
-                                        annotator.setNote(noteText, on: mark)
-                                    }
-                                    noteText = ""
-                                    addingNote = false
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty || dictation.isRecording || dictation.isTranscribing)
-                                Button("Cancel") { dictation.cancel(); noteText = ""; addingNote = false }
-                            }
-                        }
-                        .padding(Space.roomy)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                    }
-
                     if marks.isEmpty && !addingNote {
                         Text(documentIsOpen
                              ? "Select text on the page to highlight it or attach a note."
@@ -461,25 +402,12 @@ struct NotesRail: View {
                             .listRowSeparator(.hidden)
                     }
 
-                    ForEach(shownMarks) { mark in
-                        MarkRow(
-                            mark: mark,
-                            isSelected: live.selectedMark == mark.id,
-                            jump: {
-                                if documentIsOpen { annotator.jump(to: mark) }
-                                else { openAtPage?(mark.page) }
-                            },
-                            remove: { live.remove(mark) },
-                            save: { live.setNote($0, on: mark) },
-                            recolour: { live.setColour($0, on: mark) },
-                            styles: palette.styles(for: effectiveMeaningScopes),
-                            meaning: palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes),
-                            styleMeaning: { palette.meaning(for: $0, scopes: effectiveMeaningScopes) },
-                            documentTitle: title
-                        )
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                    }
+                    // The note being written sits where its passage is listed, under the
+                    // mark it is about or where the new highlight will land, so it opens
+                    // beside the marks the list is showing rather than above all of them.
+                    ForEach(Array(shownMarks.prefix(composerSlot))) { mark in row(for: mark) }
+                    if addingNote { noteComposer.id(Self.composerID) }
+                    ForEach(Array(shownMarks.dropFirst(composerSlot))) { mark in row(for: mark) }
 
                     if let problem = live.lastError {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
@@ -505,7 +433,7 @@ struct NotesRail: View {
                 // to follow that page off the row that had just been clicked.
                 .task(id: annotator.page) {
                     try? await Task.sleep(for: .milliseconds(200))
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, !addingNote else { return }
                     let page = annotator.page
                     if let chosen = shownMarks.first(where: { $0.id == annotator.selectedMark }),
                        abs(chosen.page - page) <= 1 { return }
@@ -520,8 +448,17 @@ struct NotesRail: View {
                 // mark is being looked at. Initially as well: clicking a highlight with
                 // the notes shut opens them on that click, and the list has to start on
                 // the mark rather than at the top. A turn later, so its rows exist.
+                .onChange(of: addingNote, initial: true) { _, isAdding in
+                    guard isAdding else { return }
+                    placeComposer()
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            notes.scrollTo(Self.composerID, anchor: .center)
+                        }
+                    }
+                }
                 .onChange(of: annotator.selectedMark, initial: true) { _, mark in
-                    guard let mark else { return }
+                    guard let mark, !addingNote else { return }
                     DispatchQueue.main.async {
                         withAnimation(.easeOut(duration: 0.18)) {
                             notes.scrollTo(mark, anchor: .center)
@@ -555,6 +492,114 @@ struct NotesRail: View {
         } message: {
             Text("This writes the document without them. It cannot be undone.")
         }
+    }
+
+    private static let composerID = "note-composer"
+
+    /// How many listed marks come before the note being written: those above the passage
+    /// it is about. Fixed when the editor opens, so a click that clears the selection
+    /// does not throw the half-written note back to the top of the list.
+    @State private var composerSlot = 0
+
+    private func placeComposer() {
+        composerSlot = Self.composerSlot(in: shownMarks, selection: annotator.selectionStart,
+                                         selectedMark: annotator.selectedMark)
+    }
+
+    /// A selection goes before the first mark below its first line, which is where its
+    /// highlight is filed; a note on a mark goes under that mark. Saving prefers the
+    /// selection, so placing does too.
+    static func composerSlot(in marks: [Annotator.Mark], selection: (page: Int, top: CGFloat)?,
+                             selectedMark: UUID?) -> Int {
+        if let selection {
+            return marks.firstIndex {
+                $0.page > selection.page
+                    || ($0.page == selection.page && $0.annotation.bounds.maxY < selection.top - 1)
+            } ?? marks.count
+        }
+        if let selectedMark, let index = marks.firstIndex(where: { $0.id == selectedMark }) {
+            return index + 1
+        }
+        return 0
+    }
+
+    private func row(for mark: Annotator.Mark) -> some View {
+        MarkRow(
+            mark: mark,
+            isSelected: live.selectedMark == mark.id,
+            jump: {
+                if documentIsOpen { annotator.jump(to: mark) }
+                else { openAtPage?(mark.page) }
+            },
+            remove: { live.remove(mark) },
+            save: { live.setNote($0, on: mark) },
+            recolour: { live.setColour($0, on: mark) },
+            styles: palette.styles(for: effectiveMeaningScopes),
+            meaning: palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes),
+            styleMeaning: { palette.meaning(for: $0, scopes: effectiveMeaningScopes) },
+            documentTitle: title
+        )
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+    }
+
+    private var noteComposer: some View {
+        VStack(alignment: .leading, spacing: Space.snug) {
+            Text("Note on the selection")
+                .font(Face.caption).foregroundStyle(.secondary)
+            TextField("What is worth remembering", text: $noteText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...5)
+                .focused($noteInputFocused)
+                .onChange(of: noteInputFocused) { _, focused in
+                    publishNoteEditorFocus(focused)
+                }
+            HStack {
+                Button {
+                    if dictation.isRecording {
+                        Task {
+                            if let text = await dictation.stop() {
+                                let separator = noteText.isEmpty || noteText.hasSuffix(" ") || noteText.hasSuffix("\n") ? "" : " "
+                                noteText += separator + text
+                                noteInputFocused = true
+                            }
+                        }
+                    } else {
+                        dictation.start()
+                    }
+                } label: {
+                    Image(systemName: dictation.isRecording ? "stop.circle.fill" : "mic.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(dictation.isTranscribing)
+                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate note")
+                .tip(dictation.isRecording ? "Stop recording and add the words to this note" : "Dictate this note on your Mac")
+                if let error = dictation.error {
+                    Text(error)
+                        .font(Face.caption)
+                        .foregroundStyle(Ink.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack {
+                Button("Save") {
+                    if annotator.hasSelection {
+                        annotator.highlightSelection(colour: lastColour, note: noteText)
+                    } else if let id = annotator.selectedMark,
+                              let mark = marks.first(where: { $0.id == id }) {
+                        annotator.setNote(noteText, on: mark)
+                    }
+                    noteText = ""
+                    addingNote = false
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(noteText.trimmingCharacters(in: .whitespaces).isEmpty || dictation.isRecording || dictation.isTranscribing)
+                Button("Cancel") { dictation.cancel(); noteText = ""; addingNote = false }
+            }
+        }
+        .padding(Space.roomy)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
     }
 
     private func focusNoteInputIfNeeded() {

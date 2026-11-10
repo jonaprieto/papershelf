@@ -150,6 +150,15 @@ final class Annotator {
     /// made rather than where they sit; and a new highlight was appended, so a passage
     /// marked on page 1 landed under one from page 7. Sorting here is what makes the list
     /// beside the page agree with the page.
+    /// Where the current selection starts: its page, one-based, and the top of its first
+    /// line in page coordinates. A note on it is listed here once saved.
+    var selectionStart: (page: Int, top: CGFloat)? {
+        guard hasSelection, let view, let document = view.document,
+              let selection = view.currentSelection, let page = selection.pages.first
+        else { return nil }
+        return (document.index(for: page) + 1, selection.bounds(for: page).maxY)
+    }
+
     static func precedes(_ first: Mark, _ second: Mark) -> Bool {
         if first.page != second.page { return first.page < second.page }
         let top = first.annotation.bounds.maxY
