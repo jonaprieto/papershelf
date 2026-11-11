@@ -2064,8 +2064,7 @@ struct ResultsPane: View {
 
     private func openFind() {
         guard readerAnnotator.hasPages else { return }
-        readerAnnotator.openFind()
-        prefs.showContents(.find)
+        toggleFind(readerAnnotator, prefs: prefs)
     }
 
     private func focusRegion(by delta: Int) {

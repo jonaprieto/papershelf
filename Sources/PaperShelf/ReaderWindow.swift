@@ -320,9 +320,7 @@ struct ReaderWindow: View {
     }
 
     private func openFind() {
-        annotator.openFind()
-        guard annotator.showsFind else { return }
-        prefs.showContents(.find)
+        toggleFind(annotator, prefs: prefs)
     }
 
     private func togglePresentation() {

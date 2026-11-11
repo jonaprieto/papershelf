@@ -21,6 +21,44 @@ final class ReaderFindTests: XCTestCase {
         XCTAssertFalse(ResultsPane.requestsPDFSearch(other))
     }
 
+    /// ⌘F brings Find out and puts it away again, and putting it away gives the rail back
+    /// as it was: hidden when Find opened it, on Pages when that was showing.
+    func testFindTogglesAndGivesTheRailBack() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("reader-find-toggle"), isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: file, text: "Needle.")
+        let view = PDFView()
+        view.document = try XCTUnwrap(PDFDocument(url: file))
+        let annotator = Annotator()
+        annotator.attach(view, url: file)
+
+        let prefs = Prefs.shared
+        let saved = (prefs.contentsShown, prefs.contentsRailMode)
+        defer { prefs.contentsShown = saved.0; prefs.contentsRailMode = saved.1 }
+
+        prefs.contentsShown = false
+        prefs.contentsRailMode = .outline
+        toggleFind(annotator, prefs: prefs)
+        XCTAssertTrue(annotator.showsFind)
+        XCTAssertTrue(prefs.contentsShown)
+        XCTAssertEqual(prefs.contentsRailMode, .find)
+        toggleFind(annotator, prefs: prefs)
+        XCTAssertFalse(annotator.showsFind)
+        XCTAssertFalse(prefs.contentsShown, "Find opened the rail, so closing it hides the rail")
+        XCTAssertEqual(prefs.contentsRailMode, .outline)
+
+        prefs.contentsShown = true
+        prefs.contentsRailMode = .thumbnails
+        toggleFind(annotator, prefs: prefs)
+        annotator.closeFind()
+        prefs.closeFindRail()
+        XCTAssertTrue(prefs.contentsShown)
+        XCTAssertEqual(prefs.contentsRailMode, .thumbnails)
+    }
+
     func testFindListsEveryOccurrenceAndMovesBetweenExactSelections() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(scratchName("reader-find"), isDirectory: true)

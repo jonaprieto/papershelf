@@ -995,6 +995,7 @@ struct PDFSearchBar: View {
         .onKeyPress("k") { advanceFind(by: -1) }
         .onKeyPress(.escape) {
             annotator.closeFind()
+            Prefs.shared.closeFindRail()
             return .handled
         }
     }
@@ -1076,7 +1077,10 @@ struct PDFSearchBar: View {
             .accessibilityLabel("Next occurrence")
             .accessibilityIdentifier("reader.findNext")
             .tip("Next occurrence, or ↓")
-            Button { annotator.closeFind() } label: {
+            Button {
+                annotator.closeFind()
+                Prefs.shared.closeFindRail()
+            } label: {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
@@ -1088,6 +1092,20 @@ struct PDFSearchBar: View {
 }
 
 // MARK: - Metadata
+
+/// ⌘F and the magnifier open Find, and close it when it is what the rail shows, so the
+/// same key that brought it out puts it away.
+@MainActor
+func toggleFind(_ annotator: Annotator, prefs: Prefs) {
+    if annotator.showsFind, prefs.contentsShown, prefs.contentsRailMode == .find {
+        annotator.closeFind()
+        prefs.closeFindRail()
+        return
+    }
+    annotator.openFind()
+    guard annotator.showsFind else { return }
+    prefs.showFindRail()
+}
 
 // MARK: - Contents
 
@@ -1139,10 +1157,15 @@ struct ContentsRail: View {
             + (findActive ? [.find] : [])
     }
 
+    /// Find only while a search is open: a saved `.find` with none open used to fall
+    /// through as itself whenever the paper had an outline, and drew an empty search.
     private var shown: ContentsRailMode {
-        if findActive && prefs.contentsRailMode == .find { return .find }
-        if prefs.contentsRailMode == .bookmarks { return .bookmarks }
-        return hasOutline ? prefs.contentsRailMode : .thumbnails
+        switch prefs.contentsRailMode {
+        case .find where findActive: return .find
+        case .bookmarks: return .bookmarks
+        case .outline where hasOutline, .find where hasOutline: return .outline
+        default: return .thumbnails
+        }
     }
 
     private var selection: Binding<ContentsRailMode> {

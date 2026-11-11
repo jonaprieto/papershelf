@@ -127,6 +127,9 @@ final class Prefs {
     var inspectorPanel: InspectorPanel = Store.choice("inspectorPanel", .details) {
         didSet { Store.put("inspectorPanel", inspectorPanel) }
     }
+    struct RailState { var shown: Bool; var mode: ContentsRailMode }
+    @ObservationIgnored var railBeforeFind: RailState?
+
     var contentsShown: Bool = Store.flag("contentsShown", false) {
         didSet { Store.put("contentsShown", contentsShown) }
     }
@@ -417,5 +420,25 @@ extension Prefs {
     func showContents(_ mode: ContentsRailMode) {
         contentsShown = true
         contentsRailMode = mode
+    }
+
+    /// Puts Find in the rail, remembering what the rail was before so closing Find can
+    /// give it back.
+    func showFindRail() {
+        if !(contentsShown && contentsRailMode == .find) {
+            railBeforeFind = RailState(shown: contentsShown, mode: contentsRailMode)
+        }
+        showContents(.find)
+    }
+
+    /// Gives the rail back as Find found it: hidden if it was hidden, on its old mode if
+    /// not. Closing Find used to clear the search and leave the rail sitting on an empty
+    /// Find, with nothing that would take it away.
+    func closeFindRail() {
+        guard contentsRailMode == .find else { return }
+        let before = railBeforeFind ?? RailState(shown: false, mode: .outline)
+        railBeforeFind = nil
+        contentsRailMode = before.mode == .find ? .outline : before.mode
+        contentsShown = before.shown
     }
 }

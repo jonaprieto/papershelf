@@ -333,9 +333,7 @@ struct ReviewInspector: View {
     }
 
     private func openFind() {
-        annotator.openFind()
-        guard annotator.showsFind else { return }
-        prefs.showContents(.find)
+        toggleFind(annotator, prefs: prefs)
     }
 
     private var panelColumn: some View {
