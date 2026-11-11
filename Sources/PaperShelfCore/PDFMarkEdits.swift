@@ -63,7 +63,7 @@ public func addPDFMark(to url: URL, page number: Int, text: String,
                                         author: author).first
     else { throw PDFMarkError("PDFKit could not place a mark on that text") }
     try rewrite(document, to: url)
-    return try reread(url, matching: made, on: number)
+    return try reread(url, matching: made, in: document)
 }
 
 /// Changes a mark's note, colour, or both, and writes the file. `nil` leaves a field as is.
@@ -76,7 +76,7 @@ public func editPDFMark(in url: URL, id: String, note: String? = nil,
     if let colour { found.annotation.color = colour }
     found.annotation.modificationDate = Date()
     try rewrite(document, to: url)
-    return try reread(url, matching: found.annotation, on: found.number)
+    return try reread(url, matching: found.annotation, in: document)
 }
 
 /// Takes a mark off its page and writes the file. Returns the mark as it was.
@@ -120,17 +120,13 @@ private func pdfMark(_ found: (page: PDFPage, number: Int, annotation: PDFAnnota
 }
 
 /// The mark as the file now holds it, so the id handed back is the one the next read uses.
-private func reread(_ url: URL, matching annotation: PDFAnnotation, on number: Int) throws -> PDFMark {
+private func reread(_ url: URL, matching annotation: PDFAnnotation,
+                    in original: PDFDocument) throws -> PDFMark {
+    // Stacked marks can share their bounds, colour and note, but have distinct stable ids.
+    guard let id = editableMarks(in: original).first(where: { $0.annotation === annotation })?.id
+    else { throw PDFMarkError("the mark did not read back") }
     guard let document = PDFDocument(url: url) else { throw PDFMarkError("the file did not read back") }
-    let type = annotation.type
-    let box = annotation.bounds
-    let candidates = editableMarks(in: document).filter {
-        $0.number == number && $0.annotation.type == type
-            && abs($0.annotation.bounds.minX - box.minX) < 0.5
-            && abs($0.annotation.bounds.minY - box.minY) < 0.5
-    }
-    guard let found = candidates.first else { throw PDFMarkError("the mark did not read back") }
-    return pdfMark(found)
+    return pdfMark(try mark(id, in: document))
 }
 
 /// Same temporary-file-then-replace write as the reader's own saves, so an interrupted

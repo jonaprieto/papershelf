@@ -53,6 +53,24 @@ final class PDFMarkEditTests: XCTestCase {
         XCTAssertThrowsError(try removePDFMark(from: pdf, id: made.id))
     }
 
+    func testAddingAMarkOverAnExistingMarkReturnsTheNewMark() throws {
+        let first = try addPDFMark(to: pdf, page: 1, text: "used exactly once",
+                                   colour: .yellow, note: "original", author: "Reader")
+        let second = try addPDFMark(to: pdf, page: 1, text: "used exactly once",
+                                    colour: .blue, note: "review", author: "Reviewer")
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(second.note, "review")
+        XCTAssertEqual(second.author, "Reviewer")
+        let third = try addPDFMark(to: pdf, page: 1, text: "used exactly once",
+                                   colour: .blue, note: "review", author: "Reviewer")
+        XCTAssertEqual(Set([first.id, second.id, third.id]).count, 3)
+
+        let edited = try editPDFMark(in: pdf, id: second.id, note: "revised")
+        XCTAssertEqual(edited.id, second.id)
+        XCTAssertEqual(edited.note, "revised")
+        XCTAssertEqual(pdfMarks(in: pdf).map(\.note), ["original", "revised", "review"])
+    }
+
     func testTextThatIsMissingOrRepeatedIsRefused() throws {
         XCTAssertThrowsError(try addPDFMark(to: pdf, page: 1, text: "session types", colour: .yellow))
         XCTAssertThrowsError(try addPDFMark(to: pdf, page: 1, text: "types", colour: .yellow))
