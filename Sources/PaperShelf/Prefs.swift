@@ -166,6 +166,27 @@ final class Prefs {
     var syncNotesSidecar: Bool = Store.flag("syncNotesSidecar", true) {
         didSet { Store.put("syncNotesSidecar", syncNotesSidecar) }
     }
+    /// What a notes file carries besides the notes, each as a hidden comment.
+    var notesShowVersion: Bool = Store.flag("notesShowVersion", true) {
+        didSet { Store.put("notesShowVersion", notesShowVersion) }
+    }
+    var notesShowPath: Bool = Store.flag("notesShowPath", true) {
+        didSet { Store.put("notesShowPath", notesShowPath) }
+    }
+    var notesShowTimes: Bool = Store.flag("notesShowTimes", true) {
+        didSet { Store.put("notesShowTimes", notesShowTimes) }
+    }
+    var notesShowColours: Bool = Store.flag("notesShowColours", true) {
+        didSet { Store.put("notesShowColours", notesShowColours) }
+    }
+    var notesDetails: NotesDetails {
+        var details: NotesDetails = []
+        if notesShowVersion { details.insert(.version) }
+        if notesShowPath { details.insert(.path) }
+        if notesShowTimes { details.insert(.times) }
+        if notesShowColours { details.insert(.colours) }
+        return details
+    }
     var pageFit: PageFit = Store.choice("pageFit", .width) {
         didSet { Store.put("pageFit", pageFit) }
     }

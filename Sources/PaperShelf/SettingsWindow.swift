@@ -359,12 +359,18 @@ struct GeneralSettings: View {
         Section {
             Toggle("Keep a Markdown notes file beside each PDF",
                    isOn: $prefs.syncNotesSidecar)
+            Toggle("PaperShelf version and date at the top", isOn: $prefs.notesShowVersion)
+            Toggle("The PDF's path at the top", isOn: $prefs.notesShowPath)
+            Toggle("When each mark was made", isOn: $prefs.notesShowTimes)
+            Toggle("Each mark's colour", isOn: $prefs.notesShowColours)
         } header: {
             Text("Notes")
         } footer: {
             Text("PaperShelf overwrites the generated <PDF stem>-notes.md file from "
                  + "the PDF annotations. Turning this off stops future writes but does "
-                 + "not delete an existing file.")
+                 + "not delete an existing file. The version, path, times and colours are "
+                 + "written as HTML comments, so rendered Markdown shows only the notes. "
+                 + "Exported notes follow the same choices.")
                 .font(Face.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

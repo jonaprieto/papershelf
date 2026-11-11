@@ -1151,7 +1151,8 @@ final class Annotator {
                        meaning: Palette.shared.meaning(for: $0.colour, scope: scope),
                        colour: colourHex($0.colour), timestamp: $0.timestamp)
         }
-        return markdownNotes(title: title, source: url.path, marks: exports)
+        return markdownNotes(title: title, source: url.path, marks: exports,
+                             details: Prefs.shared.notesDetails)
     }
 
     private func colourHex(_ colour: NSColor) -> String {

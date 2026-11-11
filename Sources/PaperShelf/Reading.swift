@@ -787,7 +787,7 @@ struct NotesRail: View {
                        timestamp: $0.timestamp)
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
-                             source: source, marks: exported)
+                             source: source, marks: exported, details: prefs.notesDetails)
     }
 
     /// Straight to a save panel, and the file is written here rather than by a document
