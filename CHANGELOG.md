@@ -4,6 +4,51 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.20.0] - 2026-11-11
+
+### Added
+
+- An assistant connected through the MCP server can mark a paper. `add_highlight`
+  highlights, underlines or strikes out a passage on a page, with a note if wanted;
+  `update_highlight` rewrites a mark's note or colour; `remove_highlight` takes it off.
+  `list_highlights` gives every mark the id these take. Marks are written into the PDF the
+  way the reader writes its own, and a paper open in the reader shows them. The passage is
+  found however its spacing, line breaks and hyphens fall, a passage that appears twice on
+  the page is refused rather than guessed at, and an encrypted PDF is left alone.
+- `list_highlights` says when each mark was made or last changed, who made it, and what
+  its colour means.
+- Every mark says who made it. The reader signs its marks with your name, an assistant
+  signs with its own (the client's name, or one it gives), and marks from other apps keep
+  theirs, in the PDF's standard author field. The notes rail and the notes file name the
+  writer of any mark that is not yours.
+- A highlighter can be added from the bar beside a selection: pick a colour, say what it
+  means, and the selection takes it. `add_highlighter` does the same from an assistant.
+- The Notes panel has a search field that narrows the list to marks whose passage or note
+  contains the text. The Find bar lists matching notes among the PDF's own matches, and
+  choosing one turns to its mark.
+- The first screen links to Settings > Integrations, where an assistant is connected.
+
+### Changed
+
+- A mark whose colour is none of your highlighters, one made in another app usually, is
+  called a Note, in purple, rather than a Highlight nobody named.
+- A notes file keeps its bookkeeping out of sight. The PaperShelf version and date, the
+  PDF's path, when each mark was made and its colour are HTML comments, so rendered
+  Markdown shows the title, quotations, notes and meanings only, and Settings > Notes
+  chooses which of the four a file carries. Exported notes follow the same choices.
+- The README and the website lead with what PaperShelf does, and say which tools can
+  change files.
+
+### Fixed
+
+- Find can be put away. Its close button and Escape left the rail showing an empty search
+  whenever the paper had a table of contents; they now give the rail back as it was before
+  Find opened it, hidden if it was hidden. ⌘F and the magnifier close Find as well as open
+  it.
+- Clicking the badge beside a mark with a note opens the notes rail on that mark, where the
+  note can be read, edited or removed, instead of PDFKit's popup, whose Done button could
+  not be read.
+
 ## [1.19.1] - 2026-11-10
 
 ### Added
