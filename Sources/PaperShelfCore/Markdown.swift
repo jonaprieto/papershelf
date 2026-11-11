@@ -299,8 +299,13 @@ public struct PDFMark: Sendable, Equatable {
     public var quoted: String
     public var note: String
     public var colour: String
+    /// What `editPDFMark` and `removePDFMark` take to find this mark again. Empty on a
+    /// mark built by hand rather than read from a file.
+    public var id: String
 
-    public init(page: Int, kind: String, quoted: String, note: String, colour: String = "") {
+    public init(page: Int, kind: String, quoted: String, note: String, colour: String = "",
+                id: String = "") {
+        self.id = id
         self.page = page
         self.kind = kind
         self.quoted = quoted
@@ -354,30 +359,18 @@ public func pdfMarks(in url: URL, passwords: [String] = []) -> [PDFMark] {
     if document.isLocked {
         for password in passwords where document.unlock(withPassword: password) { break }
     }
-    let wanted: Set<String> = [PDFAnnotationSubtype.highlight.rawValue,
-                               PDFAnnotationSubtype.underline.rawValue,
-                               PDFAnnotationSubtype.strikeOut.rawValue,
-                               PDFAnnotationSubtype.text.rawValue]
-
-    var found: [PDFMark] = []
-    for index in 0..<document.pageCount {
-        guard let page = document.page(at: index) else { continue }
-        for annotation in page.annotations {
-            guard let type = annotation.type, wanted.contains("/" + type) || wanted.contains(type)
-            else { continue }
-            let quoted = annotation.type == "Text" ? "" : quotedText(of: annotation, on: page)
-            let note = annotation.contents ?? ""
-            guard !quoted.isEmpty || !note.isEmpty else { continue }
-            // Pages are 1-based everywhere this app shows one.
-            found.append(PDFMark(page: index + 1, kind: type.lowercased(),
-                                 quoted: quoted, note: note,
-                                 colour: annotationColour(annotation.color)))
-        }
+    return editableMarks(in: document).compactMap { found in
+        let annotation = found.annotation
+        let quoted = annotation.type == "Text" ? "" : quotedText(of: annotation, on: found.page)
+        let note = annotation.contents ?? ""
+        guard !quoted.isEmpty || !note.isEmpty else { return nil }
+        return PDFMark(page: found.number, kind: (annotation.type ?? "").lowercased(),
+                       quoted: quoted, note: note,
+                       colour: annotationColour(annotation.color), id: found.id)
     }
-    return found
 }
 
-private func annotationColour(_ colour: NSColor?) -> String {
+func annotationColour(_ colour: NSColor?) -> String {
     guard let rgb = colour?.usingColorSpace(.sRGB) else { return "" }
     let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
         .map { Int((max(0, min(1, $0)) * 255).rounded()) }

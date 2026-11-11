@@ -46,7 +46,7 @@ final class WebsiteTests: XCTestCase {
         }.joined(separator: "\n")
         let expected = toolNames(in: source)
         XCTAssertEqual(pageTools, expected)
-        XCTAssertEqual(pageTools.count, 22)
+        XCTAssertEqual(pageTools.count, 25)
     }
 
     func testLandingPageExplainsScopedHighlightsAndDuplicateWatcher() throws {

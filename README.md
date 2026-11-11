@@ -29,10 +29,12 @@ that has none, or pdftotext, MarkItDown, Marker or Docling when you have them, a
 result as the paper's searchable text. Projects read their papers the same way.
 
 **Answers questions about your library.** A bundled MCP server gives a local assistant
-22 tools over the shelf: search, read a document or a page, list highlights and bookmarks,
-build a bibliography, work with projects and tags. Settings > Integrations shows the exact
-line to paste into Claude Code or Codex. Tools that would change your files are off until
-you turn them on, and every change is proposed before it is applied.
+25 tools over the shelf: search, read a document or a page, list, add, edit and remove
+highlights and their notes, list bookmarks, build a bibliography, work with projects and
+tags. Settings > Integrations shows the exact line to paste into Claude Code or Codex.
+Highlights an assistant adds are written into the PDF the way your own are. Tools that
+would rename or move your files are off until you turn them on, and every such change is
+proposed before it is applied.
 
 **Keeps the shelf in order.** Names built from date, author, title and year, previewed
 before anything moves, with originals kept when you ask. Watched folders stay current, and a

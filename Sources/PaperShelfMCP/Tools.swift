@@ -292,7 +292,8 @@ let folderTools: [Tool] = [
             + "document_id; path wins if both are given. The answer is live from the PDF. "
             + "Save its revision and pass it back as since_revision on the next call to "
             + "learn whether highlights, notes, or profile settings need to be pulled. "
-            + "Each mark also includes its stored color when the PDF provides one.",
+            + "Each mark also includes its stored color when the PDF provides one, and "
+            + "an id that update_highlight and remove_highlight take.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -362,16 +363,10 @@ let folderTools: [Tool] = [
                                   structured: ["changed": true, "revision": revision,
                                                "count": 0, "marks": [], "notes": []])
             }
-            let rows = marks.map { mark -> [String: Any] in
-                var row: [String: Any] = ["page": mark.page, "kind": mark.kind]
-                if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
-                if !mark.note.isEmpty { row["note"] = mark.note }
-                if !mark.colour.isEmpty { row["color"] = mark.colour }
-                return row
-            }
+            let rows = marks.map(markRow)
             let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
             var text = marks.map { mark in
-                var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")]"
+                var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")] id \(mark.id)"
                 if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
                 if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
                 return line
@@ -458,3 +453,12 @@ let folderTools: [Tool] = [
     // whole-library forms of list_documents and search_documents above) live in
     // LibraryTools.swift instead.
 ]
+
+/// One mark as every highlight tool reports it.
+func markRow(_ mark: PDFMark) -> [String: Any] {
+    var row: [String: Any] = ["id": mark.id, "page": mark.page, "kind": mark.kind]
+    if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
+    if !mark.note.isEmpty { row["note"] = mark.note }
+    if !mark.colour.isEmpty { row["color"] = mark.colour }
+    return row
+}

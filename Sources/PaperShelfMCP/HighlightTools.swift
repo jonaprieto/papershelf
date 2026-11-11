@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import PDFKit
 import PaperShelfCore
 
 private struct HighlightScope {
@@ -192,6 +194,136 @@ let highlightTools: [Tool] = [
             return ToolOutput(text: "Updated \(scope.label): \(row["color"] ?? "") "
                                 + "means \(row["meaning"] ?? "Highlight").",
                               structured: ["scope": scope.key, "style": row, "reset": reset])
+        }
+    ),
+]
+
+/// The file a mark tool writes into, and the scope its style colours resolve in.
+private func markTarget(_ arguments: [String: Any]) throws -> (url: URL, scope: HighlightScope) {
+    let resolved = try resolveDocument(arguments)
+    guard let path = resolved.path, resolved.exists else {
+        throw ToolFailure("that document's file is not where the library last saw it; "
+            + "call this again with its current 'path'")
+    }
+    let key = "document:" + (resolved.id ?? URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
+    return (URL(fileURLWithPath: path), HighlightScope(key: key, label: path))
+}
+
+/// `color` wins over `style_id`; neither gives nil, so an edit leaves the colour alone.
+private func markColour(_ arguments: [String: Any], scope: HighlightScope) throws -> NSColor? {
+    var rgb = try profileRGB(arguments["color"])
+    if rgb == nil, let styleID = arguments["style_id"] as? String, !styleID.isEmpty {
+        let row = try profileRow(readHighlightProfile() ?? .defaults, styleID: styleID, scope: scope)
+        rgb = try profileRGB(row["color"])
+    }
+    return rgb.map { NSColor(srgbRed: $0.red, green: $0.green, blue: $0.blue, alpha: 1) }
+}
+
+private func markOutput(_ verb: String, _ mark: PDFMark) -> ToolOutput {
+    var text = "\(verb) \(mark.kind) \(mark.id) on page \(mark.page)"
+    if !mark.quoted.isEmpty { text += ": \"\(mark.quoted)\"" }
+    if !mark.note.isEmpty { text += "\n    note: \(mark.note)" }
+    return ToolOutput(text: text, structured: ["mark": markRow(mark)])
+}
+
+private let markDocumentProperties: [String: Any] = [
+    "document_id": ["type": "string", "description": "A document id from a PaperShelf result."],
+    "path": ["type": "string", "description": "Absolute path to a PDF."],
+]
+
+let highlightWriteTools: [Tool] = [
+    Tool(
+        name: "add_highlight",
+        title: "Highlight a passage",
+        description: "Highlight, underline or strike out a passage on one page, optionally "
+            + "with a note, and write it into the PDF the way the reader's own marks are. "
+            + "text is the passage as read_page or read_document gives it; case, spacing, "
+            + "line breaks and hyphens do not need to match. Text that appears more than "
+            + "once on the page is refused, so quote enough to name one place. Colour comes "
+            + "from color (hex) or style_id (see get_highlight_profile); with neither, the "
+            + "first style is used. Encrypted PDFs are refused. Returns the new mark's id.",
+        inputSchema: [
+            "type": "object",
+            "properties": markDocumentProperties.merging([
+                "page": ["type": "integer", "description": "One-based page number."],
+                "text": ["type": "string", "description": "The passage to mark."],
+                "kind": ["type": "string", "enum": ["highlight", "underline", "strikeout"]],
+                "note": ["type": "string", "description": "Optional note attached to the mark."],
+                "style_id": ["type": "string"],
+                "color": ["type": "string", "description": "Six-digit hex, for example #FFCC00"],
+            ]) { first, _ in first },
+            "required": ["page", "text"],
+        ],
+        run: { arguments in
+            guard let page = arguments["page"] as? Int, page > 0 else {
+                throw ToolFailure("'page' is required and starts at 1")
+            }
+            let text = try requireString(arguments, "text")
+            let kind: PDFAnnotationSubtype
+            switch arguments["kind"] as? String ?? "highlight" {
+            case "highlight": kind = .highlight
+            case "underline": kind = .underline
+            case "strikeout": kind = .strikeOut
+            default: throw ToolFailure("'kind' must be highlight, underline, or strikeout")
+            }
+            let target = try markTarget(arguments)
+            var colour = try markColour(arguments, scope: target.scope)
+            if colour == nil, let first = (readHighlightProfile() ?? .defaults).styles.first {
+                colour = try markColour(["style_id": first.id], scope: target.scope)
+            }
+            let mark = try addPDFMark(to: target.url, page: page, text: text, kind: kind,
+                                      colour: colour ?? .systemYellow,
+                                      note: arguments["note"] as? String ?? "")
+            return markOutput("Added", mark)
+        }
+    ),
+
+    Tool(
+        name: "update_highlight",
+        title: "Change a mark's note or colour",
+        description: "Rewrite the note on a mark from list_highlights, recolour it, or "
+            + "both, in the PDF itself. An empty note clears it. Colour comes from color "
+            + "(hex) or style_id. The id stays the same.",
+        inputSchema: [
+            "type": "object",
+            "properties": markDocumentProperties.merging([
+                "id": ["type": "string", "description": "A mark id from list_highlights."],
+                "note": ["type": "string"],
+                "style_id": ["type": "string"],
+                "color": ["type": "string", "description": "Six-digit hex, for example #FFCC00"],
+            ]) { first, _ in first },
+            "required": ["id"],
+        ],
+        run: { arguments in
+            let id = try requireString(arguments, "id")
+            let target = try markTarget(arguments)
+            let colour = try markColour(arguments, scope: target.scope)
+            let note = arguments["note"] as? String
+            guard note != nil || colour != nil else {
+                throw ToolFailure("give 'note', 'color', or 'style_id'")
+            }
+            return markOutput("Updated", try editPDFMark(in: target.url, id: id, note: note,
+                                                         colour: colour))
+        }
+    ),
+
+    Tool(
+        name: "remove_highlight",
+        title: "Remove a mark",
+        description: "Remove one highlight, underline, strikeout or sticky note, with its "
+            + "note, from the PDF. Takes an id from list_highlights. Returns what was removed, "
+            + "so it can be put back with add_highlight.",
+        inputSchema: [
+            "type": "object",
+            "properties": markDocumentProperties.merging([
+                "id": ["type": "string", "description": "A mark id from list_highlights."],
+            ]) { first, _ in first },
+            "required": ["id"],
+        ],
+        run: { arguments in
+            let id = try requireString(arguments, "id")
+            let target = try markTarget(arguments)
+            return markOutput("Removed", try removePDFMark(from: target.url, id: id))
         }
     ),
 ]

@@ -128,6 +128,12 @@ check(
     "the MCP server exposes durable bookmark tools",
     bookmark_tool_names.issubset({tool.get("name") for tool in listed_tools}),
 )
+check(
+    "the MCP server exposes tools that write marks",
+    {"add_highlight", "update_highlight", "remove_highlight"}.issubset(
+        {tool.get("name") for tool in listed_tools}
+    ),
+)
 
 c = result("3")
 check("an empty folder is not an error", c.get("isError") is False)

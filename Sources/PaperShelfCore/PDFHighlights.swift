@@ -3,13 +3,14 @@ import AppKit
 
 /// One native annotation per page, shared by PDF selections and captured web selections.
 @discardableResult
-public func addPDFHighlights(for selection: PDFSelection, colour: NSColor, note: String = "") -> [PDFAnnotation] {
+public func addPDFHighlights(for selection: PDFSelection, colour: NSColor, note: String = "",
+                             kind: PDFAnnotationSubtype = .highlight) -> [PDFAnnotation] {
     selection.pages.compactMap { page in
         let lines = selection.selectionsByLine().filter { $0.pages.contains(page) }
             .map { $0.bounds(for: page) }.filter { $0.width > 0 && $0.height > 0 }
         guard let first = lines.first else { return nil }
         let union = lines.dropFirst().reduce(first) { $0.union($1) }
-        let mark = PDFAnnotation(bounds: union, forType: .highlight, withProperties: nil)
+        let mark = PDFAnnotation(bounds: union, forType: kind, withProperties: nil)
         mark.color = colour
         mark.modificationDate = Date()
         if !note.isEmpty { mark.contents = note }
