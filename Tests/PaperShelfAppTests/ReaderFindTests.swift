@@ -59,6 +59,40 @@ final class ReaderFindTests: XCTestCase {
         XCTAssertEqual(annotator.selectedFindHit, 2, "previous wraps to the final occurrence")
     }
 
+    /// A note is not page text, so PDFKit alone never finds it. Its hit is listed with the
+    /// page's own matches and turns to the mark it is written on.
+    func testFindAlsoMatchesNotesAndTurnsToTheirMark() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(scratchName("reader-find-notes"), isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("paper.pdf")
+        try makeTextPDF(at: file, pages: ["Alpha Beta on one.", "Gamma on two, with a quorum."])
+
+        let document = try XCTUnwrap(PDFDocument(url: file))
+        let view = PDFView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
+        view.document = document
+        let annotator = Annotator()
+        annotator.attach(view, url: file)
+        defer { annotator.detach() }
+        view.setCurrentSelection(try XCTUnwrap(document.findString("Beta", withOptions: []).first),
+                                 animate: false)
+        annotator.highlightSelection(colour: .systemYellow, note: "Recall the Quorum rule")
+        view.clearSelection()
+        let mark = try XCTUnwrap(annotator.marks.first)
+
+        annotator.openFind()
+        annotator.findQuery = "quorum"
+        annotator.updateFindHits()
+
+        XCTAssertEqual(annotator.findHits.map(\.page), [1, 2], "the note on page one comes first")
+        XCTAssertEqual(annotator.findHits.map(\.id), [0, 1])
+        XCTAssertEqual(annotator.findHits.first?.mark, mark.id)
+        XCTAssertNil(annotator.findHits.last?.mark)
+        annotator.jumpToSelectedFindHit()
+        XCTAssertEqual(annotator.selectedMark, mark.id)
+    }
+
     func testClosingFindLeavesNoSearchStateForTheNextDocument() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(scratchName("reader-find-close"), isDirectory: true)

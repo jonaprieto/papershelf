@@ -140,7 +140,10 @@ final class Annotator {
         let id: Int
         let page: Int
         let text: String
-        fileprivate let selection: PDFSelection
+        fileprivate let selection: PDFSelection?
+        /// Set when the match is in a note rather than on the page, so choosing it turns
+        /// to the mark the note is written on.
+        let mark: UUID?
     }
 
     /// Marks in reading order: by page, then down the page, then across it.
@@ -677,12 +680,26 @@ final class Annotator {
             selectedFindHit = nil
             return
         }
-        findHits = document.findString(query, withOptions: [.caseInsensitive]).enumerated()
-            .compactMap { index, selection in
+        let onPage = document.findString(query, withOptions: [.caseInsensitive])
+            .compactMap { selection -> FindHit? in
                 guard let page = selection.pages.first else { return nil }
-                return FindHit(id: index, page: document.index(for: page) + 1,
-                               text: Self.findLabel(selection.string ?? query), selection: selection)
+                return FindHit(id: 0, page: document.index(for: page) + 1,
+                               text: Self.findLabel(selection.string ?? query),
+                               selection: selection, mark: nil)
             }
+        // A note is not text on the page, so PDFKit cannot find it; the highlighted
+        // passage is, and is already found above.
+        let inNotes = marks.filter { $0.note.localizedStandardContains(query) }.map {
+            FindHit(id: 0, page: $0.page, text: Self.findLabel($0.note), selection: nil, mark: $0.id)
+        }
+        // A stable sort keeps each page's own matches in page order, its notes after them.
+        let merged = (onPage + inNotes).enumerated()
+            .sorted { ($0.element.page, $0.offset) < ($1.element.page, $1.offset) }
+        findHits = merged.enumerated().map { index, entry in
+            let hit = entry.element
+            return FindHit(id: index, page: hit.page, text: hit.text,
+                           selection: hit.selection, mark: hit.mark)
+        }
         selectedFindHit = findHits.isEmpty ? nil : 0
     }
 
@@ -691,8 +708,12 @@ final class Annotator {
         selectedFindHit = index
         guard jumping, let view else { return }
         let hit = findHits[index]
-        view.go(to: hit.selection)
-        view.setCurrentSelection(hit.selection, animate: true)
+        if let selection = hit.selection {
+            view.go(to: selection)
+            view.setCurrentSelection(selection, animate: true)
+        } else if let mark = marks.first(where: { $0.id == hit.mark }) {
+            jump(to: mark)
+        }
     }
 
     func stepFind(by delta: Int, jumping: Bool = true) {

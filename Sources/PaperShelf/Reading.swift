@@ -316,10 +316,16 @@ struct NotesRail: View {
         return seen
     }
 
+    /// Narrowed by meaning and by the search text, which looks in the quoted passage and
+    /// the note alike, ignoring case and accents the way Finder does.
     private var shownMarks: [Annotator.Mark] {
-        guard let filter else { return marks }
+        let query = search.trimmingCharacters(in: .whitespaces)
         return marks.filter {
-            palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes) == filter
+            (filter == nil
+             || palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes) == filter)
+            && (query.isEmpty
+                || $0.quoted.localizedStandardContains(query)
+                || $0.note.localizedStandardContains(query))
         }
     }
 
@@ -359,7 +365,7 @@ struct NotesRail: View {
             // Whatever the shadow document still owes the disk it owes now, rather than
             // whenever the panel happens to be torn down.
             .onDisappear { shadow.flush(); dictation.cancel() }
-            .onChange(of: source) { _, _ in activeMeaningScope = nil }
+            .onChange(of: source) { _, _ in activeMeaningScope = nil; search = "" }
             .sheet(item: $editingMeaningScope) { scope in
                 HighlightMeaningEditor(palette: palette, scope: scope)
             }
@@ -380,6 +386,18 @@ struct NotesRail: View {
             }
 
             summaryBar
+            if !marks.isEmpty {
+                TextField("Search notes and highlights", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onKeyPress(.escape) {
+                        guard !search.isEmpty else { return .ignored }
+                        search = ""
+                        return .handled
+                    }
+                    .padding(.horizontal, Space.roomy)
+                    .padding(.bottom, Space.step)
+            }
             Divider()
 
             // A `List`, not a `ScrollView` of a `LazyVStack`: a scroll proxy cannot reach
@@ -388,6 +406,15 @@ struct NotesRail: View {
             // scrolling to.
             ScrollViewReader { notes in
                 List {
+                    if !marks.isEmpty && shownMarks.isEmpty && !addingNote {
+                        Text("No marks match.")
+                            .font(Face.body)
+                            .foregroundStyle(.secondary)
+                            .padding(Space.roomy)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
                     if marks.isEmpty && !addingNote {
                         Text(documentIsOpen
                              ? "Select text on the page to highlight it or attach a note."
@@ -744,6 +771,8 @@ struct NotesRail: View {
     @State private var clearing = false
     /// Which meaning the list is narrowed to, or nil for all of them.
     @State private var filter: String?
+    /// Text the listed marks must contain, in the passage or the note.
+    @State private var search = ""
     @FocusState private var noteInputFocused: Bool
     @State private var activeMeaningScope: HighlightMeaningScope?
     @State private var editingMeaningScope: HighlightMeaningScope?
@@ -1315,7 +1344,7 @@ struct ContentsRail: View {
                                    description: Text("Type a phrase above."))
         } else if annotator.findHits.isEmpty {
             ContentUnavailableView("No matches", systemImage: "magnifyingglass",
-                                   description: Text("This PDF has no selectable match for “\(annotator.findQuery)”."))
+                                   description: Text("Neither this PDF nor its notes match “\(annotator.findQuery)”."))
         } else {
             ScrollViewReader { rail in
                 List(annotator.findHits) { hit in
@@ -1323,7 +1352,7 @@ struct ContentsRail: View {
                         annotator.selectFindHit(at: hit.id)
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: Space.snug) {
-                            Image(systemName: "text.magnifyingglass")
+                            Image(systemName: hit.mark == nil ? "text.magnifyingglass" : "note.text")
                                 .foregroundStyle(hit.id == annotator.selectedFindHit
                                                  ? Color.accentColor : Color.secondary)
                             Text(hit.text).lineLimit(2)
