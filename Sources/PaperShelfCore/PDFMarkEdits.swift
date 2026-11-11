@@ -114,7 +114,7 @@ private func pdfMark(_ found: (page: PDFPage, number: Int, annotation: PDFAnnota
     return PDFMark(page: found.number, kind: (annotation.type ?? "").lowercased(),
                    quoted: annotation.type == "Text" ? "" : quotedText(of: annotation, on: found.page),
                    note: annotation.contents ?? "", colour: annotationColour(annotation.color),
-                   id: found.id)
+                   id: found.id, modified: annotation.modificationDate)
 }
 
 /// The mark as the file now holds it, so the id handed back is the one the next read uses.

@@ -302,10 +302,14 @@ public struct PDFMark: Sendable, Equatable {
     /// What `editPDFMark` and `removePDFMark` take to find this mark again. Empty on a
     /// mark built by hand rather than read from a file.
     public var id: String
+    /// When the mark was last made or changed, as the PDF records it. Marks from some
+    /// other apps carry no date.
+    public var modified: Date?
 
     public init(page: Int, kind: String, quoted: String, note: String, colour: String = "",
-                id: String = "") {
+                id: String = "", modified: Date? = nil) {
         self.id = id
+        self.modified = modified
         self.page = page
         self.kind = kind
         self.quoted = quoted
@@ -366,7 +370,8 @@ public func pdfMarks(in url: URL, passwords: [String] = []) -> [PDFMark] {
         guard !quoted.isEmpty || !note.isEmpty else { return nil }
         return PDFMark(page: found.number, kind: (annotation.type ?? "").lowercased(),
                        quoted: quoted, note: note,
-                       colour: annotationColour(annotation.color), id: found.id)
+                       colour: annotationColour(annotation.color), id: found.id,
+                       modified: annotation.modificationDate)
     }
 }
 

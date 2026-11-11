@@ -30,6 +30,8 @@ final class PDFMarkEditTests: XCTestCase {
         XCTAssertEqual(marks.first?.id, made.id)
         XCTAssertEqual(marks.first?.note, "the key rule")
         XCTAssertEqual(marks.first?.kind, "highlight")
+        let madeAt = try XCTUnwrap(marks.first?.modified, "a mark made here records when")
+        XCTAssertLessThan(abs(madeAt.timeIntervalSinceNow), 60)
         XCTAssertTrue(marks.first?.quoted.contains("exactly once") == true, marks.first?.quoted ?? "")
 
         let edited = try editPDFMark(in: pdf, id: made.id, note: "exactly once, not at most",

@@ -293,7 +293,8 @@ let folderTools: [Tool] = [
             + "Save its revision and pass it back as since_revision on the next call to "
             + "learn whether highlights, notes, or profile settings need to be pulled. "
             + "Each mark also includes its stored color when the PDF provides one, and "
-            + "an id that update_highlight and remove_highlight take.",
+            + "an id that update_highlight and remove_highlight take, and modified_at, "
+            + "when the mark was made or last changed, where the PDF records it.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -367,6 +368,9 @@ let folderTools: [Tool] = [
             let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
             var text = marks.map { mark in
                 var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")] id \(mark.id)"
+                if let modified = mark.modified {
+                    line += " " + ISO8601DateFormatter().string(from: modified)
+                }
                 if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
                 if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
                 return line
@@ -460,5 +464,8 @@ func markRow(_ mark: PDFMark) -> [String: Any] {
     if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
     if !mark.note.isEmpty { row["note"] = mark.note }
     if !mark.colour.isEmpty { row["color"] = mark.colour }
+    if let modified = mark.modified {
+        row["modified_at"] = ISO8601DateFormatter().string(from: modified)
+    }
     return row
 }
