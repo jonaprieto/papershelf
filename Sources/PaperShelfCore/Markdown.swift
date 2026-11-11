@@ -300,7 +300,12 @@ private func bboxWords(for page: PDFPage) -> [PDFWord]? {
 
 func bboxQuote(words: [PDFWord], in boxes: [CGRect]) -> String? {
     let selected = words.filter { word in
-        boxes.contains { $0.insetBy(dx: -0.5, dy: -0.5).intersects(word.bounds) }
+        boxes.contains { box in
+            let overlap = box.insetBy(dx: -0.5, dy: -0.5).intersection(word.bounds)
+            // A glyph box can graze the next line; require most of the shorter height.
+            return overlap.width > 0
+                && overlap.height >= min(box.height, word.bounds.height) * 2 / 3
+        }
     }
     guard !selected.isEmpty else { return nil }
 

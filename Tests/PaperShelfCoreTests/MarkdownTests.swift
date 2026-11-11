@@ -47,6 +47,23 @@ final class MarkdownTests: XCTestCase {
                        "pre-sentation.")
     }
 
+    func testAHighlightDoesNotQuoteAdjacentLinesWhoseGlyphBoxesOverlapIt() {
+        let words = [
+            PDFWord(text: "above", bounds: CGRect(x: 10, y: 24.39, width: 30, height: 11.29)),
+            PDFWord(text: "selected", bounds: CGRect(x: 10, y: 13.43, width: 30, height: 11.29)),
+            PDFWord(text: "below", bounds: CGRect(x: 10, y: 2.47, width: 30, height: 11.29)),
+        ]
+        let mark = CGRect(x: 10, y: 7.73, width: 30, height: 16.99)
+        XCTAssertEqual(bboxQuote(words: words, in: [mark]), "selected")
+    }
+
+    func testAThinUnderlineStillQuotesTheWordItCrosses() {
+        let word = PDFWord(text: "selected",
+                           bounds: CGRect(x: 10, y: 13.43, width: 30, height: 11.29))
+        let underline = CGRect(x: 10, y: 14, width: 30, height: 1)
+        XCTAssertEqual(bboxQuote(words: [word], in: [underline]), "selected")
+    }
+
     func testNotesIncludeTheStoredColourAndSidecarUsesThePDFFolder() {
         let text = markdownNotes(
             title: "Book", source: "/tmp/papers/book.pdf",
