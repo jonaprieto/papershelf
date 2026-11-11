@@ -4,7 +4,7 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
-## [1.20.0] - 2026-11-11
+## [1.20.1] - 2026-11-11
 
 ### Added
 
@@ -48,6 +48,9 @@ numbers rather than dates.
 - Clicking the badge beside a mark with a note opens the notes rail on that mark, where the
   note can be read, edited or removed, instead of PDFKit's popup, whose Done button could
   not be read.
+- v1.20.0 was tagged and never built, and nothing was published under it. A test of the
+  note badge expected PDFKit to draw one on the macOS 26 release runner, where it does
+  not. v1.20.0's changes are in this release.
 
 ## [1.19.1] - 2026-11-10
 
