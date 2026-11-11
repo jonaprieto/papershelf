@@ -1223,9 +1223,44 @@ final class FitWidthPDFView: PDFView {
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 1 {
             let point = convert(event.locationInWindow, from: nil)
+            if let box = noteBadgeTarget(at: point) {
+                onMarkClick?(CGPoint(x: box.midX, y: bounds.height - box.midY))
+                return
+            }
             onMarkClick?(CGPoint(x: point.x, y: bounds.height - point.y))
         }
         super.mouseDown(with: event)
+    }
+
+    /// PDFKit puts a small badge beside each mark that carries a note, and a click on it
+    /// opened PDFKit's own popup: a yellow box with an unreadable Done button, no way to
+    /// delete the mark, and no way to make it bigger. Claiming the click here sends it
+    /// where a click on the mark goes, so the notes rail opens on that mark instead.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard hit is NSImageView, let superview,
+              noteBadgeTarget(at: convert(point, from: superview)) != nil else { return hit }
+        return self
+    }
+
+    /// The box, in this view, of the mark whose note badge is under a point. PDFKit sets
+    /// the badge just off the mark's top-right corner and says nothing else about which
+    /// mark it belongs to, so the nearest corner of a mark with a note is taken as its own.
+    func noteBadgeTarget(at point: CGPoint) -> CGRect? {
+        guard let pages = documentView?.subviews else { return nil }
+        let badge = pages.lazy.flatMap(\.subviews).first {
+            $0 is NSImageView && self.convert($0.frame, from: $0.superview).contains(point)
+        }
+        guard let badge else { return nil }
+        let frame = convert(badge.frame, from: badge.superview)
+        let corner = CGPoint(x: frame.minX, y: frame.minY)
+        guard let page = page(for: corner, nearest: true) else { return nil }
+        let onPage = convert(corner, to: page)
+        let mark = page.annotations
+            .filter { !($0.contents ?? "").isEmpty }
+            .min { hypot($0.bounds.maxX - onPage.x, $0.bounds.maxY - onPage.y)
+                < hypot($1.bounds.maxX - onPage.x, $1.bounds.maxY - onPage.y) }
+        return mark.map { convert($0.bounds, from: page) }
     }
 
     override func keyDown(with event: NSEvent) {
