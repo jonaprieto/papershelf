@@ -130,7 +130,7 @@ check(
 )
 check(
     "the MCP server exposes tools that write marks",
-    {"add_highlight", "update_highlight", "remove_highlight"}.issubset(
+    {"add_highlight", "update_highlight", "remove_highlight", "add_highlighter"}.issubset(
         {tool.get("name") for tool in listed_tools}
     ),
 )

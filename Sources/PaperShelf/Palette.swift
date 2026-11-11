@@ -206,6 +206,16 @@ final class Palette {
         save()
     }
 
+    /// A new highlighter with its colour and meaning chosen up front, for adding one from
+    /// beside a selection rather than from Settings.
+    @discardableResult
+    func add(_ colour: Color, meaning: String) -> HighlightStyle {
+        let style = HighlightStyle(color: colour, meaning: meaning)
+        styles.append(style)
+        save()
+        return style
+    }
+
     /// The last one cannot be removed: with no colours there is no way to highlight, and
     /// an empty palette is a state nobody chose on purpose.
     func remove(_ style: HighlightStyle) {

@@ -372,6 +372,10 @@ struct ReaderWindow: View {
                     .buttonStyle(.plain)
                     .help(palette.meaning(for: style.nsColor, scopes: currentMeaningScopes))
                 }
+                NewHighlighterButton { style in
+                    _ = annotator.highlightSelection(colour: style.nsColor)
+                    prefs.lastHighlightColour = style.id.uuidString
+                }
                 Divider().frame(height: Metric.barDivider)
                 AskReadingAssistant {
                     annotator.selectionPrompt()

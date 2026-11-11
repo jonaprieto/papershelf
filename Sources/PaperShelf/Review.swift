@@ -452,7 +452,7 @@ struct ReviewInspector: View {
                 // Measured from the palette, for the same reason the mark bar's is: these
                 // were 250 and 284, written when the palette had five colours in it, and
                 // the palette is a list the reader edits.
-                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 228 : 194),
+                let bar = CGSize(width: CGFloat(effectiveStyles.count) * 27 + (handoff ? 255 : 221),
                                  height: 40)
                 let box = annotator.selectionRect ?? CGRect(
                     x: geometry.size.width / 2, y: geometry.size.height - 60, width: 0, height: 0)
@@ -624,6 +624,12 @@ struct ReviewInspector: View {
                 .onHover { hovered = $0 ? style.id : nil }
                 .accessibilityLabel(palette.meaning(for: style, scopes: effectiveMeaningScopes))
                 .tip("Highlight as \(palette.meaning(for: style, scopes: effectiveMeaningScopes))")
+            }
+
+            NewHighlighterButton { style in
+                annotator.highlightSelection(colour: style.nsColor)
+                prefs.lastHighlightColour = style.id.uuidString
+                prefs.showInspector(.notes)
             }
 
             Divider().frame(height: 16)

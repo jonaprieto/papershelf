@@ -196,6 +196,39 @@ let highlightTools: [Tool] = [
                               structured: ["scope": scope.key, "style": row, "reset": reset])
         }
     ),
+
+    Tool(
+        name: "add_highlighter",
+        title: "Add a highlighter",
+        description: "Add a new highlighter to the whole library: a colour and what it "
+            + "means. Returns its style_id, which add_highlight and update_highlight take. "
+            + "The app shows it beside its other highlighters the next time its palette "
+            + "reloads.",
+        inputSchema: [
+            "type": "object",
+            "properties": [
+                "color": ["type": "string", "description": "Six-digit hex, for example #9B59B6"],
+                "meaning": ["type": "string", "description": "What marks in this colour stand for."],
+            ],
+            "required": ["color", "meaning"],
+        ],
+        run: { arguments in
+            guard let rgb = try profileRGB(arguments["color"]) else {
+                throw ToolFailure("'color' is required, as a six-digit hex value like #9B59B6")
+            }
+            let meaning = try requireString(arguments, "meaning")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            var stored = readHighlightProfile() ?? .defaults
+            let style = HighlightProfileStyle(id: UUID().uuidString, red: rgb.red,
+                                              green: rgb.green, blue: rgb.blue, meaning: meaning)
+            stored.styles.append(style)
+            try writeHighlightProfile(stored)
+            let row = try profileRow(stored, styleID: style.id, scope: nil)
+            return ToolOutput(text: "Added highlighter \(row["color"] ?? "") “\(meaning)”, "
+                                + "style_id \(style.id).",
+                              structured: ["style": row])
+        }
+    ),
 ]
 
 /// The file a mark tool writes into, and the scope its style colours resolve in.

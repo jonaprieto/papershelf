@@ -146,3 +146,39 @@ private struct ReadingAssistant: View {
         }
     }
 }
+
+/// A highlighter made where it is needed: pick a colour, say what it means, and the
+/// selection takes it straight away. Settings used to be the only place to add a colour.
+struct NewHighlighterButton: View {
+    let apply: (HighlightStyle) -> Void
+    @State private var open = false
+    @State private var colour = Color.purple
+    @State private var meaning = ""
+
+    var body: some View {
+        Button { open = true } label: { Image(systemName: "plus.circle") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("New highlighter")
+            .tip("Add a colour to the highlighters and use it here")
+            .popover(isPresented: $open) {
+                VStack(alignment: .leading, spacing: Space.step) {
+                    ColorPicker("Colour", selection: $colour, supportsOpacity: false)
+                    TextField("What it means", text: $meaning)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 220)
+                    HStack {
+                        Spacer()
+                        Button("Add and highlight") {
+                            let style = Palette.shared.add(
+                                colour, meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines))
+                            apply(style)
+                            meaning = ""
+                            open = false
+                        }
+                        .keyboardShortcut(.defaultAction)
+                    }
+                }
+                .padding(Space.roomy)
+            }
+    }
+}

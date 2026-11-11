@@ -3190,6 +3190,10 @@ struct ResultsPane: View {
                     .accessibilityLabel(palette.meaning(for: style, scopes: scopes))
                     .tip("Highlight as \(palette.meaning(for: style, scopes: scopes))")
                 }
+                NewHighlighterButton { style in
+                    _ = annotator.highlightSelection(colour: style.nsColor)
+                    prefs.lastHighlightColour = style.id.uuidString
+                }
             }
             .padding(.horizontal, Space.step)
             .padding(.vertical, Space.snug)
