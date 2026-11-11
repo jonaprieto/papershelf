@@ -332,7 +332,7 @@ final class Palette {
             }
         }
         let match = nearest(to: colour)
-        guard let match, match.distance(to: colour ?? .clear) < limit else { return "Highlight" }
+        guard let match, match.distance(to: colour ?? .clear) < limit else { return unlabelledMarkMeaning }
         return meaning(for: match, scopes: scopes)
     }
 

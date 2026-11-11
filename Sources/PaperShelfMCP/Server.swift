@@ -1,5 +1,9 @@
 import Foundation
 
+/// The client that said who it is in `initialize`, which signs the marks it makes unless
+/// it names an author itself.
+var connectedClient = ""
+
 /// Newline-delimited JSON-RPC over stdin and stdout, which is what the stdio transport is.
 ///
 /// Nothing but JSON-RPC ever goes to stdout: the specification is explicit that a stdio
@@ -62,6 +66,9 @@ struct Server {
             ], seconds: 3600)])
 
         case "initialize":
+            if let info = params["clientInfo"] as? [String: Any] {
+                connectedClient = (info["title"] as? String) ?? (info["name"] as? String) ?? ""
+            }
             // The pre-2026 handshake. Answer in the version the client asked for when it
             // is one this server knows, which is what negotiation means here.
             let asked = params["protocolVersion"] as? String

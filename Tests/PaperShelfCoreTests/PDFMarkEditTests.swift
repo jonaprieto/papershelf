@@ -24,12 +24,13 @@ final class PDFMarkEditTests: XCTestCase {
     /// back with, renoted, recoloured, and taken off, with every step read from disk.
     func testAMarkIsMadeChangedAndRemovedThroughTheFile() throws {
         let made = try addPDFMark(to: pdf, page: 1, text: "used   exactly\nonce",
-                                  colour: .systemYellow, note: "the key rule")
+                                  colour: .systemYellow, note: "the key rule", author: "Claude")
         var marks = pdfMarks(in: pdf)
         XCTAssertEqual(marks.count, 1)
         XCTAssertEqual(marks.first?.id, made.id)
         XCTAssertEqual(marks.first?.note, "the key rule")
         XCTAssertEqual(marks.first?.kind, "highlight")
+        XCTAssertEqual(marks.first?.author, "Claude", "the author is stored in the file")
         let madeAt = try XCTUnwrap(marks.first?.modified, "a mark made here records when")
         XCTAssertLessThan(abs(madeAt.timeIntervalSinceNow), 60)
         XCTAssertTrue(marks.first?.quoted.contains("exactly once") == true, marks.first?.quoted ?? "")

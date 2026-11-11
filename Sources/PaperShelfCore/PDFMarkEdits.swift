@@ -45,7 +45,7 @@ func editableMarks(in document: PDFDocument) -> [(page: PDFPage, number: Int, an
 @discardableResult
 public func addPDFMark(to url: URL, page number: Int, text: String,
                        kind: PDFAnnotationSubtype = .highlight, colour: NSColor,
-                       note: String = "") throws -> PDFMark {
+                       note: String = "", author: String = "") throws -> PDFMark {
     let document = try openForMarking(url)
     guard number >= 1, number <= document.pageCount, let page = document.page(at: number - 1) else {
         throw PDFMarkError("page \(number) is outside the document, which has \(document.pageCount)")
@@ -59,7 +59,8 @@ public func addPDFMark(to url: URL, page number: Int, text: String,
             + "quote more of the passage so it names one place")
     }
     guard let selection = page.selection(for: range),
-          let made = addPDFHighlights(for: selection, colour: colour, note: note, kind: kind).first
+          let made = addPDFHighlights(for: selection, colour: colour, note: note, kind: kind,
+                                        author: author).first
     else { throw PDFMarkError("PDFKit could not place a mark on that text") }
     try rewrite(document, to: url)
     return try reread(url, matching: made, on: number)
@@ -114,7 +115,8 @@ private func pdfMark(_ found: (page: PDFPage, number: Int, annotation: PDFAnnota
     return PDFMark(page: found.number, kind: (annotation.type ?? "").lowercased(),
                    quoted: annotation.type == "Text" ? "" : quotedText(of: annotation, on: found.page),
                    note: annotation.contents ?? "", colour: annotationColour(annotation.color),
-                   id: found.id, modified: annotation.modificationDate)
+                   id: found.id, modified: annotation.modificationDate,
+                   author: annotation.userName ?? "")
 }
 
 /// The mark as the file now holds it, so the id handed back is the one the next read uses.

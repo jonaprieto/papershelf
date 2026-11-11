@@ -119,6 +119,8 @@ final class Annotator {
         /// When this mark was last changed, read from the PDF annotation.
         let timestamp: Date
         let annotation: PDFAnnotation
+        /// Who made it, as the PDF records it: the reader, an assistant, another app.
+        var author: String { annotation.userName ?? "" }
 
         init(id: UUID = UUID(), page: Int, kind: String, quoted: String, note: String,
              colour: NSColor, timestamp: Date? = nil, annotation: PDFAnnotation) {
@@ -898,7 +900,8 @@ final class Annotator {
         guard let view, let document = view.document, let selection = view.currentSelection else { return 0 }
         var madeMarks: [Mark] = []
 
-        for mark in addPDFHighlights(for: selection, colour: colour, note: note) {
+        for mark in addPDFHighlights(for: selection, colour: colour, note: note,
+                                     author: NSFullUserName()) {
             guard let page = mark.page else { continue }
             madeMarks.append(Mark(page: document.index(for: page) + 1, kind: "Highlight",
                                   quoted: selectedText(in: selection, on: page),
@@ -1149,10 +1152,11 @@ final class Annotator {
         let exports = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: Palette.shared.meaning(for: $0.colour, scope: scope),
-                       colour: colourHex($0.colour), timestamp: $0.timestamp)
+                       colour: colourHex($0.colour), timestamp: $0.timestamp,
+                       author: $0.author)
         }
         return markdownNotes(title: title, source: url.path, marks: exports,
-                             details: Prefs.shared.notesDetails)
+                             details: Prefs.shared.notesDetails, me: NSFullUserName())
     }
 
     private func colourHex(_ colour: NSColor) -> String {

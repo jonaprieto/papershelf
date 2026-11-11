@@ -293,8 +293,9 @@ let folderTools: [Tool] = [
             + "Save its revision and pass it back as since_revision on the next call to "
             + "learn whether highlights, notes, or profile settings need to be pulled. "
             + "Each mark also includes its stored color when the PDF provides one, and "
-            + "an id that update_highlight and remove_highlight take, and modified_at, "
-            + "when the mark was made or last changed, where the PDF records it.",
+            + "an id that update_highlight and remove_highlight take, its meaning from the "
+            + "highlight profile (Note when no highlighter matches its colour), its author "
+            + "when the PDF records one, and modified_at, when it was made or last changed.",
         inputSchema: [
             "type": "object",
             "properties": [
@@ -364,12 +365,16 @@ let folderTools: [Tool] = [
                                   structured: ["changed": true, "revision": revision,
                                                "count": 0, "marks": [], "notes": []])
             }
-            let rows = marks.map(markRow)
+            let scopeKey = "document:" + (id ?? URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
+            let rows = marks.map { markRow($0, scopeKey: scopeKey) }
             let noteRows = notes.map { ["body": $0.body, "created_at": $0.createdAt] }
             var text = marks.map { mark in
-                var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")] id \(mark.id)"
+                var line = "p.\(mark.page) [\(mark.kind)\(mark.colour.isEmpty ? "" : " \(mark.colour)")] "
+                    + markMeaning(mark.colour, scopeKey: scopeKey)
+                if !mark.author.isEmpty { line += ", by \(mark.author)" }
+                line += ", id \(mark.id)"
                 if let modified = mark.modified {
-                    line += " " + ISO8601DateFormatter().string(from: modified)
+                    line += ", " + ISO8601DateFormatter().string(from: modified)
                 }
                 if !mark.quoted.isEmpty { line += " \"\(mark.quoted)\"" }
                 if !mark.note.isEmpty { line += "\n    note: \(mark.note)" }
@@ -458,9 +463,11 @@ let folderTools: [Tool] = [
     // LibraryTools.swift instead.
 ]
 
-/// One mark as every highlight tool reports it.
-func markRow(_ mark: PDFMark) -> [String: Any] {
-    var row: [String: Any] = ["id": mark.id, "page": mark.page, "kind": mark.kind]
+/// One mark as every highlight tool reports it, named in the scope it is read in.
+func markRow(_ mark: PDFMark, scopeKey: String) -> [String: Any] {
+    var row: [String: Any] = ["id": mark.id, "page": mark.page, "kind": mark.kind,
+                              "meaning": markMeaning(mark.colour, scopeKey: scopeKey)]
+    if !mark.author.isEmpty { row["author"] = mark.author }
     if !mark.quoted.isEmpty { row["quoted"] = mark.quoted }
     if !mark.note.isEmpty { row["note"] = mark.note }
     if !mark.colour.isEmpty { row["color"] = mark.colour }

@@ -71,6 +71,10 @@ public struct HighlightProfile: Codable, Equatable, Sendable {
     ])
 }
 
+/// What a mark is called when its colour is none of the highlighters: one made in another
+/// app, usually. It reads as a note rather than as a highlighter nobody named.
+public let unlabelledMarkMeaning = "Note"
+
 public func highlightProfileURL() -> URL? {
     if let overridden = ProcessInfo.processInfo.environment["PAPERSHELF_HIGHLIGHT_PROFILE_PATH"],
        !overridden.isEmpty {

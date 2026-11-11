@@ -121,7 +121,8 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
                     error = "This selection cannot be located uniquely in the saved page. Use Save copy, then select it in the reading copy."
                     return nil
                 }
-                _ = addPDFHighlights(for: selection, colour: highlightColour)
+                _ = addPDFHighlights(for: selection, colour: highlightColour,
+                                     author: NSFullUserName())
             }
             try article.embed(in: document)
             // Through `supportDirectory()` like everything else beside the library, so a run

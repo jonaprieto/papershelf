@@ -12,9 +12,12 @@ public struct MarkExport: Sendable, Equatable {
     public let meaning: String
     /// The stored colour, kept so a sidecar can be understood without the app's palette.
     public let colour: String
+    /// Who made the mark, when the PDF says.
+    public let author: String
 
     public init(page: Int, quoted: String, note: String, meaning: String,
-                colour: String = "", timestamp: Date = Date()) {
+                colour: String = "", timestamp: Date = Date(), author: String = "") {
+        self.author = author
         self.page = page
         self.quoted = quoted
         self.note = note
@@ -93,7 +96,8 @@ private func markdownComment(_ text: String) -> String {
 }
 
 public func markdownNotes(title: String, source: String, marks: [MarkExport],
-                          date: Date = Date(), details: NotesDetails = .all) -> String {
+                          date: Date = Date(), details: NotesDetails = .all,
+                          me: String = "") -> String {
     let stamp = DateFormatter()
     stamp.locale = Locale(identifier: "en_US_POSIX")
     stamp.dateFormat = "yyyy-MM-dd HH:mm"
@@ -127,9 +131,16 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         if !mark.note.isEmpty {
             out += "\(markdownEscape(mark.note))\n\n"
         }
+        // Whose mark it is, when that is someone other than the person the file is for:
+        // with an assistant or a colleague marking the same paper, it is part of the note.
+        var tag: [String] = []
         if !mark.meaning.isEmpty && mark.meaning != "Highlight" {
-            out += "*\(markdownEscape(mark.meaning))*\n\n"
+            tag.append("*\(markdownEscape(mark.meaning))*")
         }
+        if !mark.author.isEmpty, mark.author != me {
+            tag.append("by \(markdownEscape(mark.author))")
+        }
+        if !tag.isEmpty { out += tag.joined(separator: " \u{00B7} ") + "\n\n" }
         var bookkeeping: [String] = []
         if details.contains(.times) { bookkeeping.append("marked \(markStamp.string(from: mark.timestamp))") }
         if details.contains(.colours), !mark.colour.isEmpty { bookkeeping.append("colour \(mark.colour)") }
@@ -329,10 +340,13 @@ public struct PDFMark: Sendable, Equatable {
     /// When the mark was last made or changed, as the PDF records it. Marks from some
     /// other apps carry no date.
     public var modified: Date?
+    /// Who made it, from the annotation's author field. Empty when nobody said.
+    public var author: String
 
     public init(page: Int, kind: String, quoted: String, note: String, colour: String = "",
-                id: String = "", modified: Date? = nil) {
+                id: String = "", modified: Date? = nil, author: String = "") {
         self.id = id
+        self.author = author
         self.modified = modified
         self.page = page
         self.kind = kind
@@ -395,7 +409,8 @@ public func pdfMarks(in url: URL, passwords: [String] = []) -> [PDFMark] {
         return PDFMark(page: found.number, kind: (annotation.type ?? "").lowercased(),
                        quoted: quoted, note: note,
                        colour: annotationColour(annotation.color), id: found.id,
-                       modified: annotation.modificationDate)
+                       modified: annotation.modificationDate,
+                       author: annotation.userName ?? "")
     }
 }
 

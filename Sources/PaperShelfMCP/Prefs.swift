@@ -26,6 +26,12 @@ enum Prefs {
 
     /// Off until the user turns it on. Nothing in this server moves a file until it is.
     /// Read here, used in Task 11 and Task 12.
+    /// Whether a mark near one of the highlighters' colours is named after it, as the app
+    /// names it in its notes rail.
+    static var labelForeignMarks: Bool {
+        defaults?.object(forKey: "labelForeignMarks") as? Bool ?? true
+    }
+
     static var fileOperationsEnabled: Bool {
         defaults?.bool(forKey: "mcpFileOperations") ?? false
     }

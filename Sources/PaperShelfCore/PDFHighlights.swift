@@ -4,7 +4,8 @@ import AppKit
 /// One native annotation per page, shared by PDF selections and captured web selections.
 @discardableResult
 public func addPDFHighlights(for selection: PDFSelection, colour: NSColor, note: String = "",
-                             kind: PDFAnnotationSubtype = .highlight) -> [PDFAnnotation] {
+                             kind: PDFAnnotationSubtype = .highlight,
+                             author: String = "") -> [PDFAnnotation] {
     selection.pages.compactMap { page in
         let lines = selection.selectionsByLine().filter { $0.pages.contains(page) }
             .map { $0.bounds(for: page) }.filter { $0.width > 0 && $0.height > 0 }
@@ -13,6 +14,9 @@ public func addPDFHighlights(for selection: PDFSelection, colour: NSColor, note:
         let mark = PDFAnnotation(bounds: union, forType: kind, withProperties: nil)
         mark.color = colour
         mark.modificationDate = Date()
+        // The PDF's own author field, which Preview and Acrobat show too, so a paper
+        // marked by several hands says whose each mark is wherever it is opened.
+        if !author.isEmpty { mark.userName = author }
         if !note.isEmpty { mark.contents = note }
         mark.quadrilateralPoints = lines.flatMap { line -> [NSValue] in
             let box = line.offsetBy(dx: -union.minX, dy: -union.minY)

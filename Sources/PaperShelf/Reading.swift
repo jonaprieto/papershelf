@@ -69,11 +69,18 @@ struct MarkRow: View {
 
                 Text(meaning)
                     .font(Face.headline)
+                    // A mark no highlighter names, from another app usually, reads as a
+                    // note in purple rather than passing for one of the reader's own.
+                    .foregroundStyle(meaning == unlabelledMarkMeaning ? Color.purple : .primary)
                     .lineLimit(1)
 
                 Spacer(minLength: Space.snug)
 
                 VStack(alignment: .trailing, spacing: 1) {
+                    // Someone else's mark says whose; the reader's own do not repeat it.
+                    if !mark.author.isEmpty, mark.author != NSFullUserName() {
+                        Text(mark.author).lineLimit(1)
+                    }
                     Text("p. \(mark.page)")
                     Text(mark.timestamp, format: .dateTime.year().month().day().hour().minute())
                 }
@@ -784,10 +791,11 @@ struct NotesRail: View {
         let exported = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes),
-                       timestamp: $0.timestamp)
+                       timestamp: $0.timestamp, author: $0.author)
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
-                             source: source, marks: exported, details: prefs.notesDetails)
+                             source: source, marks: exported, details: prefs.notesDetails,
+                             me: NSFullUserName())
     }
 
     /// Straight to a save panel, and the file is written here rather than by a document

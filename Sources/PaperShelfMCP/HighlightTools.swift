@@ -219,11 +219,33 @@ private func markColour(_ arguments: [String: Any], scope: HighlightScope) throw
     return rgb.map { NSColor(srgbRed: $0.red, green: $0.green, blue: $0.blue, alpha: 1) }
 }
 
-private func markOutput(_ verb: String, _ mark: PDFMark) -> ToolOutput {
+/// What a mark's colour stands for in a document's scope, as the app's notes rail would say.
+///
+/// ponytail: the document and library scopes only; a folder or project override is not
+/// consulted, so a mark coloured by one reads as the library names it.
+func markMeaning(_ hex: String, scopeKey: String) -> String {
+    guard let rgb = (try? profileRGB(hex)) ?? nil else { return unlabelledMarkMeaning }
+    let profile = readHighlightProfile() ?? .defaults
+    let limit = Prefs.labelForeignMarks ? 0.02 : 0.0002
+    var best: (distance: Double, meaning: String)?
+    for style in profile.styles {
+        let override = profile.overrides[scopeKey]?[style.id]
+        let distance = pow((override?.red ?? style.red) - rgb.red, 2)
+            + pow((override?.green ?? style.green) - rgb.green, 2)
+            + pow((override?.blue ?? style.blue) - rgb.blue, 2)
+        if distance < (best?.distance ?? .infinity) {
+            best = (distance, override?.meaning ?? style.meaning)
+        }
+    }
+    guard let best, best.distance < limit else { return unlabelledMarkMeaning }
+    return best.meaning.isEmpty ? "Highlight" : best.meaning
+}
+
+private func markOutput(_ verb: String, _ mark: PDFMark, scope: HighlightScope) -> ToolOutput {
     var text = "\(verb) \(mark.kind) \(mark.id) on page \(mark.page)"
     if !mark.quoted.isEmpty { text += ": \"\(mark.quoted)\"" }
     if !mark.note.isEmpty { text += "\n    note: \(mark.note)" }
-    return ToolOutput(text: text, structured: ["mark": markRow(mark)])
+    return ToolOutput(text: text, structured: ["mark": markRow(mark, scopeKey: scope.key)])
 }
 
 private let markDocumentProperties: [String: Any] = [
@@ -241,7 +263,8 @@ let highlightWriteTools: [Tool] = [
             + "line breaks and hyphens do not need to match. Text that appears more than "
             + "once on the page is refused, so quote enough to name one place. Colour comes "
             + "from color (hex) or style_id (see get_highlight_profile); with neither, the "
-            + "first style is used. Encrypted PDFs are refused. Returns the new mark's id.",
+            + "first style is used. The mark is signed with author, so the reader can tell "
+            + "it from their own. Encrypted PDFs are refused. Returns the new mark's id.",
         inputSchema: [
             "type": "object",
             "properties": markDocumentProperties.merging([
@@ -249,6 +272,7 @@ let highlightWriteTools: [Tool] = [
                 "text": ["type": "string", "description": "The passage to mark."],
                 "kind": ["type": "string", "enum": ["highlight", "underline", "strikeout"]],
                 "note": ["type": "string", "description": "Optional note attached to the mark."],
+                "author": ["type": "string", "description": "Who the mark is from, e.g. Claude. Defaults to the connected client's name."],
                 "style_id": ["type": "string"],
                 "color": ["type": "string", "description": "Six-digit hex, for example #FFCC00"],
             ]) { first, _ in first },
@@ -271,10 +295,14 @@ let highlightWriteTools: [Tool] = [
             if colour == nil, let first = (readHighlightProfile() ?? .defaults).styles.first {
                 colour = try markColour(["style_id": first.id], scope: target.scope)
             }
+            let named = (arguments["author"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let author = !named.isEmpty ? named
+                : connectedClient.isEmpty ? "Assistant" : connectedClient
             let mark = try addPDFMark(to: target.url, page: page, text: text, kind: kind,
                                       colour: colour ?? .systemYellow,
-                                      note: arguments["note"] as? String ?? "")
-            return markOutput("Added", mark)
+                                      note: arguments["note"] as? String ?? "", author: author)
+            return markOutput("Added", mark, scope: target.scope)
         }
     ),
 
@@ -303,7 +331,7 @@ let highlightWriteTools: [Tool] = [
                 throw ToolFailure("give 'note', 'color', or 'style_id'")
             }
             return markOutput("Updated", try editPDFMark(in: target.url, id: id, note: note,
-                                                         colour: colour))
+                                                         colour: colour), scope: target.scope)
         }
     ),
 
@@ -323,7 +351,8 @@ let highlightWriteTools: [Tool] = [
         run: { arguments in
             let id = try requireString(arguments, "id")
             let target = try markTarget(arguments)
-            return markOutput("Removed", try removePDFMark(from: target.url, id: id))
+            return markOutput("Removed", try removePDFMark(from: target.url, id: id),
+                              scope: target.scope)
         }
     ),
 ]
