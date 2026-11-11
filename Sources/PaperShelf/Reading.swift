@@ -104,7 +104,8 @@ struct MarkRow: View {
             if !mark.note.isEmpty && !editing {
                 Text(mark.note)
                     .font(Face.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
