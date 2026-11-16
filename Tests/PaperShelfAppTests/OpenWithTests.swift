@@ -38,3 +38,28 @@ final class AppDelegateCurrentTests: XCTestCase {
                       "the running delegate cannot be reached, so ⌘K never reaches a reader")
     }
 }
+
+/// Papers opened from outside share one reader window as tabs, not a window each.
+@MainActor
+final class ReaderTabsTests: XCTestCase {
+    func testASecondPaperJoinsTheFirstReaderAsATab() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reader-tabs-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = folder.appendingPathComponent("a.pdf")
+        let second = folder.appendingPathComponent("b.pdf")
+        try makePDF(at: first, password: nil)
+        try makePDF(at: second, password: nil)
+
+        let delegate = AppDelegate()
+        delegate.openReader(for: first)
+        delegate.openReader(for: second)
+        let windows = NSApp.windows.filter { delegate.isReader($0) }
+        defer { windows.forEach { $0.close() } }
+
+        XCTAssertEqual(windows.count, 2)
+        XCTAssertEqual(windows.first?.tabbedWindows?.count, 2,
+                       "each paper opened in a window of its own")
+    }
+}

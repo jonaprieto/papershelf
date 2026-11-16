@@ -153,6 +153,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName(Self.readerFrameName)
         if !window.setFrameUsingName(Self.readerFrameName) { window.center() }
 
+        // Papers handed over by the machine join the reader in front as tabs. Five papers
+        // opened at once from Finder or a terminal were five windows to sort through.
+        window.tabbingIdentifier = Self.readerFrameName
+        window.tabbingMode = .preferred
+        if let host = tabHost() { host.addTabbedWindow(window, ordered: .above) }
+
         let controller = NSWindowController(window: window)
         readers[key] = controller
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
@@ -161,6 +167,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The reader a new paper joins as a tab: the one in front if it is a reader, or else
+    /// any reader still on screen.
+    private func tabHost() -> NSWindow? {
+        if let key = NSApp.keyWindow, isReader(key) { return key }
+        return readers.values.lazy.compactMap(\.window).first(where: \.isVisible)
     }
 
     /// Whether this window is one opened for a file handed over by the machine, rather
