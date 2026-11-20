@@ -76,4 +76,19 @@ final class RegionsTests: XCTestCase {
         }
         XCTAssertEqual(rungs, [.leaveField, .leaveRow, .clearFilters, .leavePlace, .nothing])
     }
+
+    /// ⇧L goes to the nearest pane to the right, ⇧H to the left, stopping at the edges,
+    /// and a list stacked under another in the same column is not a step.
+    func testPaneHopMovesOneColumnAtATime() {
+        let edges: [CGFloat] = [0, 220, 223, 900]
+        XCTAssertEqual(PaneHop.next(from: 0, among: edges, step: 1), 1)
+        XCTAssertEqual(PaneHop.next(from: 220, among: edges, step: 1), 3)
+        XCTAssertNil(PaneHop.next(from: 900, among: edges, step: 1))
+        XCTAssertEqual(PaneHop.next(from: 900, among: edges, step: -1), 2)
+        XCTAssertEqual(PaneHop.next(from: 223, among: edges, step: -1), 0)
+        XCTAssertNil(PaneHop.next(from: 0, among: edges, step: -1))
+        XCTAssertEqual(PaneHop.next(from: nil, among: edges, step: 1), 0)
+        XCTAssertEqual(PaneHop.next(from: nil, among: edges, step: -1), 3)
+        XCTAssertNil(PaneHop.next(from: nil, among: [], step: 1))
+    }
 }

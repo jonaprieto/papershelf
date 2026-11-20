@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 
 /// The five places focus can be, and the rule that makes moving between them predictable:
 /// one key cycles, five jump, and ⎋ always means "out of this, into what contains it".
@@ -123,4 +124,69 @@ struct RegionFocus: ViewModifier {
 
 extension View {
     func region(_ region: Region) -> some View { modifier(RegionFocus(region)) }
+}
+
+/// ⇧H and ⇧L move the keys to the pane on the left or the right, the way H and L move the
+/// page: in the reader that is the outline, the page and the notes; in the library, the
+/// sidebar, the files and the inspector.
+///
+/// Found by where the panes are drawn rather than by naming them, so it reaches whatever
+/// is on screen in whichever window has the keys, and skips what is folded away. A pane
+/// here is a list or a page, the two things in this app that take keys of their own.
+@MainActor
+enum PaneHop {
+    private static var monitor: Any?
+
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handle(event) ? nil : event
+        }
+    }
+
+    private static func handle(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control, .shift]) == .shift,
+              let key = event.charactersIgnoringModifiers?.lowercased(), key == "h" || key == "l",
+              let window = event.window else { return false }
+        // A capital letter typed into a note or a name is a capital letter.
+        if let text = window.firstResponder as? NSTextView, text.isEditable { return false }
+        let panes = candidates(in: window)
+        let responder = window.firstResponder as? NSView
+        let current = panes.first { pane in responder.map { $0 === pane || $0.isDescendant(of: pane) } ?? false }
+        guard let index = next(from: current.map(leftEdge), among: panes.map(leftEdge),
+                               step: key == "l" ? 1 : -1) else { return true }
+        window.makeFirstResponder(panes[index])
+        return true
+    }
+
+    private static func leftEdge(_ view: NSView) -> CGFloat {
+        view.convert(view.visibleRect, to: nil).minX
+    }
+
+    private static func candidates(in window: NSWindow) -> [NSView] {
+        var found: [NSView] = []
+        func walk(_ view: NSView) {
+            guard !view.isHidden else { return }
+            if view is NSTableView || view is PDFView {
+                if !view.visibleRect.isEmpty, view.acceptsFirstResponder { found.append(view) }
+                return
+            }
+            view.subviews.forEach(walk)
+        }
+        if let content = window.contentView { walk(content) }
+        return found
+    }
+
+    /// The nearest pane whose left edge is past the current one's, in the direction of the
+    /// step; nil at the edge, which does not wrap. Two lists stacked in one column share an
+    /// edge, so a few points either way count as the same column. With nothing focused,
+    /// ⇧L lands on the leftmost pane and ⇧H on the rightmost.
+    static func next(from current: CGFloat?, among edges: [CGFloat], step: Int) -> Int? {
+        let slack: CGFloat = 8
+        let ahead = edges.indices.filter { index in
+            guard let current else { return true }
+            return step > 0 ? edges[index] > current + slack : edges[index] < current - slack
+        }
+        return step > 0 ? ahead.min { edges[$0] < edges[$1] } : ahead.max { edges[$0] < edges[$1] }
+    }
 }

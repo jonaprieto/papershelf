@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        PaneHop.install()
         checkForUpdates(manual: false)
     }
 
