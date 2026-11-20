@@ -22,8 +22,10 @@ struct MarkRow: View {
     /// Named in the handoff so an answer is about the right document.
     var documentTitle: String = ""
 
-    @State private var editing = false
+    /// Owned by the rail, so E there can open the editor on whichever row is selected.
+    @Binding var editing: Bool
     @State private var hovering = false
+    @FocusState private var editorFocused: Bool
     /// Hovered, selected, or being written on: any of the three means the row is the one
     /// being worked on.
     private var showsActions: Bool { hovering || editing || isSelected }
@@ -126,17 +128,22 @@ struct MarkRow: View {
                         .lineSpacing(3)
                         .scrollContentBackground(.hidden)
                         .padding(.vertical, Space.tight)
+                        .focused($editorFocused)
+                        // Return alone is a new line in the note; with Shift it keeps it.
+                        .onKeyPress(.return, phases: .down) { press in
+                            guard press.modifiers.contains(.shift) else { return .ignored }
+                            commit()
+                            return .handled
+                        }
                 }
                 .frame(minHeight: 44, maxHeight: 260)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Metric.card))
                 .overlay(RoundedRectangle(cornerRadius: Metric.card).stroke(Color(nsColor: .separatorColor)))
                 HStack {
-                    Button("Save") {
-                        save(text)
-                        editing = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    Button("Save", action: commit)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tip("Keep this note (\u{21E7}\u{21A9})")
                     Button("Cancel") { editing = false }.controlSize(.small)
                 }
             }
@@ -164,6 +171,18 @@ struct MarkRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: jump)
+        // Opened from the pencil or from E in the rail, the editor starts on the note as
+        // it stands and takes the keys, so typing begins without a click.
+        .onChange(of: editing, initial: true) { _, isEditing in
+            guard isEditing else { return }
+            text = mark.note
+            DispatchQueue.main.async { editorFocused = true }
+        }
+    }
+
+    private func commit() {
+        save(text)
+        editing = false
     }
 
     /// Edit, delete and the handoff. Always in the tree so keyboard focus and VoiceOver
@@ -200,7 +219,6 @@ struct MarkRow: View {
                  + "copy is for one you already have going.")
         }
         Button {
-            text = mark.note
             editing.toggle()
         } label: {
             Image(systemName: "square.and.pencil")
@@ -473,6 +491,7 @@ struct NotesRail: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .focused($listFocused)
                 // The list follows the page. Marks are in page order, so the one to bring
                 // up is the first that is not behind you; past the last mark the list
                 // stays at the end rather than springing back to the top.
@@ -509,7 +528,7 @@ struct NotesRail: View {
                         }
                     }
                 }
-                .onChange(of: annotator.selectedMark, initial: true) { _, mark in
+                .onChange(of: live.selectedMark, initial: true) { _, mark in
                     guard let mark, !addingNote else { return }
                     DispatchQueue.main.async {
                         withAnimation(.easeOut(duration: 0.18)) {
@@ -525,16 +544,33 @@ struct NotesRail: View {
             }
         }
         .background(.background.secondary)
+        .background { WindowReader { railWindow.window = $0 }.frame(width: 0, height: 0) }
         .onAppear {
             palette.reloadSharedProfile()
             focusNoteInputIfNeeded()
+            keyMonitor.handle = handleRailKey
+            keyMonitor.install()
         }
+        // The handler is this view as it stands, so it is replaced whenever the paper
+        // changes. Kept from the first appearance, D in the library's inspector acted on
+        // the marks of whichever paper had been selected first.
+        .onChange(of: source) { _, _ in keyMonitor.handle = handleRailKey }
+        .onChange(of: documentIsOpen) { _, _ in keyMonitor.handle = handleRailKey }
         .onChange(of: addingNote) { _, isAdding in
             noteInputFocused = false
             if isAdding { focusNoteInputIfNeeded() }
-            else { publishNoteEditorFocus(false) }
+            else { publishKeyOwnership() }
         }
-        .onDisappear { publishNoteEditorFocus(false) }
+        .onChange(of: listFocused) { _, _ in publishKeyOwnership() }
+        .onChange(of: editingMark) { _, editing in
+            publishKeyOwnership()
+            // Back to the list once the note is kept or dropped, so J and K carry on.
+            if editing == nil { listFocused = true }
+        }
+        .onDisappear {
+            keyMonitor.remove()
+            publishNoteEditorFocus(false)
+        }
         .confirmationDialog("Remove every mark from this document?",
                             isPresented: $clearing) {
             Button("Remove \(marks.count) marks", role: .destructive) {
@@ -580,6 +616,9 @@ struct NotesRail: View {
             mark: mark,
             isSelected: live.selectedMark == mark.id,
             jump: {
+                // A click on a mark hands the list the keys, the way a click on the page
+                // hands them to the page.
+                listFocused = true
                 if documentIsOpen { annotator.jump(to: mark) }
                 else { openAtPage?(mark.page) }
             },
@@ -589,7 +628,9 @@ struct NotesRail: View {
             styles: palette.styles(for: effectiveMeaningScopes),
             meaning: palette.meaning(for: mark.colour, scopes: effectiveMeaningScopes),
             styleMeaning: { palette.meaning(for: $0, scopes: effectiveMeaningScopes) },
-            documentTitle: title
+            documentTitle: title,
+            editing: Binding(get: { editingMark == mark.id },
+                             set: { editingMark = $0 ? mark.id : nil })
         )
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color.clear)
@@ -603,9 +644,7 @@ struct NotesRail: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...5)
                 .focused($noteInputFocused)
-                .onChange(of: noteInputFocused) { _, focused in
-                    publishNoteEditorFocus(focused)
-                }
+                .onChange(of: noteInputFocused) { _, _ in publishKeyOwnership() }
             HStack {
                 Button {
                     if dictation.isRecording {
@@ -657,6 +696,77 @@ struct NotesRail: View {
     private func focusNoteInputIfNeeded() {
         guard addingNote else { return }
         DispatchQueue.main.async { noteInputFocused = true }
+    }
+
+    /// The window's own keys stand back while anything here has them: the note being
+    /// written, a note being edited, or the list itself. Otherwise D in the list would
+    /// reach the library, where D moves the PDF to the Trash.
+    private func publishKeyOwnership() {
+        publishNoteEditorFocus(noteInputFocused || listFocused || editingMark != nil)
+    }
+
+    /// The list's own keys, the way H, J, K and L move the page: J and K step through the
+    /// marks listed, H and L to the previous and next page that has one, E opens the note,
+    /// D removes the mark and R repaints it with the next highlighter.
+    private func handleRailKey(_ event: NSEvent) -> Bool {
+        guard listFocused, editingMark == nil, !addingNote,
+              let window = railWindow.window, event.window === window,
+              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+              let key = event.charactersIgnoringModifiers?.lowercased(),
+              let move = RailMove(rawValue: key) else { return false }
+        let shown = shownMarks
+        let index = shown.firstIndex { $0.id == live.selectedMark }
+        switch move {
+        case .down, .up, .previousPage, .nextPage:
+            if let target = Self.railTarget(pages: shown.map(\.page), selected: index,
+                                            currentPage: live.page, move: move) {
+                live.jump(to: shown[target])
+            }
+        case .edit:
+            if let index { editingMark = shown[index].id }
+        case .delete:
+            guard let index else { break }
+            // The one below takes its place, or the one above at the end of the list, so
+            // D pressed again keeps clearing without a trip back to the mouse.
+            let next = shown.indices.contains(index + 1) ? shown[index + 1]
+                : (index > 0 ? shown[index - 1] : nil)
+            live.remove(shown[index])
+            if let next, let still = live.marks.first(where: { $0.id == next.id }) {
+                live.jump(to: still)
+            }
+        case .recolour:
+            guard let index else { break }
+            let styles = palette.styles(for: effectiveMeaningScopes)
+            guard !styles.isEmpty else { break }
+            let current = palette.nearest(to: shown[index].colour)
+            let at = styles.firstIndex { $0.id == current?.id }
+            live.setColour(styles[((at ?? -1) + 1) % styles.count].nsColor, on: shown[index])
+        }
+        return true
+    }
+
+    /// Which listed mark a step lands on. With nothing selected, J and K start from the
+    /// page being read rather than from the top of the list. Nil leaves the selection
+    /// where it is: the list does not wrap.
+    static func railTarget(pages: [Int], selected: Int?, currentPage: Int,
+                           move: RailMove) -> Int? {
+        guard !pages.isEmpty else { return nil }
+        let page = selected.map { pages[$0] } ?? currentPage
+        switch move {
+        case .down:
+            if let selected { return selected + 1 < pages.count ? selected + 1 : nil }
+            return pages.firstIndex { $0 >= page } ?? pages.count - 1
+        case .up:
+            if let selected { return selected > 0 ? selected - 1 : nil }
+            return pages.lastIndex { $0 <= page } ?? 0
+        case .nextPage:
+            return pages.firstIndex { $0 > page }
+        case .previousPage:
+            guard let earlier = pages.last(where: { $0 < page }) else { return nil }
+            return pages.firstIndex(of: earlier)
+        default:
+            return nil
+        }
     }
 
     private func publishNoteEditorFocus(_ focused: Bool) {
@@ -802,6 +912,12 @@ struct NotesRail: View {
     @State private var activeMeaningScope: HighlightMeaningScope?
     @State private var editingMeaningScope: HighlightMeaningScope?
     @State private var dictation = NoteDictation()
+    /// Whether the list of marks has the keys: H, J, K, L, E, D and R act on it then.
+    @FocusState private var listFocused: Bool
+    /// The mark whose note is open for editing, if any.
+    @State private var editingMark: UUID?
+    @State private var railWindow = PaneWindow()
+    @State private var keyMonitor = RailKeyMonitor()
 
     /// Reading notes as Markdown: the quotations, what was written about them, and where
     /// they are, which is the shape those notes take anywhere else they are pasted.
@@ -1470,5 +1586,33 @@ private extension View {
     /// A list in the rail, drawn on the rail's own background.
     func railList() -> some View {
         listStyle(.inset).scrollContentBackground(.hidden)
+    }
+}
+
+/// What a bare key does in the notes list.
+enum RailMove: String {
+    case previousPage = "h", down = "j", up = "k", nextPage = "l"
+    case edit = "e", delete = "d", recolour = "r"
+}
+
+/// The notes list's key monitor. A List is a table view whose type-select eats letters
+/// before `onKeyPress` sees them, the reason the library uses a local monitor too; held in
+/// a box so the rail installs one, removes the same one, and can swap what it calls.
+final class RailKeyMonitor {
+    private var monitor: Any?
+    var handle: (NSEvent) -> Bool = { _ in false }
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handle(event) == true ? nil : event
+        }
+    }
+
+    /// Drops the handler too: it holds the view, which holds this box.
+    func remove() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        handle = { _ in false }
     }
 }

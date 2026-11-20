@@ -66,4 +66,25 @@ final class MarkOrderTests: XCTestCase {
                        "Saving writes the selection, so the editor sits with the selection")
         XCTAssertEqual(NotesRail.composerSlot(in: marks, selection: nil, selectedMark: nil), 0)
     }
+
+    /// J and K step one mark and stop at the ends; H and L land on the first mark of the
+    /// page before or after; with nothing selected they start from the page being read.
+    func testRailKeysStepThroughTheListedMarks() {
+        let pages = [2, 2, 5, 5, 9]
+        func target(_ selected: Int?, _ move: RailMove, page: Int = 1) -> Int? {
+            NotesRail.railTarget(pages: pages, selected: selected, currentPage: page, move: move)
+        }
+        XCTAssertEqual(target(0, .down), 1)
+        XCTAssertNil(target(4, .down))
+        XCTAssertEqual(target(1, .up), 0)
+        XCTAssertNil(target(0, .up))
+        XCTAssertEqual(target(0, .nextPage), 2)
+        XCTAssertEqual(target(3, .previousPage), 0)
+        XCTAssertNil(target(4, .nextPage))
+        XCTAssertNil(target(0, .previousPage))
+        XCTAssertEqual(target(nil, .down, page: 4), 2)
+        XCTAssertEqual(target(nil, .up, page: 6), 3)
+        XCTAssertEqual(target(nil, .down, page: 12), 4)
+        XCTAssertNil(NotesRail.railTarget(pages: [], selected: nil, currentPage: 1, move: .down))
+    }
 }
