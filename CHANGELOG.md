@@ -4,6 +4,42 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.21.0] - 2026-11-20
+
+### Added
+
+- The notes list answers the keys the page does: H, J, K and L move between marks, E edits
+  or adds a note, Shift-Return keeps it, D deletes the mark and R changes what it means.
+- Shift-H and Shift-L move the keys between the panes: outline, page and notes.
+- Each mark in the notes list says where it stands, as (10/23).
+- The reader's bar names the paper's author and date, its size, when the file last
+  changed, and the PaperShelf build, dropping the least needed first as the window
+  narrows.
+- Settings > Notes takes the name your marks are signed with. It was always your account's
+  full name.
+- A mark in the notes file names its printed page where that differs from the PDF's own
+  page number.
+
+### Changed
+
+- Papers opened from Finder or a terminal join the reader in front as tabs, rather than
+  each opening a window of its own.
+- A note in the notes list is drawn in the main text colour with a little more space
+  between lines, so it reads as easily as the passage it is about.
+- A mark's page, author and date sit on one line under its note, with its buttons at the
+  end of that line, and the year is left out for this year's marks.
+- The note editor grows with the note.
+
+### Fixed
+
+- A highlight's quotation in the notes file keeps to the lines that were marked. A word on
+  the line above or below whose glyph box grazed the mark was quoted with it.
+- Adding or editing a mark from an assistant returns that mark, even where another mark
+  sits on the same passage with the same bounds. It could hand back the other one's id.
+- Command-B in a reader opened from Finder folds its outline, and Shift-Command-B its
+  notes. The first folded the library's sidebar in a window behind it, and the second did
+  nothing anybody could see.
+
 ## [1.20.1] - 2026-11-11
 
 ### Added
