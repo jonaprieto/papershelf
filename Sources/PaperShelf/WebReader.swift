@@ -122,7 +122,7 @@ final class WebReaderModel: NSObject, WKNavigationDelegate {
                     return nil
                 }
                 _ = addPDFHighlights(for: selection, colour: highlightColour,
-                                     author: NSFullUserName())
+                                     author: Prefs.shared.signature)
             }
             try article.embed(in: document)
             // Through `supportDirectory()` like everything else beside the library, so a run

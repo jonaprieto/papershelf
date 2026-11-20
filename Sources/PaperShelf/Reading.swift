@@ -38,7 +38,9 @@ struct MarkRow: View {
     /// it), and when it was last changed.
     private var footer: String {
         var parts = ["p. \(mark.page)"]
-        if !mark.author.isEmpty, mark.author != NSFullUserName() { parts.append(mark.author) }
+        if !mark.author.isEmpty, !Prefs.shared.myNames.contains(mark.author) {
+            parts.append(mark.author)
+        }
         parts.append(mark.timestamp.formatted(.dateTime.day().month(.abbreviated).year()
             .hour().minute()))
         return parts.joined(separator: " \u{00B7} ")
@@ -952,7 +954,7 @@ struct NotesRail: View {
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported, details: prefs.notesDetails,
-                             me: NSFullUserName())
+                             me: prefs.myNames)
     }
 
     /// Straight to a save panel, and the file is written here rather than by a document

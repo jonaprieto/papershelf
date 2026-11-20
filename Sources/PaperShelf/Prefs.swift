@@ -166,6 +166,20 @@ final class Prefs {
     var syncNotesSidecar: Bool = Store.flag("syncNotesSidecar", true) {
         didSet { Store.put("syncNotesSidecar", syncNotesSidecar) }
     }
+    /// The name the reader's own marks are signed with, in the PDF's author field. Empty
+    /// means the macOS account's full name, which is what every mark was signed with
+    /// before this could be set.
+    var markAuthor: String = Store.text("markAuthor", "") {
+        didSet { Store.put("markAuthor", markAuthor) }
+    }
+    var signature: String {
+        let name = markAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? NSFullUserName() : name
+    }
+    /// Every name a mark of the reader's own can carry: the one set now, and the account
+    /// name marks made before it was set still carry, so those do not turn into somebody
+    /// else's the moment a handle is chosen.
+    var myNames: Set<String> { [signature, NSFullUserName()] }
     /// What a notes file carries besides the notes, each as a hidden comment.
     var notesShowVersion: Bool = Store.flag("notesShowVersion", true) {
         didSet { Store.put("notesShowVersion", notesShowVersion) }

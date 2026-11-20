@@ -104,7 +104,7 @@ final class MarkdownTests: XCTestCase {
     func testNotesNameAnotherWritersMarks() {
         let marks = [MarkExport(page: 1, quoted: "a", note: "", meaning: "Note", author: "Claude"),
                      MarkExport(page: 1, quoted: "b", note: "", meaning: "Note", author: "Ada")]
-        let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks, me: "Ada")
+        let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks, me: ["Ada"])
         XCTAssertTrue(text.contains("*Note* \u{00B7} by Claude"))
         XCTAssertFalse(text.contains("by Ada"))
     }

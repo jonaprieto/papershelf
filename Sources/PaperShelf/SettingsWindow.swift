@@ -357,6 +357,8 @@ struct GeneralSettings: View {
 
     private var notes: some View {
         Section {
+            TextField("Sign my marks as", text: $prefs.markAuthor,
+                      prompt: Text(NSFullUserName()))
             Toggle("Keep a Markdown notes file beside each PDF",
                    isOn: $prefs.syncNotesSidecar)
             Toggle("PaperShelf version and date at the top", isOn: $prefs.notesShowVersion)
@@ -366,7 +368,9 @@ struct GeneralSettings: View {
         } header: {
             Text("Notes")
         } footer: {
-            Text("PaperShelf overwrites the generated <PDF stem>-notes.md file from "
+            Text("Your marks carry this name in the PDF, where other readers and "
+                 + "assistants see it; empty uses your Mac account's name. "
+                 + "PaperShelf overwrites the generated <PDF stem>-notes.md file from "
                  + "the PDF annotations. Turning this off stops future writes but does "
                  + "not delete an existing file. The version, path, times and colours are "
                  + "written as HTML comments, so rendered Markdown shows only the notes. "

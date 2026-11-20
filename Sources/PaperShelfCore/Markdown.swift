@@ -102,7 +102,7 @@ private func markdownComment(_ text: String) -> String {
 
 public func markdownNotes(title: String, source: String, marks: [MarkExport],
                           date: Date = Date(), details: NotesDetails = .all,
-                          me: String = "") -> String {
+                          me: Set<String> = []) -> String {
     let stamp = DateFormatter()
     stamp.locale = Locale(identifier: "en_US_POSIX")
     stamp.dateFormat = "yyyy-MM-dd HH:mm"
@@ -147,7 +147,7 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         }
         // Whose mark it is, when that is someone other than the person the file is for:
         // with an assistant or a colleague marking the same paper, it is part of the note.
-        if !mark.author.isEmpty, mark.author != me {
+        if !mark.author.isEmpty, !me.contains(mark.author) {
             tag.append("by \(markdownEscape(mark.author))")
         }
         if !tag.isEmpty { out += tag.joined(separator: " \u{00B7} ") + "\n\n" }

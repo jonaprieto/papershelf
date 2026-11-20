@@ -903,7 +903,7 @@ final class Annotator {
         var madeMarks: [Mark] = []
 
         for mark in addPDFHighlights(for: selection, colour: colour, note: note,
-                                     author: NSFullUserName()) {
+                                     author: Prefs.shared.signature) {
             guard let page = mark.page else { continue }
             madeMarks.append(Mark(page: document.index(for: page) + 1, kind: "Highlight",
                                   quoted: selectedText(in: selection, on: page),
@@ -1158,7 +1158,7 @@ final class Annotator {
                        author: $0.author, pageLabel: $0.pageLabel)
         }
         return markdownNotes(title: title, source: url.path, marks: exports,
-                             details: Prefs.shared.notesDetails, me: NSFullUserName())
+                             details: Prefs.shared.notesDetails, me: Prefs.shared.myNames)
     }
 
     private func colourHex(_ colour: NSColor) -> String {
