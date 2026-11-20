@@ -627,6 +627,8 @@ extension Notification.Name {
     /// are AppKit's, not a scene with focused values the menu can always read, and the
     /// library window answers it too for the commands both kinds share.
     static let windowCommand = Notification.Name("PaperShelf.windowCommand")
+    /// A palette command for the library's sidebar, which is not the pane that ran it.
+    static let sidebarCommand = Notification.Name("PaperShelf.sidebarCommand")
     static let scriptCopyCitation = Notification.Name("PaperShelf.scriptCopyCitation")
     static let scriptAddBookmark = Notification.Name("PaperShelf.scriptAddBookmark")
     static let scriptRemoveBookmark = Notification.Name("PaperShelf.scriptRemoveBookmark")

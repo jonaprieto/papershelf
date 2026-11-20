@@ -126,6 +126,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case removeFromLibrary, trashNow
     case suggestTags, checkForUpdates, openSettings, about
     case quickLook, copyName, copyPath, convertToMarkdown
+    case addSource, newProject, clearFilters, askAIForPending, trashIdenticalSpares
+    case copyBibliography, saveBibliography, copyCatalogueMarkdown, copyBibliographyMarkdown
 
     var id: String { rawValue }
 
@@ -226,7 +228,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
             return .reading
         case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
              .newTag, .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates,
-             .openSettings, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown:
+             .openSettings, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown,
+             .addSource, .newProject, .clearFilters, .askAIForPending, .trashIdenticalSpares,
+             .copyBibliography, .saveBibliography, .copyCatalogueMarkdown, .copyBibliographyMarkdown:
             return .library
         }
     }
@@ -253,7 +257,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
              .openExternally, .printPDF, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags,
-             .convertToMarkdown:
+             .convertToMarkdown, .addSource, .newProject, .clearFilters, .askAIForPending,
+             .trashIdenticalSpares, .copyBibliography, .saveBibliography,
+             .copyCatalogueMarkdown, .copyBibliographyMarkdown:
             return .library
         default:
             return .anywhere
@@ -359,6 +365,15 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .copyName: return "Copy this PDF's file name"
         case .copyPath: return "Copy this PDF's path"
         case .convertToMarkdown: return "Convert this PDF to Markdown…"
+        case .addSource: return "Add a folder or PDF to the library…"
+        case .newProject: return "New project"
+        case .clearFilters: return "Clear the search and filters"
+        case .askAIForPending: return "Ask the model for every pending name…"
+        case .trashIdenticalSpares: return "Trash the spare copies of identical files"
+        case .copyBibliography: return "Copy the bibliography as BibTeX"
+        case .saveBibliography: return "Save the bibliography as a .bib file…"
+        case .copyCatalogueMarkdown: return "Copy the catalogue as Markdown"
+        case .copyBibliographyMarkdown: return "Copy the bibliography as Markdown"
         }
     }
 
@@ -460,6 +475,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // D in the notes list already; a key for it on the page would sit beside the
         // library's D, which moves the file to the Trash.
         case .deleteMark, .exportNotes, .copyNotes, .openNotesFile: return nil
+        case .addSource, .newProject, .clearFilters, .askAIForPending, .trashIdenticalSpares,
+             .copyBibliography, .saveBibliography, .copyCatalogueMarkdown, .copyBibliographyMarkdown:
+            return nil
         }
     }
 

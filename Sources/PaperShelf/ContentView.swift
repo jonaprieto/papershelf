@@ -471,6 +471,16 @@ struct ContentView: View {
         .dropDestination(for: URL.self) { urls, _ in
             receiveDroppedURLs(urls)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sidebarCommand)) { note in
+            switch (note.userInfo?["command"] as? String).flatMap(Command.init(rawValue:)) {
+            case .addSource: importing = true
+            case .newProject:
+                chrome.setSidebarVisibility(.all, persist: true)
+                newProjectName = ""
+                namingProject = true
+            default: break
+            }
+        }
         .confirmationDialog(removing.map { "Remove \($0.url.lastPathComponent)?" } ?? "",
                             isPresented: Binding(get: { removing != nil },
                                                  set: { if !$0 { removing = nil } }),

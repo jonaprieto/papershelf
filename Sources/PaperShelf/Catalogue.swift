@@ -1225,7 +1225,7 @@ struct ResultsPane: View {
         .textExporter(isPresented: $savingBib, text: builtBib.text, filename: bibFileName)
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
-                commands: Self.paletteCommands.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags].contains($0)) },
+                commands: Self.paletteCommands.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags, .askAIForPending].contains($0)) },
                 documents: runner.results,
                 run: runFromPalette,
                 open: { openReader($0.key) },
@@ -1857,10 +1857,7 @@ struct ResultsPane: View {
         case .leaveRow:
             regions.rowFocused = false
         case .clearFilters:
-            query = ""
-            folderScope = nil
-            shelves.current = .all
-            runner.search("", passwords: passwords)
+            clearFilters()
         case .leavePlace:
             // Leaves the reader, which is what this rung means everywhere else: the
             // project, the palette and the popover are all still there afterwards.
@@ -1870,6 +1867,14 @@ struct ResultsPane: View {
             return false
         }
         return true
+    }
+
+    /// Every filter off: the search, the folder, and the shelf back to everything.
+    private func clearFilters() {
+        query = ""
+        folderScope = nil
+        shelves.current = .all
+        runner.search("", passwords: passwords)
     }
 
     /// Exactly the commands `perform` carries out, in the order the palette lists them.
@@ -1896,6 +1901,8 @@ struct ResultsPane: View {
         .lockPDF, .unlockPDF, .openSettings,
         .showLibrary, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown,
         .deleteMark, .exportNotes, .copyNotes, .openNotesFile,
+        .addSource, .newProject, .clearFilters, .askAIForPending, .trashIdenticalSpares,
+        .copyBibliography, .saveBibliography, .copyCatalogueMarkdown, .copyBibliographyMarkdown,
     ]
 
     /// What the palette lists: everything `perform` does, and Undo, which the menu owns.
@@ -1947,6 +1954,33 @@ struct ResultsPane: View {
         case .convertToMarkdown:
             guard selectedItem != nil else { return false }
             showingMarkdown = true
+        case .addSource, .newProject:
+            NotificationCenter.default.post(name: .sidebarCommand, object: nil,
+                                            userInfo: ["command": command.rawValue])
+        case .clearFilters: clearFilters()
+        case .askAIForPending:
+            guard prefs.aiEnabled, runner.pendingCount > 0 else { return false }
+            confirmingBatchAI = true
+        case .trashIdenticalSpares:
+            guard runner.identicalExtras > 0 else { return false }
+            runner.markIdenticalExtras()
+            ensureSelection()
+        case .copyBibliography, .saveBibliography:
+            // The file is what the BibTeX view draws, with its filters and hand edits, and
+            // it exists only while that view is on screen. So the view is shown first.
+            if builtBib.isEmpty { choose(.bibliography) }
+            Task {
+                for _ in 0..<30 where builtBib.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+                guard !builtBib.isEmpty else { return }
+                if command == .copyBibliography { copyToPasteboard(builtBib.text) } else { savingBib = true }
+            }
+        case .copyBibliographyMarkdown:
+            Task {
+                await runner.ensureBibReady()
+                copyToPasteboard(markdownBibliography(runner.bib))
+            }
+        case .copyCatalogueMarkdown:
+            copyToPasteboard(markdownCatalogue(runner.results, known: runner.ai.guesses))
         case .openFile: AppDelegate.current?.choosePDFs()
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)

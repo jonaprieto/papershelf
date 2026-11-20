@@ -57,6 +57,10 @@ enum PaletteSettings {
         flag("aiEnabled", "AI features", { prefs.aiEnabled }, { prefs.aiEnabled = $0 })
         flag("offerChatGPT", "Offer “Open in ChatGPT” beside a highlight",
              { prefs.offerChatGPT }, { prefs.offerChatGPT = $0 })
+        flag("offerChatGPTCopy", "Offer “Copy for ChatGPT” beside a highlight",
+             { prefs.offerChatGPTCopy }, { prefs.offerChatGPTCopy = $0 })
+        flag("syncNotesSidecar", "Keep a Markdown notes file beside each PDF",
+             { prefs.syncNotesSidecar }, { prefs.syncNotesSidecar = $0 })
 
         // The shelf
         flag("watchSources", "Watch the sources for changes",
@@ -67,6 +71,10 @@ enum PaletteSettings {
              { prefs.returnAppliesRename }, { prefs.returnAppliesRename = $0 })
         flag("onlyUndecided", "Show only what is still undecided",
              { prefs.onlyUndecided }, { prefs.onlyUndecided = $0 })
+        flag("autoIdentify", "Ask the model for names as I go",
+             { prefs.autoIdentify }, { prefs.autoIdentify = $0 })
+        flag("sortDescending", "Largest or newest first",
+             { prefs.sortDescending }, { prefs.sortDescending = $0 })
 
         // Renaming
         flag("moveOriginals", "Keep the originals",
@@ -91,6 +99,12 @@ enum PaletteSettings {
              { prefs.bibSortFields }, { prefs.bibSortFields = $0 })
         flag("bibOmitFile", "Omit the file field in BibTeX",
              { prefs.bibOmitFile }, { prefs.bibOmitFile = $0 })
+        flag("bibCompleteOnly", "Only complete BibTeX entries",
+             { prefs.bibCompleteOnly }, { prefs.bibCompleteOnly = $0 })
+        flag("bibValidOnly", "Only valid BibTeX entries",
+             { prefs.bibValidOnly }, { prefs.bibValidOnly = $0 })
+        flag("bibWrapped", "Wrap long BibTeX lines",
+             { prefs.bibWrapped }, { prefs.bibWrapped = $0 })
 
         // The ones whose value is text open the window that can edit it properly.
         for (id, title) in [("aiModel", "AI model"), ("aiBaseURL", "AI endpoint"),
