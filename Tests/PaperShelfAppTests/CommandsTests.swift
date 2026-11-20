@@ -307,6 +307,26 @@ final class CommandsTests: XCTestCase {
         }
     }
 
+    /// ⌘K is the way to find anything the app does, so every command is a line in one
+    /// palette or the other. Undo was carried out by the menu alone and listed by neither.
+    func testEveryCommandIsInAPalette() {
+        let missing = Set(Command.allCases)
+            .subtracting(ResultsPane.paletteCommands)
+            .subtracting(ReaderWindow.paletteCommands)
+        XCTAssertTrue(missing.isEmpty,
+                      "in no palette: \(missing.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
+    /// A reader opened from Finder has no library behind it, so what it offers about the
+    /// app and the file has to be its own: Undo, the library, About, updates, and the
+    /// file's name, path and Quick Look.
+    func testTheFinderReaderOffersTheAppAndTheFile() {
+        for command: Command in [.undo, .showLibrary, .about, .checkForUpdates,
+                                 .quickLook, .copyName, .copyPath] {
+            XCTAssertTrue(ReaderWindow.paletteCommands.contains(command), command.rawValue)
+        }
+    }
+
     /// And the other direction: a command claimed by both would be ambiguous about which
     /// one wins, which is how a key starts doing two things depending on focus.
     func testNoCommandIsClaimedTwice() {

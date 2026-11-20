@@ -202,7 +202,8 @@ struct ReaderWindow: View {
         .addNote, .addBookmark, .removeBookmark, .showBookmarks, .nextMark, .previousMark,
         .findInDocument, .toggleNotes, .toggleContents, .zenMode,
         .printPDF, .lockPDF, .unlockPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
-        .openSettings,
+        .openSettings, .undo, .showLibrary, .about, .checkForUpdates,
+        .quickLook, .copyName, .copyPath,
     ]
 
     /// Every command this window answers, from its palette, its menu items and its keys.
@@ -238,6 +239,9 @@ struct ReaderWindow: View {
         case .openExternally: NSWorkspace.shared.open(url)
         case .revealInFinder: NSWorkspace.shared.activateFileViewerSelecting([url])
         case .openFile: AppDelegate.current?.choosePDFs()
+        case .undo: _ = annotator.undoLastMarkChange()
+        case .showLibrary, .about, .checkForUpdates: command.runFromTheMenu()
+        case .quickLook, .copyName, .copyPath: command.perform(on: url)
         case .shortcuts:
             prefs.settingsPane = .keyboard
             PaletteSettings.openSettingsWindow()

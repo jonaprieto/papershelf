@@ -1225,9 +1225,9 @@ struct ResultsPane: View {
         .textExporter(isPresented: $savingBib, text: builtBib.text, filename: bibFileName)
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
-                commands: Self.performable.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags].contains($0)) },
+                commands: Self.paletteCommands.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags].contains($0)) },
                 documents: runner.results,
-                run: { perform($0) },
+                run: runFromPalette,
                 open: { openReader($0.key) },
                 sources: paletteSources
             )
@@ -1894,7 +1894,22 @@ struct ResultsPane: View {
         .nextRegion, .previousRegion, .back, .forward, .newTag,
         .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates, .openFile,
         .lockPDF, .unlockPDF, .openSettings,
+        .showLibrary, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown,
     ]
+
+    /// What the palette lists: everything `perform` does, and Undo, which the menu owns.
+    /// Undo is kept out of `perform` so its key stays with the menu, where a text field's
+    /// own Undo is reached first; chosen by name, it can only mean the app's.
+    static let paletteCommands: [Command] = performable + [.undo]
+
+    private func runFromPalette(_ command: Command) {
+        guard command == .undo else {
+            perform(command)
+            return
+        }
+        // Not `readerOpen`: the palette has the focus by now, so that would read false.
+        if !(deck.deck.activeTab != nil && readerAnnotator.undoLastMarkChange()) { runner.undo() }
+    }
 
     /// Carries out one command, whatever asked for it.
     ///
@@ -1917,6 +1932,15 @@ struct ResultsPane: View {
         switch command {
         case .openWebsite: openWebsite()
         case .openSettings: PaletteSettings.openSettingsWindow()
+        case .about: openWindow(id: AboutWindow.windowID)
+        // This is the library; the command exists for the windows that are not.
+        case .showLibrary: break
+        case .quickLook, .copyName, .copyPath:
+            guard let url = (readerItem ?? selectedItem)?.currentURL else { return false }
+            command.perform(on: url)
+        case .convertToMarkdown:
+            guard selectedItem != nil else { return false }
+            showingMarkdown = true
         case .openFile: AppDelegate.current?.choosePDFs()
         case .viewList: choose(.list)
         case .viewCatalogue: choose(.catalogue)

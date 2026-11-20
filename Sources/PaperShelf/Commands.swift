@@ -98,7 +98,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case focusSidebar, focusContents, focusDocument, focusInspector, focusStatus
     case nextRegion, previousRegion
     case back, forward
-    case focusSearch, toggleSidebar, toggleInspector
+    case focusSearch, toggleSidebar, toggleInspector, showLibrary
 
     // Views
     case viewList, viewCatalogue, viewBibliography, viewDuplicates
@@ -122,7 +122,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     // Library
     case openFile, plan, apply, refresh, findDuplicates, indexText, revealInFinder, newTag, shortcuts
     case removeFromLibrary, trashNow
-    case suggestTags, checkForUpdates, openSettings
+    case suggestTags, checkForUpdates, openSettings, about
+    case quickLook, copyName, copyPath, convertToMarkdown
 
     var id: String { rawValue }
 
@@ -203,7 +204,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .palette, .focusSidebar, .focusContents, .focusDocument, .focusInspector,
              .focusStatus, .nextRegion, .previousRegion,
              .back, .forward,
-             .focusSearch, .toggleSidebar, .toggleInspector:
+             .focusSearch, .toggleSidebar, .toggleInspector, .showLibrary:
             return .gettingAround
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .readingMode, .zenMode, .normalMode, .toggleNotes, .toggleContents,
@@ -222,7 +223,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
             return .reading
         case .openFile, .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder,
              .newTag, .shortcuts, .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates,
-             .openSettings:
+             .openSettings, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown:
             return .library
         }
     }
@@ -247,7 +248,8 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // wanted, and answering only while browsing would just move the hole.
         case .viewList, .viewCatalogue, .viewBibliography, .viewDuplicates,
              .plan, .apply, .refresh, .findDuplicates, .indexText, .revealInFinder, .newTag,
-             .openExternally, .printPDF, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags:
+             .openExternally, .printPDF, .openInNewTab, .removeFromLibrary, .trashNow, .suggestTags,
+             .convertToMarkdown:
             return .library
         default:
             return .anywhere
@@ -343,6 +345,12 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .checkForUpdates: return "Check for updates"
         case .openSettings: return "Open Settings"
         case .shortcuts: return "Every shortcut"
+        case .showLibrary: return "Show the library window"
+        case .about: return "About PaperShelf"
+        case .quickLook: return "Quick Look this PDF"
+        case .copyName: return "Copy this PDF's file name"
+        case .copyPath: return "Copy this PDF's path"
+        case .convertToMarkdown: return "Convert this PDF to Markdown…"
         }
     }
 
@@ -438,6 +446,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .removeFromLibrary, .trashNow, .suggestTags, .checkForUpdates: return nil
         case .lockPDF, .unlockPDF: return nil
         case .shortcuts: return Shortcut("?", [])
+        // The Window menu's key for the library since there was a Window menu item for it.
+        case .showLibrary: return Shortcut("0", .command)
+        case .about, .quickLook, .copyName, .copyPath, .convertToMarkdown: return nil
         }
     }
 
@@ -752,6 +763,44 @@ extension Command {
     /// every command does something. A command nobody implements is a line in the palette
     /// and a row in the settings table that lies about what the app can do, and there is
     /// no version of that which is acceptable.
+    /// Runs a command whose only implementation is a menu item, by choosing that item.
+    /// A reader opened from Finder is an AppKit window the app's scene cannot reach with
+    /// `openWindow`, so the Library, About and update windows are asked for the way a
+    /// person would ask for them.
+    @MainActor
+    @discardableResult
+    func runFromTheMenu() -> Bool {
+        let titles: [String]
+        switch self {
+        case .showLibrary: titles = ["Library"]
+        case .about: titles = ["About PaperShelf"]
+        case .checkForUpdates: titles = [Command.checkForUpdates.title]
+        default: return false
+        }
+        func find(in menu: NSMenu?) -> (NSMenu, Int)? {
+            guard let menu else { return nil }
+            for (index, item) in menu.items.enumerated() {
+                if titles.contains(item.title), item.isEnabled { return (menu, index) }
+                if let found = find(in: item.submenu) { return found }
+            }
+            return nil
+        }
+        guard let (menu, index) = find(in: NSApp.mainMenu) else { return false }
+        menu.performActionForItem(at: index)
+        return true
+    }
+
+    /// The three that act on a file and nothing else, for whichever window has one.
+    @MainActor
+    func perform(on url: URL) {
+        switch self {
+        case .quickLook: QuickLook.show(url)
+        case .copyName: copyToPasteboard(url.lastPathComponent)
+        case .copyPath: copyToPasteboard(url.path)
+        default: break
+        }
+    }
+
     static let handledByTheMenu: Set<Command> = [
         .undo,
     ]

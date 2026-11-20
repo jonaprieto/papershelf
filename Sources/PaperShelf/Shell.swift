@@ -326,7 +326,7 @@ struct PaperShelfApp: App {
                     AppDelegate.current?.wantsLibrary = true
                     openWindow(id: "main")
                 }
-                    .keyboardShortcut("0", modifiers: .command)
+                    .commandShortcut(.showLibrary)
                 Divider()
             }
         }
