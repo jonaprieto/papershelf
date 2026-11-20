@@ -524,6 +524,9 @@ struct ContentView: View {
                         fitSidebar(to: width)
                     }
             }
+            WindowReader { window in
+                if let window { AppDelegate.current?.libraryWindowAttached(window) }
+            }
         }
         .onAppear {
             AppDelegate.current?.libraryAppearedAt = Date()
@@ -1632,7 +1635,15 @@ struct ContentView: View {
     private func openTheShelf() async {
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
-        guard AppDelegate.current?.libraryUnwanted != true else { return }
+        // Held, not abandoned. A window built while only readers were wanted gave up here
+        // for good, so asking for the library later brought up an empty shelf that said
+        // there were no sources. The view outlives its window being closed, so this waits
+        // until somebody asks for it.
+        // ponytail: a poll a few times a second; an observable delegate if it ever matters
+        while AppDelegate.current?.libraryUnwanted == true {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+        }
         restoreSources()
         // Which sources are actually there, before anything is asked of them. One bounded
         // pass costs the launch a fraction of a second at worst and keeps a folder that

@@ -69,8 +69,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// folders and reopening tabs, for a window that is closed again a moment later.
     var libraryUnwanted: Bool { !wantsLibrary && !readers.isEmpty }
 
+    /// Whether this launch was the machine handing over files, as opposed to somebody
+    /// starting the app. Then the library comes up only when asked for, however long
+    /// SwiftUI's own copy of it has been on screen by the time the files arrive: a slow
+    /// launch could put two seconds between them, and the rule below took that for a
+    /// library somebody was using.
+    private var launchedForFiles = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        launchedForFiles = NSAppleEventManager.shared().currentAppleEvent?.eventID == AEEventID(kAEOpenDocuments)
+    }
+
+    /// The library window, as it comes on screen, closes itself when nobody asked for it.
+    /// The delegate closing it when files arrive is not enough on its own: the window can
+    /// be built later than both of those closes, and was then left on screen with an
+    /// empty shelf.
+    func libraryWindowAttached(_ window: NSWindow) {
+        guard libraryUnwanted else { return }
+        libraryAppearedAt = nil
+        window.close()
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
-        if !wantsLibrary, let appeared = libraryAppearedAt, Date().timeIntervalSince(appeared) > 2 {
+        if !wantsLibrary, !launchedForFiles, let appeared = libraryAppearedAt,
+           Date().timeIntervalSince(appeared) > 2 {
             wantsLibrary = true
         }
         for url in urls { openReader(for: url) }
