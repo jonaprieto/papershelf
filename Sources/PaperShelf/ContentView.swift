@@ -471,16 +471,7 @@ struct ContentView: View {
         .dropDestination(for: URL.self) { urls, _ in
             receiveDroppedURLs(urls)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sidebarCommand)) { note in
-            switch (note.userInfo?["command"] as? String).flatMap(Command.init(rawValue:)) {
-            case .addSource: importing = true
-            case .newProject:
-                chrome.setSidebarVisibility(.all, persist: true)
-                newProjectName = ""
-                namingProject = true
-            default: break
-            }
-        }
+        .background(commandRoutes)
         .confirmationDialog(removing.map { "Remove \($0.url.lastPathComponent)?" } ?? "",
                             isPresented: Binding(get: { removing != nil },
                                                  set: { if !$0 { removing = nil } }),
@@ -634,6 +625,35 @@ struct ContentView: View {
     /// things that are all navigation, and they belong on screen together. Sources first
     /// because it is where the files come from, the folder tree under it because that is
     /// the same question one level down.
+    /// Palette commands that land here rather than on the shelf: the sidebar's two, and
+    /// ⌘K while a project's workspace is where the shelf would be. Their own view, because
+    /// the window's chain is already at what the type checker will work through.
+    private var commandRoutes: some View {
+        Color.clear
+            .onReceive(NotificationCenter.default.publisher(for: .sidebarCommand)) { note in
+                switch (note.userInfo?["command"] as? String).flatMap(Command.init(rawValue:)) {
+                case .addSource: importing = true
+                case .newProject:
+                    chrome.setSidebarVisibility(.all, persist: true)
+                    newProjectName = ""
+                    namingProject = true
+                default: break
+                }
+            }
+            // The palette belongs to the shelf, which a project's workspace takes the place
+            // of, so ⌘K inside a project reached nothing at all. It leaves the project and
+            // asks again once the shelf is back to hear it.
+            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { note in
+                guard openProject != nil else { return }
+                openProject = nil
+                sidebarTarget = .shelf(shelves.current)
+                // ponytail: a fixed wait for the shelf to be built and listening
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: note.object)
+                }
+            }
+    }
+
     private var sidebarPanel: some View {
         // A sidebar, not a settings sheet. A grouped Form gives every section a white card
         // and a paragraph of explanation, which is right for the settings window and wrong
