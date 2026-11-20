@@ -121,6 +121,8 @@ final class Annotator {
         let annotation: PDFAnnotation
         /// Who made it, as the PDF records it: the reader, an assistant, another app.
         var author: String { annotation.userName ?? "" }
+        /// The number printed on the page, which PDFKit reads from the document's labels.
+        var pageLabel: String { annotation.page?.label ?? "" }
 
         init(id: UUID = UUID(), page: Int, kind: String, quoted: String, note: String,
              colour: NSColor, timestamp: Date? = nil, annotation: PDFAnnotation) {
@@ -1153,7 +1155,7 @@ final class Annotator {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: Palette.shared.meaning(for: $0.colour, scope: scope),
                        colour: colourHex($0.colour), timestamp: $0.timestamp,
-                       author: $0.author)
+                       author: $0.author, pageLabel: $0.pageLabel)
         }
         return markdownNotes(title: title, source: url.path, marks: exports,
                              details: Prefs.shared.notesDetails, me: NSFullUserName())

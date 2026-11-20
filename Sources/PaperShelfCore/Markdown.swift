@@ -14,10 +14,15 @@ public struct MarkExport: Sendable, Equatable {
     public let colour: String
     /// Who made the mark, when the PDF says.
     public let author: String
+    /// The number printed on the page, when the PDF gives one ("iv", "86:3"). Citations use
+    /// it, and it differs from `page` wherever there is front matter or a journal range.
+    public let pageLabel: String
 
     public init(page: Int, quoted: String, note: String, meaning: String,
-                colour: String = "", timestamp: Date = Date(), author: String = "") {
+                colour: String = "", timestamp: Date = Date(), author: String = "",
+                pageLabel: String = "") {
         self.author = author
+        self.pageLabel = pageLabel
         self.page = page
         self.quoted = quoted
         self.note = note
@@ -131,16 +136,19 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         if !mark.note.isEmpty {
             out += "\(markdownEscape(mark.note))\n\n"
         }
-        // Whose mark it is, when that is someone other than the person the file is for:
-        // with an assistant or a colleague marking the same paper, it is part of the note.
-        var tag: [String] = []
+        // Where it is, on every mark, so one copied out of the file still says so.
+        let label = mark.pageLabel.trimmingCharacters(in: .whitespaces)
+        var tag = [label.isEmpty || label == String(mark.page)
+            ? "p. \(mark.page)" : "p. \(markdownEscape(label)) (pdf \(mark.page))"]
         if !mark.meaning.isEmpty && mark.meaning != "Highlight" {
             tag.append("*\(markdownEscape(mark.meaning))*")
         }
+        // Whose mark it is, when that is someone other than the person the file is for:
+        // with an assistant or a colleague marking the same paper, it is part of the note.
         if !mark.author.isEmpty, mark.author != me {
             tag.append("by \(markdownEscape(mark.author))")
         }
-        if !tag.isEmpty { out += tag.joined(separator: " \u{00B7} ") + "\n\n" }
+        out += tag.joined(separator: " \u{00B7} ") + "\n\n"
         var bookkeeping: [String] = []
         if details.contains(.times) { bookkeeping.append("marked \(markStamp.string(from: mark.timestamp))") }
         if details.contains(.colours), !mark.colour.isEmpty { bookkeeping.append("colour \(mark.colour)") }

@@ -792,7 +792,7 @@ struct NotesRail: View {
         let exported = marks.map {
             MarkExport(page: $0.page, quoted: $0.quoted, note: $0.note,
                        meaning: palette.meaning(for: $0.colour, scopes: effectiveMeaningScopes),
-                       timestamp: $0.timestamp, author: $0.author)
+                       timestamp: $0.timestamp, author: $0.author, pageLabel: $0.pageLabel)
         }
         return markdownNotes(title: (title as NSString).deletingPathExtension,
                              source: source, marks: exported, details: prefs.notesDetails,

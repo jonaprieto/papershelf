@@ -89,7 +89,7 @@ final class MarkdownTests: XCTestCase {
                                 colour: "#FFCC00", timestamp: moment)]
         let full = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks, date: moment)
         let visible = full.split(separator: "\n").filter { !$0.hasPrefix("<!--") && !$0.isEmpty }
-        XCTAssertEqual(visible, ["# Book", "1 mark", "## Page 2", "> text", "keep", "*Follow up*"])
+        XCTAssertEqual(visible, ["# Book", "1 mark", "## Page 2", "> text", "keep", "p. 2 \u{00B7} *Follow up*"])
 
         let bare = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks, date: moment,
                                  details: [])
@@ -107,6 +107,17 @@ final class MarkdownTests: XCTestCase {
         let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks, me: "Ada")
         XCTAssertTrue(text.contains("*Note* \u{00B7} by Claude"))
         XCTAssertFalse(text.contains("by Ada"))
+    }
+
+    /// Each mark says its page, with the printed number where the PDF's differs.
+    func testEachMarkSaysWhichPageItIsOn() {
+        let marks = [MarkExport(page: 3, quoted: "a", note: "", meaning: "", pageLabel: "86:3"),
+                     MarkExport(page: 4, quoted: "b", note: "", meaning: "", pageLabel: "4"),
+                     MarkExport(page: 5, quoted: "c", note: "", meaning: "")]
+        let text = markdownNotes(title: "Book", source: "/tmp/a.pdf", marks: marks)
+        XCTAssertTrue(text.contains("> a\n\np. 86:3 (pdf 3)\n"))
+        XCTAssertTrue(text.contains("> b\n\np. 4\n"))
+        XCTAssertTrue(text.contains("> c\n\np. 5\n"))
     }
 
     func testASidecarUnderTheOldNameIsAdoptedRatherThanLeftBeside() throws {
