@@ -41,8 +41,11 @@ struct MarkRow: View {
         if !mark.author.isEmpty, !Prefs.shared.myNames.contains(mark.author) {
             parts.append(mark.author)
         }
-        parts.append(mark.timestamp.formatted(.dateTime.day().month(.abbreviated).year()
-            .hour().minute()))
+        // The year only when it is not this one, which is most of the width it took.
+        let thisYear = Calendar.current.isDate(mark.timestamp, equalTo: Date(), toGranularity: .year)
+        let day = Date.FormatStyle.dateTime.day().month(.abbreviated)
+        parts.append(mark.timestamp.formatted(thisYear ? day.hour().minute()
+                                              : day.year().hour().minute()))
         return parts.joined(separator: " \u{00B7} ")
     }
 
@@ -122,11 +125,21 @@ struct MarkRow: View {
             // Where and when, on one quiet line under the note. Stacked at the top right
             // they made the heading three lines tall, wrapped the date, and sat under the
             // row's buttons, which covered the author and the page whenever they showed.
-            Text(footer)
-                .font(Face.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            // The row's buttons end this line rather than float over the heading, where
+            // they covered the mark's place in the list whenever they showed. They take
+            // room only on the row being worked on: held on every row, they cut every
+            // date short to make space for buttons nobody could see.
+            HStack(spacing: Space.step) {
+                Text(footer)
+                    .font(Face.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                if showsActions {
+                    HStack(spacing: Space.hair) { rowActions }.fixedSize()
+                }
+            }
 
             if editing {
                 // A TextEditor sized by a hidden copy of the note, not a vertical TextField:
@@ -171,21 +184,11 @@ struct MarkRow: View {
         // Edge to edge rather than a rounded card inset from the panel: the marks are a
         // list, and a selected row in a list is a band, not a floating tile.
         .background(isSelected ? Color.accentColor.opacity(0.09) : .clear)
-        // Floated over the row rather than laid out in it. In the row they were three
-        // controls' worth of width that a mark's meaning had to fit around, so "Definition
-        // or key term" was drawn as "Definition or key…" on every mark, all the time, to
-        // make room for buttons nobody could see.
-        .overlay(alignment: .topTrailing) {
-            HStack(spacing: Space.hair) { rowActions }
-                .padding(.horizontal, Space.snug)
-                .padding(.vertical, Space.tight)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.trailing, Space.step)
-                .padding(.top, Space.tight)
-                .opacity(showsActions ? 1 : 0)
-                .allowsHitTesting(showsActions)
-        }
         .contentShape(Rectangle())
+        .accessibilityAction(named: mark.note.isEmpty ? "Add a note" : "Edit the note") {
+            editing = true
+        }
+        .accessibilityAction(named: "Delete the mark", remove)
         .onHover { hovering = $0 }
         .onTapGesture(perform: jump)
         // Opened from the pencil or from E in the rail, the editor starts on the note as
@@ -202,10 +205,10 @@ struct MarkRow: View {
         editing = false
     }
 
-    /// Edit, delete and the handoff. Always in the tree so keyboard focus and VoiceOver
-    /// can reach them; only their opacity is gated. Three icons on every mark turned a
-    /// column of quotations into a column of buttons, and none of them needs to be seen
-    /// until you are looking at the mark they belong to.
+    /// Edit, delete and the handoff, on the row being worked on only. Three icons on every
+    /// mark turned a column of quotations into a column of buttons, and none of them needs
+    /// to be seen until you are looking at the mark they belong to. VoiceOver reaches edit
+    /// and delete on every row through the row's own actions.
     ///
     /// Shown while the row is selected as well as while it is hovered. Clicking a mark
     /// selects it and jumps the page to it, which is exactly the moment somebody wants to
@@ -230,7 +233,6 @@ struct MarkRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .opacity(showsActions ? 1 : 0)
             .accessibilityLabel("Send the mark on page \(mark.page) to ChatGPT")
             .tip("Send this passage to ChatGPT. Open starts a new conversation; "
                  + "copy is for one you already have going.")
@@ -242,7 +244,6 @@ struct MarkRow: View {
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
-        .opacity(showsActions ? 1 : 0)
         .tip(mark.note.isEmpty ? "Add a note here" : "Edit this note")
         .accessibilityLabel(mark.note.isEmpty
                              ? "Add a note to the mark on page \(mark.page)"
@@ -250,7 +251,6 @@ struct MarkRow: View {
         Button(action: remove) { Image(systemName: "trash") }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .opacity(showsActions ? 1 : 0)
             .tip("Remove this mark from the file")
             .accessibilityLabel("Delete the mark on page \(mark.page)")
     }
