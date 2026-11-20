@@ -34,6 +34,16 @@ struct MarkRow: View {
     @State private var text = ""
     private let prefs = Prefs.shared
 
+    /// The page, whose mark it is when someone else's (the reader's own do not repeat
+    /// it), and when it was last changed.
+    private var footer: String {
+        var parts = ["p. \(mark.page)"]
+        if !mark.author.isEmpty, mark.author != NSFullUserName() { parts.append(mark.author) }
+        parts.append(mark.timestamp.formatted(.dateTime.day().month(.abbreviated).year()
+            .hour().minute()))
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
     /// The colour it was actually painted with, whatever palette that came from.
     private var colour: Color { Color(nsColor: mark.colour) }
 
@@ -84,17 +94,6 @@ struct MarkRow: View {
                     .fixedSize()
 
                 Spacer(minLength: Space.snug)
-
-                VStack(alignment: .trailing, spacing: 1) {
-                    // Someone else's mark says whose; the reader's own do not repeat it.
-                    if !mark.author.isEmpty, mark.author != NSFullUserName() {
-                        Text(mark.author).lineLimit(1)
-                    }
-                    Text("p. \(mark.page)")
-                    Text(mark.timestamp, format: .dateTime.year().month().day().hour().minute())
-                }
-                .font(Face.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
             }
 
             if !mark.quoted.isEmpty {
@@ -117,6 +116,15 @@ struct MarkRow: View {
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // Where and when, on one quiet line under the note. Stacked at the top right
+            // they made the heading three lines tall, wrapped the date, and sat under the
+            // row's buttons, which covered the author and the page whenever they showed.
+            Text(footer)
+                .font(Face.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             if editing {
                 // A TextEditor sized by a hidden copy of the note, not a vertical TextField:
