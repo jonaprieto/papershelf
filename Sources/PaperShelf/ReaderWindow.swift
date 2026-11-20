@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFKit
 import PaperShelfCore
 
 extension Notification.Name {
@@ -79,11 +80,19 @@ struct ReaderWindow: View {
                     paletteButton
                     Spacer()
                     if !barFolded {
-                        Text(url.lastPathComponent)
-                            .font(Face.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        // The author and date beside the name where the bar has room for
+                        // all three, and the name alone where it does not.
+                        ViewThatFits(in: .horizontal) {
+                            if !documentDetails.isEmpty {
+                                Text(documentDetails + "  \u{00B7}  " + url.lastPathComponent)
+                                    .lineLimit(1)
+                            }
+                            Text(url.lastPathComponent)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .font(Face.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal, Space.roomy)
@@ -255,6 +264,24 @@ struct ReaderWindow: View {
 
     /// The notes beside the page, and how many there are. Without it a reader opened from
     /// Finder showed its notes only to somebody who selected text or clicked a highlight.
+    /// Who wrote the paper and when, as the PDF itself says: its author field, and the
+    /// date it was made, or last changed when it records no other. Empty when it says
+    /// neither, which many PDFs do not.
+    private var documentDetails: String {
+        guard annotator.hasPages, let info = annotator.view?.document?.documentAttributes
+        else { return "" }
+        var parts: [String] = []
+        if let author = info[PDFDocumentAttribute.authorAttribute] as? String,
+           !author.trimmingCharacters(in: .whitespaces).isEmpty {
+            parts.append(author.trimmingCharacters(in: .whitespaces))
+        }
+        if let date = (info[PDFDocumentAttribute.creationDateAttribute]
+                       ?? info[PDFDocumentAttribute.modificationDateAttribute]) as? Date {
+            parts.append(date.formatted(.dateTime.day().month(.abbreviated).year()))
+        }
+        return parts.joined(separator: "  \u{00B7}  ")
+    }
+
     /// A narrow reader: the file name goes and the buttons keep only their icons.
     private var barFolded: Bool { barWidth < SplitLayout.readerBarFoldsBelow }
 
