@@ -276,6 +276,11 @@ struct PaperShelfApp: App {
                 }
                 .commandShortcut(.toggleNotes)
                 Button(chrome.inspectorCollapsed ? "Show Inspector" : "Hide Inspector") {
+                    // Sent rather than asked of the focused scene: in a reader the page
+                    // holds the keys, SwiftUI then has no `togglePane` to hand over, and
+                    // the key fell through to the library's inspector, which the reader
+                    // does not draw. ⇧⌘B did nothing there that anybody could see.
+                    if sendToReader(.toggleInspector) { return }
                     if let togglePane { togglePane.perform() }
                     else { chrome.inspectorCollapsed.toggle() }
                 }

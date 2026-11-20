@@ -224,7 +224,7 @@ struct ReaderWindow: View {
         case .nextMark: annotator.stepMark(by: 1)
         case .previousMark: annotator.stepMark(by: -1)
         case .findInDocument: openFind()
-        case .toggleNotes: showsNotes.toggle()
+        case .toggleNotes, .toggleInspector: showsNotes.toggle()
         case .toggleContents, .toggleSidebar: prefs.contentsShown.toggle()
         case .zenMode: togglePresentation()
         case .printPDF: annotator.printPDF()
