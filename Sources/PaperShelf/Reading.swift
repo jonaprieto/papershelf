@@ -11,6 +11,8 @@ extension Notification.Name {
 /// One highlight or note, in the rail beside the page.
 struct MarkRow: View {
     let mark: Annotator.Mark
+    /// Where it stands among the marks listed, as "10/23".
+    let position: String
     let isSelected: Bool
     let jump: () -> Void
     let remove: () -> Void
@@ -75,6 +77,11 @@ struct MarkRow: View {
                     // note in purple rather than passing for one of the reader's own.
                     .foregroundStyle(meaning == unlabelledMarkMeaning ? Color.purple : .primary)
                     .lineLimit(1)
+
+                Text("(\(position))")
+                    .font(Face.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
 
                 Spacer(minLength: Space.snug)
 
@@ -475,9 +482,16 @@ struct NotesRail: View {
                     // The note being written sits where its passage is listed, under the
                     // mark it is about or where the new highlight will land, so it opens
                     // beside the marks the list is showing rather than above all of them.
-                    ForEach(Array(shownMarks.prefix(composerSlot))) { mark in row(for: mark) }
+                    // Filtered once rather than once per row: each row says where it stands
+                    // in the list, and asking the filter for that per row was quadratic.
+                    let shown = Array(shownMarks.enumerated())
+                    ForEach(shown.prefix(composerSlot), id: \.element.id) { index, mark in
+                        row(for: mark, position: "\(index + 1)/\(shown.count)")
+                    }
                     if addingNote { noteComposer.id(Self.composerID) }
-                    ForEach(Array(shownMarks.dropFirst(composerSlot))) { mark in row(for: mark) }
+                    ForEach(shown.dropFirst(composerSlot), id: \.element.id) { index, mark in
+                        row(for: mark, position: "\(index + 1)/\(shown.count)")
+                    }
 
                     if let problem = live.lastError {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
@@ -611,9 +625,10 @@ struct NotesRail: View {
         return 0
     }
 
-    private func row(for mark: Annotator.Mark) -> some View {
+    private func row(for mark: Annotator.Mark, position: String) -> some View {
         MarkRow(
             mark: mark,
+            position: position,
             isSelected: live.selectedMark == mark.id,
             jump: {
                 // A click on a mark hands the list the keys, the way a click on the page
