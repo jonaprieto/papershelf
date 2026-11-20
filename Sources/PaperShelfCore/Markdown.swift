@@ -136,10 +136,12 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         if !mark.note.isEmpty {
             out += "\(markdownEscape(mark.note))\n\n"
         }
-        // Where it is, on every mark, so one copied out of the file still says so.
+        // The heading above already gives the page. The number printed on it is the one
+        // thing it does not give, and the one a citation needs, so that alone is said
+        // here, where the PDF's labels differ from its page count.
         let label = mark.pageLabel.trimmingCharacters(in: .whitespaces)
-        var tag = [label.isEmpty || label == String(mark.page)
-            ? "p. \(mark.page)" : "p. \(markdownEscape(label)) (pdf \(mark.page))"]
+        var tag: [String] = []
+        if !label.isEmpty, label != String(mark.page) { tag.append("p. \(markdownEscape(label))") }
         if !mark.meaning.isEmpty && mark.meaning != "Highlight" {
             tag.append("*\(markdownEscape(mark.meaning))*")
         }
@@ -148,7 +150,7 @@ public func markdownNotes(title: String, source: String, marks: [MarkExport],
         if !mark.author.isEmpty, mark.author != me {
             tag.append("by \(markdownEscape(mark.author))")
         }
-        out += tag.joined(separator: " \u{00B7} ") + "\n\n"
+        if !tag.isEmpty { out += tag.joined(separator: " \u{00B7} ") + "\n\n" }
         var bookkeeping: [String] = []
         if details.contains(.times) { bookkeeping.append("marked \(markStamp.string(from: mark.timestamp))") }
         if details.contains(.colours), !mark.colour.isEmpty { bookkeeping.append("colour \(mark.colour)") }
