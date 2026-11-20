@@ -35,6 +35,7 @@ struct ReaderWindow: View {
     @State private var readerWindow = PaneWindow()
     /// How wide the row under the page is, so it can fold before its controls collide.
     @State private var barWidth = SplitLayout.readerIdealWidth
+    @State private var fileFacts = FileFacts()
     // Computed, not stored: a stored private property makes the memberwise initialiser
     // private too, and the delegate is the one that builds this window.
     private var palette: Palette { Palette.shared }
@@ -80,12 +81,13 @@ struct ReaderWindow: View {
                     paletteButton
                     Spacer()
                     if !barFolded {
-                        // The author and date beside the name where the bar has room for
-                        // all three, and the name alone where it does not.
+                        // As much as the bar has room for, the least needed going first: the
+                        // build, then the file's size and when it last changed, then who
+                        // wrote it and when, and at the narrowest the name alone. The same
+                        // facts the library's status bar gives under a page.
                         ViewThatFits(in: .horizontal) {
-                            if !documentDetails.isEmpty {
-                                Text(documentDetails + "  \u{00B7}  " + url.lastPathComponent)
-                                    .lineLimit(1)
+                            ForEach(barLines, id: \.self) { line in
+                                Text(line).lineLimit(1)
                             }
                             Text(url.lastPathComponent)
                                 .lineLimit(1)
@@ -131,6 +133,9 @@ struct ReaderWindow: View {
             PasswordSheet(purpose: purpose, annotator: annotator)
         }
         .task { await record() }
+        // Again once marks have been written, which is what changes the file: the flag
+        // falls when the write lands, not when the mark is made.
+        .task(id: annotator.hasUnwrittenMarks) { await loadFileFacts() }
         // A window that is only a page goes full screen to be shown, so the green button
         // presents the way the presentation button does.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
@@ -262,8 +267,48 @@ struct ReaderWindow: View {
         )
     }
 
-    /// The notes beside the page, and how many there are. Without it a reader opened from
-    /// Finder showed its notes only to somebody who selected text or clicked a highlight.
+    /// The bar's text from fullest to sparest, for `ViewThatFits` to take the first that
+    /// fits. Internal for the test that holds it to unique lines.
+    private var barLines: [String] {
+        let dot = "  \u{00B7}  "
+        let name = url.lastPathComponent
+        var file: [String] = []
+        if let bytes = fileFacts.bytes { file.append(formattedBytes(bytes)) }
+        if let modified = fileFacts.modified {
+            file.append("modified " + modified.formatted(.dateTime.day().month(.abbreviated)
+                .year().hour().minute()))
+        }
+        let running = AppBuild.current
+        let build = StatusBar.buildLabel(version: running.version, build: running.build,
+                                         revision: running.revision)
+        let paper = documentDetails.isEmpty ? [] : [documentDetails]
+        let lines = [
+            (paper + file + [name, build]).joined(separator: dot),
+            (paper + file + [name]).joined(separator: dot),
+            (paper + [name]).joined(separator: dot),
+        ]
+        // Unique, and never the bare name, which is the fallback after these. With nothing
+        // known yet all three were the name, and `ViewThatFits` traps on children that
+        // share an identity.
+        var seen: Set<String> = [name]
+        return lines.filter { seen.insert($0).inserted }
+    }
+
+    /// The file's size and when it last changed on disk, read off the main thread: a
+    /// paper on a network share answers a stat with that share's own timeout.
+    private func loadFileFacts() async {
+        let url = url
+        fileFacts = await Task.detached {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            return FileFacts(bytes: values?.fileSize, modified: values?.contentModificationDate)
+        }.value
+    }
+
+    struct FileFacts: Equatable, Sendable {
+        var bytes: Int?
+        var modified: Date?
+    }
+
     /// Who wrote the paper and when, as the PDF itself says: its author field, and the
     /// date it was made, or last changed when it records no other. Empty when it says
     /// neither, which many PDFs do not.
@@ -282,6 +327,8 @@ struct ReaderWindow: View {
         return parts.joined(separator: "  \u{00B7}  ")
     }
 
+    /// The notes beside the page, and how many there are. Without it a reader opened from
+    /// Finder showed its notes only to somebody who selected text or clicked a highlight.
     /// A narrow reader: the file name goes and the buttons keep only their icons.
     private var barFolded: Bool { barWidth < SplitLayout.readerBarFoldsBelow }
 
