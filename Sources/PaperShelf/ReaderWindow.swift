@@ -225,7 +225,7 @@ struct ReaderWindow: View {
         case .previousMark: annotator.stepMark(by: -1)
         case .findInDocument: openFind()
         case .toggleNotes: showsNotes.toggle()
-        case .toggleContents: prefs.contentsShown.toggle()
+        case .toggleContents, .toggleSidebar: prefs.contentsShown.toggle()
         case .zenMode: togglePresentation()
         case .printPDF: annotator.printPDF()
         case .lockPDF: passwordPurpose = .lock

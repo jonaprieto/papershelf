@@ -284,8 +284,13 @@ struct PaperShelfApp: App {
                     chrome.contentsShown.toggle()
                 }
                 .commandShortcut(.toggleContents)
-                Button("Toggle Sidebar", action: chrome.toggleSidebar)
-                    .commandShortcut(.toggleSidebar)
+                // In a reader the pane on the left is the outline. Sent to the library,
+                // the key folded a sidebar in a window behind the one being read.
+                Button("Toggle Sidebar") {
+                    if sendToReader(.toggleSidebar) { return }
+                    chrome.toggleSidebar()
+                }
+                .commandShortcut(.toggleSidebar)
                 Divider()
                 // The theme and the page's contrast were only in the toolbar's Display
                 // menu, which a reader opened from Finder does not have.
