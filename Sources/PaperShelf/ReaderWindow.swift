@@ -204,6 +204,7 @@ struct ReaderWindow: View {
         .printPDF, .lockPDF, .unlockPDF, .openExternally, .revealInFinder, .openFile, .shortcuts,
         .openSettings, .undo, .showLibrary, .about, .checkForUpdates,
         .quickLook, .copyName, .copyPath,
+        .deleteMark, .exportNotes, .copyNotes, .openNotesFile,
     ]
 
     /// Every command this window answers, from its palette, its menu items and its keys.
@@ -241,7 +242,11 @@ struct ReaderWindow: View {
         case .openFile: AppDelegate.current?.choosePDFs()
         case .undo: _ = annotator.undoLastMarkChange()
         case .showLibrary, .about, .checkForUpdates: command.runFromTheMenu()
-        case .quickLook, .copyName, .copyPath: command.perform(on: url)
+        case .quickLook, .copyName, .copyPath, .openNotesFile: command.perform(on: url)
+        case .deleteMark: _ = command.deleteSelectedMark(in: annotator)
+        case .exportNotes, .copyNotes:
+            showsNotes = true
+            command.sendToNotes(in: readerWindow.window)
         case .shortcuts:
             prefs.settingsPane = .keyboard
             PaletteSettings.openSettingsWindow()
@@ -249,11 +254,18 @@ struct ReaderWindow: View {
         }
     }
 
+    /// Paints the selection, or repaints the selected mark when nothing is selected, the
+    /// way the library's reader does.
     private func highlight(slot: Int) {
-        guard annotator.hasSelection, currentStyles.indices.contains(slot) else { return }
+        guard currentStyles.indices.contains(slot) else { return }
         let style = currentStyles[slot]
-        _ = annotator.highlightSelection(colour: style.nsColor)
-        prefs.lastHighlightColour = style.id.uuidString
+        if annotator.hasSelection {
+            _ = annotator.highlightSelection(colour: style.nsColor)
+            prefs.lastHighlightColour = style.id.uuidString
+        } else if let id = annotator.selectedMark,
+                  let mark = annotator.marks.first(where: { $0.id == id }) {
+            annotator.setColour(style.nsColor, on: mark)
+        }
     }
 
     /// This paper's passages and pages, and the library's other papers, each opening in a

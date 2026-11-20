@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PaperShelfCore
 
 /// The hardware keys read directly: ones with no character of their own, and the number
 /// row, whose control and command chords can arrive without a usable one.
@@ -115,6 +116,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
     case highlight1, highlight2, highlight3, highlight4, highlight5
     case addNote, addBookmark, showBookmarks, removeBookmark, findInDocument
     case nextMark, previousMark, openExternally, printPDF, lockPDF, unlockPDF
+    case deleteMark, exportNotes, copyNotes, openNotesFile
     case fitPage, fitWidth, actualSize, zoomIn, zoomOut
     case nextPage, previousPage, firstPage, lastPage
     case openInNewTab, closeTab, closeAllTabs, nextTab, previousTab, toggleSplit, openWebsite
@@ -217,6 +219,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark, .openExternally, .printPDF,
+             .deleteMark, .exportNotes, .copyNotes, .openNotesFile,
              .lockPDF, .unlockPDF, .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
              .nextPage, .previousPage, .firstPage, .lastPage,
              .openInNewTab, .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit, .openWebsite:
@@ -234,6 +237,7 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
              .highlight1, .highlight2, .highlight3, .highlight4, .highlight5,
              .addNote, .addBookmark, .showBookmarks, .removeBookmark,
              .findInDocument, .nextMark, .previousMark,
+             .deleteMark, .exportNotes, .copyNotes, .openNotesFile,
              .fitPage, .fitWidth, .actualSize, .zoomIn, .zoomOut,
              .nextPage, .previousPage, .firstPage, .lastPage,
              .closeTab, .closeAllTabs, .nextTab, .previousTab, .toggleSplit:
@@ -304,7 +308,11 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         case .highlight3: return "Highlight with colour 3"
         case .highlight4: return "Highlight with colour 4"
         case .highlight5: return "Highlight with colour 5"
-        case .addNote: return "Add a note to the selection"
+        case .addNote: return "Write a note on the selection or the selected mark"
+        case .deleteMark: return "Delete the selected mark"
+        case .exportNotes: return "Export this PDF's notes as Markdown…"
+        case .copyNotes: return "Copy this PDF's notes as Markdown"
+        case .openNotesFile: return "Open this PDF's notes file"
         case .addBookmark: return "Add a bookmark at the current page"
         case .showBookmarks: return "Show bookmarks"
         case .removeBookmark: return "Remove the bookmark at the current page"
@@ -449,6 +457,9 @@ enum Command: String, CaseIterable, Identifiable, Codable, Sendable {
         // The Window menu's key for the library since there was a Window menu item for it.
         case .showLibrary: return Shortcut("0", .command)
         case .about, .quickLook, .copyName, .copyPath, .convertToMarkdown: return nil
+        // D in the notes list already; a key for it on the page would sit beside the
+        // library's D, which moves the file to the Trash.
+        case .deleteMark, .exportNotes, .copyNotes, .openNotesFile: return nil
         }
     }
 
@@ -790,14 +801,43 @@ extension Command {
         return true
     }
 
-    /// The three that act on a file and nothing else, for whichever window has one.
+    /// The ones that act on a file and nothing else, for whichever window has one.
     @MainActor
     func perform(on url: URL) {
         switch self {
         case .quickLook: QuickLook.show(url)
         case .copyName: copyToPasteboard(url.lastPathComponent)
         case .copyPath: copyToPasteboard(url.path)
+        case .openNotesFile:
+            let notes = notesSidecarURL(for: url)
+            if FileManager.default.fileExists(atPath: notes.path) { NSWorkspace.shared.open(notes) }
+            else { NSSound.beep() }
         default: break
+        }
+    }
+
+    /// Takes the selected mark off the page. False when no mark is selected.
+    @MainActor
+    func deleteSelectedMark(in annotator: Annotator) -> Bool {
+        guard let id = annotator.selectedMark,
+              let mark = annotator.marks.first(where: { $0.id == id }) else { return false }
+        annotator.remove(mark)
+        return true
+    }
+
+    /// Hands a notes command to the notes list in this window, which is what knows how
+    /// the notes file reads: its meanings depend on the scope chosen there.
+    ///
+    /// Asked a moment after the notes are shown, since a list just opened for it has not
+    /// started listening yet.
+    // ponytail: a fixed 0.2 s wait; a handshake from the list if it ever proves short
+    @MainActor
+    func sendToNotes(in window: NSWindow?) {
+        guard let window else { return }
+        let raw = rawValue
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            NotificationCenter.default.post(name: .notesCommand, object: window,
+                                            userInfo: ["command": raw])
         }
     }
 

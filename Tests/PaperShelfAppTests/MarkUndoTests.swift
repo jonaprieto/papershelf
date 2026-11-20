@@ -37,6 +37,23 @@ final class MarkUndoTests: XCTestCase {
         page.annotations.filter { $0.type == "Highlight" }
     }
 
+    /// The palette's Delete takes off the mark that is selected, and only with one
+    /// selected: with none it says so rather than picking one.
+    func testThePaletteDeletesTheSelectedMarkOnly() throws {
+        let (annotator, view, page) = try reader()
+        defer { annotator.detach() }
+        XCTAssertGreaterThan(annotator.highlightSelection(colour: .systemYellow), 0)
+        view.clearSelection()
+        annotator.selectedMark = nil
+        XCTAssertFalse(Command.deleteMark.deleteSelectedMark(in: annotator))
+        XCTAssertEqual(highlights(on: page).count, 1)
+
+        annotator.selectedMark = try XCTUnwrap(annotator.marks.first).id
+        XCTAssertTrue(Command.deleteMark.deleteSelectedMark(in: annotator))
+        XCTAssertTrue(highlights(on: page).isEmpty)
+        XCTAssertTrue(annotator.marks.isEmpty)
+    }
+
     /// Jumping to a mark finds it without selecting text. The selection it used to make was
     /// built from the mark's box, and was a selection like any other for an armed
     /// highlighter to paint over.

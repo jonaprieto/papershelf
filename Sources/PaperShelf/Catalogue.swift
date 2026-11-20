@@ -1895,6 +1895,7 @@ struct ResultsPane: View {
         .focusSearch, .shortcuts, .palette, .plan, .apply, .checkForUpdates, .openFile,
         .lockPDF, .unlockPDF, .openSettings,
         .showLibrary, .about, .quickLook, .copyName, .copyPath, .convertToMarkdown,
+        .deleteMark, .exportNotes, .copyNotes, .openNotesFile,
     ]
 
     /// What the palette lists: everything `perform` does, and Undo, which the menu owns.
@@ -1935,9 +1936,14 @@ struct ResultsPane: View {
         case .about: openWindow(id: AboutWindow.windowID)
         // This is the library; the command exists for the windows that are not.
         case .showLibrary: break
-        case .quickLook, .copyName, .copyPath:
+        case .quickLook, .copyName, .copyPath, .openNotesFile:
             guard let url = (readerItem ?? selectedItem)?.currentURL else { return false }
             command.perform(on: url)
+        case .deleteMark: return command.deleteSelectedMark(in: readerAnnotator)
+        case .exportNotes, .copyNotes:
+            guard readerItem ?? selectedItem != nil else { return false }
+            prefs.showInspector(.notes)
+            command.sendToNotes(in: paneWindow.window)
         case .convertToMarkdown:
             guard selectedItem != nil else { return false }
             showingMarkdown = true

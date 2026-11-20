@@ -6,6 +6,8 @@ import PaperShelfCore
 
 extension Notification.Name {
     static let noteEditorFocus = Notification.Name("PaperShelf.noteEditorFocus")
+    /// A palette command for the notes list in one window: export or copy its notes.
+    static let notesCommand = Notification.Name("PaperShelf.notesCommand")
 }
 
 /// One highlight or note, in the rail beside the page.
@@ -569,6 +571,16 @@ struct NotesRail: View {
         }
         .background(.background.secondary)
         .background { WindowReader { railWindow.window = $0 }.frame(width: 0, height: 0) }
+        .onReceive(NotificationCenter.default.publisher(for: .notesCommand)) { note in
+            guard let window = railWindow.window, note.object as? NSWindow === window,
+                  !marks.isEmpty,
+                  let raw = note.userInfo?["command"] as? String else { return }
+            switch Command(rawValue: raw) {
+            case .exportNotes: exportNotes()
+            case .copyNotes: copyNotes()
+            default: break
+            }
+        }
         .onAppear {
             palette.reloadSharedProfile()
             focusNoteInputIfNeeded()
