@@ -110,9 +110,26 @@ struct MarkRow: View {
             }
 
             if editing {
-                TextField("Note", text: $text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(2...6)
+                // A TextEditor sized by a hidden copy of the note, not a vertical TextField:
+                // in a List row the field stayed one line tall, so a note longer than a line
+                // was cut off at the right edge while it was being edited.
+                ZStack(alignment: .topLeading) {
+                    Text(text + "\n")
+                        .font(Face.body)
+                        .lineSpacing(3)
+                        .padding(.horizontal, Space.tight + 1)
+                        .padding(.vertical, Space.tight)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                    TextEditor(text: $text)
+                        .font(Face.body)
+                        .lineSpacing(3)
+                        .scrollContentBackground(.hidden)
+                        .padding(.vertical, Space.tight)
+                }
+                .frame(minHeight: 44, maxHeight: 260)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Metric.card))
+                .overlay(RoundedRectangle(cornerRadius: Metric.card).stroke(Color(nsColor: .separatorColor)))
                 HStack {
                     Button("Save") {
                         save(text)
