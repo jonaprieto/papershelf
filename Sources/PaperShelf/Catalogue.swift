@@ -1225,7 +1225,7 @@ struct ResultsPane: View {
         .textExporter(isPresented: $savingBib, text: builtBib.text, filename: bibFileName)
         .sheet(isPresented: $showingPalette) {
             CommandPalette(
-                commands: Self.paletteCommands.filter { $0 != .palette && (prefs.aiEnabled || ![.askAI, .suggestTags, .askAIForPending].contains($0)) },
+                commands: Self.paletteCommands(aiReady: aiReady),
                 documents: runner.results,
                 run: runFromPalette,
                 open: { openReader($0.key) },
@@ -1915,6 +1915,14 @@ struct ResultsPane: View {
     /// own Undo is reached first; chosen by name, it can only mean the app's.
     static let paletteCommands: [Command] = performable + [.undo]
 
+    /// What the palette offers right now: not itself, and no AI line while AI cannot
+    /// answer, since choosing one would read every file it names before failing.
+    static func paletteCommands(aiReady: Bool) -> [Command] {
+        paletteCommands.filter {
+            $0 != .palette && (aiReady || ![.askAI, .suggestTags, .askAIForPending].contains($0))
+        }
+    }
+
     private func runFromPalette(_ command: Command) {
         guard command == .undo else {
             perform(command)
@@ -1964,7 +1972,7 @@ struct ResultsPane: View {
                                             userInfo: ["command": command.rawValue])
         case .clearFilters: clearFilters()
         case .askAIForPending:
-            guard prefs.aiEnabled, runner.pendingCount > 0 else { return false }
+            guard aiReady, runner.pendingCount > 0 else { return false }
             confirmingBatchAI = true
         case .trashIdenticalSpares:
             guard runner.identicalExtras > 0 else { return false }
