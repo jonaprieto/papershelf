@@ -162,7 +162,17 @@ struct ReaderWindow: View {
                 openFind()
                 return .handled
             }
-            return mark(with: press)
+            if mark(with: press) == .handled { return .handled }
+            // Whatever else this window answers, under the key it is bound to, so a
+            // binding made in Settings works here as it does in the library.
+            if let command = Self.paletteCommands.first(where: { command in
+                !Command.highlights.contains(command) && command != .addNote
+                    && Keymap.shared.shortcut(for: command)?.matches(press) == true
+            }) {
+                perform(command)
+                return .handled
+            }
+            return .ignored
         }
         .onDisappear { annotator.flush() }
         .onReceive(NotificationCenter.default.publisher(for: .readingFileRemoved)) { note in
@@ -499,11 +509,11 @@ struct ReaderWindow: View {
         }
     }
 
-    /// 1 to 5 paint with the palette's colours, N opens a note on the selection. Keys with
-    /// no selection under them are left alone, so typing in a field the inspector owns
-    /// still types.
+    /// 1 to 5 paint the selection, or repaint the selected mark, with the palette's
+    /// colours; N opens a note on either. Keys with neither under them are left alone, so
+    /// typing in a field the inspector owns still types.
     private func mark(with press: KeyPress) -> KeyPress.Result {
-        guard annotator.hasSelection else { return .ignored }
+        guard annotator.hasSelection || annotator.selectedMark != nil else { return .ignored }
         if Keymap.shared.shortcut(for: .addNote)?.matches(press) == true {
             showsNotes = true
             addingNote = true
