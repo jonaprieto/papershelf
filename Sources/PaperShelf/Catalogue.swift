@@ -1669,6 +1669,9 @@ struct ResultsPane: View {
         .palette, .focusSearch, .shortcuts, .zenMode, .normalMode, .checkForUpdates, .openSettings,
         .focusSidebar, .focusContents, .focusDocument, .focusInspector, .focusStatus,
         .nextRegion, .previousRegion, .back, .forward, .toggleInspector,
+        // None of these needs a document, and an empty shelf is where the first source is
+        // added from.
+        .addSource, .newProject, .clearFilters,
         // What is open and what is on the shelf are different questions. A paper put back
         // into a tab at launch, or read while a search narrows the results out from under
         // it, is not a row the gate below can find, and these four want a tab rather than
@@ -1869,9 +1872,11 @@ struct ResultsPane: View {
         return true
     }
 
-    /// Every filter off: the search, the folder, and the shelf back to everything.
+    /// Every filter off: the search, the folder, the list's undecided-only switch, and the
+    /// shelf back to everything.
     private func clearFilters() {
         query = ""
+        prefs.onlyUndecided = false
         folderScope = nil
         shelves.current = .all
         runner.search("", passwords: passwords)
@@ -1967,10 +1972,17 @@ struct ResultsPane: View {
             ensureSelection()
         case .copyBibliography, .saveBibliography:
             // The file is what the BibTeX view draws, with its filters and hand edits, and
-            // it exists only while that view is on screen. So the view is shown first.
-            if builtBib.isEmpty { choose(.bibliography) }
+            // it exists only while the file pane is on screen. So that pane is shown first:
+            // below 900 points it shares the view with the entries by a switch.
+            if builtBib.isEmpty {
+                prefs.bibShowsFile = true
+                choose(.bibliography)
+            }
             Task {
-                for _ in 0..<30 where builtBib.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+                // ponytail: polled until built, for as long as the BibTeX view stays up
+                while builtBib.isEmpty, prefs.viewMode == .bibliography, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
                 guard !builtBib.isEmpty else { return }
                 if command == .copyBibliography { copyToPasteboard(builtBib.text) } else { savingBib = true }
             }
