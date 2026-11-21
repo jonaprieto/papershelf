@@ -69,6 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// folders and reopening tabs, for a window that is closed again a moment later.
     var libraryUnwanted: Bool { !wantsLibrary && !readers.isEmpty }
 
+    /// Whether the shelf's own work should still wait: nobody has asked for the library,
+    /// and it is either unwanted or not on screen. Not `libraryUnwanted` alone, which turns
+    /// false when the last reader closes, with the library still closed and still unasked for.
+    var libraryOnHold: Bool { !wantsLibrary && (libraryUnwanted || !showsLibrary) }
+
     /// Whether this launch was the machine handing over files, as opposed to somebody
     /// starting the app. Then the library comes up only when asked for, however long
     /// SwiftUI's own copy of it has been on screen by the time the files arrive: a slow

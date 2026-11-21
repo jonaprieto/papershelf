@@ -1668,9 +1668,9 @@ struct ContentView: View {
         // Held, not abandoned. A window built while only readers were wanted gave up here
         // for good, so asking for the library later brought up an empty shelf that said
         // there were no sources. The view outlives its window being closed, so this waits
-        // until somebody asks for it.
+        // until somebody asks for it, or until it is on screen of its own accord.
         // ponytail: a poll a few times a second; an observable delegate if it ever matters
-        while AppDelegate.current?.libraryUnwanted == true {
+        while AppDelegate.current?.libraryOnHold == true {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
         }
