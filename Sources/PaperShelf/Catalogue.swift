@@ -942,6 +942,12 @@ struct ResultsPane: View {
                 }
                 openPalette()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .runPaletteChoice)) { note in
+                if let key = note.userInfo?["open"] as? String { openReader(key) }
+                if let command = (note.userInfo?["command"] as? String).flatMap(Command.init(rawValue:)) {
+                    runFromPalette(command, inReader: false)
+                }
+            }
     }
 
     /// Split from `withShelfNavigation` for the reason `withKeys` gives: one chain this long

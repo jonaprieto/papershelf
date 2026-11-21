@@ -50,6 +50,7 @@ struct ContentView: View {
     /// The project being read, if any. It takes the middle of the window, the way a
     /// document does.
     @State private var openProject: ProjectSummary?
+    @State private var paletteOverProject = false
     @State private var sessionSpend: SpendTotals?
     @State private var loadingModels = false
     @State private var modelsError: String?
@@ -640,18 +641,29 @@ struct ContentView: View {
                 default: break
                 }
             }
-            // The palette belongs to the shelf, which a project's workspace takes the place
-            // of, so ⌘K inside a project reached nothing at all. It leaves the project and
-            // asks again once the shelf is back to hear it.
-            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { note in
-                guard openProject != nil else { return }
-                openProject = nil
-                sidebarTarget = .shelf(shelves.current)
-                // ponytail: a fixed wait for the shelf to be built and listening
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    NotificationCenter.default.post(name: .scriptOpenCommandPalette, object: note.object)
-                }
+            // The palette's commands are the shelf's, and a project's workspace takes the
+            // shelf's place, so ⌘K inside a project reached nothing at all. The palette
+            // opens over the project and leaves it only once a line is chosen: leaving
+            // drops the conversation, which Escape must not cost.
+            .onReceive(NotificationCenter.default.publisher(for: .scriptOpenCommandPalette)) { _ in
+                if openProject != nil { paletteOverProject = true }
             }
+            .sheet(isPresented: $paletteOverProject) {
+                CommandPalette(commands: ResultsPane.paletteCommands(aiReady: aiReady),
+                               documents: runner.results,
+                               run: { leaveProject(toRun: ["command": $0.rawValue]) },
+                               open: { leaveProject(toRun: ["open": $0.key]) })
+            }
+    }
+
+    /// Back to the shelf, and the palette's choice carried out once it is there to hear it.
+    private func leaveProject(toRun choice: [String: String]) {
+        openProject = nil
+        sidebarTarget = .shelf(shelves.current)
+        // ponytail: a fixed wait for the shelf to be built and listening
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            NotificationCenter.default.post(name: .runPaletteChoice, object: nil, userInfo: choice)
+        }
     }
 
     private var sidebarPanel: some View {

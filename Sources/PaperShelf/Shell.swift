@@ -622,6 +622,9 @@ extension Notification.Name {
     static let scriptToggleReading = Notification.Name("PaperShelf.scriptToggleReading")
     static let scriptToggleZen = Notification.Name("PaperShelf.scriptToggleZen")
     static let scriptOpenCommandPalette = Notification.Name("PaperShelf.scriptOpenCommandPalette")
+    /// A palette line chosen over a project, for the shelf to carry out once it is back:
+    /// a command's raw value under "command", or a document's key under "open".
+    static let runPaletteChoice = Notification.Name("PaperShelf.runPaletteChoice")
     /// A command for the window that is the object, named by its raw value under
     /// "command". The menu bar reaches readers opened from Finder this way because they
     /// are AppKit's, not a scene with focused values the menu can always read, and the
