@@ -846,16 +846,17 @@ extension Command {
     /// Hands a notes command to the notes list in this window, which is what knows how
     /// the notes file reads: its meanings depend on the scope chosen there.
     ///
-    /// Asked a moment after the notes are shown, since a list just opened for it has not
-    /// started listening yet.
-    // ponytail: a fixed 0.2 s wait; a handshake from the list if it ever proves short
+    /// Named for one paper, so a list that has moved on to another by the time it hears
+    /// does nothing, and a list still reading the paper's marks holds the request until
+    /// they are in. Asked a moment after the notes are shown, since a list just opened
+    /// for it has not started listening yet.
+    // ponytail: a fixed 0.2 s wait for the list to mount; a handshake if it proves short
     @MainActor
-    func sendToNotes(in window: NSWindow?) {
+    func sendToNotes(in window: NSWindow?, about paper: URL, after delay: Double = 0.2) {
         guard let window else { return }
-        let raw = rawValue
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            NotificationCenter.default.post(name: .notesCommand, object: window,
-                                            userInfo: ["command": raw])
+        let info: [String: String] = ["command": rawValue, "paper": paper.path]
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            NotificationCenter.default.post(name: .notesCommand, object: window, userInfo: info)
         }
     }
 

@@ -48,10 +48,18 @@ final class MarkUndoTests: XCTestCase {
         XCTAssertFalse(Command.deleteMark.deleteSelectedMark(in: annotator))
         XCTAssertEqual(highlights(on: page).count, 1)
 
-        annotator.selectedMark = try XCTUnwrap(annotator.marks.first).id
+        let kept = try XCTUnwrap(annotator.marks.first)
+        let delta = try XCTUnwrap(view.document?.findString("Delta", withOptions: []).first)
+        view.setCurrentSelection(delta, animate: false)
+        XCTAssertGreaterThan(annotator.highlightSelection(colour: .systemGreen), 0)
+        view.clearSelection()
+        let doomed = try XCTUnwrap(annotator.marks.first { $0.id != kept.id })
+
+        annotator.selectedMark = doomed.id
         XCTAssertTrue(Command.deleteMark.deleteSelectedMark(in: annotator))
-        XCTAssertTrue(highlights(on: page).isEmpty)
-        XCTAssertTrue(annotator.marks.isEmpty)
+        XCTAssertEqual(annotator.marks.map(\.id), [kept.id], "the other mark went too")
+        XCTAssertEqual(highlights(on: page).count, 1)
+        XCTAssertTrue(highlights(on: page).first === kept.annotation, "the wrong mark was deleted")
     }
 
     /// Jumping to a mark finds it without selecting text. The selection it used to make was

@@ -179,6 +179,9 @@ struct ResultsPane: View {
     /// hangs in, and a strong reference the other way would keep a closed one alive.
     @State private var paneWindow = PaneWindow()
     @State private var showingPalette = false
+    /// Whether the palette was opened over a page. Taken when it opens, because by the
+    /// time a line is chosen the palette has the focus and the reader reads as closed.
+    @State private var paletteFromReader = false
     @State private var passwordPurpose: PasswordSheet.Purpose?
     @State private var paletteTags: [TagCount] = []
     @State private var paletteProjects: [ProjectSummary] = []
@@ -937,7 +940,7 @@ struct ResultsPane: View {
                         openReader(item.key)
                     }
                 }
-                showingPalette = true
+                openPalette()
             }
     }
 
@@ -1923,13 +1926,23 @@ struct ResultsPane: View {
         }
     }
 
+    private func openPalette() {
+        paletteFromReader = activeScope == .reader
+        showingPalette = true
+    }
+
+    /// Undo is here rather than in `perform`, whose key path would take ⌘Z from a text
+    /// field. Like the Edit menu, it undoes the pane it was asked from and nothing else.
     private func runFromPalette(_ command: Command) {
+        runFromPalette(command, inReader: paletteFromReader)
+    }
+
+    private func runFromPalette(_ command: Command, inReader: Bool) {
         guard command == .undo else {
-            perform(command)
+            perform(command, inReader: inReader)
             return
         }
-        // Not `readerOpen`: the palette has the focus by now, so that would read false.
-        if !(deck.deck.activeTab != nil && readerAnnotator.undoLastMarkChange()) { runner.undo() }
+        if inReader { _ = readerAnnotator.undoLastMarkChange() } else { runner.undo() }
     }
 
     /// Carries out one command, whatever asked for it.
@@ -1940,8 +1953,13 @@ struct ResultsPane: View {
     ///
     /// Returning false means "not mine": the key event carries on to whatever else might
     /// want it, which is how ⌘↩ still reaches the Apply button in the toolbar.
+    ///
+    /// `inReader` is whether a page was in front when the command was asked for; nil
+    /// reads it now. Delete Selected Mark acts on that page's marks, and with no page in
+    /// front on the notes list's, rather than on a document nobody can see.
     @discardableResult
-    func perform(_ command: Command) -> Bool {
+    func perform(_ command: Command, inReader: Bool? = nil) -> Bool {
+        let inReader = inReader ?? (activeScope == .reader)
         if Command.pageActions.contains(command) {
             return command.performPageAction(on: readerAnnotator, fit: $prefs.pageFit)
         }
@@ -1959,11 +1977,16 @@ struct ResultsPane: View {
         case .quickLook, .copyName, .copyPath, .openNotesFile:
             guard let url = (readerItem ?? selectedItem)?.currentURL else { return false }
             command.perform(on: url)
-        case .deleteMark: return command.deleteSelectedMark(in: readerAnnotator)
+        case .deleteMark:
+            if inReader { return command.deleteSelectedMark(in: readerAnnotator) }
+            // With no page on screen the selected mark is the notes list's, which reads the
+            // selected paper into an annotator of its own.
+            guard let url = selectedItem?.currentURL else { return false }
+            command.sendToNotes(in: paneWindow.window, about: url, after: 0)
         case .exportNotes, .copyNotes:
-            guard readerItem ?? selectedItem != nil else { return false }
+            guard let url = (readerItem ?? selectedItem)?.currentURL else { return false }
             prefs.showInspector(.notes)
-            command.sendToNotes(in: paneWindow.window)
+            command.sendToNotes(in: paneWindow.window, about: url)
         case .convertToMarkdown:
             guard selectedItem != nil else { return false }
             showingMarkdown = true
@@ -2048,8 +2071,8 @@ struct ResultsPane: View {
             openWindow(id: UpdateDetails.windowID)
             checkForUpdates(manual: true)
         case .shortcuts: showingShortcuts = true
-        case .palette: showingPalette = true
-        case .focusSearch: showingPalette = true
+        case .palette: openPalette()
+        case .focusSearch: openPalette()
         case .toggleSidebar: toggleSidebar()
         case .printPDF:
             if readerAnnotator.printPDF() { return true }
@@ -3325,7 +3348,7 @@ struct ResultsPane: View {
                    // The palette is already this window's answer to "which paper", with
                    // every document in it and a field to narrow them. The + is the pointer's
                    // way to the same place ⌘K goes, not a picker of its own.
-                   open: { focusPane(pane.id); showingPalette = true },
+                   open: { focusPane(pane.id); openPalette() },
                    split: deck.deck.isSplit ? joinReader : (deck.deck.canSplit ? splitReader : nil),
                    isSplit: deck.deck.isSplit,
                    closeAll: closeAllTabs)
@@ -3662,7 +3685,7 @@ struct ResultsPane: View {
     }
 
     private var commandPaletteButton: some View {
-        Button { showingPalette = true } label: {
+        Button { openPalette() } label: {
             Label("Open command palette", systemImage: "magnifyingglass")
                 .tip("Search the library or run a command", command: .palette)
         }

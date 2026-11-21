@@ -256,7 +256,7 @@ struct ReaderWindow: View {
         case .deleteMark: _ = command.deleteSelectedMark(in: annotator)
         case .exportNotes, .copyNotes:
             showsNotes = true
-            command.sendToNotes(in: readerWindow.window)
+            command.sendToNotes(in: readerWindow.window, about: url)
         case .shortcuts:
             prefs.settingsPane = .keyboard
             PaletteSettings.openSettingsWindow()

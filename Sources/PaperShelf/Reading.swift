@@ -316,6 +316,8 @@ struct NotesRail: View {
     @State private var shadow = Annotator()
     @State private var shadowView = PDFView()
     @State private var readingFile = false
+    /// Export or Copy asked for before this paper's marks were in, carried out once they are.
+    @State private var pendingNotesCommand: Command?
 
     /// Whichever annotator holds the document the panel is about: the reader's when it has
     /// this document open, the shadow one when the shelf merely has it selected.
@@ -573,14 +575,22 @@ struct NotesRail: View {
         .background { WindowReader { railWindow.window = $0 }.frame(width: 0, height: 0) }
         .onReceive(NotificationCenter.default.publisher(for: .notesCommand)) { note in
             guard let window = railWindow.window, note.object as? NSWindow === window,
-                  !marks.isEmpty,
-                  let raw = note.userInfo?["command"] as? String else { return }
-            switch Command(rawValue: raw) {
-            case .exportNotes: exportNotes()
-            case .copyNotes: copyNotes()
-            default: break
+                  let paper = note.userInfo?["paper"] as? String, isAbout(paper),
+                  let command = (note.userInfo?["command"] as? String).flatMap(Command.init(rawValue:))
+            else { return }
+            if command == .deleteMark {
+                if let id = live.selectedMark, let mark = marks.first(where: { $0.id == id }) {
+                    live.remove(mark)
+                }
+                return
             }
+            pendingNotesCommand = command
+            runPendingNotesCommand()
         }
+        // A paper selected but not open is still being read when the request arrives.
+        .onChange(of: marks.count) { _, _ in runPendingNotesCommand() }
+        .onChange(of: readingFile) { _, _ in runPendingNotesCommand() }
+        .onChange(of: source) { _, _ in pendingNotesCommand = nil }
         .onAppear {
             palette.reloadSharedProfile()
             focusNoteInputIfNeeded()
@@ -983,6 +993,27 @@ struct NotesRail: View {
 
     private func copyNotes() {
         copyToPasteboard(notesMarkdown)
+    }
+
+    private func isAbout(_ paper: String) -> Bool {
+        !source.isEmpty && URL(fileURLWithPath: paper).resolvingSymlinksInPath().path
+            == URL(fileURLWithPath: source).resolvingSymlinksInPath().path
+    }
+
+    /// Whether the marks listed are this paper's, read in full, rather than the previous
+    /// paper's or none yet.
+    private var marksAreIn: Bool {
+        documentIsOpen || (!readingFile && shadow.url.map { isAbout($0.path) } == true)
+    }
+
+    private func runPendingNotesCommand() {
+        guard let command = pendingNotesCommand, marksAreIn, !marks.isEmpty else { return }
+        pendingNotesCommand = nil
+        switch command {
+        case .exportNotes: exportNotes()
+        case .copyNotes: copyNotes()
+        default: break
+        }
     }
 
     private var chatGPTNotesPrompt: String {
