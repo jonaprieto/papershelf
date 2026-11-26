@@ -1709,6 +1709,7 @@ struct ContentView: View {
                 preview()
             }
         }
+        if !aiReady { await DiscoveredKey.shared.settled() }
         if aiReady && availableModels.isEmpty { loadModels() }
     }
 

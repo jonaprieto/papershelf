@@ -558,19 +558,27 @@ final class StoredKey: @unchecked Sendable {
 
 /// The login shell is asked once per launch, lazily, and the answer is kept in memory
 /// only. Storing it would be deciding on the user's behalf that a key belongs on disk.
-final class DiscoveredKey: @unchecked Sendable {
+@MainActor
+@Observable
+final class DiscoveredKey {
     static let shared = DiscoveredKey()
-    private let lock = NSLock()
-    private var looked = false
+    @ObservationIgnored private let look: @Sendable () -> String?
+    @ObservationIgnored private var lookup: Task<Void, Never>?
     private var found: String?
 
+    init(look: @escaping @Sendable () -> String? = { AIClient.loginShellKey() }) {
+        self.look = look
+    }
+
     var value: String? {
-        lock.lock()
-        defer { lock.unlock() }
-        if !looked {
-            looked = true
-            found = AIClient.loginShellKey()
+        if lookup == nil {
+            let look = look
+            lookup = Task { found = await Task.detached(operation: look).value }
         }
         return found
+    }
+
+    func settled() async {
+        await lookup?.value
     }
 }

@@ -110,6 +110,17 @@ final class AIClientTests: XCTestCase {
         XCTAssertEqual(AIClient.loginShellKey(shell: "/bin/zsh", home: home.path), "from-zshrc")
     }
 
+    @MainActor
+    func testDiscoveredKeyNeverWaitsForTheShellOnTheMainThread() async {
+        let calls = LockedCounter()
+        let discovered = DiscoveredKey(look: { calls.bump(); return "from-shell" })
+
+        XCTAssertNil(discovered.value)
+        await discovered.settled()
+        XCTAssertEqual(discovered.value, "from-shell")
+        XCTAssertEqual(calls.count, 1)
+    }
+
     func testTranscriptionMultipartBodyCarriesTheModelAndAudio() {
         let boundary = "test-boundary"
         let body = audioMultipartBody(audio: Data([1, 2, 3]), filename: "note.m4a",
@@ -151,4 +162,11 @@ private final class LocalAIProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func bump() { lock.withLock { value += 1 } }
 }
