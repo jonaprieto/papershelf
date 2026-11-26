@@ -1707,6 +1707,8 @@ struct ContentView: View {
                 await absorbChanges(nil)
             } else if prefs.autoPreview {
                 preview()
+            } else {
+                libraryPreview()
             }
         }
         if !aiReady { await DiscoveredKey.shared.settled() }
