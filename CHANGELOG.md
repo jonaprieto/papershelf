@@ -4,6 +4,39 @@ All notable changes to PaperShelf are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are plain semantic
 numbers rather than dates.
 
+## [1.22.0] - 2026-11-26
+
+### Added
+
+- The command palette lists Undo, the library, About and the file in front, so every
+  command is a line in one palette or the other.
+- The palette deletes the selected mark, and exports, copies or opens a paper's notes.
+- The palette adds a folder, PDF or project, clears the search and filters, asks the model
+  for every pending name, trashes spare copies of identical files, and copies or saves the
+  bibliography as BibTeX or Markdown.
+
+### Changed
+
+- Opening the app in List view with no saved plan reads the shelf, rather than stopping on
+  a screen that asks to show the papers.
+
+### Fixed
+
+- Opening a paper no longer crashes the app when the AI key comes from your shell's
+  `.zshrc`. The key is now looked up without holding up the window.
+- A paper opened from Finder brings up no library window until one is asked for, and the
+  library, when asked for, shows its sources rather than an empty shelf.
+- Command-K inside a project opens the palette over the project, and leaves it only once a
+  line is chosen.
+- A reader opened from Finder answers the keys its commands are bound to, and the number
+  keys recolour a selected mark there.
+- Clearing filters from the palette also turns off List view's undecided-only switch.
+  Shortcuts for Add Source, New Project and Clear Filters work on an empty shelf, and Copy
+  and Save BibTeX work in a narrow window.
+- The palette offers no AI batch while AI has no key to answer with.
+- Undo, Delete Selected Mark and the notes commands in the palette act on the pane and
+  paper they were asked from.
+
 ## [1.21.0] - 2026-11-20
 
 ### Added
